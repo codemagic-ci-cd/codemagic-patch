@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
   s.version      = package["version"] || "0.0.0"
   s.summary      = "React Native Codemagic Patch client"
   s.homepage     = "https://github.com/codemagic-ci-cd/codemagic-patch"
-  s.license      = { :type => "MIT" }
+  s.license      = { :type => "Apache-2.0" }
   s.authors      = { "Codemagic" => "codemagic-patch@example.invalid" }
   s.platforms    = { :ios => "13.4" }
   s.source       = { :path => "." }

@@ -1,0 +1,188 @@
+Codemagic Server License
+(Based on Functional Source License, Version 1.1)
+
+Abbreviation
+
+Codemagic-FSL-1.1-Apache-2.0
+
+Notice
+
+Copyright (C) 2026 Nevercode Ltd
+
+TERMS AND CONDITIONS
+
+1. Definitions
+
+"Licensor"
+
+Nevercode Ltd, a company incorporated under the laws of England and Wales in
+the UK, Company number 10577696, with its registered address at Lytchett House,
+Wareham Road, Poole, Dorset, England, BH16 6FA, UK.
+
+"You" or "your"
+
+The individual or legal entity exercising rights under this License.
+
+"Licensed Work"
+
+Codemagic Patch, including all source code, documentation, and associated files
+made available by Licensor under this License. The software is Copyright (C) 2026
+Nevercode Ltd.
+
+"Change License"
+
+Apache License, Version 2.0
+
+"Change Date"
+
+Two (2) years from the date the Licensed Work is made available under this
+License. Each separately published version of the Licensed Work has its own
+Change Date. On the Change Date, or if Licensor publicly posts a later Change
+Date for a given version, the later of the two dates, the Licensed Work will
+become available under the Change License.
+
+2. License Grant
+
+Subject to the Terms and Conditions of this License, Licensor hereby grants you
+a non-exclusive, worldwide, royalty-free license to use, copy, modify, create
+derivative works, and redistribute the Licensed Work, subject to the Use
+Limitation and the Competing Use restriction set out below.
+
+All rights in the Licensed Work not expressly granted herein are reserved by
+Licensor.
+
+3. Use Limitation
+
+3.1. Free Use
+
+The Licensed Work may be used free of charge, provided that the total number of
+unique devices that request an update from the Licensed Work in any calendar
+month ("Monthly Active Users") does not exceed one million (1,000,000).
+
+3.2. Commercial Use
+
+If Monthly Active Users exceeds this threshold in any calendar month, you must,
+before continuing such use in the following calendar month, either obtain a
+separate commercial license from Licensor or cease all use of the Licensed Work.
+
+3.3. Measurement of Use
+
+Monthly Active Users is measured by counting each unique device identifier that
+initiates at least one update request to the Licensed Work during a given
+calendar month. A device that requests multiple updates within the same calendar
+month is counted only once.
+
+4. Use Restrictions
+
+4.1. Permitted Purpose
+
+A Permitted Purpose is any purpose other than a Competing Use. Permitted
+Purposes specifically include using the Licensed Work: (a) for your own internal
+use and access; (b) for non-commercial education; (c) for non-commercial
+research; and (d) in connection with professional services that you provide to a
+licensee using the Licensed Work in accordance with these Terms and Conditions.
+
+4.2. Competing Use
+
+A Competing Use means making the Licensed Work available to others in a
+commercial product or service that:
+
+(a) substitutes for the Licensed Work;
+
+(b) substitutes for any other product or service offered by Licensor using the
+    Licensed Work that exists as of the date the Licensed Work is made available
+    under this License; or
+
+(c) offers the same or substantially similar functionality as the Licensed Work.
+
+5. Redistribution Requirements
+
+Redistribution in source or binary form, with or without modification, is
+permitted provided that the following conditions are met:
+
+(a) You must give any recipients of the Licensed Work a copy of this License.
+
+(b) You must cause any modified files to carry prominent notices stating that
+    you changed the files.
+
+(c) You must retain, in the source form of any derivative works, all copyright,
+    patent, trademark, and attribution notices from the source form of the
+    Licensed Work, excluding those notices that do not pertain to any part of
+    the derivative works.
+
+(d) You may not remove or alter any license notices, including copyright
+    notices, patent notices, disclaimers of warranty, or limitations of
+    liability, contained within the source form of the Licensed Work.
+
+6. Covenants
+
+Each contributor to the Licensed Work covenants that they have the right to
+grant the license set out in this License.
+
+7. Trademarks
+
+This License does not grant permission to use the trade names, trademarks,
+service marks, or product names of the Licensor, except as required for
+reasonable and customary use in describing the origin of the Licensed Work.
+
+8. Disclaimer of Warranty
+
+To the maximum extent permitted by applicable law, the Licensed Work is provided
+"as is" and "as available", without warranties or conditions of any kind,
+whether express, implied or statutory.
+
+To the maximum extent permitted by applicable law, Licensor disclaims all
+warranties and conditions, including any implied warranties or conditions of
+merchantability, fitness for a particular purpose, title, non-infringement,
+accuracy, availability, security or reliability.
+
+9. Limitation of Liability
+
+To the maximum extent permitted by applicable law, Licensor will not be liable
+for any direct, indirect, incidental, special, consequential, exemplary or
+punitive damages, or for any loss of profits, revenue, goodwill, data, business
+opportunities or anticipated savings, arising out of or in connection with the
+Licensed Work or this License.
+
+10. Termination
+
+Any use of the Licensed Work in violation of this License will automatically
+terminate your rights under this License for the current and all other versions
+of the Licensed Work. Upon termination, you must immediately cease all use and
+distribution of the Licensed Work, destroy all copies of the Licensed Work in
+your possession or control, and upon Licensor's request, certify such
+destruction in writing. Termination does not affect any rights or obligations
+that by their nature are intended to survive termination, including sections
+titled "Disclaimer of Warranty," "Limitation of Liability," "Indemnification,"
+and "Termination".
+
+11. Indemnification
+
+You shall indemnify, defend, and hold harmless Licensor and its officers,
+directors, employees, and agents from and against any claims, damages, losses,
+liabilities, costs, and expenses (including reasonable legal fees) arising out of
+or in connection with your use of the Licensed Work or any breach of this
+License.
+
+12. Transition to Change License
+
+On the Change Date, the Terms and Conditions of this License, including the Use
+Limitation and the Competing Use restriction, shall cease to apply to the
+applicable version of the Licensed Work, and such version shall thereafter be
+available under the Change License. Each version of the Licensed Work has its own
+Change Date, calculated from the date that specific version was first made
+available by Licensor.
+
+13. Separate Mobile SDK License
+
+The Codemagic Mobile SDK is not covered by this License. The Mobile SDK is made
+available under the Apache License, Version 2.0, as separately documented in the
+Mobile SDK repository. The Mobile SDK may not be used to circumvent or avoid the
+restrictions of this License as applied to the Licensed Work.
+
+14. Governing Law and Jurisdiction
+
+This License shall be governed by and construed in accordance with the laws of
+the Republic of Estonia, without regard to its conflict of laws principles. Any
+disputes arising out of or in connection with this License shall be submitted to
+the exclusive jurisdiction of the courts of the Republic of Estonia.

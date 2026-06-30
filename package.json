@@ -1,6 +1,7 @@
 {
   "name": "codemagic-patch-monorepo",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "packageManager": "yarn@4.12.0",
   "workspaces": [
     "cli",
