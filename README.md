@@ -323,7 +323,7 @@ Add the config plugin to `app.json` / `app.config.js`:
   "expo": {
     "plugins": [
       [
-        "@codemagic/react-native-patch/app.plugin.js",
+        "@codemagic/react-native-patch",
         {
           "ios": {
             "deploymentKey": "ios-staging-deployment-key",
