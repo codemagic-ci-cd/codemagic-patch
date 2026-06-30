@@ -1,0 +1,57 @@
+{
+  "name": "@codemagic/patch-server",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "vendor"
+  ],
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1031.0",
+    "@aws-sdk/lib-storage": "^3.1031.0",
+    "@fastify/multipart": "^9.4.0",
+    "@google-cloud/storage": "^7.19.0",
+    "fastify": "^5.4.0",
+    "fflate": "^0.8.2",
+    "pg": "^8.16.3",
+    "pino": "^10.1.0",
+    "semver": "^7.7.4",
+    "zstd-napi": "0.0.12"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "eslint": "^9.36.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "yarn exec tsc -p tsconfig.build.json",
+    "auth:grant-team-owner": "yarn exec tsx scripts/grantTeamOwner.ts",
+    "clean": "yarn exec rimraf dist node_modules/.cache",
+    "db:test:down": "docker compose -f docker-compose.test.yml down -v",
+    "db:test:logs": "docker compose -f docker-compose.test.yml logs -f postgres",
+    "db:test:up": "docker compose -f docker-compose.test.yml up -d postgres",
+    "dev": "yarn exec tsx src/main.ts",
+    "fixtures:patches": "yarn exec node --import tsx scripts/generatePatchFixtures.ts",
+    "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "s3:test:up": "docker compose -f ../docker-compose.dev.yml up -d minio && docker compose -f ../docker-compose.dev.yml up --force-recreate minio-init",
+    "start": "node dist/main.js",
+    "test:artifact-gate": "yarn exec node --import tsx scripts/checkArtifactGateEnv.ts && yarn exec vitest run test/mode-all-happy-path.e2e.test.ts test/protocol-artifact-conformance.test.ts test/adapters/s3-storage.test.ts test/delivery/public-path.e2e.test.ts",
+    "test:artifact-gate:local": "TEST_DATABASE_URL=postgresql://codemagic_patch:codemagic_patch@127.0.0.1:55432/codemagic_patch_test TEST_S3_ENDPOINT=http://127.0.0.1:9100 TEST_S3_BUCKET=codemagic-patch TEST_S3_ACCESS_KEY_ID=minio TEST_S3_SECRET_ACCESS_KEY=minio12345 TEST_S3_REGION=us-east-1 TEST_S3_PUBLIC_BASE_URL=http://127.0.0.1:9100/codemagic-patch yarn run test:artifact-gate",
+    "test:db": "yarn exec vitest run test/db/**/*.test.ts",
+    "test:db:local": "TEST_DATABASE_URL=postgresql://codemagic_patch:codemagic_patch@127.0.0.1:55432/codemagic_patch_test yarn exec vitest run test/db/**/*.test.ts",
+    "test": "yarn exec vitest run",
+    "test:full:local": "TEST_DATABASE_URL=postgresql://codemagic_patch:codemagic_patch@127.0.0.1:55432/codemagic_patch_test TEST_S3_ENDPOINT=http://127.0.0.1:9100 TEST_S3_BUCKET=codemagic-patch TEST_S3_ACCESS_KEY_ID=minio TEST_S3_SECRET_ACCESS_KEY=minio12345 TEST_S3_REGION=us-east-1 TEST_S3_PUBLIC_BASE_URL=http://127.0.0.1:9100/codemagic-patch yarn exec vitest run",
+    "test:local": "TEST_DATABASE_URL=postgresql://codemagic_patch:codemagic_patch@127.0.0.1:55432/codemagic_patch_test yarn exec vitest run",
+    "typecheck": "yarn exec tsc -p tsconfig.json"
+  }
+}

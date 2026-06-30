@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": false,
+    "declaration": false,
+    "declarationMap": false,
+    "module": "CommonJS",
+    "outDir": "./plugin/build",
+    "rootDir": "./plugin/src",
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.plugin.tsbuildinfo"
+  },
+  "include": ["plugin/src/**/*.ts"],
+  "exclude": ["test/**"]
+}

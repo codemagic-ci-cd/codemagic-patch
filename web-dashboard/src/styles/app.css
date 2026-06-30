@@ -1,0 +1,450 @@
+/* ============================================================================
+   Codemagic Patch — Web Dashboard
+   Single CSS entrypoint (Tailwind v4, CSS-first config).
+
+   Preflight is deliberately NOT imported: base.css remains the reset so the
+   Tailwind adoption itself is visually inert (the e2e screenshot suite is the
+   proof). The one preflight rule v4 utilities depend on — `border:0 solid` on
+   every element — lives in base.css.
+
+   Layer semantics: `utilities` is declared last so converted components win
+   over any remaining legacy rules; during the migration no element carries a
+   legacy class and a conflicting utility at the same time (conversion is
+   wholesale per component).
+
+   Theme notes:
+   - --color-fg* renames the legacy --text* (avoids `text-text`); --color-canvas
+     renames --bg (avoids `bg-bg`).
+   - --radius-* / --shadow-* intentionally shadow the Tailwind defaults of the
+     same names (this design system's scale wins for rounded-sm/md/lg/xl).
+   - Tailwind's stock color palette stays available underneath — convention:
+     design-system tokens only (plus white/black); review catches strays.
+   - --animate-* tokens and @keyframes migrate here per stage, together with
+     their consumers, to avoid duplicate keyframe definitions meanwhile.
+   - --maxw / --sb-w stay plain :root vars (below) — NOT @theme: --sb-w is
+     mutated by `.app.collapsed`, it is not a static theme token.
+   ============================================================================ */
+
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@import "./fonts.css";
+@import "./base.css" layer(base);
+
+/* Layout vars — deliberately plain :root, NOT @theme: --sb-w is runtime-mutated
+   by `.app.collapsed` (the sidebar collapse), so it is not a static design
+   token. --maxw is the content max-width. Both are read via arbitrary values
+   (grid-cols-[var(--sb-w)_1fr], max-w-[var(--maxw)]) on the shell. */
+:root {
+  --maxw: 1320px;
+  --sb-w: 248px;
+}
+
+/* ============================================================================
+   COMPONENT KEEP-LIST (final residue of the verbatim mockup component library)
+   These rules are the escapes that cannot be a Tailwind utility string: layered
+   gradients, ::before/::after pseudo-elements, data-URI backgrounds, and the
+   ::-webkit-slider-thumb / ::-moz-range-thumb vendor pseudos. Everything else
+   from the legacy components.css was converted to utilities / ui/*.ts literals
+   over Stages 0–11. Token refs are the @theme names (var(--color-*) /
+   var(--shadow-*) / var(--radius-*)); var(--accent…) is injected inline at the
+   call site (stat.ts STAT marker) and so stays a bare custom property.
+   ============================================================================ */
+@layer components {
+  /* Sidebar art: subtle vertical wash on light chrome (star-field removed). */
+  .sb-art {
+    background-image: linear-gradient(
+      180deg,
+      var(--color-sb-bg),
+      var(--color-sb-bg-2) 55%
+    );
+  }
+
+  /* Active-nav indicator bar — hidden; active items use a solid fill instead. */
+  .nav-active-bar.is-active::before {
+    content: none;
+  }
+
+  /* Top accent strip for the utility-converted stat tiles — pseudo-element;
+     --accent is injected inline by the caller (stat.ts STAT marker). */
+  .stat-strip::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: var(--accent, var(--color-blue));
+    opacity: 0.9;
+  }
+
+  /* Role badges (MembersPage / TeamsPage / Invitations / TeamOverview): the
+     leading `::before` dot is a pseudo-element, so the whole family stays a
+     keep-list class (rendering it as a real <span> would change the DOM, and
+     the screenshot suite is the contract). The tone hexes have no @theme token
+     (legacy literals), so they stay hex; the tint fills map to @theme tints. */
+  .role {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px 3px 7px;
+    border-radius: 99px;
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+  .role::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: currentColor;
+  }
+  .role-owner {
+    color: #a417b8;
+    background: var(--color-magenta-tint);
+  }
+  .role-admin {
+    color: var(--color-blue);
+    background: var(--color-blue-tint);
+  }
+  .role-developer {
+    color: #0496c0;
+    background: var(--color-aqua-tint);
+  }
+  .role-viewer {
+    color: #5a6480;
+    background: var(--color-slate-tint);
+  }
+
+  /* toggle — NOT converted: inside the modal grid the legacy `.track` <span>
+     renders collapsed (its width is shrunk away in the inline-flex/grid
+     nesting), and the visual-contract baseline (modal-promote) captured that
+     exact rendering; a `w-[42px] flex-none` utility literal paints a full pill
+     instead and breaks parity. Kept legacy verbatim until a baseline re-capture
+     is on the table (a post-migration design decision). */
+  .toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .toggle input {
+    position: absolute;
+    opacity: 0;
+  }
+  .toggle .track {
+    width: 42px;
+    height: 24px;
+    border-radius: 99px;
+    background: var(--color-border-strong);
+    transition: 0.2s;
+    flex: none;
+    position: relative;
+  }
+  .toggle .track::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 99px;
+    background: #fff;
+    box-shadow: var(--shadow-sm);
+    transition: 0.2s;
+  }
+  .toggle input:checked + .track {
+    background: var(--color-blue);
+  }
+  .toggle input:checked + .track::after {
+    transform: translateX(18px);
+  }
+  .toggle input:focus-visible + .track {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* <select> chevron — data-URI background can't be a utility. The call sites
+     compose form.ts INPUT + SELECT_EXTRA (appearance-none + the right padding)
+     + this `select` class; this rule owns ONLY the chevron art so it never
+     co-sets a property with SELECT_EXTRA (no-merge contract). */
+  .select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6786' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+  }
+
+  /* Range-slider thumbs — ::-webkit-slider-thumb / ::-moz-range-thumb pseudo-
+     elements can't be utilities. The track converts via form.ts SLIDER, which
+     carries the `slider` marker so these thumb rules still apply; the thumb owns
+     none of the track's properties (no-merge contract). */
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 99px;
+    background: #fff;
+    border: 3px solid var(--color-blue);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+  }
+  .slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 99px;
+    background: #fff;
+    border: 3px solid var(--color-blue);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+  }
+
+  /* Auth starfield overlay — multi-layer gradient pseudo-element. */
+  .auth-art::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(
+        1.5px 1.5px at 20% 30%,
+        rgba(0, 206, 255, 0.7),
+        transparent
+      ),
+      radial-gradient(1.5px 1.5px at 80% 20%, rgba(254, 25, 255, 0.5), transparent),
+      radial-gradient(1px 1px at 65% 70%, rgba(255, 255, 255, 0.5), transparent),
+      radial-gradient(2px 2px at 35% 80%, rgba(0, 81, 255, 0.6), transparent);
+    opacity: 0.8;
+  }
+
+  /* Spinner — NOT converted: the border-color / border-top-color split (a full
+     ring color plus a single highlighted edge that the `spin` keyframes rotate)
+     is a utilities-layer ordering trap, so the family stays a keep-list class.
+     Used by CallbackPage / LoginPage and ConfirmDialog's busy `spinner sm m-0`. */
+  .spinner {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.18);
+    border-top-color: var(--color-aqua);
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+  }
+  .spinner.sm {
+    width: 18px;
+    height: 18px;
+    border-width: 2px;
+    /* The base `.spinner` carries `margin: 0 auto 20px` (it centers a large
+       page spinner). Inline busy spinners must not inherit that bottom margin —
+       it inflates the spinner's margin box and grows the submit button ~20px
+       taller the instant it appears. Zero it here so every `spinner sm` site is
+       stable without needing a per-call `m-0`. */
+    margin: 0;
+  }
+  .spinner.blue {
+    border-color: var(--color-blue-tint);
+    border-top-color: var(--color-blue);
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Tooltip bubble — ::after content:attr(data-tip) pseudo-element. */
+  .tip {
+    position: relative;
+  }
+  .tip[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-ink);
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 8px;
+    white-space: nowrap;
+    z-index: 50;
+    box-shadow: var(--shadow-md);
+    pointer-events: none;
+  }
+
+  /* load-in stagger — gated on no-preference: base.css kills animations under
+     reduced motion, which would otherwise strand children at opacity:0 forever
+     (blank content for reduced-motion users). */
+  @media (prefers-reduced-motion: no-preference) {
+    .stagger > * {
+      opacity: 0;
+      animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
+    }
+    .stagger > *:nth-child(1) {
+      animation-delay: 0.02s;
+    }
+    .stagger > *:nth-child(2) {
+      animation-delay: 0.06s;
+    }
+    .stagger > *:nth-child(3) {
+      animation-delay: 0.1s;
+    }
+    .stagger > *:nth-child(4) {
+      animation-delay: 0.14s;
+    }
+    .stagger > *:nth-child(5) {
+      animation-delay: 0.18s;
+    }
+    .stagger > *:nth-child(6) {
+      animation-delay: 0.22s;
+    }
+    .stagger > *:nth-child(7) {
+      animation-delay: 0.26s;
+    }
+    .stagger > *:nth-child(8) {
+      animation-delay: 0.3s;
+    }
+  }
+}
+
+@theme {
+  /* type */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* brand */
+  --color-blue: #2563eb;
+  --color-blue-deep: #1d4ed8;
+  --color-blue-bright: #3b82f6;
+  --color-aqua: #3b82f6;
+  --color-magenta: #fe19ff;
+  --color-yellow: #ff9100;
+  --color-orange: #ff4d13;
+  --color-red: #dc2626;
+  --color-green: #15803d;
+  --color-green-deep: #166534;
+
+  /* neutrals */
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8f9fb;
+  --color-surface-3: #eef0f3;
+  --color-border: #e4e7ec;
+  --color-border-strong: #d0d5dd;
+  --color-ink: #0a0e22;
+  --color-fg: #10152e;
+  --color-fg-2: #525a78;
+  /* fg-3 / fg-faint darkened to clear WCAG-AA: fg-3 is the pervasive muted-text
+     token (field hints, breadcrumbs, account email, table headers, dl labels) so
+     it must clear 4.5:1 as normal text — #5f6786 measures >=4.9:1 on white,
+     surface-2 and canvas. fg-faint (input placeholders + breadcrumb separator)
+     stays the lightest muted shade but clears the 3:1 non-text floor on canvas
+     at #737b99. */
+  --color-fg-3: #5f6786;
+  --color-fg-faint: #737b99;
+
+  /* sidebar — light chrome aligned with Codemagic app shell */
+  --color-sb-bg: #ffffff;
+  --color-sb-bg-2: #fafbfc;
+  --color-sb-text: #667085;
+  --color-sb-text-hi: #10152e;
+  --color-sb-border: #e4e7ec;
+  --color-sb-active: #2563eb;
+
+  /* tints */
+  --color-blue-tint: #eff6ff;
+  --color-blue-tint-2: #dbeafe;
+  --color-aqua-tint: #eff6ff;
+  --color-green-tint: #f0fdf4;
+  --color-red-tint: #fef2f2;
+  --color-yellow-tint: #fff2e0;
+  --color-magenta-tint: #fde6ff;
+  --color-slate-tint: #f6f7f9;
+
+  /* radii (shadow Tailwind defaults; --radius-control = the btn/input radius) */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  --radius-control: 8px;
+
+  /* shadows */
+  --shadow-xs: 0 1px 2px rgba(16, 21, 46, 0.04);
+  --shadow-sm: 0 1px 2px rgba(16, 21, 46, 0.04);
+  --shadow-md: 0 4px 12px -4px rgba(16, 21, 46, 0.08);
+  --shadow-lg: 0 16px 40px -12px rgba(10, 14, 34, 0.2),
+    0 6px 16px -6px rgba(10, 14, 34, 0.12);
+  --shadow-glow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+  --shadow-glow-aqua: 0 0 0 4px rgba(59, 130, 246, 0.14);
+
+  /* legacy media queries: (max-width:1080px) cols collapse, (max-width:760px) shell */
+  --breakpoint-cols: 1080px;
+  --breakpoint-shell: 760px;
+
+  /* animation — migrated with their Stage-2/3 consumers (status led, skeleton,
+     overlay, modal/toast). `led-pulse` is named to not collide with Tailwind's
+     own `pulse` keyframes. `rise` keeps its legacy name: the keep-list
+     `.stagger` block above references it by name, and Modal's `animate-rise`
+     consumes the same keyframes — they stay defined once here to avoid a
+     duplicate definition. */
+  --animate-led-pulse: led-pulse 1.4s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.3s infinite;
+  --animate-fade: fade 0.15s ease;
+  --animate-rise: rise 0.2s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  --animate-pop: pop 0.14s ease both;
+  --animate-drawer-in: drawer-in 0.2s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+
+  @keyframes led-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+}

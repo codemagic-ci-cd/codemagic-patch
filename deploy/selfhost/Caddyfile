@@ -1,0 +1,39 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$CODEMAGIC_PATCH_API_DOMAIN} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy server:3000
+	}
+
+	# /health* covers both /health and /health/ready
+	handle /health* {
+		reverse_proxy server:3000
+	}
+
+	# /worker/* is intentionally NOT exposed publicly. In MODE=all (the only
+	# self-host topology) release reconciliation runs in-process; the HTTP
+	# /worker/reconcile route is only used by the distributed worker topology.
+	# Exposing it here would put the worker endpoint on the public internet for
+	# no functional gain. Do not add a `handle /worker/*` block.
+
+	handle {
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
+		header {
+			Content-Security-Policy "default-src 'self'; connect-src 'self'"
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			-Server
+		}
+	}
+}
+
+{$CODEMAGIC_PATCH_STORAGE_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy minio:9000
+}

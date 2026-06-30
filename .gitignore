@@ -1,0 +1,56 @@
+### macOS
+# Finder metadata
+.DS_Store
+
+# Thumbnails
+._*
+
+# Custom folder icons
+Icon
+
+
+# Volume root files
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+### Node / Yarn
+node_modules/
+dist/
+coverage/
+.omx/
+.pnp.*
+.yarn/cache/
+.yarn/install-state.gz
+tools/hdiffpatch/vendor/*/downloads/
+tools/
+
+### TypeScript
+*.tsbuildinfo
+.omc
+
+### Copybara sync (runtime artifacts)
+.copybara-out/
+
+### Self-host deployment
+# Real secrets live here. Ignore the live file plus any temp/backup variants
+# (.tmp, .bak, dated copies) the install/backup scripts may write — but keep
+# tracking the committed template. .dockerignore already excludes the same set.
+.env.selfhost
+.env.selfhost.*
+!.env.selfhost.example
+backups/
+
+.playwright-mcp
+
+# Local dashboard preview (personal dev / theme experiments — not shared)
+scripts/dev/dashboard-preview.sh
+web-dashboard/.env.local
+web-dashboard/src/styles/app.local.css
+
+# CLI global-install packing dir
+.tmp-pack/

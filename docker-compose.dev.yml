@@ -1,0 +1,164 @@
+# ⚠ NOT THE SELF-HOST STACK. This is an internal development / test stack:
+# Postgres + MinIO + the API server only. It does NOT serve the web dashboard,
+# so bringing it up does not give you a usable CodemagicPatch deployment.
+#
+# To self-host, run:  scripts/selfhost/install.sh
+# (it provisions secrets and brings up the full stack — dashboard included —
+# from docker-compose.selfhost.yml). See that file and the installer's --help.
+#
+# Local development stack for Codemagic Patch.
+#
+# Brings up Postgres + MinIO + the server in MODE=all, runs migrations on
+# boot, and creates the single team named by INITIAL_TEAM_NAME (default-team)
+# during server startup. seed.sql then attaches a demo app / deployment / API
+# token to that team so the CLI can issue a release without first calling
+# control-plane CRUD APIs.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Tear down (drops volumes):
+#   docker compose -f docker-compose.dev.yml down -v
+#
+# Default values (team via INITIAL_TEAM_NAME, the rest via examples/local-dev/seed.sql):
+#   team        = default-team
+#   app         = demo-app
+#   deployment  = staging
+#   deploymentKey = dev_local_deployment_key
+#   api token   = cm_pat_local-dev-token-change-me-00000001
+
+services:
+  postgres:
+    # Pinned to the exact digest behind postgres:16.13-alpine. Refresh both
+    # the tag and the digest together when bumping Postgres.
+    image: postgres:16.13-alpine@sha256:20edbde7749f822887a1a022ad526fde0a47d6b2be9a8364433605cf65099416
+    environment:
+      POSTGRES_DB: codemagic_patch_dev
+      POSTGRES_PASSWORD: codemagic_patch
+      POSTGRES_USER: codemagic_patch
+    ports:
+      - "55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codemagic_patch -d codemagic_patch_dev"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+
+  minio:
+    # MinIO uses date-stamped tags; pin to the digest that was validated
+    # locally. Refresh together with quay.io/minio/mc below.
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    ports:
+      - "9100:9000" # S3 API
+      - "9101:9001" # Web console
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - minio-dev-data:/data
+
+  minio-init:
+    # Pinned alongside the minio image; mc command-surface drift would
+    # silently break the bucket-bootstrap step otherwise.
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      minio:
+        condition: service_healthy
+    # Apply a prefix-split bucket policy: anonymous GET on the bucket root
+    # for OTA artifacts, explicit Deny on `_internal/*` so staged uploads
+    # and worker-private objects are not publicly reachable. The Deny rule
+    # wins over the broader Allow for overlapping resources, matching
+    # standard IAM evaluation.
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minio minio12345 &&
+      mc mb --ignore-existing local/codemagic-patch &&
+      mc anonymous set-json /policy/codemagic-patch-bucket-policy.json local/codemagic-patch &&
+      echo 'minio bucket ready: codemagic-patch (public OTA prefix, _internal/* denied)'
+      "
+    volumes:
+      - ./examples/local-dev/minio-bucket-policy.json:/policy/codemagic-patch-bucket-policy.json:ro
+    restart: "no"
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      MODE: all
+      HOST: 0.0.0.0
+      PORT: 3000
+      LOGGER: "true"
+      RUN_MIGRATIONS: "true"
+      DATABASE_URL: postgresql://codemagic_patch:codemagic_patch@postgres:5432/codemagic_patch_dev
+      WORKER_SHARED_SECRET: dev-worker-secret-change-me-0000000001
+      # GitHub OAuth is mandatory for MODE=all to boot. Local dev uses the seeded
+      # API token (not OAuth login), so these are placeholder values that only
+      # satisfy the startup check; the device-flow routes are unused here.
+      GITHUB_OAUTH_CLIENT_ID: dev-local-github-oauth-client-id
+      GITHUB_OAUTH_CLIENT_SECRET: secret
+      OAUTH_DEVICE_POLL_TOKEN_SECRET: dev-oauth-device-poll-token-secret-000001
+      INITIAL_ADMIN_EMAILS: local-admin@example.com
+      # The server creates the fixed `default-team` on boot (idempotently);
+      # seed.sql then attaches the demo app/deployment/token to it by name.
+      # Team CRUD is disabled in the CLI/dashboard — everything runs on it.
+      STORAGE_ADAPTER: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: codemagic-patch
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: "true"
+      S3_ACCESS_KEY_ID: minio
+      S3_SECRET_ACCESS_KEY: minio12345
+      # PUBLIC_BASE_URL points at the host-reachable MinIO endpoint so manifest
+      # URLs returned to clients are fetchable from outside the compose network.
+      # The minio-init service applies the matching prefix-split policy so
+      # `_internal/*` remains private while public OTA keys are readable.
+      # Do not reuse this dev URL shape in production without equivalent
+      # bucket/delivery policy. See server/README.md "Serving artifacts from object
+      # storage".
+      PUBLIC_BASE_URL: http://localhost:9100/codemagic-patch
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  seed:
+    # Reuse the pinned postgres image so psql client behavior matches the
+    # database server.
+    image: postgres:16.13-alpine@sha256:20edbde7749f822887a1a022ad526fde0a47d6b2be9a8364433605cf65099416
+    depends_on:
+      server:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      psql 'postgresql://codemagic_patch:codemagic_patch@postgres:5432/codemagic_patch_dev' -v ON_ERROR_STOP=1 -f /seed/seed.sql
+      "
+    volumes:
+      - ./examples/local-dev:/seed:ro
+    restart: "no"
+
+volumes:
+  postgres-dev-data:
+  minio-dev-data:

@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@codemagic/patch-client": ["./src/index.ts"],
+      "@codemagic/patch-client/testing": ["./testing.ts"]
+    },
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts",
+    "testing.ts",
+    "test/**/*.ts",
+    "e2e/**/*.ts",
+    "plugin/**/*.ts"
+  ]
+}

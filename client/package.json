@@ -1,0 +1,109 @@
+{
+  "name": "@codemagic/patch-client",
+  "version": "0.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
+  "codegenConfig": {
+    "name": "CodemagicPatchSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "io.codemagic.patch"
+    },
+    "ios": {
+      "modulesConformingToProtocol": {
+        "RCTTurboModule": [
+          "CodemagicPatchModule"
+        ]
+      }
+    }
+  },
+  "exports": {
+    ".": {
+      "react-native": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "react-native": "./testing.ts",
+      "types": "./testing.ts",
+      "default": "./dist/testing.js"
+    },
+    "./app.plugin.js": "./app.plugin.js",
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "testing": [
+        "./testing.ts"
+      ]
+    }
+  },
+  "files": [
+    "android",
+    "app.plugin.js",
+    "CodemagicPatchClient.podspec",
+    "dist",
+    "ios",
+    "libs",
+    "plugin",
+    "react-native.config.js",
+    "testing.ts",
+    "src",
+    "!**/.cxx",
+    "!**/.cxx/**",
+    "!**/.gradle",
+    "!**/.gradle/**",
+    "!**/.kotlin",
+    "!**/.kotlin/**",
+    "!android/build",
+    "!android/build/**",
+    "!android/app/build",
+    "!android/app/build/**",
+    "!ios/build",
+    "!ios/build/**",
+    "!ios/Pods",
+    "!ios/Pods/**",
+    "!ios/DerivedData",
+    "!ios/DerivedData/**",
+    "!**/*.o",
+    "!**/*.a",
+    "!**/*.so",
+    "!**/.DS_Store",
+    "!**/*.tsbuildinfo",
+    "!**/*.md"
+  ],
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.76"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "devDependencies": {
+    "eslint": "^9.36.0",
+    "expo": "~56.0.9",
+    "react": "19.2.4",
+    "react-native": "0.84.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "yarn exec rimraf dist plugin/build node_modules/.cache && yarn exec tsc -p tsconfig.build.json && yarn exec tsc -p tsconfig.plugin.json",
+    "prepare": "rimraf dist plugin/build node_modules/.cache && tsc -p tsconfig.build.json && tsc -p tsconfig.plugin.json",
+    "clean": "yarn exec rimraf dist plugin/build node_modules/.cache",
+    "describe:e2e": "node ./e2e/scripts/describe-e2e-setup.mjs",
+    "e2e:scaffold:test": "yarn exec vitest run test/e2e-lanes.test.ts",
+    "e2e:server:test": "yarn exec vitest run test/e2e-server/**/*.test.ts",
+    "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\" \"e2e/**/*.ts\" \"plugin/**/*.ts\"",
+    "test": "yarn exec vitest run test/**/*.test.ts",
+    "typecheck": "yarn exec tsc -p tsconfig.json",
+    "e2e:ios:smoke": "bash ./e2e/scripts/ios-smoke.sh",
+    "e2e:android:smoke": "bash ./e2e/scripts/android-smoke.sh",
+    "e2e:lane:ios": "node ./e2e/scripts/run-maestro-lane.mjs --platform ios",
+    "e2e:lane:android": "node ./e2e/scripts/run-maestro-lane.mjs --platform android",
+    "e2e:server:start": "node --import ../node_modules/tsx/dist/loader.mjs ./e2e/scripts/start-scenario-server.ts"
+  }
+}

@@ -1,0 +1,61 @@
+/* ============================================================================
+   Codemagic Patch — Web Dashboard
+   Self-hosted webfonts (CSP `default-src 'self'` — no CDN imports allowed).
+   Replaces the mockup's cdnfonts/Google `@import`s (mockup/assets/styles.css:9-10).
+
+   Metropolis — Unlicense. Vendored from the dw5/Metropolis mirror of
+     chrismsimpson/Metropolis (original repo no longer available on GitHub).
+   Fira Code  — SIL OFL 1.1. Vendored from the tonsky/FiraCode v6.2 release.
+   Licenses + sources: ./fonts/README.md
+
+   Weight-range notes (file set is Regular/Medium/SemiBold/Bold + mono R/M):
+   - Metropolis Bold declares `font-weight:700 900` so the design system's
+     800/900 usages (.page-title, .sb__word b, …) resolve to Bold without
+     synthetic bolding.
+   - Fira Code Medium declares `font-weight:500 600` so mono-600 usages
+     (.copyable b, .rollout__pct) resolve to Medium.
+   ============================================================================ */
+
+@font-face{
+  font-family:"Metropolis";
+  src:url("./fonts/Metropolis-Regular.woff2") format("woff2");
+  font-weight:400;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Metropolis";
+  src:url("./fonts/Metropolis-Medium.woff2") format("woff2");
+  font-weight:500;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Metropolis";
+  src:url("./fonts/Metropolis-SemiBold.woff2") format("woff2");
+  font-weight:600;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Metropolis";
+  src:url("./fonts/Metropolis-Bold.woff2") format("woff2");
+  font-weight:700 900;
+  font-style:normal;
+  font-display:swap;
+}
+
+@font-face{
+  font-family:"Fira Code";
+  src:url("./fonts/FiraCode-Regular.woff2") format("woff2");
+  font-weight:400;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Fira Code";
+  src:url("./fonts/FiraCode-Medium.woff2") format("woff2");
+  font-weight:500 600;
+  font-style:normal;
+  font-display:swap;
+}

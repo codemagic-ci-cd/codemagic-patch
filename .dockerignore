@@ -1,0 +1,50 @@
+.git
+.gitignore
+.gitattributes
+
+# Workspace local state
+node_modules
+**/node_modules
+.yarn/cache
+.yarn/install-state.gz
+.yarn/unplugged
+.pnp.*
+
+# Build output
+**/dist
+**/coverage
+**/*.tsbuildinfo
+
+# IDE / agent local state
+.agents
+.claude
+.codex
+.idea
+.vscode
+.cursor
+.history
+
+# OS noise
+.DS_Store
+**/.DS_Store
+
+# Logs and tmp
+*.log
+.tmp
+**/.tmp
+
+# Self-host local secrets and backups
+.env.selfhost
+.env.selfhost.*
+backups
+backups/**
+
+# fixture-app is test-only. Both Dockerfiles COPY its package.json for yarn
+# workspace resolution, but nothing else (android/, src/, test corpus,
+# .artifacts) is needed at image-build time — keep it out of the build context.
+server/test/fixture-app/*
+!server/test/fixture-app/package.json
+
+# Compose / dev assets — built separately, not part of image context
+docker-compose*.yml
+**/docker-compose*.yml

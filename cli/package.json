@@ -1,0 +1,65 @@
+{
+  "name": "codemagic-patch",
+  "version": "0.1.0",
+  "description": "Codemagic Patch CLI for releasing and managing over-the-air React Native updates",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codemagic-ci-cd/codemagic-patch.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/cli#readme",
+  "bugs": "https://github.com/codemagic-ci-cd/codemagic-patch/issues",
+  "keywords": [
+    "cmpatch",
+    "react-native",
+    "ota",
+    "over-the-air",
+    "cli",
+    "deployment"
+  ],
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "cmpatch": "./dist/cmpatch.js",
+    "codemagic-patch": "./dist/cmpatch.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@expo/fingerprint": "^0.16.7",
+    "fast-xml-parser": "^5.0.0",
+    "fflate": "^0.8.2",
+    "fzstd": "^0.1.1",
+    "gradle-to-js": "2.0.1",
+    "plist": "^3.0.6",
+    "prompts": "^2.4.2",
+    "xcode": "^3.0.1"
+  },
+  "devDependencies": {
+    "@codemagic/patch-server": "workspace:*",
+    "@codemagic/patch-shared": "workspace:*",
+    "@types/prompts": "^2.4.9",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.36.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "yarn exec node scripts/build.mjs",
+    "clean": "yarn exec rimraf dist node_modules/.cache",
+    "dev": "yarn exec tsx src/bin/cmpatch.ts",
+    "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "prepack": "node scripts/build.mjs",
+    "test": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run",
+    "test:http": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run test/http-contract.test.ts",
+    "test:http:smoke": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run test/http-smoke.e2e.test.ts",
+    "typecheck": "yarn workspace @codemagic/patch-shared build && yarn exec tsc -p tsconfig.json"
+  }
+}

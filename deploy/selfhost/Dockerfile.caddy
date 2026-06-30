@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.7
+
+# ---------------------------------------------------------------------------
+# Builder — installs the web-dashboard workspace deps and builds the SPA to
+# dist/. Mirrors server/Dockerfile's workspace-aware staging.
+# ---------------------------------------------------------------------------
+FROM node:22.20.0-alpine AS builder
+
+WORKDIR /workspace
+
+ENV CI=1 \
+    YARN_ENABLE_TELEMETRY=0
+
+RUN corepack enable
+
+# Yarn workspace resolution needs every package's manifest. Copy manifests
+# first so the install layer is cached when only source changes.
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY cli/package.json ./cli/
+COPY client/package.json ./client/
+COPY infra/pulumi/package.json ./infra/pulumi/
+COPY server/package.json ./server/
+COPY shared/package.json ./shared/
+COPY web-dashboard/package.json ./web-dashboard/
+
+# Focused install for the SPA build. web-dashboard's build compiles the
+# @codemagic/patch-shared workspace first, and both extend tsconfig.base.json
+# (types: ["node"]), so the build needs the root workspace's tsc + @types/node
+# devDependencies. Focusing the root workspace (codemagic-patch-monorepo) pulls
+# those in without dragging in server's native deps (zstd-napi), which would
+# need a C toolchain this image lacks. No `--production` — the build toolchain
+# lives in devDependencies.
+RUN yarn workspaces focus codemagic-patch-monorepo web-dashboard
+
+# web-dashboard imports @codemagic/patch-shared, and its build script compiles
+# that workspace first. Copy the shared source plus the base tsconfig it
+# extends so the build can resolve and emit it.
+COPY tsconfig.base.json ./
+COPY shared ./shared
+COPY web-dashboard ./web-dashboard
+
+RUN yarn workspace web-dashboard build
+
+# ---------------------------------------------------------------------------
+# Runtime — caddy serves the built SPA from /srv/dashboard. The Caddyfile is
+# bind-mounted by docker-compose.selfhost.yml, so the image keeps the stock
+# entrypoint/CMD.
+# ---------------------------------------------------------------------------
+FROM caddy:2-alpine AS runtime
+
+COPY --from=builder /workspace/web-dashboard/dist /srv/dashboard

@@ -1,0 +1,31 @@
+{
+  "name": "@codemagic/patch-shared",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "eslint": "^9.36.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "yarn exec tsc -p tsconfig.build.json",
+    "clean": "yarn exec rimraf dist node_modules/.cache",
+    "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "test": "yarn exec vitest run",
+    "typecheck": "yarn exec tsc -p tsconfig.json"
+  }
+}
