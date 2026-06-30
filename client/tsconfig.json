@@ -6,8 +6,8 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@codemagic/patch-client": ["./src/index.ts"],
-      "@codemagic/patch-client/testing": ["./testing.ts"]
+      "@codemagic/react-native-patch": ["./src/index.ts"],
+      "@codemagic/react-native-patch/testing": ["./testing.ts"]
     },
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.tsbuildinfo"
   },
