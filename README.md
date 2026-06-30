@@ -49,7 +49,7 @@ This monorepo contains everything you need to run the service yourself and wire 
                                    └─────────┘
 ```
 
-1. You publish a release with the CLI. The server bundles your JS, computes a native **fingerprint** and a target **binary version**, then stores the artifact and a manifest in object storage.
+1. You publish a release with the CLI. It bundles your JS, computes a native **fingerprint**, resolves a target **binary version**, and uploads the bundle to the server, which stores the artifact and a manifest in object storage.
 2. On launch (or resume), the SDK fetches the manifest for its deployment + binary version, downloads the new bundle (or a smaller **binary patch** when available), and swaps it in on the next restart.
 3. The SDK reports download/install/success/failure metrics back to the server.
 
