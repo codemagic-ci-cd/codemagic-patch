@@ -356,32 +356,163 @@ The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) **a
 
 ### Run updates in app code
 
-The simplest integration is a single `sync()` call after startup. `sync()` runs `notifyAppReady()`, the update check, download, and install in order.
+#### What `sync()` does
 
-```ts
+`sync()` is the one call most apps need. On each invocation it runs the whole update flow in order:
+
+1. **`notifyAppReady()`** — marks the currently running bundle as healthy. This is the SDK's **rollback protection**: if a freshly installed bundle crashes *before* `sync()` (and therefore `notifyAppReady()`) runs, the next launch automatically reverts to the last known-good bundle. Because `sync()` calls it first, simply running `sync()` on every startup confirms the previous update and arms rollback for the next one — you don't have to call it yourself.
+2. **Check** the server for an update matching this app's deployment key + binary version.
+3. **Download** the new bundle (or a smaller binary **patch**, with automatic fallback to the full bundle).
+4. **Install** it according to the chosen *install mode* (see below).
+
+`sync()` **never throws** — it always resolves to a `SyncStatus` string, so you can branch on the result instead of wrapping it in `try/catch`.
+
+#### Step 1 — Minimal integration (drop-in)
+
+Call `sync()` once, as early as possible after your root component mounts. This is enough to get OTA updates working end to end.
+
+```tsx
+// App.tsx
 import { useEffect } from "react";
 import { sync } from "@codemagic/patch-client";
 
-export function useCodemagicPatch() {
+export default function App() {
   useEffect(() => {
-    void sync(
-      {
-        installMode: "ON_NEXT_RESTART",
-        mandatoryInstallMode: "IMMEDIATE",
-      },
-      (progress) => {
-        console.log("OTA download", progress.receivedBytes, "/", progress.totalBytes);
-      },
-    );
+    // Fire-and-forget: sync() handles its own errors and resolves to a status.
+    void sync();
   }, []);
+
+  return <YourApp />;
 }
 ```
 
-**Install modes:** `IMMEDIATE` · `ON_NEXT_RESTART` *(default)* · `ON_NEXT_RESUME` · `ON_NEXT_SUSPEND`
+With no options, non-mandatory updates install on the **next app restart** and mandatory updates install **immediately**. The user gets the new bundle the next time they cold-start the app.
 
-**`SyncOptions`:** `{ installMode?, mandatoryInstallMode?, minimumBackgroundDuration? }` — `sync()` resolves to a status such as `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`.
+#### Step 2 — Choose how updates apply (install modes)
 
-For manual control, the SDK also exports `checkForUpdate()`, `downloadUpdate()`, `installUpdate()`, `notifyAppReady()`, `restartApp()`, `allowRestart()`, and `disallowRestart()`.
+The **install mode** controls *when* a downloaded bundle becomes active. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode`; everything else uses `installMode`.
+
+| Install mode        | When the new bundle becomes active                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| `ON_NEXT_RESTART`   | On the next cold start *(default for non-mandatory)*. Least disruptive.                        |
+| `ON_NEXT_RESUME`    | When the app returns to the foreground after being backgrounded for `minimumBackgroundDuration`. |
+| `ON_NEXT_SUSPEND`   | When the app goes to the background (after `minimumBackgroundDuration`).                       |
+| `IMMEDIATE`         | Right away — the JS bundle reloads as soon as install finishes *(default for mandatory)*.      |
+
+```ts
+void sync({
+  installMode: "ON_NEXT_RESTART",   // optional updates: wait for a natural restart
+  mandatoryInstallMode: "IMMEDIATE", // forced updates: reload now
+  minimumBackgroundDuration: 60_000, // for ON_NEXT_RESUME/SUSPEND, in ms
+});
+```
+
+> Re-running `sync()` when the app returns to the foreground catches updates published while the user had the app open. Wire it to `AppState`:
+>
+> ```ts
+> import { AppState } from "react-native";
+> import { sync } from "@codemagic/patch-client";
+>
+> AppState.addEventListener("change", (next) => {
+>   if (next === "active") void sync();
+> });
+> ```
+
+#### Step 3 — React to the result and show progress
+
+`sync()` resolves to one of: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. The optional second argument is a progress callback (`{ receivedBytes, totalBytes }`) you can use to drive a UI.
+
+```tsx
+import { useEffect, useState } from "react";
+import { sync, type SyncStatus } from "@codemagic/patch-client";
+
+export function useOtaUpdate() {
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<SyncStatus>();
+
+  useEffect(() => {
+    void (async () => {
+      const result = await sync(
+        { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" },
+        ({ receivedBytes, totalBytes }) => {
+          setProgress(totalBytes > 0 ? receivedBytes / totalBytes : 0);
+        },
+      );
+
+      setStatus(result);
+
+      switch (result) {
+        case "update-installed":
+          // Downloaded and staged. For ON_NEXT_RESTART it applies on the next launch.
+          break;
+        case "up-to-date":
+        case "embedded-revert-applied":
+        case "sync-in-progress":
+          break;
+        case "error":
+          // Safe to ignore — the app keeps running the current bundle.
+          break;
+      }
+    })();
+  }, []);
+
+  return { progress, status };
+}
+```
+
+#### Step 4 — Manual control (advanced)
+
+If you need to separate the steps — e.g. download silently but let the user decide when to restart, or gate updates behind a "What's new" prompt — use the lower-level functions instead of `sync()`:
+
+```ts
+import {
+  checkForUpdate,
+  downloadUpdate,
+  installUpdate,
+  notifyAppReady,
+  restartApp,
+  disallowRestart,
+  allowRestart,
+} from "@codemagic/patch-client";
+
+// 1) Confirm the running bundle is healthy (arms rollback). Call this once on
+//    startup if you are NOT using sync(), e.g. after your app finishes booting.
+await notifyAppReady();
+
+// 2) Check, then download with progress.
+const check = await checkForUpdate();
+if (check.action === "ota-update") {
+  const local = await downloadUpdate(check.remotePackage, (p) =>
+    console.log(p.receivedBytes, "/", p.totalBytes),
+  );
+
+  // 3) Install. With IMMEDIATE the bundle reloads now; with ON_NEXT_RESTART it
+  //    waits for the next launch.
+  await installUpdate(local, { installMode: "ON_NEXT_RESTART" });
+
+  // 4) Optionally force a reload yourself (e.g. after the user taps "Update now").
+  await restartApp(/* onlyIfUpdateIsPending */ true);
+}
+
+// Suppress restarts during a critical flow (checkout, video call, …), then re-enable.
+disallowRestart();
+// … later …
+allowRestart();
+```
+
+> **If you do not use `sync()`, you must call `notifyAppReady()` yourself** once the app has booted successfully. Otherwise the SDK treats the new bundle as unverified and rolls it back on the next launch.
+
+#### API summary
+
+| Function | Purpose |
+| --- | --- |
+| `sync(options?, onProgress?)` | End-to-end: confirm → check → download → install. Returns a `SyncStatus`; never throws. |
+| `checkForUpdate()` | Returns `{ action: "up-to-date" \| "ota-update" \| "embedded-revert", remotePackage? }`. |
+| `downloadUpdate(remotePackage, onProgress?)` | Downloads (patch or full bundle) and returns a `LocalPackage`. |
+| `installUpdate(target, options?)` | Stages/applies a downloaded package using an `installMode`. |
+| `notifyAppReady()` | Confirms the running bundle as good (rollback protection). |
+| `restartApp(onlyIfUpdateIsPending?)` | Reloads the JS bundle to apply a pending update. |
+| `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
 
 ---
 
