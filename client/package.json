@@ -1,6 +1,7 @@
 {
   "name": "@codemagic/patch-client",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "react-native": "./src/index.ts",
