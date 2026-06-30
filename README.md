@@ -5,7 +5,7 @@ Codemagic Patch is a **self-hosted over-the-air (OTA) update service for React N
 This monorepo contains everything you need to run the service yourself and wire it into an app:
 
 - a **server** (control plane + release worker),
-- a **React Native client SDK** (`@codemagic/patch-client`) with an Expo config plugin,
+- a **React Native client SDK** (`@codemagic/react-native-patch`) with an Expo config plugin,
 - a **CLI** (`cmpatch`) for publishing and managing releases,
 - a **web dashboard**, and
 - a one-command **Docker Compose self-host** stack.
@@ -38,8 +38,8 @@ This monorepo contains everything you need to run the service yourself and wire 
 ```
   Developer / CI                Self-host server                 Installed app
  ┌──────────────┐   release    ┌──────────────────┐   manifest  ┌──────────────┐
- │   cmpatch    │ ───────────► │  API + worker    │ ◄────────── │  patch-client│
- │  release-... │   upload     │  (Fastify)       │   download  │   SDK (RN)   │
+ │   cmpatch    │ ───────────► │  API + worker    │ ◄────────── │ react-native │
+ │  release-... │   upload     │  (Fastify)       │   download  │  -patch SDK  │
  └──────────────┘              │  Postgres + S3   │ ──────────► │  swaps bundle│
                                └──────────────────┘   artifacts └──────────────┘
                                         ▲
@@ -84,7 +84,7 @@ The default self-host stack runs four services on a single Docker host:
 | Path               | Package                   | Description                                                          |
 | ------------------ | ------------------------- | ------------------------------------------------------------------- |
 | `server/`          | `@codemagic/patch-server` | Fastify API + release/manifest worker                               |
-| `client/`          | `@codemagic/patch-client` | React Native SDK + Expo config plugin (`app.plugin.js`)             |
+| `client/`          | `@codemagic/react-native-patch` | React Native SDK + Expo config plugin (`app.plugin.js`)             |
 | `cli/`             | `codemagic-patch`         | The `cmpatch` CLI                                                    |
 | `web-dashboard/`   | `web-dashboard`           | React SPA dashboard (served by Caddy)                               |
 | `shared/`          | `@codemagic/patch-shared` | Types and helpers shared across packages                            |
@@ -256,7 +256,7 @@ cmpatch deployment list --app MyApp-Android --format table
 Add the SDK:
 
 ```bash
-yarn add @codemagic/patch-client
+yarn add @codemagic/react-native-patch
 ```
 
 The SDK is configured through four native values (injected at build time):
@@ -323,7 +323,7 @@ Add the config plugin to `app.json` / `app.config.js`:
   "expo": {
     "plugins": [
       [
-        "@codemagic/patch-client/app.plugin.js",
+        "@codemagic/react-native-patch/app.plugin.js",
         {
           "ios": {
             "deploymentKey": "ios-staging-deployment-key",
@@ -374,7 +374,7 @@ Call `sync()` once, as early as possible after your root component mounts. This 
 ```tsx
 // App.tsx
 import { useEffect } from "react";
-import { sync } from "@codemagic/patch-client";
+import { sync } from "@codemagic/react-native-patch";
 
 export default function App() {
   useEffect(() => {
@@ -411,7 +411,7 @@ void sync({
 >
 > ```ts
 > import { AppState } from "react-native";
-> import { sync } from "@codemagic/patch-client";
+> import { sync } from "@codemagic/react-native-patch";
 >
 > AppState.addEventListener("change", (next) => {
 >   if (next === "active") void sync();
@@ -424,7 +424,7 @@ void sync({
 
 ```tsx
 import { useEffect, useState } from "react";
-import { sync, type SyncStatus } from "@codemagic/patch-client";
+import { sync, type SyncStatus } from "@codemagic/react-native-patch";
 
 export function useOtaUpdate() {
   const [progress, setProgress] = useState(0);
@@ -473,7 +473,7 @@ import {
   restartApp,
   disallowRestart,
   allowRestart,
-} from "@codemagic/patch-client";
+} from "@codemagic/react-native-patch";
 
 // 1) Confirm the running bundle is healthy (arms rollback). Call this once on
 //    startup if you are NOT using sync(), e.g. after your app finishes booting.
