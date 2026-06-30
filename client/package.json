@@ -1,7 +1,30 @@
 {
-  "name": "@codemagic/patch-client",
-  "version": "0.0.0",
+  "name": "@codemagic/react-native-patch",
+  "version": "0.1.0",
+  "description": "React Native client SDK for Codemagic Patch — over-the-air JavaScript & asset updates for React Native and Expo apps.",
+  "keywords": [
+    "react-native",
+    "expo",
+    "ota",
+    "over-the-air",
+    "code-push",
+    "hot-update",
+    "codemagic",
+    "codemagic-patch"
+  ],
   "license": "Apache-2.0",
+  "homepage": "https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codemagic-ci-cd/codemagic-patch.git",
+    "directory": "client"
+  },
+  "bugs": {
+    "url": "https://github.com/codemagic-ci-cd/codemagic-patch/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "react-native": "./src/index.ts",

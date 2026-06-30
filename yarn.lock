@@ -1929,9 +1929,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@codemagic/patch-client@workspace:client":
+"@codemagic/react-native-patch@workspace:client":
   version: 0.0.0-use.local
-  resolution: "@codemagic/patch-client@workspace:client"
+  resolution: "@codemagic/react-native-patch@workspace:client"
   dependencies:
     eslint: "npm:^9.36.0"
     expo: "npm:~56.0.9"

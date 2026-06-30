@@ -23,7 +23,7 @@ import { withAndroidBundleFile } from './withAndroidBundleFile';
 import { withAndroidConfig } from './withAndroidConfig';
 
 /**
- * Expo config plugin for `@codemagic/patch-client`.
+ * Expo config plugin for `@codemagic/react-native-patch`.
  *
  * Adds, at prebuild time, the native bundle-selection seam the SDK needs (the
  * one bare-RN hosts wire by hand) plus the per-platform CodemagicPatch config values.
@@ -37,11 +37,11 @@ const withCodemagicPatch: ConfigPlugin<CodemagicPatchPluginProps> = (config, pro
   const plugins: Parameters<typeof withPlugins>[1] = [];
 
   if (props.ios) {
-    plugins.push(createRunOncePlugin(withIosBundleURL, '@codemagic/patch-client:ios-bundle'));
+    plugins.push(createRunOncePlugin(withIosBundleURL, '@codemagic/react-native-patch:ios-bundle'));
     plugins.push([withIosConfig, props.ios]);
   }
   if (props.android) {
-    plugins.push(createRunOncePlugin(withAndroidBundleFile, '@codemagic/patch-client:android-bundle'));
+    plugins.push(createRunOncePlugin(withAndroidBundleFile, '@codemagic/react-native-patch:android-bundle'));
     plugins.push([withAndroidConfig, props.android]);
   }
 

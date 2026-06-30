@@ -36,7 +36,7 @@ export function assertPlatformConfig(
   if (missing.length > 0) {
     throw new Error(
       `[codemagic-patch] ${platform} config is missing required value(s): ${missing.join(', ')}. ` +
-        `Set them in app config under plugins → "@codemagic/patch-client" → ${platform} ` +
+        `Set them in app config under plugins → "@codemagic/react-native-patch" → ${platform} ` +
         `(deploymentKey, downloadBaseUrl, and apiUrl are all required; publicKey is optional). ` +
         `To disable OTA for ${platform}, omit the ${platform} block entirely.`,
     );
@@ -56,7 +56,7 @@ export function validatePluginProps(props: CodemagicPatchPluginProps): void {
   if (!props.ios && !props.android) {
     throw new Error(
       `[codemagic-patch] no platform is configured. Provide an "ios" and/or "android" block under ` +
-        `plugins → "@codemagic/patch-client" (each with deploymentKey, downloadBaseUrl, and apiUrl). ` +
+        `plugins → "@codemagic/react-native-patch" (each with deploymentKey, downloadBaseUrl, and apiUrl). ` +
         `At least one platform is required.`,
     );
   }

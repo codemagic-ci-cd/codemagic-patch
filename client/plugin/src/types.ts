@@ -1,5 +1,5 @@
 /**
- * Public prop shape for the `@codemagic/patch-client` Expo config plugin.
+ * Public prop shape for the `@codemagic/react-native-patch` Expo config plugin.
  *
  * Deployment keys differ per platform, so the plugin takes a separate config
  * block for iOS and Android. Each block is written verbatim into the native
