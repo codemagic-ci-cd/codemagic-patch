@@ -268,7 +268,53 @@ The SDK is configured through four native values (injected at build time):
 | `CodemagicPatchApiUrl`          | your **API** URL                                        |
 | `CodemagicPatchPublicKey`       | *(optional)* PEM public key for code-signing enforcement |
 
-### Option A — Expo (prebuild)
+### Option A — Bare React Native
+
+Wire the config and native bundle selection manually.
+
+**iOS**
+
+- Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, `CodemagicPatchApiUrl` to `ios/<YourApp>/Info.plist`:
+  ```xml
+  <key>CodemagicPatchDeploymentKey</key>
+  <string>ios-staging-deployment-key</string>
+  <key>CodemagicPatchDownloadBaseUrl</key>
+  <string>https://storage.updates.example.com/codemagic-patch</string>
+  <key>CodemagicPatchApiUrl</key>
+  <string>https://updates.example.com</string>
+  <!-- optional, only when enforcing code signing -->
+  <key>CodemagicPatchPublicKey</key>
+  <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+  ```
+- In your AppDelegate, prefer the OTA bundle before the embedded fallback:
+  ```swift
+  import CodemagicPatchClient
+  // ...
+  CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+  ```
+  Reference: `client/plugin/src/withIosBundleURL.ts`
+
+**Android**
+
+- Add the same keys to `android/app/src/main/res/values/strings.xml`:
+  ```xml
+  <resources>
+    <string name="CodemagicPatchDeploymentKey" translatable="false">android-staging-deployment-key</string>
+    <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage.updates.example.com/codemagic-patch</string>
+    <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
+    <!-- optional, only when enforcing code signing -->
+    <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+  </resources>
+  ```
+- In `MainApplication.kt`, make `getJSBundleFile()` (or `getDefaultReactHost(..., jsBundleFilePath = ...)`) use the SDK:
+  ```kotlin
+  import io.codemagic.patch.CodemagicPatch
+  // ...
+  override fun getJSBundleFile(): String? = CodemagicPatch.getJSBundleFile(applicationContext)
+  ```
+  Reference: `client/plugin/src/withAndroidBundleFile.ts`
+
+### Option B — Expo (prebuild)
 
 Add the config plugin to `app.json` / `app.config.js`:
 
@@ -303,36 +349,10 @@ npx expo prebuild
 cd ios && pod install && cd ..
 ```
 
-The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) **and** wires native bundle selection for you:
+The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) **and** wires native bundle selection for you — the same wiring shown in Option A:
 
 - **iOS** AppDelegate → prefers `CodemagicPatch.bundleURL()`, falling back to the embedded bundle.
 - **Android** MainApplication → prefers `CodemagicPatch.getJSBundleFile(applicationContext)`.
-
-### Option B — Bare React Native
-
-Wire the same things manually. The Expo plugin sources are the reference implementation:
-
-**iOS**
-
-- Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, `CodemagicPatchApiUrl` to `Info.plist`.
-- In your AppDelegate, prefer the OTA bundle before the embedded fallback:
-  ```swift
-  import CodemagicPatchClient
-  // ...
-  CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
-  ```
-  Reference: `client/plugin/src/withIosBundleURL.ts`
-
-**Android**
-
-- Add the same keys to `android/app/src/main/res/values/strings.xml`.
-- In `MainApplication.kt`, make `getJSBundleFile()` (or `getDefaultReactHost(..., jsBundleFilePath = ...)`) use the SDK:
-  ```kotlin
-  import io.codemagic.patch.CodemagicPatch
-  // ...
-  override fun getJSBundleFile(): String? = CodemagicPatch.getJSBundleFile(applicationContext)
-  ```
-  Reference: `client/plugin/src/withAndroidBundleFile.ts`
 
 ### Run updates in app code
 
