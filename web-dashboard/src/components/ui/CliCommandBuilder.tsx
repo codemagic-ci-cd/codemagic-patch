@@ -188,8 +188,8 @@ export function CliCommandBuilder({
   const inner = (
     <>
       <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
-        <div className={`${BUILDER_FIELD} items-center`}>
-          <span className={`${BUILDER_LABEL} text-center`}>Platform</span>
+        <div className={BUILDER_FIELD}>
+          <span className={BUILDER_LABEL}>Platform</span>
           <div className={BUILDER_CONTROL}>
             <div className={SEGMENTED} role="group" aria-label="Platform">
               {PLATFORMS.map((option) => {
