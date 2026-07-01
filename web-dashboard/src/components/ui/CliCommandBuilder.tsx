@@ -96,6 +96,8 @@ export interface CliCommandBuilderProps {
   /** Prefill from the newest release on this deployment, when available. */
   suggestedTargetBinaryVersion?: string;
   codeSigningRequired?: boolean;
+  /** Drop the outer card + section title when embedded in a modal. */
+  embedded?: boolean;
 }
 
 export function CliCommandBuilder({
@@ -104,6 +106,7 @@ export function CliCommandBuilder({
   deploymentName,
   suggestedTargetBinaryVersion = "",
   codeSigningRequired = false,
+  embedded = false,
 }: CliCommandBuilderProps) {
   const [platform, setPlatform] = useState<ReleaseReactPlatform>("ios");
   const [targetBinaryVersion, setTargetBinaryVersion] = useState(
@@ -182,19 +185,9 @@ export function CliCommandBuilder({
     selection.addRange(range);
   }, [state]);
 
-  return (
-    <div className={`${CARD} ${CARD_PAD} flex w-full min-w-0 max-w-[580px] flex-col gap-4`}>
-      <div className={SECTION_TITLE}>
-        <ServerIcon /> CLI Command Builder
-      </div>
-
-      <div
-        className={`grid items-end gap-x-3 ${
-          codeSigningRequired
-            ? "grid-cols-[auto_4.5rem_7.5rem_9rem]"
-            : "grid-cols-[auto_4.5rem_7.5rem]"
-        }`}
-      >
+  const inner = (
+    <>
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
         <div className={`${BUILDER_FIELD} items-center`}>
           <span className={`${BUILDER_LABEL} text-center`}>Platform</span>
           <div className={BUILDER_CONTROL}>
@@ -323,6 +316,21 @@ export function CliCommandBuilder({
             ? "Clipboard unavailable — command selected, copy it manually"
             : ""}
       </span>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-4">{inner}</div>
+    );
+  }
+
+  return (
+    <div className={`${CARD} ${CARD_PAD} flex w-full min-w-0 max-w-[580px] flex-col gap-4`}>
+      <div className={SECTION_TITLE}>
+        <ServerIcon /> CLI Command Builder
+      </div>
+      {inner}
     </div>
   );
 }

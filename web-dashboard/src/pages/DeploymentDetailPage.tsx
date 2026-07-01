@@ -18,8 +18,8 @@
 // columns, never conflated. Lifecycle modals: every
 // action funnels into the shared useReleaseActions coordinator's
 // `openAction(type, release)`, which mounts RolloutModal / StatusModal /
-// PromoteModal / RollbackModal. Empty history → CliCommandBuilder with
-// the pre-filled `release-react` command (uploads are CLI-only).
+// PromoteModal / RollbackModal. Empty history → New release CTA (CLI or bundle
+// upload via NewReleaseModal).
 
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -35,7 +35,6 @@ import { useDeploymentMetrics } from "../api/hooks/metrics";
 import { useReleases } from "../api/hooks/releases";
 import { useUserLabel } from "../api/hooks/userLabels";
 import { HttpProblemError } from "../api/problem";
-import { CliCommandBuilder } from "../components/ui/CliCommandBuilder";
 import { apiServerUrl } from "../lib/cliSnippet";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -56,7 +55,7 @@ import {
   canRollback,
 } from "../model/release";
 import { useTeamRole } from "../rbac/useTeamRole";
-import { UploadArtifactModal } from "./release/modals/UploadArtifactModal";
+import { NewReleaseModal } from "./release/modals/NewReleaseModal";
 import { useReleaseActions } from "./release/modals/useReleaseActions";
 import type { ReleaseListItem } from "../api/types";
 import type { Deployment } from "../model/deployment";
@@ -214,7 +213,7 @@ function DeploymentDetail({
     deploymentId: deployment.id,
     deploymentName: deployment.name,
   });
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const [newReleaseOpen, setNewReleaseOpen] = useState(false);
 
   const pages = releasesQuery.data?.pages;
   const rows = pages?.flatMap((page) => page.releases) ?? [];
@@ -232,24 +231,15 @@ function DeploymentDetail({
 
   const appName = appQuery.data?.name ?? appId;
   const suggestedTargetBinaryVersion = rows[0]?.release.targetBinaryVersion ?? "";
-  const cliBuilder = (
-    <CliCommandBuilder
-      serverUrl={apiServerUrl()}
-      appName={appName}
-      deploymentName={deployment.name}
-      suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
-      codeSigningRequired={appQuery.data?.requireCodeSigning === true}
-    />
-  );
-  const uploadButton = (
+  const newReleaseButton = (
     <span className="tip" data-tip={deployTip}>
       <button
         type="button"
         className={buttonVariants({ intent: "primary" })}
         disabled={!canDeploy}
-        onClick={() => setUploadOpen(true)}
+        onClick={() => setNewReleaseOpen(true)}
       >
-        <UploadIcon /> Upload release
+        <PlusIcon /> New release
       </button>
     </span>
   );
@@ -277,13 +267,8 @@ function DeploymentDetail({
       <EmptyState
         icon={<ActivityIcon />}
         title="No releases yet"
-        description="Drag in a .cmpatch artifact (`cmpatch bundle` builds one), or run `cmpatch release-react` from the CLI / CI to build and publish in one step — pre-filled below."
-        action={
-          <div className="flex flex-col items-center gap-[18px]">
-            {uploadButton}
-            {cliBuilder}
-          </div>
-        }
+        description="Publish your first update via the CLI or by uploading a pre-built .cmpatch bundle."
+        action={newReleaseButton}
       />
     );
   } else {
@@ -397,7 +382,7 @@ function DeploymentDetail({
           </div>
         </div>
         <div className="flex items-center gap-2.5">
-          {uploadButton}
+          {newReleaseButton}
           <span className="tip" data-tip={deployTip}>
             <button
               type="button"
@@ -418,27 +403,18 @@ function DeploymentDetail({
 
       <MetricsSummaryStrip deploymentId={deployment.id} />
 
-      {isEmpty ? (
-        // Empty: the CLI builder lives inside the empty state — no right rail.
-        historyCard
-      ) : (
-        // Stacked, not side-by-side: the 580px builder rail can't sit beside the
-        // full release table within the 1320px content cap without the table
-        // scrolling horizontally and hiding its success/failed columns (content
-        // is capped, so this is true at every viewport width — a wider monitor
-        // doesn't help). Table first, builder below — matching the empty state.
-        <div className="flex flex-col gap-[22px]">
-          {historyCard}
-          {cliBuilder}
-        </div>
-      )}
+      {historyCard}
 
       {modals}
-      <UploadArtifactModal
-        open={uploadOpen}
+      <NewReleaseModal
+        open={newReleaseOpen}
         deploymentId={deployment.id}
         deploymentName={deployment.name}
-        onClose={() => setUploadOpen(false)}
+        serverUrl={apiServerUrl()}
+        appName={appName}
+        suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
+        codeSigningRequired={appQuery.data?.requireCodeSigning === true}
+        onClose={() => setNewReleaseOpen(false)}
       />
     </>
   );
@@ -1112,12 +1088,11 @@ function RollbackIcon() {
   );
 }
 
-function UploadIcon() {
+function PlusIcon() {
   return (
     <IconSvg>
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="17 8 12 3 7 8" />
-      <line x1="12" y1="3" x2="12" y2="15" />
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
     </IconSvg>
   );
 }
