@@ -15,7 +15,7 @@ export async function executeDeploymentClear(
     deps,
   );
 
-  enforceMutationSafety(deps, {
+  await enforceMutationSafety(deps, {
     commandName: "deployment clear",
     fields: [
       ["serverUrl", command.serverUrl],

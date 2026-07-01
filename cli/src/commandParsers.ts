@@ -391,6 +391,7 @@ const appSettingSchema: Record<string, FlagSchema> = {
 const appRemoveSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
   appId: STRING_FLAG,
+  nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
@@ -427,6 +428,7 @@ const deploymentRemoveSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
+  nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
@@ -2596,6 +2598,8 @@ export function parseReleaseStatus(
 
   return {
     command: {
+      commandLabel:
+        status === "disabled" ? "release disable" : "release enable",
       kind: "release-patch",
       ...(parsedFlags.flags.nonInteractive === true
         ? { nonInteractive: true }
@@ -3821,22 +3825,18 @@ export function parseAppRemove(
     return app;
   }
 
-  if (parsedFlags.flags.yes !== true) {
-    return {
-      error: "Missing required flag --yes",
-      ok: false,
-      showHelp: true,
-    };
-  }
-
   return {
     command: {
       app,
       kind: "app-remove",
+      ...(parsedFlags.flags.nonInteractive === true
+        ? { nonInteractive: true }
+        : {}),
       serverUrl,
       ...(typeof parsedFlags.flags.token === "string"
         ? { token: parsedFlags.flags.token }
         : {}),
+      ...(parsedFlags.flags.yes === true ? { yes: true } : {}),
     },
     ok: true,
   };
@@ -3999,22 +3999,18 @@ export function parseDeploymentRemove(
     return deployment;
   }
 
-  if (parsedFlags.flags.yes !== true) {
-    return {
-      error: "Missing required flag --yes",
-      ok: false,
-      showHelp: true,
-    };
-  }
-
   return {
     command: {
       deployment,
       kind: "deployment-remove",
+      ...(parsedFlags.flags.nonInteractive === true
+        ? { nonInteractive: true }
+        : {}),
       serverUrl,
       ...(typeof parsedFlags.flags.token === "string"
         ? { token: parsedFlags.flags.token }
         : {}),
+      ...(parsedFlags.flags.yes === true ? { yes: true } : {}),
     },
     ok: true,
   };

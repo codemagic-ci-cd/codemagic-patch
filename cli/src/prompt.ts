@@ -23,6 +23,15 @@ export type PromptRequest =
 
 export type PromptFn = (request: PromptRequest) => Promise<string | string[]>;
 
+// Confirm prompts are kept separate from PromptFn so existing callers that
+// consume a string answer stay strictly typed; a confirm resolves to a boolean.
+export type ConfirmRequest = {
+  initial?: boolean;
+  message: string;
+};
+
+export type ConfirmFn = (request: ConfirmRequest) => Promise<boolean>;
+
 export class PromptAbortError extends Error {
   constructor() {
     super("Prompt aborted");
@@ -30,25 +39,49 @@ export class PromptAbortError extends Error {
   }
 }
 
+// Single owner of the prompts() cancel/abort protocol so Ctrl-C handling
+// cannot drift between the text/select prompts and the confirm prompt.
+async function askQuestion(
+  question: prompts.PromptObject<"value">,
+): Promise<unknown> {
+  let aborted = false;
+  const answer = await prompts(question, {
+    onCancel: () => {
+      aborted = true;
+      return false;
+    },
+  });
+
+  if (aborted || answer.value === undefined) {
+    throw new PromptAbortError();
+  }
+
+  return answer.value;
+}
+
 export function createInteractivePrompt(
   stdin: typeof process.stdin,
   stderr: typeof process.stderr,
 ): PromptFn {
-  return async (request) => {
-    let aborted = false;
-    const answer = await prompts(buildQuestion(request, stdin, stderr), {
-      onCancel: () => {
-        aborted = true;
-        return false;
-      },
-    });
+  return async (request) =>
+    (await askQuestion(buildQuestion(request, stdin, stderr))) as
+      | string
+      | string[];
+}
 
-    if (aborted || answer.value === undefined) {
-      throw new PromptAbortError();
-    }
-
-    return answer.value as string | string[];
-  };
+export function createInteractiveConfirm(
+  stdin: typeof process.stdin,
+  stderr: typeof process.stderr,
+): ConfirmFn {
+  return async ({ initial, message }) =>
+    (await askQuestion({
+      initial: initial ?? false,
+      message,
+      name: "value",
+      stdin,
+      stdout: stderr,
+      type: "confirm",
+    })) === true;
 }
 
 function buildQuestion(

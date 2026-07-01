@@ -397,9 +397,9 @@ const commandSpecs: RunnableCommandSpec[] = [
     kind: "app-remove",
     help: [
       {
-        description: "Delete an app.",
+        description: "Delete an app (confirms unless --yes).",
         group: "management",
-        usage: "cmpatch app remove --server-url <url> (--app-id <id> | --app <name>) --yes [--token <token>]",
+        usage: "cmpatch app remove --server-url <url> (--app-id <id> | --app <name>) [--yes] [--non-interactive] [--token <token>]",
       }
     ],
     parse: parseAppRemove,
@@ -550,9 +550,9 @@ const commandSpecs: RunnableCommandSpec[] = [
     kind: "deployment-remove",
     help: [
       {
-        description: "Delete a deployment.",
+        description: "Delete a deployment (confirms unless --yes).",
         group: "management",
-        usage: "cmpatch deployment remove --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) --yes [--token <token>]",
+        usage: "cmpatch deployment remove --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--yes] [--non-interactive] [--token <token>]",
       }
     ],
     parse: parseDeploymentRemove,

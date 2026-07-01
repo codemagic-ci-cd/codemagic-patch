@@ -23,7 +23,13 @@ import {
   type NativePlatform,
 } from "../projectAnalysis";
 import type { PromptFn } from "../prompt";
-import { assertHttpUrl, buildApiUrl, type CommandDeps, UsageError } from "./shared";
+import {
+  assertHttpUrl,
+  buildApiUrl,
+  canPromptInteractively,
+  type CommandDeps,
+  UsageError,
+} from "./shared";
 
 export async function executeConfigCommand(
   command: ConfigCommand,
@@ -171,9 +177,8 @@ async function linkProject(
   const flags = parseLinkFlags(args);
   validatePlatformSpecificFlags(flags);
   const interactive =
-    deps.stdin?.isTTY === true &&
+    canPromptInteractively(deps, flags.nonInteractive === true) &&
     !flags.yes &&
-    !flags.nonInteractive &&
     deps.prompt !== undefined;
   const userConfig = await loadCliConfig({ env: deps.env });
   const effectiveContext = resolveEffectiveContext(

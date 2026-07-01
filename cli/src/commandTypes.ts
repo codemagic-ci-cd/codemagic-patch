@@ -214,8 +214,10 @@ export type AppSettingCommand = {
 export type AppRemoveCommand = {
   app: AppSelector;
   kind: "app-remove";
+  nonInteractive?: true;
   serverUrl: string;
   token?: string;
+  yes?: true;
 };
 
 export type WhoamiCommand = {
@@ -443,8 +445,10 @@ export type DeploymentRenameCommand = {
 export type DeploymentRemoveCommand = {
   deployment: DeploymentSelector;
   kind: "deployment-remove";
+  nonInteractive?: true;
   serverUrl: string;
   token?: string;
+  yes?: true;
 };
 
 export type DeploymentClearCommand = {
@@ -480,6 +484,11 @@ export type FingerprintCommand = {
 };
 
 export type ReleasePatchCommand = {
+  /**
+   * Set when the command was invoked via the `release disable` / `release
+   * enable` aliases so prompts and errors name what the user actually typed.
+   */
+  commandLabel?: "release disable" | "release enable";
   kind: "release-patch";
   nonInteractive?: true;
   patch: {

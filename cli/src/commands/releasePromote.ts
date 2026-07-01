@@ -46,7 +46,7 @@ export async function executeReleasePromote(
     body.target_binary_version = command.targetBinaryVersion;
   }
 
-  enforceMutationSafety(deps, {
+  await enforceMutationSafety(deps, {
     commandName: "release promote",
     fields: [
       ["serverUrl", command.serverUrl],

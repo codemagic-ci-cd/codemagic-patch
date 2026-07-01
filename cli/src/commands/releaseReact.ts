@@ -31,6 +31,7 @@ import {
 } from "../projectAnalysis";
 import { enforceMutationSafety } from "./mutationSafety";
 import { executeReleaseCreate } from "./releaseCreate";
+import { formatDeploymentSelector } from "./resolveNames";
 import {
   ensureReadableDirectory,
   ensureReadableFile,
@@ -140,7 +141,7 @@ export async function executeReleaseReact(
     projectRoot,
   });
 
-  enforceMutationSafety(deps, {
+  await enforceMutationSafety(deps, {
     commandName: "release-react",
     dryRun: command.dryRun,
     fields: [
@@ -190,7 +191,10 @@ export async function executeReleaseReact(
       sourcemapPath,
       targetBinaryVersion,
       token: command.token,
-      ...(command.yes === true ? { yes: true } : {}),
+      // The release-react guard above already enforced mutation safety
+      // (--yes, interactive confirm, or dry-run), so the delegated command
+      // must not prompt a second time.
+      yes: true,
     };
 
     progress.write(
@@ -501,22 +505,6 @@ function assertExpoCompatibleOptions(command: ReactBuildOptions): void {
   if (command.extraHermesFlags.length > 0) {
     throw new UsageError("--extra-hermes-flag is only supported with --bundler metro");
   }
-}
-
-function formatDeploymentSelector(
-  deployment: ReleaseReactCommand["deployment"],
-): string {
-  if (deployment.deploymentId !== undefined) {
-    return deployment.deploymentId;
-  }
-
-  return [
-    deployment.teamId ?? deployment.teamName,
-    deployment.appName,
-    deployment.deploymentName,
-  ]
-    .filter((value): value is string => value !== undefined)
-    .join("/");
 }
 
 async function resolveReleaseReactTargetBinaryVersion(

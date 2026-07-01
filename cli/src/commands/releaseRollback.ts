@@ -21,7 +21,7 @@ export async function executeReleaseRollback(
           target_release_label: command.targetReleaseLabel,
         };
 
-  enforceMutationSafety(deps, {
+  await enforceMutationSafety(deps, {
     commandName: "release rollback",
     fields: [
       ["serverUrl", command.serverUrl],

@@ -20,11 +20,16 @@ import {
   type CommandDefaultPolicy,
 } from "./commandSpecs";
 import {
+  DeclinedError,
   UsageError,
   ValidationError,
   type CommandDeps,
 } from "./commands/shared";
-import { createInteractivePrompt, PromptAbortError } from "./prompt";
+import {
+  createInteractiveConfirm,
+  createInteractivePrompt,
+  PromptAbortError,
+} from "./prompt";
 import {
   computeNativeFingerprint,
   computeNativeFingerprintDetails,
@@ -62,6 +67,7 @@ function createDefaultDeps(): CliDeps {
   return {
     computeFingerprint: computeNativeFingerprint,
     computeFingerprintDetails: computeNativeFingerprintDetails,
+    confirm: createInteractiveConfirm(process.stdin, process.stderr),
     env: process.env,
     fetch: globalThis.fetch,
     now: () => Date.now(),
@@ -295,6 +301,11 @@ export async function runCli(
       return 130;
     }
 
+    if (error instanceof DeclinedError) {
+      writeLine(deps.stderr, error.message);
+      return 1;
+    }
+
     if (error instanceof UsageError) {
       writeLine(deps.stderr, error.message);
       return 2;
@@ -497,11 +508,37 @@ function getCommandResultExitCode(result: unknown): number | null {
   return null;
 }
 
+// JSON is machine output — never prompt. Force non-interactive on every
+// command that can otherwise prompt (mutation guard confirms, login), so the
+// guard requires --yes instead of blocking on an interactive confirm. The
+// `satisfies` clause is the drift guard: any command type gaining
+// `nonInteractive?: true` without an entry here is a compile error.
+const JSON_NON_INTERACTIVE_KINDS = {
+  "app-remove": true,
+  "deployment-clear": true,
+  "deployment-remove": true,
+  login: true,
+  "release-create": true,
+  "release-patch": true,
+  "release-promote": true,
+  "release-react": true,
+  "release-rollback": true,
+} satisfies Record<
+  Extract<CliCommand, { nonInteractive?: true }>["kind"],
+  true
+>;
+
+function supportsNonInteractive(
+  command: CliCommand,
+): command is Extract<CliCommand, { nonInteractive?: true }> {
+  return command.kind in JSON_NON_INTERACTIVE_KINDS;
+}
+
 function withJsonNonInteractiveMode(
   command: CliCommand,
   format: StructuredOutputFormat | undefined,
 ): CliCommand {
-  if (format !== "json" || !("nonInteractive" in command)) {
+  if (format !== "json" || !supportsNonInteractive(command)) {
     return command;
   }
 

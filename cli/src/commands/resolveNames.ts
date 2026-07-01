@@ -25,6 +25,38 @@ type ReleaseResource = {
 
 const RELEASE_RESOLUTION_PAGE_SIZE = 100;
 
+/**
+ * Human-readable rendering of a deployment selector for prompts and errors:
+ * the raw id when selected by id, otherwise the full `team/app/deployment`
+ * path so name-based targets stay unambiguous across apps.
+ */
+export function formatDeploymentSelector(
+  deployment: DeploymentSelector,
+): string {
+  if (deployment.deploymentId !== undefined) {
+    return deployment.deploymentId;
+  }
+
+  return [
+    deployment.teamId ?? deployment.teamName,
+    deployment.appName,
+    deployment.deploymentName,
+  ]
+    .filter((value): value is string => value !== undefined)
+    .join("/");
+}
+
+/** Sibling of formatDeploymentSelector for app selectors (`team/app`). */
+export function formatAppSelector(app: AppSelector): string {
+  if (app.appId !== undefined) {
+    return app.appId;
+  }
+
+  return [app.teamId ?? app.teamName, app.appName]
+    .filter((value): value is string => value !== undefined)
+    .join("/");
+}
+
 export async function resolveDeploymentId(
   deployment: DeploymentSelector,
   serverUrl: string,

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { WritableStream } from "../output";
-import type { PromptFn } from "../prompt";
+import type { ConfirmFn, PromptFn } from "../prompt";
 
 export class UsageError extends Error {
   constructor(message: string) {
@@ -13,6 +13,18 @@ export class ValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ValidationError";
+  }
+}
+
+/**
+ * Thrown when the user explicitly declines an interactive mutation confirm.
+ * Distinct from PromptAbortError (Ctrl-C → exit 130): a considered "No"
+ * exits 1 with its own message so wrappers can tell decline from interrupt.
+ */
+export class DeclinedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeclinedError";
   }
 }
 
@@ -42,9 +54,17 @@ export type CommandDeps = {
       type: string;
     }>;
   }>;
+  /**
+   * The default wiring binds confirm/prompt to the real process.stdin/stderr.
+   * Tests (or embedders) that override `stdin` must also override `confirm`
+   * and/or `prompt`, or the prompt will read the real process streams while
+   * the TTY gate consults the injected `stdin`.
+   */
+  confirm?: ConfirmFn;
   env: Record<string, string | undefined>;
   fetch: typeof globalThis.fetch;
   now: () => number;
+  /** See the note on `confirm`: override together with `stdin` in tests. */
   prompt?: PromptFn;
   readFile: (path: string) => Promise<Buffer>;
   readDirectory: (path: string) => Promise<DirectoryEntryLike[]>;
@@ -81,6 +101,18 @@ export type CommandDeps = {
   }>;
   stdout?: WritableStream;
 };
+
+/**
+ * Shared kernel of every "may we prompt?" decision: not forced non-interactive
+ * and stdin is a real TTY. Call sites layer their own extras on top (which
+ * prompt/confirm dep must exist, stderr visibility, --yes semantics).
+ */
+export function canPromptInteractively(
+  deps: Pick<CommandDeps, "stdin">,
+  nonInteractive: boolean,
+): boolean {
+  return nonInteractive !== true && deps.stdin?.isTTY === true;
+}
 
 export function buildApiUrl(serverUrl: string, pathname: string): string {
   const base = assertHttpUrl(serverUrl);

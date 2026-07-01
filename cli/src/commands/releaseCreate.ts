@@ -76,11 +76,10 @@ export async function executeReleaseCreate(
   const zipPath = path.join(tempRoot, "bundle.zip");
 
   try {
-    const bundleArchivePath = await prepareBundleArchive(
-      deps,
-      command.bundlePath,
-      zipPath,
-    );
+    // Validate the bundle path before any network work or the confirm prompt
+    // so a typo fails instantly (and before "Missing --yes" can mask it).
+    await statBundlePath(deps, command.bundlePath);
+
     const fingerprint = await resolveFingerprint(command, deps);
     const deploymentId = await resolveDeploymentId(
       command.deployment,
@@ -89,19 +88,12 @@ export async function executeReleaseCreate(
       deps,
     );
 
-    if (command.dryRun) {
-      return await buildDryRunResult(command, deps, {
-        bundleArchivePath,
-        deploymentId,
-        fingerprint,
-        privateKeyPath,
-        sourcemapPath,
-        targetBinaryVersion,
-      });
-    }
-
-    enforceMutationSafety(deps, {
+    // Guard before the expensive bundle zip so a declined confirmation (or a
+    // missing --yes) doesn't waste the archive build. Dry-run skips the guard
+    // and still archives below to report what would be uploaded.
+    await enforceMutationSafety(deps, {
       commandName: "release create",
+      dryRun: command.dryRun,
       fields: [
         ["serverUrl", command.serverUrl],
         ["deploymentId", deploymentId],
@@ -115,6 +107,23 @@ export async function executeReleaseCreate(
       nonInteractive: command.nonInteractive === true,
       yes: command.yes === true,
     });
+
+    const bundleArchivePath = await prepareBundleArchive(
+      deps,
+      command.bundlePath,
+      zipPath,
+    );
+
+    if (command.dryRun) {
+      return await buildDryRunResult(command, deps, {
+        bundleArchivePath,
+        deploymentId,
+        fingerprint,
+        privateKeyPath,
+        sourcemapPath,
+        targetBinaryVersion,
+      });
+    }
 
     return await uploadReleaseArchive(command, deps, {
       bundleArchivePath,
@@ -183,8 +192,11 @@ async function executeArtifactReleaseCreate(
     return buildArtifactDryRunResult(command, descriptor, deploymentId);
   }
 
-  enforceMutationSafety(deps, {
+  await enforceMutationSafety(deps, {
     commandName: "release create",
+    // Unreachable when true (dry-run returned above), but passing it keeps
+    // the missing---yes error suggesting --dry-run, which this path supports.
+    dryRun: command.dryRun,
     fields: [
       ["serverUrl", command.serverUrl],
       ["deploymentId", deploymentId],
@@ -310,21 +322,32 @@ async function resolveFingerprint(
   });
 }
 
-async function prepareBundleArchive(
+// Cheap existence check shared by the pre-guard validation (bad inputs must
+// fail before any network resolution or confirm prompt) and the archive build.
+async function statBundlePath(
   deps: CommandDeps,
   inputPath: string,
-  zipPath: string,
-): Promise<string> {
+): Promise<{
+  resolvedPath: string;
+  stats: Awaited<ReturnType<CommandDeps["stat"]>>;
+}> {
   const resolvedPath = path.resolve(inputPath);
-  let stats: Awaited<ReturnType<CommandDeps["stat"]>>;
 
   try {
-    stats = await deps.stat(resolvedPath);
+    return { resolvedPath, stats: await deps.stat(resolvedPath) };
   } catch (error) {
     throw new UsageError(
       `bundle path was not found: ${resolvedPath}${formatErrorSuffix(error)}`,
     );
   }
+}
+
+async function prepareBundleArchive(
+  deps: CommandDeps,
+  inputPath: string,
+  zipPath: string,
+): Promise<string> {
+  const { resolvedPath, stats } = await statBundlePath(deps, inputPath);
 
   if (stats.isDirectory()) {
     const files = await listArchiveFiles(resolvedPath);

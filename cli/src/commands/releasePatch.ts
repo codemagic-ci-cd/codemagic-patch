@@ -26,8 +26,8 @@ export async function executeReleasePatch(
     deps,
   );
 
-  enforceMutationSafety(deps, {
-    commandName: "release patch",
+  await enforceMutationSafety(deps, {
+    commandName: command.commandLabel ?? "release patch",
     fields: [
       ["serverUrl", command.serverUrl],
       ["releaseId", releaseId],

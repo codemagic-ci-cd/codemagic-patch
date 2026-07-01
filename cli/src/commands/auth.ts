@@ -13,6 +13,7 @@ import type { PromptFn } from "../prompt";
 import {
   assertHttpUrl,
   buildApiUrl,
+  canPromptInteractively,
   normalizeBearerToken,
   ValidationError,
   type CommandDeps,
@@ -159,7 +160,7 @@ function resolveInteractivePrompt(
   command: LoginCommand,
   deps: CommandDeps,
 ): PromptFn | undefined {
-  if (command.nonInteractive === true || deps.stdin?.isTTY !== true) {
+  if (!canPromptInteractively(deps, command.nonInteractive === true)) {
     return undefined;
   }
 
