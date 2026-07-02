@@ -9,8 +9,8 @@
 // role badge (skeleton while resolving, inferred confidence tolerated).
 // Quick links → apps/members/metrics. Mandatory states: per-region skeletons,
 // page-level ErrorState (useTeam failure → retry; not-found/forbidden copy
-// comes from the shared classifier). Breadcrumbs ("Team › Overview") come
-// from the AppShell — not rendered here. TeamRoleBadge mirrors the TeamsPage
+// comes from the shared classifier). Breadcrumbs are omitted on this screen
+// (see Breadcrumbs.tsx). TeamRoleBadge mirrors the TeamsPage helper by design
 // helper by design (shared extraction would exceed this task's file set).
 
 import { Link, useParams } from "react-router";
@@ -206,8 +206,8 @@ function InvitationsTile({ teamId }: { teamId: string }) {
       isPending={invitationsQuery.isPending}
       isError={invitationsQuery.isError}
       onRetry={() => void invitationsQuery.refetch()}
-      to={`/teams/${teamId}/invitations`}
-      linkText="View invitations"
+      to={`/teams/${teamId}/members`}
+      linkText="View members"
     />
   );
 }

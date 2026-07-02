@@ -2,7 +2,8 @@
 // `iam.manage`-gated: while useTeamRole resolves → skeleton; non-managers
 // (exact viewer/developer binding, or the bindings 403 inference) get a
 // FULL-PAGE permission notice instead of a broken table; non-403 bindings
-// failures render the problem-mapped ErrorState with retry. Removal follows
+// failures render the problem-mapped ErrorState with retry. Pending
+// invitations are merged into the members table (Status column). Removal follows
 // the optimistic pattern — the confirm closes immediately, the row is
 // dropped from the cached bindings list (in-flight fetches cancelled first)
 // and restored on error; `409 last-owner` renders the inline blocking callout
@@ -11,8 +12,8 @@
 // against the pre-mutation cache (the hook envelope carries no status), and
 // success swaps to the show-once PAT modal (`disableEscapeClose`, Copyable
 // full token — bindings refresh is already handled by useProvisionMember's
-// invalidation). Helpers (Glyph icons, gate, dates) are file-local twins of
-// InvitationsPage's — promote to components/ui if a third consumer appears.
+// invalidation). Helpers (Glyph icons, gate, dates) are file-local — promote
+// to components/ui if a third consumer appears.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
@@ -28,8 +29,10 @@ import {
   iamKeys,
   useAddRoleBinding,
   useCreateInvitation,
+  useInvitations,
   useProvisionMember,
   useRemoveRoleBinding,
+  useRevokeInvitation,
   useRoleBindings,
   useRoles,
 } from "../api/hooks/iam";
@@ -49,7 +52,11 @@ import type {
   IamUserProvisionBody,
   IamUserProvisionResponse,
 } from "../api/types";
-import type { RoleBinding, RoleDefinition } from "../model/iam";
+import type {
+  RoleBinding,
+  RoleDefinition,
+  TeamInvitation,
+} from "../model/iam";
 import { formatDate } from "../model/format";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../components/ui/callout";
@@ -194,8 +201,10 @@ function MembersScreen({ teamId }: { teamId: string }) {
             </div>
           </div>
         ) : null}
-        <MemberTable
+        <ManagedMembersTable
+          teamId={teamId}
           bindings={bindingsQuery.data ?? []}
+          bindingsQuery={bindingsQuery}
           onRemove={(binding) => {
             setLastOwnerBlocked(false);
             setPendingRemoval(binding);
@@ -231,7 +240,7 @@ function MembersScreen({ teamId }: { teamId: string }) {
             Members
           </h1>
           <p className={PAGE_SUB}>
-            People with access to apps and releases in this team.
+            People with access to this team, including pending invitations.
           </p>
         </div>
         {canManage ? (
@@ -297,15 +306,173 @@ function MembersScreen({ teamId }: { teamId: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// MemberTable (user, role badge, granted at/by, kebab Remove)
+// ManagedMembersTable (bindings + pending invitations, revoke confirm)
 // ---------------------------------------------------------------------------
+
+function ManagedMembersTable({
+  teamId,
+  bindings,
+  bindingsQuery,
+  onRemove,
+}: {
+  teamId: string;
+  bindings: readonly RoleBinding[];
+  bindingsQuery: ReturnType<typeof useRoleBindings>;
+  onRemove: (binding: RoleBinding) => void;
+}) {
+  const invitationsQuery = useInvitations(teamId, "pending");
+  const revokeInvitation = useRevokeInvitation();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const [pendingRevoke, setPendingRevoke] = useState<TeamInvitation | null>(
+    null,
+  );
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+
+  const confirmRevoke = () => {
+    if (pendingRevoke === null) {
+      return;
+    }
+    const invitation = pendingRevoke;
+    setRevokeError(null);
+    revokeInvitation.mutate(
+      { invitationId: invitation.id, teamId },
+      {
+        onSuccess: () => {
+          setPendingRevoke(null);
+          toast.success("Invitation revoked", {
+            description: `${invitationContactValue(invitation)} can no longer use this invitation.`,
+          });
+        },
+        onError: (error) => {
+          if (
+            error instanceof HttpProblemError &&
+            error.typeSuffix === "invitation-not-pending"
+          ) {
+            setPendingRevoke(null);
+            toast.error("Invitation is no longer pending", {
+              description:
+                "It was accepted, revoked, or expired elsewhere — refreshing the list.",
+            });
+            void queryClient.invalidateQueries({
+              queryKey: iamKeys.invitationLists(teamId),
+            });
+          } else {
+            setRevokeError(problemDescription(error));
+          }
+        },
+      },
+    );
+  };
+
+  if (bindingsQuery.isPending || invitationsQuery.isPending) {
+    return <LoadingCard label="Loading members" />;
+  }
+
+  if (
+    bindingsQuery.isError &&
+    !isForbiddenProblem(bindingsQuery.error)
+  ) {
+    return (
+      <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
+        <ErrorState
+          error={bindingsQuery.error}
+          onRetry={() => {
+            void bindingsQuery.refetch();
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (
+    invitationsQuery.isError &&
+    !isForbiddenProblem(invitationsQuery.error)
+  ) {
+    return (
+      <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
+        <ErrorState
+          error={invitationsQuery.error}
+          onRetry={() => {
+            void invitationsQuery.refetch();
+          }}
+        />
+      </div>
+    );
+  }
+
+  const pendingInvitations = invitationsQuery.data ?? [];
+
+  return (
+    <>
+      <MemberTable
+        bindings={bindings}
+        pendingInvitations={pendingInvitations}
+        onRemove={onRemove}
+        onRevokeInvitation={(invitation) => {
+          setRevokeError(null);
+          setPendingRevoke(invitation);
+        }}
+      />
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        variant="summary"
+        destructive
+        icon={<TrashIcon />}
+        title="Revoke invitation"
+        description="They will no longer be able to accept this invitation."
+        summary={
+          pendingRevoke === null
+            ? []
+            : [
+                {
+                  label: invitationContactLabel(pendingRevoke),
+                  value: invitationContactValue(pendingRevoke),
+                },
+                { label: "Role", value: pendingRevoke.role.key },
+                {
+                  label: "Expires",
+                  value: (
+                    <span>
+                      {formatDate(pendingRevoke.expiresAt)}
+                      {" · "}
+                      {relativeExpiry(pendingRevoke.expiresAt)}
+                    </span>
+                  ),
+                },
+              ]
+        }
+        confirmLabel="Revoke invitation"
+        error={revokeError}
+        onCancel={() => {
+          setPendingRevoke(null);
+          setRevokeError(null);
+        }}
+        onConfirm={confirmRevoke}
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MemberTable (members + pending invitations)
+// ---------------------------------------------------------------------------
+
+type MemberTableRow =
+  | { kind: "member"; binding: RoleBinding }
+  | { kind: "invitation"; invitation: TeamInvitation };
 
 function MemberTable({
   bindings,
+  pendingInvitations,
   onRemove,
+  onRevokeInvitation,
 }: {
   bindings: readonly RoleBinding[];
+  pendingInvitations: readonly TeamInvitation[];
   onRemove: (binding: RoleBinding) => void;
+  onRevokeInvitation: (invitation: TeamInvitation) => void;
 }) {
   const ownerCount = useMemo(
     () => bindings.filter((entry) => entry.role.key === "owner").length,
@@ -316,20 +483,30 @@ function MemberTable({
     () => new Map(bindings.map((entry) => [entry.user.id, entry.user.email])),
     [bindings],
   );
+  const rows = useMemo((): MemberTableRow[] => {
+    const pending = [...pendingInvitations].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+    return [
+      ...pending.map(
+        (invitation): MemberTableRow => ({
+          kind: "invitation",
+          invitation,
+        }),
+      ),
+      ...bindings.map(
+        (binding): MemberTableRow => ({
+          kind: "member",
+          binding,
+        }),
+      ),
+    ];
+  }, [bindings, pendingInvitations]);
 
   return (
     <div className="rounded-lg border border-border bg-surface shadow-sm">
-      <div className="flex items-center gap-3 border-b border-border px-[22px] py-[18px]">
-        <UsersIcon className="size-[18px] text-blue" />
-        <h3 className="text-[15px] font-bold">Role bindings</h3>
-        <span className={`${CHIP} ${CHIP_TONE.blue}`}>{bindings.length}</span>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-fg-3 text-[12.5px]">
-            Roles grant team-wide access
-          </span>
-        </div>
-      </div>
-      {bindings.length === 0 ? (
+      {rows.length === 0 ? (
         <EmptyState
           icon={<UsersIcon />}
           title="No members yet"
@@ -342,6 +519,7 @@ function MemberTable({
               <tr>
                 <th className={TBL_TH}>User</th>
                 <th className={TBL_TH}>Role</th>
+                <th className={TBL_TH}>Status</th>
                 <th className={TBL_TH}>Granted</th>
                 <th className={TBL_TH}>
                   <span className="sr-only">Actions</span>
@@ -349,46 +527,113 @@ function MemberTable({
               </tr>
             </thead>
             <tbody>
-              {bindings.map((binding) => (
-                <tr key={binding.id} className={TBL_TR}>
-                  <td className={TBL_TD}>
-                    <div className={CELL_APP}>
-                      <span className={avatarClassFor(binding.user.id, "sm")} aria-hidden="true">
-                        {initialsOf(binding.user.displayName, binding.user.email)}
-                      </span>
-                      <div>
-                        <div className={CELL_MAIN}>
-                          {binding.user.displayName ?? binding.user.email}
+              {rows.map((row) =>
+                row.kind === "invitation" ? (
+                  <tr key={`invitation:${row.invitation.id}`} className={TBL_TR}>
+                    <td className={TBL_TD}>
+                      <div className={CELL_APP}>
+                        <span
+                          className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-3"
+                          aria-hidden="true"
+                        >
+                          <MailIcon className="size-4" />
+                        </span>
+                        <div>
+                          <div className={CELL_MAIN}>
+                            {invitationContactValue(row.invitation)}
+                          </div>
+                          <div className={CELL_SUB}>Pending invitation</div>
                         </div>
-                        {binding.user.displayName !== null ? (
-                          <div className={CELL_SUB}>{binding.user.email}</div>
-                        ) : null}
                       </div>
-                    </div>
-                  </td>
-                  <td className={TBL_TD}>
-                    <span className={`role role-${binding.role.key}`}>
-                      {binding.role.key}
-                    </span>
-                  </td>
-                  <td className={TBL_TD}>
-                    <span
-                      className="text-fg-3 text-[13px]"
-                    >
-                      {grantedLine(binding, emailById)}
-                    </span>
-                  </td>
-                  <td className={`${TBL_TD} ${TBL_RIGHT}`}>
-                    <RowKebab
-                      binding={binding}
-                      // Proactive last-owner guard; the 409
-                      // remains the server-authoritative fallback.
-                      lastOwner={binding.role.key === "owner" && ownerCount === 1}
-                      onRemove={onRemove}
-                    />
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className={TBL_TD}>
+                      <span className={`role role-${row.invitation.role.key}`}>
+                        {row.invitation.role.key}
+                      </span>
+                    </td>
+                    <td className={TBL_TD}>
+                      <div>
+                        <span className={PENDING_STATUS_CHIP.className}>
+                          {PENDING_STATUS_CHIP.label}
+                        </span>
+                        <div className="text-fg-3 mt-1 text-[12px]">
+                          {relativeExpiry(row.invitation.expiresAt)}
+                        </div>
+                      </div>
+                    </td>
+                    <td className={TBL_TD}>
+                      <span className="text-fg-3 text-[13px]">
+                        Invited {formatDate(row.invitation.createdAt)}
+                      </span>
+                    </td>
+                    <td className={`${TBL_TD} ${TBL_RIGHT}`}>
+                      <button
+                        type="button"
+                        className={buttonVariants({
+                          intent: "dangerGhost",
+                          size: "sm",
+                        })}
+                        onClick={() => onRevokeInvitation(row.invitation)}
+                      >
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={`member:${row.binding.id}`} className={TBL_TR}>
+                    <td className={TBL_TD}>
+                      <div className={CELL_APP}>
+                        <span
+                          className={avatarClassFor(row.binding.user.id, "sm")}
+                          aria-hidden="true"
+                        >
+                          {initialsOf(
+                            row.binding.user.displayName,
+                            row.binding.user.email,
+                          )}
+                        </span>
+                        <div>
+                          <div className={CELL_MAIN}>
+                            {row.binding.user.displayName ??
+                              row.binding.user.email}
+                          </div>
+                          {row.binding.user.displayName !== null ? (
+                            <div className={CELL_SUB}>
+                              {row.binding.user.email}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </td>
+                    <td className={TBL_TD}>
+                      <span className={`role role-${row.binding.role.key}`}>
+                        {row.binding.role.key}
+                      </span>
+                    </td>
+                    <td className={TBL_TD}>
+                      <span className={ACTIVE_STATUS_CHIP.className}>
+                        {ACTIVE_STATUS_CHIP.label}
+                      </span>
+                    </td>
+                    <td className={TBL_TD}>
+                      <span className="text-fg-3 text-[13px]">
+                        {grantedLine(row.binding, emailById)}
+                      </span>
+                    </td>
+                    <td className={`${TBL_TD} ${TBL_RIGHT}`}>
+                      <RowKebab
+                        binding={row.binding}
+                        // Proactive last-owner guard; the 409
+                        // remains the server-authoritative fallback.
+                        lastOwner={
+                          row.binding.role.key === "owner" && ownerCount === 1
+                        }
+                        onRemove={onRemove}
+                      />
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>
@@ -1172,7 +1417,7 @@ function ProvisionedTokenModal({
 }
 
 // ---------------------------------------------------------------------------
-// Shared screen states + helpers (file-local twins of InvitationsPage's)
+// Shared screen states + helpers (file-local)
 // ---------------------------------------------------------------------------
 
 /** Full-page permission notice (deep link without `iam.manage`). */
@@ -1216,6 +1461,39 @@ function problemDescription(error: unknown): string {
     return error.detail ?? error.title ?? "The request couldn't be completed.";
   }
   return "The request couldn't be completed. Check your connection and try again.";
+}
+
+const ACTIVE_STATUS_CHIP = {
+  className: `${CHIP} ${CHIP_TONE.green}`,
+  label: "Active",
+} as const;
+
+const PENDING_STATUS_CHIP = {
+  className: `${CHIP} ${CHIP_TONE.blue}`,
+  label: "Pending",
+} as const;
+
+const DAY_MS = 86_400_000;
+
+function invitationContactValue(invitation: TeamInvitation): string {
+  return invitation.email ?? `@${invitation.githubHandle ?? ""}`;
+}
+
+function invitationContactLabel(invitation: TeamInvitation): string {
+  return invitation.email !== null ? "Email" : "GitHub handle";
+}
+
+/** Pending rows show the relative expiry ("in 14 days"). */
+function relativeExpiry(iso: string): string {
+  const expiresAt = new Date(iso).getTime();
+  if (Number.isNaN(expiresAt)) {
+    return iso;
+  }
+  const days = Math.ceil((expiresAt - Date.now()) / DAY_MS);
+  if (days <= 0) {
+    return "expired";
+  }
+  return days === 1 ? "in 1 day" : `in ${days} days`;
 }
 
 function grantedLine(
@@ -1282,6 +1560,15 @@ function UsersIcon({ className }: { className?: string }) {
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </Glyph>
+  );
+}
+
+function MailIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <rect x="2" y="4" width="20" height="16" rx="2.5" />
+      <path d="m3 7 9 6 9-6" />
     </Glyph>
   );
 }

@@ -34,6 +34,9 @@ import {
   INPUT,
   INPUT_STATE,
   TEXTAREA_EXTRA,
+  TOGGLE,
+  TOGGLE_INPUT,
+  TOGGLE_TRACK,
 } from "../../../components/ui/form";
 
 export interface EditMetadataModalProps {
@@ -145,21 +148,16 @@ function EditMetadataModalContent({
       >
         <div className={FIELD}>
           <span className={FIELD_LABEL}>Mandatory</span>
-          {/* Legacy `.field>label` (== `.field-label`) won on specificity over
-              `.toggle` for this direct-child toggle label, so it carried the
-              field-label box wholesale: display:block (which un-flexes the row →
-              the `.track` <span> collapses to the bare thumb) + the 13px/600/
-              text color + a 7px bottom margin. Reproduce it verbatim. */}
-          <label
-            className="toggle mb-[7px] mt-0.5 block text-[13px] font-semibold text-fg"
-          >
+          <label className={TOGGLE}>
             <input
               type="checkbox"
+              className={TOGGLE_INPUT}
               checked={mandatory}
               disabled={busy}
               onChange={(event) => setMandatory(event.currentTarget.checked)}
             />
-            <span className="track" /> Clients must install this update
+            <span className={TOGGLE_TRACK} aria-hidden="true" />
+            Clients must install this update
           </label>
         </div>
         <label className={FIELD}>

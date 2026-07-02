@@ -2,7 +2,7 @@
 // 1:1 port of the legacy rules; header/cell styling lives on each th/td, the
 // row carries the hover tint and drops the divider on the last row's cells
 // (legacy `tbody tr:last-child td{border-bottom:0}`). Extracted from the
-// InvitationsPage twins now that a third consumer appears (Tokens/Apps).
+// MembersPage / Tokens / Apps).
 export const TBL_WRAP = "overflow-auto";
 
 export const TBL = "w-full border-collapse text-[13.5px]";

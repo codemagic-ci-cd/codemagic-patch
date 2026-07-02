@@ -1,16 +1,16 @@
-// Route-derived breadcrumbs ("mirror Team › App › Deployment ›
-// Release; IDs resolve to names (skeleton text while resolving)"). Entity ids
-// come from the route params (teamId/appId/depId/
-// releaseId) and resolve through the existing query hooks, cache-first — a
-// navigation from a list that already populated the cache paints names
-// instantly, otherwise a small inline Skeleton shows. Deployment names come
-// from the app's deployment list (`useDeployments`) because no
-// single-deployment GET exists (api/hooks/deployments.ts). Leaf-only routes
-// (apps/members/invitations/metrics/overview, /teams, /account/*) derive a
-// static label from the pathname so AppShell can render one <Breadcrumbs/>
-// above the Outlet for every screen. DOM/classes follow the
-// `.crumbs` nav structure (`›` separators, `.cur` leaf); each name component falls
-// back to the raw id when resolution fails so the trail never blanks.
+// Route-derived breadcrumbs for app hierarchy screens ("Apps › App ›
+// Deployment › Release; IDs resolve to names (skeleton text while resolving)").
+// Team-level leaf routes (overview, apps list, members, metrics)
+// omit breadcrumbs — the page <h1> already carries the title. Entity ids come
+// from the route params (teamId/appId/depId/releaseId) and resolve through
+// the existing query hooks, cache-first — a navigation from a list that
+// already populated the cache paints names instantly, otherwise a small inline
+// Skeleton shows. Deployment names come from the app's deployment list
+// (`useDeployments`) because no single-deployment GET exists
+// (api/hooks/deployments.ts). Account routes keep a short trail
+// (Account › Profile / API tokens). DOM/classes follow the `.crumbs` nav
+// structure (`›` separators, `.cur` leaf); each name component falls back to
+// the raw id when resolution fails so the trail never blanks.
 
 import { Fragment } from "react";
 import { Link, useLocation, useParams } from "react-router";
@@ -70,14 +70,6 @@ export function Breadcrumbs() {
   );
 }
 
-/** Static labels for team-scoped leaf segments. */
-const TEAM_LEAF_LABELS = new Map<string, string>([
-  ["apps", "Apps"],
-  ["members", "Members"],
-  ["invitations", "Invitations"],
-  ["metrics", "Metrics"],
-]);
-
 function buildCrumbs(
   params: Readonly<Record<string, string | undefined>>,
   pathname: string,
@@ -87,17 +79,7 @@ function buildCrumbs(
   const segments = pathname.split("/").filter((segment) => segment.length > 0);
 
   if (teamId !== undefined) {
-    // Single-team OSS: the team root crumb is just the fixed `default-team`
-    // slug, so omit it; show it only in multi-team mode where it disambiguates.
-    const crumbs: Crumb[] = isMultiTeam
-      ? [
-          {
-            key: "team",
-            to: `/teams/${teamId}`,
-            node: <TeamName teamId={teamId} />,
-          },
-        ]
-      : [];
+    const crumbs: Crumb[] = [];
 
     if (appId !== undefined) {
       crumbs.push(
@@ -124,20 +106,9 @@ function buildCrumbs(
       return crumbs;
     }
 
-    const leaf = segments[2];
-    if (leaf !== undefined) {
-      const leafLabel = TEAM_LEAF_LABELS.get(leaf);
-      if (leafLabel !== undefined) {
-        crumbs.push({ key: leaf, node: leafLabel });
-      }
-    } else if (segments.length === 2) {
-      crumbs.push({ key: "overview", node: "Overview" });
-    }
-    return crumbs;
-  }
-
-  if (segments[0] === "teams") {
-    return [{ key: "teams", node: "Teams" }];
+    // Team-level screens (overview, apps list, members, …) — no breadcrumb;
+    // the page <h1> is the title.
+    return [];
   }
 
   if (segments[0] === "account") {

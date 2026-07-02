@@ -27,7 +27,6 @@ import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
 import { CallbackPage } from "./pages/CallbackPage";
 import { DeploymentDetailPage } from "./pages/DeploymentDetailPage";
-import { InvitationsPage } from "./pages/InvitationsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MembersPage } from "./pages/MembersPage";
 import { MetricsPage } from "./pages/MetricsPage";
@@ -107,7 +106,6 @@ export const router = createBrowserRouter([
               { path: "apps/:appId/deployments/:depId", element: <DeploymentDetailPage /> },
               { path: "apps/:appId/deployments/:depId/releases/:releaseId", element: <ReleaseDetailPage /> },
               { path: "members", element: <MembersPage /> },
-              { path: "invitations", element: <InvitationsPage /> },
               { path: "metrics", element: <MetricsPage /> },
             ],
           },
