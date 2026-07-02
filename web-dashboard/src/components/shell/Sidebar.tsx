@@ -1,4 +1,4 @@
-// Team-scoped sidebar: brand, main nav (Apps, Metrics), and a foot section
+// Team-scoped sidebar: brand, main nav (Releases, Metrics), and a foot section
 // (Members for `iam.manage`, GitHub repo link) above Collapse.
 // against the route map — the DOM/class structure is ported, its hardcoded
 // `.html` hrefs and global `DB` are not. Members is HIDDEN, not disabled,
@@ -129,7 +129,7 @@ interface TeamNavItem {
 const MAIN_NAV_ITEMS: readonly TeamNavItem[] = [
   {
     key: "apps",
-    label: "Apps",
+    label: "Releases",
     segment: "apps",
     icon: (
       <NavIcon>

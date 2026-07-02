@@ -1,41 +1,29 @@
-// Metrics dashboard.
-// Visible to ALL roles (`release.view` includes viewer) — no RBAC gating here.
-// Scope cascade: App selector (useApps) → Deployment selector (useDeployments)
-// → counters from `GET /v1/metrics/deployments/:id` via useDeploymentMetrics.
-// Every derived number comes from model/metrics.ts: aggregateMetrics
-// (summary cards), successRate (null → "—" when no Success/Failed events),
-// and activeVersionDistribution (hash-keyed grouping, share as 0..1) — this
-// page does NOT re-derive any math. Component layering exists because hooks
-// can't be conditional: <ScopedMetrics> mounts only with a non-empty app
-// list, <DeploymentCounters> only with a resolved deployment, so every hook
-// call always has a valid id. Time-series/adoption-over-time is out of MVP
-// — rendered as the muted "coming soon" note, never fetched.
+// Deployment-level metrics detail (summary cards, version distribution).
+// Mounted only with a resolved deployment id on the metrics drill-down route.
 
-import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link } from "react-router";
 import type { CSSProperties, ReactNode } from "react";
 
-import { useApps } from "../api/hooks/apps";
-import { useDeployments } from "../api/hooks/deployments";
-import { useDeploymentMetrics } from "../api/hooks/metrics";
-import { formatCount } from "../model/format";
+import { useDeploymentMetrics } from "../../api/hooks/metrics";
+import { formatCount } from "../../model/format";
 import {
   activeVersionDistribution,
   aggregateMetrics,
   successRate,
-} from "../model/metrics";
-import { EmptyState } from "../components/ui/EmptyState";
-import { ErrorState } from "../components/ui/ErrorState";
-import { Skeleton } from "../components/ui/Skeleton";
-import type { App } from "../model/app";
-import type { Deployment } from "../model/deployment";
-import { buttonVariants } from "../components/ui/Button";
-import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
-import { CARD, CARD_PAD } from "../components/ui/card";
-import { CHIP, CHIP_TONE } from "../components/ui/chip";
-import { DL, DL_DT, DL_DD } from "../components/ui/dl";
-import { INPUT, INPUT_STATE, SELECT_EXTRA } from "../components/ui/form";
-import { ROLLOUT, ROLLOUT_FILL, ROLLOUT_TRACK } from "../components/ui/RolloutBar";
+} from "../../model/metrics";
+import type { Deployment } from "../../model/deployment";
+import { buttonVariants } from "../../components/ui/Button";
+import { CALLOUT, CALLOUT_TONE } from "../../components/ui/callout";
+import { CARD, CARD_PAD } from "../../components/ui/card";
+import { CHIP, CHIP_TONE } from "../../components/ui/chip";
+import { DL, DL_DD, DL_DT } from "../../components/ui/dl";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { ErrorState } from "../../components/ui/ErrorState";
+import {
+  ROLLOUT,
+  ROLLOUT_FILL,
+  ROLLOUT_TRACK,
+} from "../../components/ui/RolloutBar";
 import {
   STAT,
   STAT_ICO_ACCENT,
@@ -43,160 +31,11 @@ import {
   STAT_META,
   STAT_TOP,
   STAT_VAL,
-} from "../components/ui/stat";
-import { PAGE_SUB, PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
+} from "../../components/ui/stat";
+import { SECTION_TITLE } from "../../components/ui/typography";
+import { MetricsBodySkeleton } from "./MetricsPageFrame";
 
-export function MetricsPage() {
-  const { teamId } = useParams<{ teamId: string }>();
-  const appsQuery = useApps(teamId ?? "");
-
-  if (appsQuery.isPending) {
-    return (
-      <PageFrame>
-        <BodySkeleton label="Loading metrics" />
-      </PageFrame>
-    );
-  }
-
-  if (appsQuery.isError) {
-    return (
-      <PageFrame>
-        <div className={`${CARD} ${CARD_PAD}`}>
-          <ErrorState
-            error={appsQuery.error}
-            onRetry={() => {
-              void appsQuery.refetch();
-            }}
-          />
-        </div>
-      </PageFrame>
-    );
-  }
-
-  if (appsQuery.data.length === 0) {
-    // Selector-empty state: metrics are per-deployment, so without apps
-    // there is nothing to select — point at the apps screen.
-    return (
-      <PageFrame>
-        <div className={`${CARD} ${CARD_PAD}`}>
-          <EmptyState
-            icon={<LayersIcon />}
-            title="No apps yet"
-            description="Metrics are reported per deployment. Create an app to get its deployments, then come back here."
-            action={
-              <Link className={buttonVariants({ intent: "primary" })} to={`/teams/${teamId}/apps`}>
-                Go to apps
-              </Link>
-            }
-          />
-        </div>
-      </PageFrame>
-    );
-  }
-
-  return <ScopedMetrics teamId={teamId ?? ""} apps={appsQuery.data} />;
-}
-
-// ---------------------------------------------------------------------------
-// App → Deployment scope (mounted only with a non-empty app list)
-// ---------------------------------------------------------------------------
-
-function ScopedMetrics({ teamId, apps }: { teamId: string; apps: App[] }) {
-  const [selectedAppId, setSelectedAppId] = useState(apps[0].id);
-  const [selectedDepId, setSelectedDepId] = useState<string | null>(null);
-
-  // Survive a refetch that drops the selected app (e.g. deleted elsewhere).
-  const appId = apps.some((app) => app.id === selectedAppId)
-    ? selectedAppId
-    : apps[0].id;
-
-  const deploymentsQuery = useDeployments(appId);
-  const deployments = deploymentsQuery.data;
-  const deployment =
-    deployments?.find((candidate) => candidate.id === selectedDepId) ??
-    deployments?.[0];
-
-  const selectors = (
-    <>
-      <select
-        className={`${INPUT} ${INPUT_STATE.normal} ${SELECT_EXTRA} select min-w-[190px]`}
-        aria-label="App"
-        value={appId}
-        onChange={(event) => {
-          setSelectedAppId(event.target.value);
-          setSelectedDepId(null);
-        }}
-      >
-        {apps.map((app) => (
-          <option key={app.id} value={app.id}>
-            {app.name}
-          </option>
-        ))}
-      </select>
-      {deployments !== undefined && deployment !== undefined ? (
-        <select
-          className={`${INPUT} ${INPUT_STATE.normal} ${SELECT_EXTRA} select min-w-[150px]`}
-          aria-label="Deployment"
-          value={deployment.id}
-          onChange={(event) => setSelectedDepId(event.target.value)}
-        >
-          {deployments.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.name}
-            </option>
-          ))}
-        </select>
-      ) : null}
-    </>
-  );
-
-  return (
-    <PageFrame actions={selectors}>
-      {deploymentsQuery.isPending ? (
-        <BodySkeleton label="Loading deployments" />
-      ) : deploymentsQuery.isError ? (
-        <div className={`${CARD} ${CARD_PAD}`}>
-          <ErrorState
-            error={deploymentsQuery.error}
-            onRetry={() => {
-              void deploymentsQuery.refetch();
-            }}
-          />
-        </div>
-      ) : deployment === undefined ? (
-        // Selector-empty state: the chosen app has no deployments.
-        <div className={`${CARD} ${CARD_PAD}`}>
-          <EmptyState
-            icon={<LayersIcon />}
-            title="No deployments in this app"
-            description="Deployments are created from the app's settings. Add one to start collecting metrics."
-            action={
-              <Link
-                className={buttonVariants({ intent: "primary" })}
-                to={`/teams/${teamId}/apps/${appId}`}
-              >
-                Open app
-              </Link>
-            }
-          />
-        </div>
-      ) : (
-        <DeploymentCounters
-          key={deployment.id}
-          teamId={teamId}
-          appId={appId}
-          deployment={deployment}
-        />
-      )}
-    </PageFrame>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Counters for one deployment (mounted only with a resolved deployment)
-// ---------------------------------------------------------------------------
-
-function DeploymentCounters({
+export function DeploymentCounters({
   teamId,
   appId,
   deployment,
@@ -205,12 +44,10 @@ function DeploymentCounters({
   appId: string;
   deployment: Deployment;
 }) {
-  // limit=100 is the server's page maximum — the widest single-call window
-  // for the aggregate (counters are hash-keyed, duplicates collapse anyway).
   const metricsQuery = useDeploymentMetrics(deployment.id, { limit: 100 });
 
   if (metricsQuery.isPending) {
-    return <BodySkeleton label="Loading deployment metrics" />;
+    return <MetricsBodySkeleton label="Loading deployment metrics" />;
   }
 
   if (metricsQuery.isError) {
@@ -240,13 +77,11 @@ function DeploymentCounters({
     );
   }
 
-  // All derivation via model/metrics.ts — no math re-derived here.
   const totals = aggregateMetrics(entries.map((entry) => entry.metrics));
   const rate = successRate(totals);
   const distribution = activeVersionDistribution(
     entries.map((entry) => ({
       label: entry.releaseLabel,
-      // A null hash (not yet processed) is its own group — key it by release.
       targetPackageHash: entry.targetPackageHash ?? `release:${entry.releaseId}`,
       metrics: entry.metrics,
     })),
@@ -310,7 +145,6 @@ function DeploymentCounters({
           </div>
           <div className={STAT_VAL}>
             {rate === null ? (
-              // successRate is null when no Success/Failed events exist.
               "—"
             ) : (
               <>
@@ -350,7 +184,9 @@ function DeploymentCounters({
               </span>{" "}
               Active version distribution
             </div>
-            <span className={`${CHIP} ${CHIP_TONE.neutral}`}>grouped by package hash</span>
+            <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
+              grouped by package hash
+            </span>
           </div>
 
           <div className="mt-1.5 flex flex-col gap-[18px]">
@@ -368,9 +204,6 @@ function DeploymentCounters({
                 <div className={ROLLOUT}>
                   <div
                     className={ROLLOUT_TRACK}
-                    // height:10 OVERRIDES ROLLOUT_TRACK's h-[7px] (these
-                    // distribution bars are taller); conflicting utilities
-                    // cannot co-apply, so the height stays inline.
                     style={{ height: 10 }}
                     role="progressbar"
                     aria-label={`${share.label} share of active installs`}
@@ -390,7 +223,6 @@ function DeploymentCounters({
           </div>
 
           <div className="my-5 h-px bg-border" />
-          {/* Muted note: time-series is out of MVP — nothing is fetched. */}
           <div className={`${CALLOUT} ${CALLOUT_TONE.info}`}>
             <InfoIcon />
             <div>
@@ -411,11 +243,27 @@ function DeploymentCounters({
                 strokeWidth={3}
                 points="0,120 90,90 180,100 270,60 360,70 450,40 540,55 630,30 720,35"
               />
-              {/* Static grid lines (legacy `.chart .grid-line`); the polyline
-                  geometry above stays inline (dynamic chart scaffolding). */}
-              <line className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]" x1="0" y1="40" x2="720" y2="40" />
-              <line className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]" x1="0" y1="80" x2="720" y2="80" />
-              <line className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]" x1="0" y1="120" x2="720" y2="120" />
+              <line
+                className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]"
+                x1="0"
+                y1="40"
+                x2="720"
+                y2="40"
+              />
+              <line
+                className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]"
+                x1="0"
+                y1="80"
+                x2="720"
+                y2="80"
+              />
+              <line
+                className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]"
+                x1="0"
+                y1="120"
+                x2="720"
+                y2="120"
+              />
             </svg>
             <div className="absolute inset-0 place-items-center [display:grid]">
               <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
@@ -489,63 +337,6 @@ function DeploymentCounters({
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Frame + skeleton
-// ---------------------------------------------------------------------------
-
-function PageFrame({
-  actions,
-  children,
-}: {
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className={PAGE_TITLE}>
-            Metrics
-          </h1>
-          <p className={PAGE_SUB}>
-            Adoption and reliability per deployment, derived live from release
-            metrics. Visible to everyone on the team.
-          </p>
-        </div>
-        {actions !== undefined ? (
-          <div className="flex items-center gap-2.5">{actions}</div>
-        ) : null}
-      </div>
-      {children}
-    </>
-  );
-}
-
-function BodySkeleton({ label }: { label: string }) {
-  return (
-    <div role="status" aria-label={label}>
-      <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-      </div>
-      <div className={`${CARD} ${CARD_PAD}`}>
-        <Skeleton variant="line" />
-        <Skeleton variant="line" />
-        <Skeleton variant="line" />
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Icon paths use lucide-style glyphs (`users2`, `download`,
-// `checkCircle`, `alert`, `layers`, `info`, `clock`, `activity`).
 
 function IconSvg({ children }: { children: ReactNode }) {
   return (

@@ -75,7 +75,7 @@ export function Breadcrumbs() {
 
 /** Static labels for team-scoped leaf segments (multi-team trails only). */
 const TEAM_LEAF_LABELS = new Map<string, string>([
-  ["apps", "Apps"],
+  ["apps", "Releases"],
   ["members", "Members"],
   ["metrics", "Metrics"],
 ]);
@@ -89,6 +89,42 @@ function buildCrumbs(
   const segments = pathname.split("/").filter((segment) => segment.length > 0);
 
   if (teamId !== undefined) {
+    const metricsIndex = segments.indexOf("metrics");
+    if (metricsIndex !== -1) {
+      const routeAppId = segments[metricsIndex + 2];
+      const routeDepId = segments[metricsIndex + 4];
+      if (segments[metricsIndex + 1] !== "apps" || routeAppId === undefined) {
+        return [];
+      }
+
+      const crumbs: Crumb[] = [
+        {
+          key: "metrics",
+          to: `/teams/${teamId}/metrics`,
+          node: "Metrics",
+        },
+        {
+          key: "app",
+          to: `/teams/${teamId}/metrics/apps/${routeAppId}`,
+          node: <AppName appId={routeAppId} />,
+        },
+      ];
+
+      if (
+        segments[metricsIndex + 3] === "deployments" &&
+        routeDepId !== undefined
+      ) {
+        crumbs.push({
+          key: "deployment",
+          node: (
+            <DeploymentName appId={routeAppId} deploymentId={routeDepId} />
+          ),
+        });
+      }
+
+      return crumbs;
+    }
+
     // Single-team OSS: the team root crumb is just the fixed `default-team`
     // slug, so omit it; show it only in multi-team mode where it disambiguates.
     const crumbs: Crumb[] = isMultiTeam
@@ -103,7 +139,7 @@ function buildCrumbs(
 
     if (appId !== undefined) {
       crumbs.push(
-        { key: "apps", to: `/teams/${teamId}/apps`, node: "Apps" },
+        { key: "apps", to: `/teams/${teamId}/apps`, node: "Releases" },
         {
           key: "app",
           to: `/teams/${teamId}/apps/${appId}`,
