@@ -1,5 +1,6 @@
-// Interactive CLI command builder for deployment detail (v1: release-react).
-// App and deployment come from the page; the user picks platform and options.
+// Interactive CLI command builder (v1: release-react), rendered inside the
+// New release modal. App and deployment come from the caller; the user picks
+// platform and options. Bare form only — the modal supplies title and chrome.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -7,7 +8,6 @@ import {
   buildReleaseReactCommand,
   type ReleaseReactPlatform,
 } from "../../cli/buildReleaseReactCommand";
-import { CARD, CARD_PAD } from "./card";
 import {
   CODEBLOCK,
   CODEBLOCK_COPY_BTN,
@@ -17,7 +17,6 @@ import {
 } from "./codeblock";
 import { CheckIcon, CopyIcon, useCopyState } from "./Copyable";
 import { INPUT, INPUT_STATE } from "./form";
-import { SECTION_TITLE } from "./typography";
 
 interface CommandToken {
   kind: "cmd" | "flag" | "str" | "plain";
@@ -43,26 +42,6 @@ function tokenizeCommand(command: string): CommandToken[] {
     }
   }
   return tokens;
-}
-
-function ServerIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="size-[18px] text-magenta"
-    >
-      <rect x="3" y="4" width="18" height="7" rx="2" />
-      <rect x="3" y="13" width="18" height="7" rx="2" />
-      <line x1="7" y1="7.5" x2="7" y2="7.5" />
-      <line x1="7" y1="16.5" x2="7" y2="16.5" />
-    </svg>
-  );
 }
 
 const SEGMENTED =
@@ -96,8 +75,6 @@ export interface CliCommandBuilderProps {
   /** Prefill from the newest release on this deployment, when available. */
   suggestedTargetBinaryVersion?: string;
   codeSigningRequired?: boolean;
-  /** Drop the outer card + section title when embedded in a modal. */
-  embedded?: boolean;
 }
 
 export function CliCommandBuilder({
@@ -106,7 +83,6 @@ export function CliCommandBuilder({
   deploymentName,
   suggestedTargetBinaryVersion = "",
   codeSigningRequired = false,
-  embedded = false,
 }: CliCommandBuilderProps) {
   const [platform, setPlatform] = useState<ReleaseReactPlatform>("ios");
   const [targetBinaryVersion, setTargetBinaryVersion] = useState(
@@ -185,8 +161,8 @@ export function CliCommandBuilder({
     selection.addRange(range);
   }, [state]);
 
-  const inner = (
-    <>
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
         <div className={BUILDER_FIELD}>
           <span className={BUILDER_LABEL}>Platform</span>
@@ -316,21 +292,6 @@ export function CliCommandBuilder({
             ? "Clipboard unavailable — command selected, copy it manually"
             : ""}
       </span>
-    </>
-  );
-
-  if (embedded) {
-    return (
-      <div className="flex w-full min-w-0 flex-col gap-4">{inner}</div>
-    );
-  }
-
-  return (
-    <div className={`${CARD} ${CARD_PAD} flex w-full min-w-0 max-w-[580px] flex-col gap-4`}>
-      <div className={SECTION_TITLE}>
-        <ServerIcon /> CLI Command Builder
-      </div>
-      {inner}
     </div>
   );
 }

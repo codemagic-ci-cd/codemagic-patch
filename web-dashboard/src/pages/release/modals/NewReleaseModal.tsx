@@ -2,7 +2,7 @@
 // inside one modal. Replaces the separate header upload button + inline CLI
 // builder on the deployment detail page.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Modal } from "../../../components/overlay/Modal";
@@ -59,30 +59,22 @@ function NewReleaseModalContent({
   codeSigningRequired,
   onClose,
 }: Omit<NewReleaseModalProps, "open">) {
+  // No step/form reset on close: the wrapper unmounts this component while
+  // closed, so all wizard state starts fresh on every open.
   const [step, setStep] = useState<Step>("choose");
 
   const uploadForm = useUploadArtifactForm({
     deploymentId,
     deploymentName,
-    onComplete: () => {
-      setStep("choose");
-      onClose();
-    },
+    onComplete: onClose,
   });
 
   const handleClose = () => {
     if (uploadForm.busy) {
       return;
     }
-    setStep("choose");
     onClose();
   };
-
-  useEffect(() => {
-    return () => {
-      setStep("choose");
-    };
-  }, []);
 
   const goBack = () => {
     if (uploadForm.busy) {
@@ -156,7 +148,6 @@ function NewReleaseModalContent({
 
       {step === "cli" ? (
         <CliCommandBuilder
-          embedded
           serverUrl={serverUrl}
           appName={appName}
           deploymentName={deploymentName}

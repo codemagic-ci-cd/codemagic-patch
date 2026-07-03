@@ -1,5 +1,5 @@
 // Card / panel literals (legacy `.card` family), shared by ErrorBoundary,
-// CliCommandBuilder, MetricsPage and ReleaseDetailPage. 1:1 port of the legacy
+// MetricsPage and ReleaseDetailPage. 1:1 port of the legacy
 // `.card` / `.card-pad` / `.card-head` rules. The `.card-head h3` rule was a
 // descendant selector (font size + weight on a class-less <h3>), so it stays a
 // `[&_h3]` descendant here rather than a co-applied class — exactly the legacy

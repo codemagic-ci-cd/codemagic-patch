@@ -1,6 +1,5 @@
-// Shared upload-a-release form body + submission hook. Used by UploadArtifactModal
-// and the upload step of NewReleaseModal so both paths share identical parsing,
-// policy editing, and POST behavior.
+// Upload-a-release form body + submission hook, rendered by the upload step of
+// NewReleaseModal: file parsing, policy editing, and POST behavior in one place.
 
 import { useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
