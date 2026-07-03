@@ -32,10 +32,6 @@ export default defineConfig({
       // resolve to IPv6 ::1, which the proxy then can't reach.
       "/v1": "http://127.0.0.1:3000",
       "/health": "http://127.0.0.1:3000",
-      "/mock-github": {
-        rewrite: (path) => path.replace(/^\/mock-github/, ""),
-        target: "http://127.0.0.1:4480",
-      },
     },
   },
 });
