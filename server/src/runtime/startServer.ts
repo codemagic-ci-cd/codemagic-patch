@@ -55,6 +55,12 @@ export async function startServer(
     deploymentClearHandler: runtime.deploymentClearHandler,
     deploymentCreateHandler: runtime.deploymentCreateHandler,
     deploymentDeleteHandler: runtime.deploymentDeleteHandler,
+    deploymentGitHubActionsDispatchHandler:
+      runtime.deploymentGitHubActionsDispatchHandler,
+    deploymentGitHubActionsReadHandler:
+      runtime.deploymentGitHubActionsReadHandler,
+    deploymentGitHubActionsUpsertHandler:
+      runtime.deploymentGitHubActionsUpsertHandler,
     deploymentMetricsHandler: runtime.deploymentMetricsHandler,
     deploymentRollbackHandler: runtime.deploymentRollbackHandler,
     deploymentUpdateHandler: runtime.deploymentUpdateHandler,
@@ -94,6 +100,11 @@ export async function startServer(
     },
     teamAppsListHandler: runtime.teamAppsListHandler,
     teamCreateHandler: runtime.teamCreateHandler,
+    teamGitHubIntegrationReadHandler: runtime.teamGitHubIntegrationReadHandler,
+    teamGitHubIntegrationRevokeHandler:
+      runtime.teamGitHubIntegrationRevokeHandler,
+    teamGitHubIntegrationUpsertHandler:
+      runtime.teamGitHubIntegrationUpsertHandler,
     teamListHandler: runtime.teamListHandler,
     teamReadHandler: runtime.teamReadHandler,
     userProfileHandler: runtime.userProfileHandler,

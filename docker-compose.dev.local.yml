@@ -6,11 +6,14 @@ services:
       GITHUB_OAUTH_BASE_URL: http://mock-github:4480
       GITHUB_API_BASE_URL: http://mock-github:4480
       GITHUB_OAUTH_ALLOWED_REDIRECT_URIS: http://127.0.0.1:5173/auth/callback
+      INTEGRATION_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
   mock-github:
     build:
       context: .
       dockerfile: deploy/dev/Dockerfile.mock-github
+    ports:
+      - "4480:4480"
     expose:
       - "4480"
 
