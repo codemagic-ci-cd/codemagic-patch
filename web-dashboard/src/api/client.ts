@@ -32,7 +32,7 @@ import {
 } from "./wire";
 import type { OAuthRefreshBody, ProblemDetails } from "./types";
 
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** One API call. `path` is origin-relative; the `/v1` prefix is implied. */
 export interface ApiClientSpec {

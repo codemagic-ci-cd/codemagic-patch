@@ -49,6 +49,7 @@ import {
 } from "../components/ui/form";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { TBL, TBL_TD, TBL_TH, TBL_TR, TBL_WRAP } from "../components/ui/table";
+import { GitHubTeamIntegrationCard } from "../components/github/GitHubTeamIntegrationCard";
 
 const EXPIRES_IN_DAYS_MAX = 3650;
 
@@ -240,6 +241,8 @@ export function TokensPage() {
           </div>
         </div>
       )}
+
+      <GitHubTeamIntegrationCard />
 
       {/* Conditional mount resets the form state on every open. */}
       {createOpen ? (

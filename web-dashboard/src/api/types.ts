@@ -81,6 +81,46 @@ export interface DeploymentRollbackBody {
   target_release_label?: string;
 }
 
+/** `PUT /v1/teams/:teamId/integrations/github` */
+export interface TeamGitHubIntegrationUpsertBody {
+  token: string;
+}
+
+/** `PUT /v1/deployments/:deploymentId/github-actions` */
+export interface DeploymentGitHubActionsUpsertBody {
+  default_ref?: string;
+  enabled?: boolean;
+  owner: string;
+  repo: string;
+  workflow_file: string;
+}
+
+/** `POST /v1/deployments/:deploymentId/github-actions/dispatch` */
+export interface DeploymentGitHubActionsDispatchBody {
+  mandatory?: boolean;
+  platform: "android" | "ios";
+  release_notes?: string;
+  rollout_percentage?: number;
+  target_binary_version?: string;
+}
+
+export type GitHubIntegrationStatus =
+  | { configured: false }
+  | { configured: true; tokenLast4: string };
+
+export interface DeploymentGitHubActionsLink {
+  defaultRef: string;
+  deploymentId: string;
+  enabled: boolean;
+  owner: string;
+  repo: string;
+  workflowFile: string;
+}
+
+export interface DeploymentGitHubActionsDispatchResponse {
+  actionsUrl: string;
+}
+
 /** `POST /v1/auth/tokens` */
 export interface ApiTokenCreateBody {
   display_name: string;

@@ -133,6 +133,7 @@ services:
       # multiple GitHub accounts. local-admin@example.com (below) lands on
       # the seeded owner account via the email link.
       REGISTRATION_MODE: open
+      INTEGRATION_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       INITIAL_ADMIN_EMAILS: local-admin@example.com
       # The server creates the fixed `default-team` on boot (idempotently);
       # seed.sql then attaches the demo app/deployment/token to it by name.

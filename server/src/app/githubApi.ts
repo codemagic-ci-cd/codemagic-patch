@@ -29,6 +29,24 @@ export async function postForm(
   });
 }
 
+export async function postJson(
+  fetchImpl: typeof globalThis.fetch,
+  url: string,
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return fetchImpl(url, {
+    body: JSON.stringify(body),
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "x-github-api-version": GITHUB_API_VERSION,
+    },
+    method: "POST",
+  });
+}
+
 export async function getJson(
   fetchImpl: typeof globalThis.fetch,
   url: string,

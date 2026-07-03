@@ -1,4 +1,5 @@
 import type { ServerMode } from "../app/types";
+import { parseIntegrationEncryptionKey } from "../app/integrationEncryption";
 import { DEFAULT_MAX_UPLOAD_SIZE_BYTES } from "../app/upload-size";
 import { DEFAULT_MANIFEST_CACHE_CONTROL } from "../worker/cachePolicy";
 import { resolveDatabaseSearchPath } from "./databaseSearchPath";
@@ -67,6 +68,7 @@ export interface RuntimeConfig {
   host: string;
   iamInvitationTtlDays: number;
   initialAdminEmails: string[];
+  integrationEncryptionKey?: Buffer;
   logger: boolean;
   manifestCacheControl: string;
   maxUploadSizeBytes: number;
@@ -119,6 +121,9 @@ export function resolveRuntimeConfig(
       MAX_IAM_INVITATION_TTL_DAYS,
     ),
     initialAdminEmails: resolveInitialAdminEmails(env.INITIAL_ADMIN_EMAILS),
+    integrationEncryptionKey: parseIntegrationEncryptionKey(
+      env.INTEGRATION_ENCRYPTION_KEY,
+    ),
     logger: resolveLogger(env.LOGGER),
     manifestCacheControl: resolveManifestCacheControl(
       env.MANIFEST_CACHE_CONTROL,

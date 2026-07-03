@@ -12,6 +12,9 @@ import type {
   AppTransferRouteHandler,
   AppUpdateRouteHandler,
   AuditEventWriteRouteHandler,
+  DeploymentGitHubActionsDispatchRouteHandler,
+  DeploymentGitHubActionsReadRouteHandler,
+  DeploymentGitHubActionsUpsertRouteHandler,
   DeploymentClearRouteHandler,
   DeploymentCreateRouteHandler,
   DeploymentDeleteRouteHandler,
@@ -47,6 +50,9 @@ import type {
   ReleaseReadRouteHandler,
   TeamAppsListRouteHandler,
   TeamCreateRouteHandler,
+  TeamGitHubIntegrationReadRouteHandler,
+  TeamGitHubIntegrationRevokeRouteHandler,
+  TeamGitHubIntegrationUpsertRouteHandler,
   TeamListRouteHandler,
   TeamReadRouteHandler,
   UserProfileRouteHandler,
@@ -128,6 +134,26 @@ export interface ReleasePromoteBody {
 
 export interface DeploymentRollbackBody {
   target_release_label?: unknown;
+}
+
+export interface TeamGitHubIntegrationUpsertBody {
+  token?: unknown;
+}
+
+export interface DeploymentGitHubActionsUpsertBody {
+  default_ref?: unknown;
+  enabled?: unknown;
+  owner?: unknown;
+  repo?: unknown;
+  workflow_file?: unknown;
+}
+
+export interface DeploymentGitHubActionsDispatchBody {
+  mandatory?: unknown;
+  platform?: unknown;
+  release_notes?: unknown;
+  rollout_percentage?: unknown;
+  target_binary_version?: unknown;
 }
 
 export interface ApiTokenCreateBody {
@@ -224,6 +250,9 @@ export interface ApiRoutesOptions {
   deploymentClearHandler?: DeploymentClearRouteHandler;
   deploymentCreateHandler?: DeploymentCreateRouteHandler;
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
+  deploymentGitHubActionsDispatchHandler?: DeploymentGitHubActionsDispatchRouteHandler;
+  deploymentGitHubActionsReadHandler?: DeploymentGitHubActionsReadRouteHandler;
+  deploymentGitHubActionsUpsertHandler?: DeploymentGitHubActionsUpsertRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
@@ -266,6 +295,9 @@ export interface ApiRoutesOptions {
   };
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
+  teamGitHubIntegrationReadHandler?: TeamGitHubIntegrationReadRouteHandler;
+  teamGitHubIntegrationRevokeHandler?: TeamGitHubIntegrationRevokeRouteHandler;
+  teamGitHubIntegrationUpsertHandler?: TeamGitHubIntegrationUpsertRouteHandler;
   teamListHandler?: TeamListRouteHandler;
   teamReadHandler?: TeamReadRouteHandler;
   userProfileHandler?: UserProfileRouteHandler;

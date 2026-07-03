@@ -1360,6 +1360,167 @@ export interface ReadinessCheckRouteHandler {
   (): Promise<ReadinessCheckResult>;
 }
 
+export interface ReadinessCheckRouteHandler {
+  (): Promise<ReadinessCheckResult>;
+}
+
+export interface TeamGitHubIntegrationUpsertHandlerInput {
+  createdBy: string;
+  teamId: string;
+  token: string;
+}
+
+export type TeamGitHubIntegrationUpsertHandlerResult =
+  | {
+      outcome: "updated";
+      tokenLast4: string;
+    }
+  | {
+      outcome: "not_found";
+      reason: "team_not_found";
+    }
+  | {
+      outcome: "failed";
+      reason: "integration_encryption_unconfigured";
+    };
+
+export interface TeamGitHubIntegrationUpsertRouteHandler {
+  (
+    input: TeamGitHubIntegrationUpsertHandlerInput,
+  ): Promise<TeamGitHubIntegrationUpsertHandlerResult>;
+}
+
+export interface TeamGitHubIntegrationRevokeHandlerInput {
+  teamId: string;
+}
+
+export type TeamGitHubIntegrationRevokeHandlerResult =
+  | {
+      outcome: "revoked";
+    }
+  | {
+      outcome: "not_found";
+      reason: "integration_not_found" | "team_not_found";
+    };
+
+export interface TeamGitHubIntegrationRevokeRouteHandler {
+  (
+    input: TeamGitHubIntegrationRevokeHandlerInput,
+  ): Promise<TeamGitHubIntegrationRevokeHandlerResult>;
+}
+
+export type TeamGitHubIntegrationReadHandlerResult =
+  | {
+      configured: true;
+      outcome: "found";
+      tokenLast4: string;
+    }
+  | {
+      configured: false;
+      outcome: "found";
+    }
+  | {
+      outcome: "not_found";
+      reason: "team_not_found";
+    };
+
+export interface TeamGitHubIntegrationReadRouteHandler {
+  (teamId: string): Promise<TeamGitHubIntegrationReadHandlerResult>;
+}
+
+export interface DeploymentGitHubActionsUpsertHandlerInput {
+  defaultRef: string;
+  deploymentId: string;
+  enabled: boolean;
+  owner: string;
+  repo: string;
+  workflowFile: string;
+}
+
+export type DeploymentGitHubActionsUpsertHandlerResult =
+  | {
+      link: {
+        defaultRef: string;
+        deploymentId: string;
+        enabled: boolean;
+        owner: string;
+        repo: string;
+        workflowFile: string;
+      };
+      outcome: "updated";
+    }
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found";
+    };
+
+export interface DeploymentGitHubActionsUpsertRouteHandler {
+  (
+    input: DeploymentGitHubActionsUpsertHandlerInput,
+  ): Promise<DeploymentGitHubActionsUpsertHandlerResult>;
+}
+
+export type DeploymentGitHubActionsReadHandlerResult =
+  | {
+      link: {
+        defaultRef: string;
+        deploymentId: string;
+        enabled: boolean;
+        owner: string;
+        repo: string;
+        workflowFile: string;
+      };
+      outcome: "found";
+    }
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found" | "link_not_found";
+    };
+
+export interface DeploymentGitHubActionsReadRouteHandler {
+  (
+    deploymentId: string,
+  ): Promise<DeploymentGitHubActionsReadHandlerResult>;
+}
+
+export interface DeploymentGitHubActionsDispatchHandlerInput {
+  deploymentId: string;
+  mandatory?: boolean;
+  platform: "android" | "ios";
+  releaseNotes?: string;
+  rolloutPercentage?: number;
+  targetBinaryVersion?: string;
+}
+
+export type DeploymentGitHubActionsDispatchHandlerResult =
+  | {
+      actionsUrl: string;
+      outcome: "dispatched";
+    }
+  | {
+      outcome: "not_found";
+      reason:
+        | "deployment_not_found"
+        | "integration_not_found"
+        | "link_not_found"
+        | "link_disabled";
+    }
+  | {
+      message: string;
+      outcome: "github_error";
+      reason: "unauthorized" | "not_found" | "provider_error";
+    }
+  | {
+      outcome: "failed";
+      reason: "integration_encryption_unconfigured";
+    };
+
+export interface DeploymentGitHubActionsDispatchRouteHandler {
+  (
+    input: DeploymentGitHubActionsDispatchHandlerInput,
+  ): Promise<DeploymentGitHubActionsDispatchHandlerResult>;
+}
+
 export interface BuildAppOptions {
   apiTokenCreateHandler?: ApiTokenCreateRouteHandler;
   apiTokenDeleteHandler?: ApiTokenDeleteRouteHandler;
@@ -1374,6 +1535,9 @@ export interface BuildAppOptions {
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
+  deploymentGitHubActionsDispatchHandler?: DeploymentGitHubActionsDispatchRouteHandler;
+  deploymentGitHubActionsReadHandler?: DeploymentGitHubActionsReadRouteHandler;
+  deploymentGitHubActionsUpsertHandler?: DeploymentGitHubActionsUpsertRouteHandler;
   iamInvitationCreateHandler?: IamInvitationCreateRouteHandler;
   iamInvitationListHandler?: IamInvitationListRouteHandler;
   iamInvitationReadHandler?: IamInvitationReadRouteHandler;
@@ -1419,6 +1583,9 @@ export interface BuildAppOptions {
   };
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
+  teamGitHubIntegrationReadHandler?: TeamGitHubIntegrationReadRouteHandler;
+  teamGitHubIntegrationRevokeHandler?: TeamGitHubIntegrationRevokeRouteHandler;
+  teamGitHubIntegrationUpsertHandler?: TeamGitHubIntegrationUpsertRouteHandler;
   teamListHandler?: TeamListRouteHandler;
   teamReadHandler?: TeamReadRouteHandler;
   userProfileHandler?: UserProfileRouteHandler;

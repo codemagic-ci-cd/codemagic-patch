@@ -1,0 +1,50 @@
+# Save as .github/workflows/codemagic-patch-release.yml
+#
+# Required GitHub secrets:
+#   CODEMAGIC_PATCH_TOKEN — API token from the Patch dashboard
+#   CODEMAGIC_PATCH_SERVER_URL — https://updates.example.com
+#
+# App: demo-app · Deployment: staging
+
+name: Codemagic Patch release
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        required: true
+        options:
+          - ios
+          - android
+      release_notes:
+        type: string
+        required: false
+      target_binary_version:
+        type: string
+        required: false
+      mandatory:
+        type: boolean
+        default: false
+
+env:
+  PATCH_APP: "demo-app"
+  PATCH_DEPLOYMENT: "staging"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Publish to Codemagic Patch
+        env:
+          CODEMAGIC_PATCH_TOKEN: ${{ secrets.CODEMAGIC_PATCH_TOKEN }}
+          CODEMAGIC_PATCH_SERVER_URL: ${{ secrets.CODEMAGIC_PATCH_SERVER_URL }}
+        run: |
+          ARGS=(--app "$PATCH_APP" --deployment "$PATCH_DEPLOYMENT" --platform "${{ inputs.platform }}" --yes --non-interactive)
+          if [ -n "${{ inputs.release_notes }}" ]; then ARGS+=(--release-notes "${{ inputs.release_notes }}"); fi
+          if [ -n "${{ inputs.target_binary_version }}" ]; then ARGS+=(--target-binary-version "${{ inputs.target_binary_version }}"); fi
+          if [ "${{ inputs.mandatory }}" = "true" ]; then ARGS+=(--mandatory); fi
+          npx @codemagic/patch-cli@latest release-react "${ARGS[@]}"

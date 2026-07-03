@@ -1,0 +1,31 @@
+# Local overlay: mock GitHub OAuth + dashboard on :5173.
+# Merged by scripts/dev/up.sh — gitignored; not part of the shared dev stack.
+services:
+  server:
+    environment:
+      GITHUB_OAUTH_BASE_URL: http://mock-github:4480
+      GITHUB_API_BASE_URL: http://mock-github:4480
+      GITHUB_OAUTH_ALLOWED_REDIRECT_URIS: http://127.0.0.1:5173/auth/callback
+
+  mock-github:
+    build:
+      context: .
+      dockerfile: deploy/dev/Dockerfile.mock-github
+    expose:
+      - "4480"
+
+  caddy:
+    build:
+      context: .
+      dockerfile: deploy/dev/Dockerfile.dashboard
+      args:
+        VITE_OAUTH_AUTHORIZE_BASE_URL: http://127.0.0.1:5173/mock-github
+    depends_on:
+      server:
+        condition: service_healthy
+      mock-github:
+        condition: service_started
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./deploy/dev/Caddyfile:/etc/caddy/Caddyfile:ro

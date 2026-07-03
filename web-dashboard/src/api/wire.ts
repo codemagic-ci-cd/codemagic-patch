@@ -350,6 +350,23 @@ export interface ApiTokenCreateWireResponse {
   token: string;
 }
 
+export type GitHubIntegrationStatusWire =
+  | { configured: false }
+  | { configured: true; token_last4: string };
+
+export interface DeploymentGitHubActionsLinkWire {
+  default_ref: string;
+  deployment_id: string;
+  enabled: boolean;
+  owner: string;
+  repo: string;
+  workflow_file: string;
+}
+
+export interface DeploymentGitHubActionsDispatchWireResponse {
+  actions_url: string;
+}
+
 export function fromTeamWire(team: TeamWire): Team {
   return {
     createdAt: team.created_at,

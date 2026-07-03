@@ -71,6 +71,9 @@ import type {
   DeploymentCreateRouteHandler,
   DeploymentDeleteRouteHandler,
   DeploymentMetricsRouteHandler,
+  DeploymentGitHubActionsDispatchRouteHandler,
+  DeploymentGitHubActionsReadRouteHandler,
+  DeploymentGitHubActionsUpsertRouteHandler,
   DeploymentRollbackRouteHandler,
   DeploymentUpdateRouteHandler,
   IamRoleBindingCreateRouteHandler,
@@ -103,6 +106,9 @@ import type {
   ReleaseReadRouteHandler,
   TeamAppsListRouteHandler,
   TeamCreateRouteHandler,
+  TeamGitHubIntegrationReadRouteHandler,
+  TeamGitHubIntegrationRevokeRouteHandler,
+  TeamGitHubIntegrationUpsertRouteHandler,
   TeamListRouteHandler,
   TeamReadRouteHandler,
   UserProfileRouteHandler,
@@ -149,6 +155,7 @@ import {
 } from "../worker/index";
 import type { RuntimeConfig } from "./config";
 import { createNoopLogger, type RuntimeLogger } from "./logger";
+import { createGitHubIntegrationHandlers } from "./createGitHubIntegrationHandlers";
 import { createTrackedReconcileExecutor } from "./trackedReconcileExecutor";
 
 // Self-host runs a single fixed team. The name is intentionally hard-coded
@@ -175,6 +182,9 @@ export interface ServerRuntime {
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
+  deploymentGitHubActionsDispatchHandler?: DeploymentGitHubActionsDispatchRouteHandler;
+  deploymentGitHubActionsReadHandler?: DeploymentGitHubActionsReadRouteHandler;
+  deploymentGitHubActionsUpsertHandler?: DeploymentGitHubActionsUpsertRouteHandler;
   iamInvitationCreateHandler?: IamInvitationCreateRouteHandler;
   iamInvitationListHandler?: IamInvitationListRouteHandler;
   iamInvitationReadHandler?: IamInvitationReadRouteHandler;
@@ -206,6 +216,9 @@ export interface ServerRuntime {
   start(): Promise<void>;
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
+  teamGitHubIntegrationReadHandler?: TeamGitHubIntegrationReadRouteHandler;
+  teamGitHubIntegrationRevokeHandler?: TeamGitHubIntegrationRevokeRouteHandler;
+  teamGitHubIntegrationUpsertHandler?: TeamGitHubIntegrationUpsertRouteHandler;
   teamListHandler?: TeamListRouteHandler;
   teamReadHandler?: TeamReadRouteHandler;
   userProfileHandler?: UserProfileRouteHandler;
@@ -494,6 +507,14 @@ export async function createServerRuntime(
             : undefined,
         )
       : {};
+    const githubIntegrationHandlers =
+      config.mode === "all" || config.mode === "api"
+        ? createGitHubIntegrationHandlers({
+            apiBaseUrl: config.githubOAuth?.apiBaseUrl,
+            encryptionKey: config.integrationEncryptionKey,
+            pool,
+          })
+        : {};
     const iamHandlers = iamRepository ? createIamHandlers(iamRepository) : {};
     const iamUserProvisionHandlers =
       authRepository && iamRepository
@@ -686,6 +707,7 @@ export async function createServerRuntime(
       ...userAuthHandlers,
       ...oauthSessionHandlers,
       ...managementHandlers,
+      ...githubIntegrationHandlers,
       ...iamHandlers,
       ...iamUserProvisionHandlers,
       ...iamInvitationHandlers,

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 
 import { createProblem, sendProblem } from "../../app/problemDetails";
 import { registerControlPlaneAuthRoutes, registerPublicAuthRoutes } from "./authRoutes";
+import { registerGitHubActionsRoutes } from "./githubActionsRoutes";
 import { registerIamRoutes } from "./iamRoutes";
 import { registerManagementRoutes } from "./managementRoutes";
 import {
@@ -79,6 +80,7 @@ export const apiRoutes: FastifyPluginAsync<ApiRoutesOptions> = async (
       });
 
       registerManagementRoutes(controlPlane, options);
+      registerGitHubActionsRoutes(controlPlane, options);
       registerControlPlaneAuthRoutes(controlPlane, options);
       registerIamRoutes(controlPlane, options);
       registerMetricsQueryRoutes(controlPlane, options);

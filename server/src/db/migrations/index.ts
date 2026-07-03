@@ -10,6 +10,7 @@ import { teamInvitationMigration } from "./0009_teamInvitation";
 import { metricEventClientSpecAlignmentMigration } from "./0010_metricEventClientSpecAlignment";
 import { teamInvitationGithubHandleMigration } from "./0011_teamInvitationGithubHandle";
 import { teamInvitationStatusFieldsMigration } from "./0012_teamInvitationStatusFields";
+import { githubActionsIntegrationMigration } from "./0013_githubActionsIntegration";
 
 export interface SqlMigration {
   name: string;
@@ -29,4 +30,5 @@ export const dbMigrations: readonly SqlMigration[] = [
   metricEventClientSpecAlignmentMigration,
   teamInvitationGithubHandleMigration,
   teamInvitationStatusFieldsMigration,
+  githubActionsIntegrationMigration,
 ];
