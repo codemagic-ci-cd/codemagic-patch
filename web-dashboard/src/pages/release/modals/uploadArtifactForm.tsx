@@ -1,10 +1,5 @@
-// Upload-a-release modal: drag/drop or pick a .cmpatch artifact, parse it in
-// the browser via the shared parseArtifact, review the descriptor, edit the
-// upload policy (seeded from the artifact's baked-in defaults), and POST it as
-// multipart via useCreateReleaseFromArtifact — the same body the CLI sends, so
-// the server is untouched. Mounted only while open, so form + mutation state
-// reset on every reopen. `409 duplicate-release` mirrors PromoteModal: an inline
-// "Upload anyway" resubmits with no_duplicate_release_error.
+// Upload-a-release form body + submission hook, rendered by the upload step of
+// NewReleaseModal: file parsing, policy editing, and POST behavior in one place.
 
 import { useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -15,7 +10,6 @@ import type { Artifact } from "@codemagic/patch-shared";
 import { useCreateReleaseFromArtifact } from "../../../api/hooks/releases";
 import { classifyProblem, HttpProblemError } from "../../../api/problem";
 import type { ProblemBehavior } from "../../../api/problem";
-import { Modal } from "../../../components/overlay/Modal";
 import { useToast } from "../../../components/overlay/ToastProvider";
 import { buttonVariants } from "../../../components/ui/Button";
 import {
@@ -51,41 +45,17 @@ import {
   type PolicyForm,
 } from "../../../model/artifactUpload";
 
-export interface UploadArtifactModalProps {
-  open: boolean;
+export interface UseUploadArtifactFormOptions {
   deploymentId: string;
   deploymentName: string;
-  onClose: () => void;
+  onComplete: () => void;
 }
 
-export function UploadArtifactModal({
-  open,
+export function useUploadArtifactForm({
   deploymentId,
   deploymentName,
-  onClose,
-}: UploadArtifactModalProps) {
-  // Unmounted while closed: file/policy/mutation state reset for free on reopen.
-  if (!open) {
-    return null;
-  }
-  return (
-    <UploadArtifactModalContent
-      deploymentId={deploymentId}
-      deploymentName={deploymentName}
-      onClose={onClose}
-    />
-  );
-}
-
-function UploadArtifactModalContent({
-  deploymentId,
-  deploymentName,
-  onClose,
-}: {
-  deploymentId: string;
-  deploymentName: string;
-  onClose: () => void;
-}) {
+  onComplete,
+}: UseUploadArtifactFormOptions) {
   const createMutation = useCreateReleaseFromArtifact();
   const toast = useToast();
   const navigate = useNavigate();
@@ -130,7 +100,7 @@ function UploadArtifactModalContent({
     setFileName(null);
     setParseError(null);
     setForm(null);
-    // Clear the input so re-picking the SAME file still fires `change`.
+    createMutation.reset();
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -157,7 +127,7 @@ function UploadArtifactModalContent({
             `Uploaded ${created.releaseLabel} to ${deploymentName}`,
             { description: "Opening the new release — its worker job is queued." },
           );
-          onClose();
+          onComplete();
           navigate(
             `/teams/${created.teamId}/apps/${created.appId}/deployments/${created.deploymentId}/releases/${created.id}`,
           );
@@ -168,7 +138,7 @@ function UploadArtifactModalContent({
 
   const requestClose = () => {
     if (!busy) {
-      onClose();
+      onComplete();
     }
   };
 
@@ -178,37 +148,8 @@ function UploadArtifactModalContent({
     setForm((previous) => (previous === null ? previous : { ...previous, ...patch }));
   };
 
-  return (
-    <Modal
-      open
-      onClose={requestClose}
-      title={`Upload a release to ${deploymentName}`}
-      description="Drop a .cmpatch artifact built with `cmpatch bundle`. The bundle and its signature are uploaded as-is."
-      icon={<UploadIcon />}
-      wide
-      footer={
-        <>
-          <button
-            type="button"
-            className={buttonVariants({ intent: "subtle" })}
-            onClick={requestClose}
-            disabled={busy}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className={buttonVariants({ intent: "primary" })}
-            onClick={() => submit()}
-            disabled={!canSubmit}
-            aria-busy={busy || undefined}
-          >
-            {busy ? <span className="spinner sm" aria-hidden="true" /> : null}
-            Upload release
-          </button>
-        </>
-      }
-    >
+  const content = (
+    <>
       <input
         ref={inputRef}
         type="file"
@@ -217,7 +158,6 @@ function UploadArtifactModalContent({
         onChange={(event) => {
           const input = event.currentTarget;
           onPick(input.files?.[0]);
-          // Reset so selecting the same file again re-triggers `change`.
           input.value = "";
         }}
       />
@@ -384,8 +324,33 @@ function UploadArtifactModalContent({
           ) : null}
         </>
       )}
-    </Modal>
+    </>
   );
+
+  const footer = (
+    <>
+      <button
+        type="button"
+        className={buttonVariants({ intent: "subtle" })}
+        onClick={requestClose}
+        disabled={busy}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className={buttonVariants({ intent: "primary" })}
+        onClick={() => submit()}
+        disabled={!canSubmit}
+        aria-busy={busy || undefined}
+      >
+        {busy ? <span className="spinner sm" aria-hidden="true" /> : null}
+        Upload release
+      </button>
+    </>
+  );
+
+  return { content, footer, busy, requestClose, reset };
 }
 
 function DescriptorSummary({
@@ -512,8 +477,6 @@ function ErrorSlot({
   );
 }
 
-// --- Problem presentation helpers (file-local per house convention) ---------
-
 function problemBehavior(error: unknown): ProblemBehavior | null {
   return error instanceof HttpProblemError ? classifyProblem(error) : null;
 }
@@ -524,8 +487,6 @@ function describeProblem(error: unknown): string {
   }
   return "The upload couldn't be completed. Check your connection and try again.";
 }
-
-// Icons mirror the inline-SVG convention used by the sibling release modals.
 
 function IconSvg({ children }: { children: ReactNode }) {
   return (
@@ -543,7 +504,7 @@ function IconSvg({ children }: { children: ReactNode }) {
   );
 }
 
-function UploadIcon() {
+export function UploadIcon() {
   return (
     <IconSvg>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />

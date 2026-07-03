@@ -1,7 +1,7 @@
 // Typography literals — the lone survivor of the legacy page-header / heading
 // family (`.page-head`/`.page-title` etc. converted inline in Stage 9). 1:1
-// port of the legacy `.section-title` rule; shared by CliCommandBuilder,
-// MetricsPage and ReleaseDetailPage section headings.
+// port of the legacy `.section-title` rule; shared by MetricsPage and
+// ReleaseDetailPage section headings.
 export const SECTION_TITLE =
   "flex items-center gap-2.5 text-[16px] font-bold tracking-[-.01em]";
 
