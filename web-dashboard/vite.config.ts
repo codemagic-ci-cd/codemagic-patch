@@ -1,9 +1,24 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const dashboardRoot = fileURLToPath(new URL(".", import.meta.url));
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    // Dev server: resolve from TypeScript source so `vite` works without a prior
+    // `yarn workspace @codemagic/patch-shared build` (production build still uses dist).
+    alias: {
+      "@codemagic/patch-shared": resolve(
+        dashboardRoot,
+        "../shared/src/index.ts",
+      ),
+    },
+  },
   // @codemagic/patch-shared ships as CommonJS, and Vite does not pre-bundle linked
   // workspace deps by default — so the dev server's esbuild/ESM interop can't see
   // its transitively re-exported names (e.g. artifactToReleaseForm via export *),

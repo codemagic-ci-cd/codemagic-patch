@@ -5,6 +5,8 @@ services:
     environment:
       GITHUB_OAUTH_BASE_URL: http://mock-github:4480
       GITHUB_API_BASE_URL: http://mock-github:4480
+      # Mock OAuth for login; real GitHub for workflow_dispatch from the dashboard.
+      GITHUB_ACTIONS_API_BASE_URL: https://api.github.com
       GITHUB_OAUTH_ALLOWED_REDIRECT_URIS: http://127.0.0.1:5173/auth/callback
       INTEGRATION_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 

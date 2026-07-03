@@ -64,7 +64,6 @@ import {
 } from "./release/releaseHistoryTable";
 import {
   ConfigureGitHubActionsModal,
-  RunGitHubActionsModal,
 } from "./release/modals/GitHubActionsModals";
 import { useReleaseActions } from "./release/modals/useReleaseActions";
 import type { ReleaseListItem } from "../api/types";
@@ -216,7 +215,6 @@ function DeploymentDetail({
   });
   const [newReleaseOpen, setNewReleaseOpen] = useState(false);
   const [configureGitHubOpen, setConfigureGitHubOpen] = useState(false);
-  const [runGitHubOpen, setRunGitHubOpen] = useState(false);
 
   const pages = releasesQuery.data?.pages;
   const rows = pages?.flatMap((page) => page.releases) ?? [];
@@ -258,18 +256,6 @@ function DeploymentDetail({
       </button>
     </span>
   );
-  const githubRunButton = (
-    <span className="tip" data-tip={deployTip}>
-      <button
-        type="button"
-        className={buttonVariants({ intent: "ghost" })}
-        disabled={!canDeploy}
-        onClick={() => setRunGitHubOpen(true)}
-      >
-        <PlayIcon /> Run in GitHub
-      </button>
-    </span>
-  );
 
   const releasePath = (releaseId: string) =>
     `/teams/${teamId}/apps/${appId}/deployments/${deployment.id}/releases/${releaseId}`;
@@ -299,7 +285,6 @@ function DeploymentDetail({
           <div className="flex flex-col items-center gap-[18px]">
             {newReleaseButton}
             {githubConfigureButton}
-            {githubRunButton}
           </div>
         }
       />
@@ -385,7 +370,6 @@ function DeploymentDetail({
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {newReleaseButton}
-          {githubRunButton}
           {githubConfigureButton}
           <span className="tip" data-tip={deployTip}>
             <button
@@ -418,6 +402,11 @@ function DeploymentDetail({
         appName={appName}
         suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
         codeSigningRequired={appQuery.data?.requireCodeSigning === true}
+        teamId={teamId}
+        onOpenGitHubConfigure={() => {
+          setNewReleaseOpen(false);
+          setConfigureGitHubOpen(true);
+        }}
         onClose={() => setNewReleaseOpen(false)}
       />
       <ConfigureGitHubActionsModal
@@ -428,12 +417,6 @@ function DeploymentDetail({
         deploymentName={deployment.name}
         codeSigningRequired={appQuery.data?.requireCodeSigning === true}
         onClose={() => setConfigureGitHubOpen(false)}
-      />
-      <RunGitHubActionsModal
-        open={runGitHubOpen}
-        deploymentId={deployment.id}
-        suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
-        onClose={() => setRunGitHubOpen(false)}
       />
     </>
   );
@@ -1333,14 +1316,6 @@ function GitHubIcon() {
   return (
     <IconSvg>
       <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48 0-.24-.01-.87-.01-1.7-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.1-1.46-1.1-1.46-.9-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.58 9.58 0 0 1 12 6.8c.85.004 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85 0 1.33-.01 2.4-.01 2.73 0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
-    </IconSvg>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <IconSvg>
-      <polygon points="8 5 19 12 8 19 8 5" />
     </IconSvg>
   );
 }

@@ -74,7 +74,8 @@ export function GitHubTeamIntegrationCard() {
       <h2 className="text-[17px] font-bold">GitHub Actions integration</h2>
       <p className="mt-1.5 max-w-[62ch] text-[14px] text-fg-2">
         Fine-grained personal access token with <b>Actions: Read and write</b>{" "}
-        on your release repo. Patch uses it to trigger{" "}
+        (search <b>Actions</b> under Repository permissions — not Workflows or
+        Secrets) on your release repo. Patch uses it to trigger{" "}
         <code className="text-fg">workflow_dispatch</code> from the dashboard.
       </p>
 

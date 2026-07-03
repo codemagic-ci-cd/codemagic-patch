@@ -64,6 +64,7 @@ export interface RuntimeConfig {
   databaseUrl?: string;
   deliveryAdapter: "base-url" | "cloudflare";
   gcs?: GcsStorageConfig;
+  githubActionsApiBaseUrl: string;
   githubOAuth?: GitHubOAuthConfig;
   host: string;
   iamInvitationTtlDays: number;
@@ -112,6 +113,7 @@ export function resolveRuntimeConfig(
     databaseSearchPath: resolveDatabaseSearchPath(env.DATABASE_SEARCH_PATH),
     databaseUrl: resolveDatabaseUrl(env.DATABASE_URL, mode),
     deliveryAdapter,
+    githubActionsApiBaseUrl: resolveGitHubActionsApiBaseUrl(env, githubOAuth),
     githubOAuth,
     host: resolveHost(env.HOST),
     iamInvitationTtlDays: resolvePositiveIntegerWithDefaultAndMax(
@@ -284,6 +286,22 @@ function resolveOptionalPositiveInteger(
   }
 
   return parsed;
+}
+
+/**
+ * GitHub API base for workflow_dispatch and other integration calls.
+ * OAuth user lookup keeps using `GITHUB_API_BASE_URL` on the OAuth config so
+ * local dev can mock login while dispatch hits real api.github.com.
+ */
+export function resolveGitHubActionsApiBaseUrl(
+  env: RuntimeEnvironment,
+  githubOAuth: GitHubOAuthConfig | undefined,
+): string {
+  return trimTrailingSlash(
+    resolveOptionalString(env.GITHUB_ACTIONS_API_BASE_URL) ??
+      githubOAuth?.apiBaseUrl ??
+      DEFAULT_GITHUB_API_BASE_URL,
+  );
 }
 
 function resolveGitHubOAuthConfig(

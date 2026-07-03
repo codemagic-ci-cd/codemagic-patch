@@ -510,7 +510,7 @@ export async function createServerRuntime(
     const githubIntegrationHandlers =
       config.mode === "all" || config.mode === "api"
         ? createGitHubIntegrationHandlers({
-            apiBaseUrl: config.githubOAuth?.apiBaseUrl,
+            apiBaseUrl: config.githubActionsApiBaseUrl,
             encryptionKey: config.integrationEncryptionKey,
             pool,
           })

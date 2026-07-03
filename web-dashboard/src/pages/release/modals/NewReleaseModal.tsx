@@ -10,8 +10,9 @@ import { CliCommandBuilder } from "../../../components/ui/CliCommandBuilder";
 import { buttonVariants } from "../../../components/ui/Button";
 import { RC_DESC, RC_TITLE, RADIO_CARD, RADIO_CARD_STATE } from "../../../components/ui/form";
 import { UploadIcon, useUploadArtifactForm } from "./uploadArtifactForm";
+import { useRunGitHubReleaseForm } from "./runGitHubReleaseForm";
 
-type Step = "choose" | "cli" | "upload";
+type Step = "choose" | "cli" | "upload" | "github";
 
 export interface NewReleaseModalProps {
   open: boolean;
@@ -21,6 +22,8 @@ export interface NewReleaseModalProps {
   appName: string;
   suggestedTargetBinaryVersion?: string;
   codeSigningRequired?: boolean;
+  teamId: string;
+  onOpenGitHubConfigure: () => void;
   onClose: () => void;
 }
 
@@ -32,6 +35,8 @@ export function NewReleaseModal({
   appName,
   suggestedTargetBinaryVersion = "",
   codeSigningRequired = false,
+  teamId,
+  onOpenGitHubConfigure,
   onClose,
 }: NewReleaseModalProps) {
   if (!open) {
@@ -45,6 +50,8 @@ export function NewReleaseModal({
       appName={appName}
       suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
       codeSigningRequired={codeSigningRequired}
+      teamId={teamId}
+      onOpenGitHubConfigure={onOpenGitHubConfigure}
       onClose={onClose}
     />
   );
@@ -57,6 +64,8 @@ function NewReleaseModalContent({
   appName,
   suggestedTargetBinaryVersion,
   codeSigningRequired,
+  teamId,
+  onOpenGitHubConfigure,
   onClose,
 }: Omit<NewReleaseModalProps, "open">) {
   // No step/form reset on close: the wrapper unmounts this component while
@@ -68,26 +77,38 @@ function NewReleaseModalContent({
     deploymentName,
     onComplete: onClose,
   });
+  const githubForm = useRunGitHubReleaseForm({
+    deploymentId,
+    onComplete: onClose,
+    onOpenConfigure: onOpenGitHubConfigure,
+    suggestedTargetBinaryVersion,
+    teamId,
+  });
 
   const handleClose = () => {
-    if (uploadForm.busy) {
+    if (uploadForm.busy || githubForm.busy) {
       return;
     }
     onClose();
   };
 
   const goBack = () => {
-    if (uploadForm.busy) {
+    if (uploadForm.busy || githubForm.busy) {
       return;
     }
     if (step === "upload") {
       uploadForm.reset();
+    }
+    if (step === "github") {
+      githubForm.reset();
     }
     setStep("choose");
   };
 
   const header = stepMeta(step, deploymentName);
   const footer = footerForStep(step, {
+    githubFooter: githubForm.footer,
+    githubBusy: githubForm.busy,
     onClose: handleClose,
     onBack: goBack,
     uploadFooter: uploadForm.footer,
@@ -143,6 +164,22 @@ function NewReleaseModalContent({
               </div>
             </div>
           </button>
+          <button
+            type="button"
+            className={`${RADIO_CARD} ${RADIO_CARD_STATE.idle} text-left`}
+            onClick={() => setStep("github")}
+          >
+            <span className="mt-0.5 size-[18px] shrink-0 text-blue" aria-hidden="true">
+              <GitHubIcon />
+            </span>
+            <div>
+              <div className={RC_TITLE}>GitHub Actions</div>
+              <div className={RC_DESC}>
+                Trigger your linked release workflow on GitHub with platform and
+                target binary settings.
+              </div>
+            </div>
+          </button>
         </div>
       ) : null}
 
@@ -157,6 +194,8 @@ function NewReleaseModalContent({
       ) : null}
 
       {step === "upload" ? uploadForm.content : null}
+
+      {step === "github" ? githubForm.content : null}
     </Modal>
   );
 }
@@ -180,6 +219,13 @@ function stepMeta(
           "Drop a .cmpatch artifact built with `cmpatch bundle`. The bundle and its signature are uploaded as-is.",
         icon: <UploadIcon />,
       };
+    case "github":
+      return {
+        title: `Release via GitHub Actions to ${deploymentName}`,
+        description:
+          "Pick the platform and target binary version, then start the linked workflow.",
+        icon: <GitHubIcon />,
+      };
     default:
       return {
         title: `New release to ${deploymentName}`,
@@ -192,6 +238,8 @@ function stepMeta(
 function footerForStep(
   step: Step,
   options: {
+    githubBusy: boolean;
+    githubFooter: ReactNode;
     onClose: () => void;
     onBack: () => void;
     uploadFooter: ReactNode;
@@ -227,6 +275,22 @@ function footerForStep(
         >
           Close
         </button>
+      </>
+    );
+  }
+
+  if (step === "github") {
+    return (
+      <>
+        <button
+          type="button"
+          className={buttonVariants({ intent: "ghost" })}
+          onClick={options.onBack}
+          disabled={options.githubBusy}
+        >
+          <BackIcon /> Back
+        </button>
+        {options.githubFooter}
       </>
     );
   }
@@ -287,6 +351,14 @@ function BackIcon() {
     <IconSvg>
       <line x1="19" y1="12" x2="5" y2="12" />
       <polyline points="12 19 5 12 12 5" />
+    </IconSvg>
+  );
+}
+
+function GitHubIcon() {
+  return (
+    <IconSvg>
+      <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48 0-.24-.01-.87-.01-1.7-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.1-1.46-1.1-1.46-.9-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.58 9.58 0 0 1 12 6.8c.85.004 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85 0 1.33-.01 2.4-.01 2.73 0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
     </IconSvg>
   );
 }
