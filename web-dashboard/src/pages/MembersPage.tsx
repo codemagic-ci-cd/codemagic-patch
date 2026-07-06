@@ -2,8 +2,12 @@
 // `iam.manage`-gated: while useTeamRole resolves → skeleton; non-managers
 // (exact viewer/developer binding, or the bindings 403 inference) get a
 // FULL-PAGE permission notice instead of a broken table; non-403 bindings
-// failures render the problem-mapped ErrorState with retry. Pending
-// invitations are merged into the members table (Status column). Removal follows
+// failures render the problem-mapped ErrorState with retry. Invitations are
+// merged into the members table (Status column): pending rows sit on top,
+// expired rows sit greyed-out below the members as history; revoked and
+// accepted invitations are hidden (accepted ones exist as member rows). Only
+// pending rows carry a Revoke action — the server 409s on any other status.
+// Removal follows
 // the optimistic pattern — the confirm closes immediately, the row is
 // dropped from the cached bindings list (in-flight fetches cancelled first)
 // and restored on error; `409 last-owner` renders the inline blocking callout
@@ -203,7 +207,6 @@ function MembersScreen({ teamId }: { teamId: string }) {
         ) : null}
         <ManagedMembersTable
           teamId={teamId}
-          bindings={bindingsQuery.data ?? []}
           bindingsQuery={bindingsQuery}
           onRemove={(binding) => {
             setLastOwnerBlocked(false);
@@ -240,7 +243,8 @@ function MembersScreen({ teamId }: { teamId: string }) {
             Members
           </h1>
           <p className={PAGE_SUB}>
-            People with access to this team, including pending invitations.
+            People with access to this team, including pending and expired
+            invitations.
           </p>
         </div>
         {canManage ? (
@@ -311,16 +315,16 @@ function MembersScreen({ teamId }: { teamId: string }) {
 
 function ManagedMembersTable({
   teamId,
-  bindings,
   bindingsQuery,
   onRemove,
 }: {
   teamId: string;
-  bindings: readonly RoleBinding[];
   bindingsQuery: ReturnType<typeof useRoleBindings>;
   onRemove: (binding: RoleBinding) => void;
 }) {
-  const invitationsQuery = useInvitations(teamId, "pending");
+  // One query for every status: the server flips lapsed pending invitations
+  // to expired on read, and the pending/expired split happens client-side.
+  const invitationsQuery = useInvitations(teamId, "all");
   const revokeInvitation = useRevokeInvitation();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -370,24 +374,12 @@ function ManagedMembersTable({
     return <LoadingCard label="Loading members" />;
   }
 
-  if (
-    bindingsQuery.isError &&
-    !isForbiddenProblem(bindingsQuery.error)
-  ) {
-    return (
-      <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
-        <ErrorState
-          error={bindingsQuery.error}
-          onRetry={() => {
-            void bindingsQuery.refetch();
-          }}
-        />
-      </div>
-    );
-  }
-
+  // No bindings error branch: this table only mounts behind `iam.manage`,
+  // and useTeamRole reads the same bindings query — a bindings error would
+  // have kept the gate closed (MembersScreen handles it).
   if (
     invitationsQuery.isError &&
+    invitationsQuery.data === undefined &&
     !isForbiddenProblem(invitationsQuery.error)
   ) {
     return (
@@ -402,13 +394,20 @@ function ManagedMembersTable({
     );
   }
 
-  const pendingInvitations = invitationsQuery.data ?? [];
+  const invitations = invitationsQuery.data ?? [];
+  const pendingInvitations = invitations.filter(
+    (invitation) => invitation.status === "pending",
+  );
+  const expiredInvitations = invitations.filter(
+    (invitation) => invitation.status === "expired",
+  );
 
   return (
     <>
       <MemberTable
-        bindings={bindings}
+        bindings={bindingsQuery.data ?? []}
         pendingInvitations={pendingInvitations}
+        expiredInvitations={expiredInvitations}
         onRemove={onRemove}
         onRevokeInvitation={(invitation) => {
           setRevokeError(null);
@@ -456,7 +455,7 @@ function ManagedMembersTable({
 }
 
 // ---------------------------------------------------------------------------
-// MemberTable (members + pending invitations)
+// MemberTable (pending invitations on top, members, expired history below)
 // ---------------------------------------------------------------------------
 
 type MemberTableRow =
@@ -466,11 +465,13 @@ type MemberTableRow =
 function MemberTable({
   bindings,
   pendingInvitations,
+  expiredInvitations,
   onRemove,
   onRevokeInvitation,
 }: {
   bindings: readonly RoleBinding[];
   pendingInvitations: readonly TeamInvitation[];
+  expiredInvitations: readonly TeamInvitation[];
   onRemove: (binding: RoleBinding) => void;
   onRevokeInvitation: (invitation: TeamInvitation) => void;
 }) {
@@ -483,10 +484,17 @@ function MemberTable({
     () => new Map(bindings.map((entry) => [entry.user.id, entry.user.email])),
     [bindings],
   );
+  // The server lists invitations created_at ASC regardless of status — the
+  // display order (newest pending first, most recently expired first) is
+  // entirely this sort's responsibility.
   const rows = useMemo((): MemberTableRow[] => {
     const pending = [...pendingInvitations].sort(
       (left, right) =>
         new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+    const expired = [...expiredInvitations].sort(
+      (left, right) =>
+        new Date(right.expiresAt).getTime() - new Date(left.expiresAt).getTime(),
     );
     return [
       ...pending.map(
@@ -501,8 +509,15 @@ function MemberTable({
           binding,
         }),
       ),
+      // Expired invitations trail the active members as greyed-out history.
+      ...expired.map(
+        (invitation): MemberTableRow => ({
+          kind: "invitation",
+          invitation,
+        }),
+      ),
     ];
-  }, [bindings, pendingInvitations]);
+  }, [bindings, pendingInvitations, expiredInvitations]);
 
   return (
     <div className="rounded-lg border border-border bg-surface shadow-sm">
@@ -529,56 +544,11 @@ function MemberTable({
             <tbody>
               {rows.map((row) =>
                 row.kind === "invitation" ? (
-                  <tr key={`invitation:${row.invitation.id}`} className={TBL_TR}>
-                    <td className={TBL_TD}>
-                      <div className={CELL_APP}>
-                        <span
-                          className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-3"
-                          aria-hidden="true"
-                        >
-                          <MailIcon className="size-4" />
-                        </span>
-                        <div>
-                          <div className={CELL_MAIN}>
-                            {invitationContactValue(row.invitation)}
-                          </div>
-                          <div className={CELL_SUB}>Pending invitation</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className={TBL_TD}>
-                      <span className={`role role-${row.invitation.role.key}`}>
-                        {row.invitation.role.key}
-                      </span>
-                    </td>
-                    <td className={TBL_TD}>
-                      <div>
-                        <span className={PENDING_STATUS_CHIP.className}>
-                          {PENDING_STATUS_CHIP.label}
-                        </span>
-                        <div className="text-fg-3 mt-1 text-[12px]">
-                          {relativeExpiry(row.invitation.expiresAt)}
-                        </div>
-                      </div>
-                    </td>
-                    <td className={TBL_TD}>
-                      <span className="text-fg-3 text-[13px]">
-                        Invited {formatDate(row.invitation.createdAt)}
-                      </span>
-                    </td>
-                    <td className={`${TBL_TD} ${TBL_RIGHT}`}>
-                      <button
-                        type="button"
-                        className={buttonVariants({
-                          intent: "dangerGhost",
-                          size: "sm",
-                        })}
-                        onClick={() => onRevokeInvitation(row.invitation)}
-                      >
-                        Revoke
-                      </button>
-                    </td>
-                  </tr>
+                  <InvitationRow
+                    key={`invitation:${row.invitation.id}`}
+                    invitation={row.invitation}
+                    onRevoke={onRevokeInvitation}
+                  />
                 ) : (
                   <tr key={`member:${row.binding.id}`} className={TBL_TR}>
                     <td className={TBL_TD}>
@@ -639,6 +609,77 @@ function MemberTable({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Invitation row, pending or expired. Expired rows are greyed-out history:
+ * neutral chip, absolute expiry date, and no Revoke — the server 409s
+ * (`invitation-not-pending`) on anything but a pending invitation.
+ */
+function InvitationRow({
+  invitation,
+  onRevoke,
+}: {
+  invitation: TeamInvitation;
+  onRevoke: (invitation: TeamInvitation) => void;
+}) {
+  const pending = invitation.status === "pending";
+  const chip = pending ? PENDING_STATUS_CHIP : EXPIRED_STATUS_CHIP;
+
+  return (
+    <tr className={pending ? TBL_TR : `${TBL_TR} opacity-60`}>
+      <td className={TBL_TD}>
+        <div className={CELL_APP}>
+          <span
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-3"
+            aria-hidden="true"
+          >
+            <MailIcon className="size-4" />
+          </span>
+          <div>
+            <div className={CELL_MAIN}>{invitationContactValue(invitation)}</div>
+            <div className={CELL_SUB}>
+              {pending ? "Pending invitation" : "Expired invitation"}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className={TBL_TD}>
+        <span className={`role role-${invitation.role.key}`}>
+          {invitation.role.key}
+        </span>
+      </td>
+      <td className={TBL_TD}>
+        <div>
+          <span className={chip.className}>{chip.label}</span>
+          <div className="text-fg-3 mt-1 text-[12px]">
+            {pending
+              ? relativeExpiry(invitation.expiresAt)
+              : formatDate(invitation.expiresAt)}
+          </div>
+        </div>
+      </td>
+      <td className={TBL_TD}>
+        <span className="text-fg-3 text-[13px]">
+          Invited {formatDate(invitation.createdAt)}
+        </span>
+      </td>
+      <td className={`${TBL_TD} ${TBL_RIGHT}`}>
+        {pending ? (
+          <button
+            type="button"
+            className={buttonVariants({
+              intent: "dangerGhost",
+              size: "sm",
+            })}
+            onClick={() => onRevoke(invitation)}
+          >
+            Revoke
+          </button>
+        ) : null}
+      </td>
+    </tr>
   );
 }
 
@@ -1471,6 +1512,11 @@ const ACTIVE_STATUS_CHIP = {
 const PENDING_STATUS_CHIP = {
   className: `${CHIP} ${CHIP_TONE.blue}`,
   label: "Pending",
+} as const;
+
+const EXPIRED_STATUS_CHIP = {
+  className: `${CHIP} ${CHIP_TONE.neutral}`,
+  label: "Expired",
 } as const;
 
 const DAY_MS = 86_400_000;
