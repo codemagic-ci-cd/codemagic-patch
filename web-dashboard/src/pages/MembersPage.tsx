@@ -335,7 +335,7 @@ function ManagedMembersTable({
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const confirmRevoke = () => {
-    if (pendingRevoke === null) {
+    if (pendingRevoke === null || revokeInvitation.isPending) {
       return;
     }
     const invitation = pendingRevoke;
@@ -443,6 +443,7 @@ function ManagedMembersTable({
               ]
         }
         confirmLabel="Revoke invitation"
+        busy={revokeInvitation.isPending}
         error={revokeError}
         onCancel={() => {
           setPendingRevoke(null);
