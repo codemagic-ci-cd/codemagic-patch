@@ -32,6 +32,7 @@ import { usePromoteRelease } from "../../../api/hooks/releases";
 import { classifyProblem, HttpProblemError } from "../../../api/problem";
 import { Modal } from "../../../components/overlay/Modal";
 import { useToast } from "../../../components/overlay/ToastProvider";
+import { toastReleaseWarnings } from "./releaseWarnings";
 import type { ReleasePromoteBody } from "../../../api/types";
 import type { ProblemBehavior } from "../../../api/problem";
 import type { Release } from "../../../model/release";
@@ -152,6 +153,7 @@ function PromoteModalContent({
                 "Opening the new release — its worker job is queued.",
             },
           );
+          toastReleaseWarnings(toast, data.warnings);
           onClose();
           // Route built from the created release's OWN scope fields.
           navigate(

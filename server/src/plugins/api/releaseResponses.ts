@@ -17,6 +17,7 @@ import type { PreparedJsonResponse } from "./routeResponses";
 import { singleFieldValidationProblem } from "./routeValidation";
 import {
   toActiveJobWire,
+  toReleaseCreationWarningWire,
   toReleaseJobWire,
   toReleaseWire,
 } from "./wireSerializers";
@@ -55,7 +56,9 @@ export function prepareReleaseCreationResponse(
       body: {
         job: toReleaseJobWire(result.job),
         release: toReleaseWire(result.release),
-        ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+        ...(result.warnings?.length
+          ? { warnings: result.warnings.map(toReleaseCreationWarningWire) }
+          : {}),
       },
       status: 201,
     };
@@ -83,7 +86,9 @@ export function prepareReleaseLifecycleCreateResponse(
       body: {
         job: toReleaseJobWire(result.job),
         release: toReleaseWire(result.release),
-        ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+        ...(result.warnings?.length
+          ? { warnings: result.warnings.map(toReleaseCreationWarningWire) }
+          : {}),
       },
       status: 201,
     };

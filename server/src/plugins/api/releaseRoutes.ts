@@ -42,6 +42,7 @@ import type {
 } from "./routeTypes";
 import {
   toActiveJobWire,
+  toReleaseCreationWarningWire,
   toReleaseJobWire,
   toReleaseMetricsWire,
   toReleaseWire,
@@ -532,6 +533,9 @@ export function registerReleaseRoutes(
       return {
         job: result.job ? toReleaseJobWire(result.job) : null,
         release: toReleaseWire(result.release),
+        ...(result.warnings?.length
+          ? { warnings: result.warnings.map(toReleaseCreationWarningWire) }
+          : {}),
       };
     }
 

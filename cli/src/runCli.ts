@@ -12,6 +12,7 @@ import type {
   ParseCliResult,
 } from "./commandTypes";
 import {
+  commandEmitsResponseWarnings,
   executeCommandSpec,
   findCommandSpecRoute,
   getCommandSuggestionCandidates,
@@ -283,11 +284,24 @@ export async function runCli(
         requestedFormat,
         deps.stdout,
       );
+      const warnings =
+        output.format === "table" &&
+        commandEmitsResponseWarnings(commandForExecution)
+          ? extractResponseWarnings(result)
+          : null;
       const table =
         output.format === "table"
-          ? renderTableResult(commandForExecution, result)
+          ? renderTableResult(
+              commandForExecution,
+              warnings ? withoutWarningsKey(result) : result,
+            )
           : null;
       if (table !== null) {
+        // Human-facing warnings go to stderr; JSON output keeps the raw
+        // response (warnings included) on stdout for machine consumption.
+        for (const warning of warnings ?? []) {
+          writeLine(deps.stderr, `Warning: ${warning.detail}`);
+        }
         deps.stdout.write(table);
       } else {
         writeJson(deps.stdout, result);
@@ -494,6 +508,45 @@ function suggestCommand(argv: string[]): string {
 
 function renderTableResult(command: CliCommand, result: unknown): string | null {
   return renderCommandTable(command, result) ?? renderGenericTable(result);
+}
+
+/**
+ * Server release responses carry non-blocking `warnings` (duplicate-release,
+ * fingerprint-disagreement). Only consulted for commands whose spec declares
+ * `responseWarnings`. Entries that don't match the `{code, detail}` shape
+ * (e.g. a newer server's warning kind) are skipped individually so the
+ * well-formed ones still reach stderr.
+ */
+function extractResponseWarnings(
+  result: unknown,
+): Array<{ code: string; detail: string }> | null {
+  if (!isRecord(result) || !Array.isArray(result.warnings)) {
+    return null;
+  }
+
+  const warnings: Array<{ code: string; detail: string }> = [];
+  for (const entry of result.warnings) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.code !== "string" ||
+      typeof entry.detail !== "string"
+    ) {
+      continue;
+    }
+    warnings.push({ code: entry.code, detail: entry.detail });
+  }
+
+  return warnings.length > 0 ? warnings : null;
+}
+
+function withoutWarningsKey(result: unknown): unknown {
+  if (!isRecord(result)) {
+    return result;
+  }
+
+  const rest = { ...result };
+  delete rest.warnings;
+  return rest;
 }
 
 function getCommandResultExitCode(result: unknown): number | null {

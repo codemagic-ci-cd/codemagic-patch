@@ -208,12 +208,21 @@ export interface ReleaseReadResponse {
 export interface ReleasePatchResponse {
   release: Release;
   job: ReleaseJob;
+  warnings?: ReleaseCreationWarning[];
 }
 
-export interface ReleaseCreationWarning {
-  code: "duplicate-release";
-  detail: string;
-}
+export type ReleaseCreationWarning =
+  | {
+      code: "duplicate-release";
+      detail: string;
+    }
+  | {
+      code: "fingerprint-disagreement";
+      detail: string;
+      binaryVersion: string;
+      storedFingerprint: string;
+      releaseFingerprint: string;
+    };
 
 /** `POST /v1/releases/:releaseId/promote` and `POST /v1/deployments/:deploymentId/rollback` (201). */
 export interface ReleaseLifecycleResponse {

@@ -68,6 +68,19 @@ export interface ReleaseWire {
   updated_at: Date;
 }
 
+export type ReleaseCreationWarningWire =
+  | {
+      code: "duplicate-release";
+      detail: string;
+    }
+  | {
+      code: "fingerprint-disagreement";
+      detail: string;
+      binary_version: string;
+      stored_fingerprint: string;
+      release_fingerprint: string;
+    };
+
 export interface ReleaseJobWire {
   attempt_count: number;
   claim_generation: number;

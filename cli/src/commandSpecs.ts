@@ -209,6 +209,13 @@ type CommandSpecInput<
   kind: K;
   parse: CommandParser;
   renderTable?: (result: unknown, command: CommandForKind<K>) => string;
+  /**
+   * The command's success result is a server release response that may carry
+   * a non-blocking `warnings` array; the CLI surfaces those entries on stderr
+   * in table mode. Declared per command so results that carry a `warnings`
+   * key as first-class data are never reinterpreted.
+   */
+  responseWarnings?: true;
   routes: R;
 };
 
@@ -224,6 +231,7 @@ type RunnableCommandSpec<K extends CommandKind = CommandKind> = {
   kind: K;
   parse: CommandParser;
   renderTable?: (result: unknown, command: ExecutableCliCommand) => string;
+  responseWarnings?: true;
   routes: readonly CommandRoute[];
 };
 
@@ -813,6 +821,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseReleaseCreate,
+    responseWarnings: true,
     routes: [{ path: ["release", "create"] }],
   }),
   commandSpec({
@@ -855,6 +864,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseReleasePatch,
+    responseWarnings: true,
     routes: [
       { path: ["release", "patch"] },
       {
@@ -950,6 +960,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseReleasePromote,
+    responseWarnings: true,
     routes: [{ path: ["release", "promote"] }],
   }),
   commandSpec({
@@ -965,6 +976,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseReleaseRollback,
+    responseWarnings: true,
     routes: [{ path: ["release", "rollback"] }],
   }),
   commandSpec({
@@ -995,6 +1007,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseReleaseReact,
+    responseWarnings: true,
     routes: [{ path: ["release-react"] }],
   }),
   commandSpec({
@@ -1181,6 +1194,19 @@ export function hasCommandTableRenderer(command: CliCommand): boolean {
   return spec?.renderTable !== undefined;
 }
 
+export function commandEmitsResponseWarnings(command: CliCommand): boolean {
+  if (
+    command.kind === "help" ||
+    command.kind === "version" ||
+    command.kind === "not-implemented"
+  ) {
+    return false;
+  }
+
+  const spec = commandSpecsByKind.get(command.kind);
+  return spec?.responseWarnings === true;
+}
+
 export function getCommandHelpGroups(): readonly CommandHelpGroup[] {
   return helpGroups;
 }
@@ -1211,6 +1237,9 @@ function commandSpec<
             command: ExecutableCliCommand,
           ) => string,
         }
+      : {}),
+    ...(spec.responseWarnings !== undefined
+      ? { responseWarnings: spec.responseWarnings }
       : {}),
     routes: spec.routes.map((route) => ({
       defaults: route.defaults ?? spec.defaults,

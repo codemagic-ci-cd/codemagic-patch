@@ -915,10 +915,18 @@ export interface ReleaseCreationHandlerInput {
   targetPackageHash: string | null;
 }
 
-export interface ReleaseCreationWarning {
-  code: "duplicate-release";
-  detail: string;
-}
+export type ReleaseCreationWarning =
+  | {
+      code: "duplicate-release";
+      detail: string;
+    }
+  | {
+      code: "fingerprint-disagreement";
+      detail: string;
+      binaryVersion: string;
+      storedFingerprint: string;
+      releaseFingerprint: string;
+    };
 
 export type ReleaseCreationHandlerResult =
   | {
@@ -1095,6 +1103,7 @@ export type ReleasePatchHandlerResult =
       job: ReleaseJob;
       outcome: "updated";
       release: Release;
+      warnings?: ReleaseCreationWarning[];
     }
   | {
       activeJob: {

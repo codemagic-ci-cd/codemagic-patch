@@ -11,6 +11,7 @@ import { useCreateReleaseFromArtifact } from "../../../api/hooks/releases";
 import { classifyProblem, HttpProblemError } from "../../../api/problem";
 import type { ProblemBehavior } from "../../../api/problem";
 import { useToast } from "../../../components/overlay/ToastProvider";
+import { toastReleaseWarnings } from "./releaseWarnings";
 import { buttonVariants } from "../../../components/ui/Button";
 import {
   CALLOUT,
@@ -127,6 +128,7 @@ export function useUploadArtifactForm({
             `Uploaded ${created.releaseLabel} to ${deploymentName}`,
             { description: "Opening the new release — its worker job is queued." },
           );
+          toastReleaseWarnings(toast, data.warnings);
           onComplete();
           navigate(
             `/teams/${created.teamId}/apps/${created.appId}/deployments/${created.deploymentId}/releases/${created.id}`,

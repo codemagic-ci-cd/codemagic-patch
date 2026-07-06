@@ -21,6 +21,7 @@ import { usePatchReleaseMetadata } from "../../../api/hooks/releases";
 import { classifyProblem, HttpProblemError } from "../../../api/problem";
 import { Modal } from "../../../components/overlay/Modal";
 import { useToast } from "../../../components/overlay/ToastProvider";
+import { toastReleaseWarnings } from "./releaseWarnings";
 import type { ReleaseMetadataPatch } from "../../../api/hooks/releases";
 import type { ProblemBehavior } from "../../../api/problem";
 import type { Release } from "../../../model/release";
@@ -92,10 +93,11 @@ function EditMetadataModalContent({
     patchMutation.mutate(
       { releaseId: release.id, body: changes },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           toast.success(`Release ${release.releaseLabel} updated`, {
             description: "Worker job queued — changes reconcile shortly.",
           });
+          toastReleaseWarnings(toast, data?.warnings);
           onClose();
         },
       },

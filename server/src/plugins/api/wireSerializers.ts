@@ -13,6 +13,7 @@ import type {
   IamRoleRouteModel,
   OAuthWebConfig,
   OAuthSessionCreatedHandlerResult,
+  ReleaseCreationWarning,
 } from "../../app/types";
 import type {
   ActiveJobWire,
@@ -24,6 +25,7 @@ import type {
   OAuthRefreshWire,
   OAuthSessionWire,
   OAuthWebConfigWire,
+  ReleaseCreationWarningWire,
   ReleaseJobWire,
   ReleaseMetricsRowWire,
   ReleaseMetricsWire,
@@ -93,6 +95,25 @@ export function toReleaseWire(release: Release): ReleaseWire {
     target_package_hash: release.targetPackageHash,
     team_id: release.teamId,
     updated_at: release.updatedAt,
+  };
+}
+
+export function toReleaseCreationWarningWire(
+  warning: ReleaseCreationWarning,
+): ReleaseCreationWarningWire {
+  if (warning.code === "fingerprint-disagreement") {
+    return {
+      binary_version: warning.binaryVersion,
+      code: warning.code,
+      detail: warning.detail,
+      release_fingerprint: warning.releaseFingerprint,
+      stored_fingerprint: warning.storedFingerprint,
+    };
+  }
+
+  return {
+    code: warning.code,
+    detail: warning.detail,
   };
 }
 

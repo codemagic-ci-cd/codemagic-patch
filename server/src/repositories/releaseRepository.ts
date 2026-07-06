@@ -40,10 +40,18 @@ export interface CreateReleaseInput {
   targetPackageHash: string | null;
 }
 
-export interface ReleaseCreationWarning {
-  code: "duplicate-release";
-  detail: string;
-}
+export type ReleaseCreationWarning =
+  | {
+      code: "duplicate-release";
+      detail: string;
+    }
+  | {
+      code: "fingerprint-disagreement";
+      detail: string;
+      binaryVersion: string;
+      storedFingerprint: string;
+      releaseFingerprint: string;
+    };
 
 export interface LatestReleasePackageHash {
   releaseId: ReleaseId;
@@ -172,6 +180,7 @@ export type PatchReleaseResult =
       job: ReleaseJob;
       outcome: "updated";
       release: Release;
+      warnings?: ReleaseCreationWarning[];
     }
   | {
       activeJob: {
@@ -358,16 +367,28 @@ export function createPostgresReleaseRepository(
           };
         }
 
-        const warnings = duplicateRelease
+        const warnings: ReleaseCreationWarning[] = duplicateRelease
           ? [
               {
                 code: "duplicate-release",
                 detail: DUPLICATE_RELEASE_DETAIL,
-              } satisfies ReleaseCreationWarning,
+              },
             ]
           : [];
 
+        const fingerprintWarning = await detectFingerprintDisagreementWarning(
+          client,
+          input.deploymentId,
+          input.targetBinaryVersion,
+          input.fingerprint,
+        );
+        if (fingerprintWarning) {
+          warnings.push(fingerprintWarning);
+        }
+
         const nextReleaseLabel = await computeNextReleaseLabel(client, input.deploymentId);
+
+        await client.query(`SAVEPOINT ${RELEASE_INSERT_SAVEPOINT}`);
 
         try {
           const insertedRelease = await client.query<ReleaseRow>(
@@ -463,7 +484,8 @@ export function createPostgresReleaseRepository(
             ...(warnings.length > 0 ? { warnings } : {}),
           };
         } catch (error) {
-          if (isUniqueViolation(error)) {
+          if (isActiveReleaseJobConflict(error)) {
+            await rollbackToReleaseInsertSavepoint(client);
             const conflictingActiveJob = await findActiveDeploymentJob(client, input.deploymentId);
             if (conflictingActiveJob) {
               return {
@@ -712,6 +734,8 @@ export function createPostgresReleaseRepository(
 
         let jobResult;
 
+        await client.query(`SAVEPOINT ${RELEASE_INSERT_SAVEPOINT}`);
+
         try {
           jobResult = await client.query<ReleaseJobRow>(
             `
@@ -747,7 +771,8 @@ export function createPostgresReleaseRepository(
             ],
           );
         } catch (error) {
-          if (isUniqueViolation(error)) {
+          if (isActiveReleaseJobConflict(error)) {
+            await rollbackToReleaseInsertSavepoint(client);
             const conflictingActiveJob = await findActiveDeploymentJob(
               client,
               currentRelease.deploymentId,
@@ -791,10 +816,23 @@ export function createPostgresReleaseRepository(
 
         const updatedRelease = requireRow(updatedReleaseResult.rows[0], "release");
 
+        // Only a retarget can introduce a new disagreement; the original
+        // binary version was already checked when the release was created.
+        const fingerprintWarning =
+          nextReleaseValues.targetBinaryVersion !== currentRelease.targetBinaryVersion
+            ? await detectFingerprintDisagreementWarning(
+                client,
+                currentRelease.deploymentId,
+                nextReleaseValues.targetBinaryVersion,
+                currentRelease.fingerprint,
+              )
+            : null;
+
         return {
           job: mapReleaseJobRow(requireRow(jobResult.rows[0], "release_job")),
           outcome: "updated",
           release: mapReleaseRow(updatedRelease),
+          ...(fingerprintWarning ? { warnings: [fingerprintWarning] } : {}),
         };
       });
     },
@@ -843,14 +881,26 @@ export function createPostgresReleaseRepository(
           };
         }
 
-        const warnings = duplicateRelease
+        const warnings: ReleaseCreationWarning[] = duplicateRelease
           ? [
               {
                 code: "duplicate-release",
                 detail: DUPLICATE_RELEASE_DETAIL,
-              } satisfies ReleaseCreationWarning,
+              },
             ]
           : [];
+
+        const targetBinaryVersion =
+          input.targetBinaryVersion ?? source.target_binary_version;
+        const fingerprintWarning = await detectFingerprintDisagreementWarning(
+          client,
+          input.destinationDeploymentId,
+          targetBinaryVersion,
+          source.fingerprint,
+        );
+        if (fingerprintWarning) {
+          warnings.push(fingerprintWarning);
+        }
 
         return insertSourcedRelease(client, {
           appId: preconditions.deploymentRow.app_id,
@@ -871,8 +921,7 @@ export function createPostgresReleaseRepository(
           signatureHashAlgorithm: source.signature_hash_algorithm,
           sourceBundleReleaseId: input.sourceReleaseId,
           status: input.disabled ? "disabled" : "uploaded",
-          targetBinaryVersion:
-            input.targetBinaryVersion ?? source.target_binary_version,
+          targetBinaryVersion,
           targetPackageHash: source.target_package_hash!,
           teamId: preconditions.deploymentRow.team_id,
           triggerType: "release_promoted",
@@ -941,6 +990,9 @@ export function createPostgresReleaseRepository(
           targetPackageHash: targetRelease.target_package_hash!,
           teamId: preconditions.deploymentRow.team_id,
           triggerType: "release_rolled_back",
+          // No fingerprint-disagreement warning here: rollback re-publishes a
+          // release that already shipped through this deployment, and the
+          // emergency path should stay quiet.
           warnings: [],
         });
       });
@@ -1103,6 +1155,76 @@ async function findLatestPublishedReleaseWithPackageHash(
   };
 }
 
+/**
+ * Look up the fingerprint the worker recorded for this binary version. Returns
+ * null for the first release targeting a binary version (the worker has not
+ * written the row yet at create time), so concurrent first releases with
+ * different fingerprints both pass without a warning — the worker's
+ * disagreement log still covers that race.
+ */
+async function findStoredBinaryVersionFingerprint(
+  client: Queryable,
+  deploymentId: DeploymentId,
+  binaryVersion: string,
+): Promise<string | null> {
+  const result = await client.query<{ fingerprint: string }>(
+    `
+      SELECT fingerprint
+      FROM binary_version_fingerprint
+      WHERE deployment_id = $1 AND binary_version = $2
+    `,
+    [deploymentId, binaryVersion],
+  );
+
+  return result.rows[0]?.fingerprint ?? null;
+}
+
+function fingerprintDisagreementWarning(
+  binaryVersion: string,
+  storedFingerprint: string,
+  releaseFingerprint: string,
+): ReleaseCreationWarning {
+  const truncate = (value: string): string =>
+    value.length > 12 ? `${value.slice(0, 12)}…` : value;
+
+  return {
+    binaryVersion,
+    code: "fingerprint-disagreement",
+    detail:
+      `release fingerprint ${truncate(releaseFingerprint)} differs from the fingerprint ` +
+      `${truncate(storedFingerprint)} recorded for binary version ${binaryVersion} in this ` +
+      `deployment; devices on this binary version may be native-incompatible with this update`,
+    releaseFingerprint,
+    storedFingerprint,
+  };
+}
+
+async function detectFingerprintDisagreementWarning(
+  client: Queryable,
+  deploymentId: DeploymentId,
+  binaryVersion: string,
+  releaseFingerprint: string | null,
+): Promise<ReleaseCreationWarning | null> {
+  if (releaseFingerprint === null) {
+    return null;
+  }
+
+  const storedFingerprint = await findStoredBinaryVersionFingerprint(
+    client,
+    deploymentId,
+    binaryVersion,
+  );
+  if (storedFingerprint === null || storedFingerprint === releaseFingerprint) {
+    return null;
+  }
+
+  return fingerprintDisagreementWarning(
+    binaryVersion,
+    storedFingerprint,
+    releaseFingerprint,
+  );
+}
+
 async function checkReleaseCreatePreconditions(
   client: Queryable,
   input: PreflightCreateReleaseInput,
@@ -1234,6 +1356,8 @@ async function insertSourcedRelease(
     input.deploymentId,
   );
 
+  await client.query(`SAVEPOINT ${RELEASE_INSERT_SAVEPOINT}`);
+
   try {
     const releaseResult = await client.query<ReleaseRow>(
       `
@@ -1332,7 +1456,8 @@ async function insertSourcedRelease(
       ...(input.warnings.length > 0 ? { warnings: input.warnings } : {}),
     };
   } catch (error) {
-    if (isUniqueViolation(error)) {
+    if (isActiveReleaseJobConflict(error)) {
+      await rollbackToReleaseInsertSavepoint(client);
       const activeJob = await findActiveDeploymentJob(client, input.deploymentId);
       if (activeJob) {
         return {
@@ -1458,13 +1583,33 @@ async function computeNextReleaseLabel(
   return `v${maxReleaseNumber + 1}`;
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
+const RELEASE_INSERT_SAVEPOINT = "release_insert";
+const ACTIVE_RELEASE_JOB_CONSTRAINT = "idx_release_job_deployment_active";
+
+// A failed INSERT leaves the surrounding transaction aborted, so the
+// active-job recovery lookup must first roll back to the savepoint taken
+// right before the insert.
+async function rollbackToReleaseInsertSavepoint(client: Queryable): Promise<void> {
+  await client.query(`ROLLBACK TO SAVEPOINT ${RELEASE_INSERT_SAVEPOINT}`);
+}
+
+function isActiveReleaseJobConflict(error: unknown): boolean {
+  return uniqueConstraint(error) === ACTIVE_RELEASE_JOB_CONSTRAINT;
+}
+
+function uniqueConstraint(error: unknown): string | null {
+  if (
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    error.code === "23505"
-  );
+    error.code === "23505" &&
+    "constraint" in error &&
+    typeof error.constraint === "string"
+  ) {
+    return error.constraint;
+  }
+
+  return null;
 }
 
 function requireRow<T>(row: T | undefined, tableName: string): T {

@@ -23,6 +23,7 @@ import type {
   OAuthRefreshBody,
   OAuthWebConfig,
   RefreshResponse,
+  ReleaseCreationWarning,
   ReleaseLifecycleResponse,
   ReleaseListItem,
   ReleaseMetricsEntry,
@@ -261,12 +262,26 @@ export interface ReleaseReadWireResponse {
 export interface ReleasePatchWireResponse {
   job: ReleaseJobWire;
   release: ReleaseWire;
+  warnings?: ReleaseCreationWarningWire[];
 }
+
+export type ReleaseCreationWarningWire =
+  | {
+      code: "duplicate-release";
+      detail: string;
+    }
+  | {
+      code: "fingerprint-disagreement";
+      detail: string;
+      binary_version: string;
+      stored_fingerprint: string;
+      release_fingerprint: string;
+    };
 
 export interface ReleaseLifecycleWireResponse {
   job: ReleaseJobWire;
   release: ReleaseWire;
-  warnings?: ReleaseLifecycleResponse["warnings"];
+  warnings?: ReleaseCreationWarningWire[];
 }
 
 export interface DeploymentMetricsWireResponse {
@@ -592,6 +607,28 @@ export function fromReleasePatchWireResponse(
   return {
     job: fromReleaseJobWire(response.job),
     release: fromReleaseWire(response.release),
+    ...(response.warnings
+      ? { warnings: response.warnings.map(fromReleaseCreationWarningWire) }
+      : {}),
+  };
+}
+
+function fromReleaseCreationWarningWire(
+  warning: ReleaseCreationWarningWire,
+): ReleaseCreationWarning {
+  if (warning.code === "fingerprint-disagreement") {
+    return {
+      binaryVersion: warning.binary_version,
+      code: warning.code,
+      detail: warning.detail,
+      releaseFingerprint: warning.release_fingerprint,
+      storedFingerprint: warning.stored_fingerprint,
+    };
+  }
+
+  return {
+    code: warning.code,
+    detail: warning.detail,
   };
 }
 
@@ -601,7 +638,9 @@ export function fromReleaseLifecycleWireResponse(
   return {
     job: fromReleaseJobWire(response.job),
     release: fromReleaseWire(response.release),
-    ...(response.warnings ? { warnings: response.warnings } : {}),
+    ...(response.warnings
+      ? { warnings: response.warnings.map(fromReleaseCreationWarningWire) }
+      : {}),
   };
 }
 

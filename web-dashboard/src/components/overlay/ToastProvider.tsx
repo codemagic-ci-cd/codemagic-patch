@@ -22,14 +22,14 @@ import {
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
-export type ToastKind = "success" | "error" | "info";
+export type ToastKind = "success" | "error" | "info" | "warning";
 
 export interface ToastOptions {
   /** Secondary line under the message (".t-sub"). */
   description?: string;
   /**
    * Auto-dismiss delay. Defaults: 4200ms (success/info) /
-   * 7000ms (error). `<= 0` disables auto-dismiss (manual dismiss only).
+   * 7000ms (error/warning). `<= 0` disables auto-dismiss (manual dismiss only).
    */
   durationMs?: number;
   /** Pause the auto-dismiss timer on hover/focus. Default: true. */
@@ -41,6 +41,7 @@ export interface ToastApi {
   success(message: string, options?: ToastOptions): string;
   error(message: string, options?: ToastOptions): string;
   info(message: string, options?: ToastOptions): string;
+  warning(message: string, options?: ToastOptions): string;
   dismiss(id: string): void;
 }
 
@@ -79,7 +80,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           description: options?.description,
           durationMs:
             options?.durationMs ??
-            (kind === "error" ? ERROR_DURATION_MS : DEFAULT_DURATION_MS),
+            (kind === "error" || kind === "warning"
+              ? ERROR_DURATION_MS
+              : DEFAULT_DURATION_MS),
           pauseOnHover: options?.pauseOnHover ?? true,
         },
       ]);
@@ -93,6 +96,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       success: (message, options) => push("success", message, options),
       error: (message, options) => push("error", message, options),
       info: (message, options) => push("info", message, options),
+      warning: (message, options) => push("warning", message, options),
       dismiss,
     }),
     [push, dismiss],
@@ -150,6 +154,7 @@ const KIND_TINT: Record<ToastKind, string> = {
   success: "text-[#34d399]",
   error: "text-[#ff6b8a]",
   info: "text-aqua",
+  warning: "text-[#fbbf24]",
 };
 
 function ToastItem({
@@ -272,7 +277,7 @@ function KindIcon({ kind }: { kind: ToastKind }) {
           <circle cx="12" cy="12" r="9" />
           <polyline points="16 9.5 11 14.5 8.5 12" />
         </>
-      ) : kind === "error" ? (
+      ) : kind === "error" || kind === "warning" ? (
         <>
           <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0z" />
           <line x1="12" y1="9" x2="12" y2="13" />
