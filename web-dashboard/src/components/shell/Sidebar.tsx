@@ -1,10 +1,9 @@
-// Team-scoped sidebar: brand, main nav (Apps, Metrics) and the IAM "Access"
-// group (Members, Invitations), all as data-driven react-router NavLinks
+// Team-scoped sidebar: brand, main nav (Apps, Metrics), and a foot section
+// (Members for `iam.manage`, GitHub repo link) above Collapse.
 // against the route map — the DOM/class structure is ported, its hardcoded
-// `.html` hrefs and global `DB` are not. Per the RBAC matrix the Access group
-// is HIDDEN, not disabled, when the resolved role lacks `iam.manage`
-// (useTeamRole — inferred developer and still-loading states both hide it, so
-// forbidden links never flash).
+// `.html` hrefs and global `DB` are not. Members is HIDDEN, not disabled,
+// when the resolved role lacks `iam.manage` (useTeamRole — inferred developer
+// and still-loading states both hide it, so forbidden links never flash).
 // The chrome renders immediately: nav needs only the route's teamId; on
 // team-less routes (/teams, /account/*) the shell passes the last-team
 // fallback, and with no team at all only brand/footer/collapse render.
@@ -14,7 +13,7 @@
 import { Link, NavLink } from "react-router";
 import type { ReactElement, ReactNode } from "react";
 
-import { PRODUCT_NAME, PRODUCT_SHORT_NAME } from "../../branding";
+import { PRODUCT_NAME, PRODUCT_SHORT_NAME, SOURCE_REPO_URL } from "../../branding";
 import { useTeamRole } from "../../rbac/useTeamRole";
 
 // nav-item is split base + state under the no-merge contract: the idle/active
@@ -92,6 +91,7 @@ export function SidebarBody({
       </Link>
       {teamId !== null && <TeamNav teamId={teamId} onNavigate={onNavigate} />}
       <div className="flex-1" />
+      <SidebarFoot teamId={teamId} onNavigate={onNavigate} />
       {onToggleCollapsed !== undefined && (
         <button
           type="button"
@@ -153,31 +153,18 @@ const MAIN_NAV_ITEMS: readonly TeamNavItem[] = [
   },
 ];
 
-const ACCESS_NAV_ITEMS: readonly TeamNavItem[] = [
-  {
-    key: "members",
-    label: "Members",
-    segment: "members",
-    icon: (
-      <NavIcon>
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-      </NavIcon>
-    ),
-  },
-  {
-    key: "invitations",
-    label: "Invitations",
-    segment: "invitations",
-    icon: (
-      <NavIcon>
-        <rect x="2" y="4" width="20" height="16" rx="2.5" />
-        <path d="m3 7 9 6 9-6" />
-      </NavIcon>
-    ),
-  },
-];
+const MEMBERS_NAV_ITEM: TeamNavItem = {
+  key: "members",
+  label: "Members",
+  segment: "members",
+  icon: (
+    <NavIcon>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </NavIcon>
+  ),
+};
 
 function TeamNav({
   teamId,
@@ -186,40 +173,68 @@ function TeamNav({
   teamId: string;
   onNavigate?: () => void;
 }) {
+  return (
+    <div className="px-3 pb-1 pt-3.5">
+      <nav className="flex flex-col gap-[2px] px-3" aria-label="Team">
+        {MAIN_NAV_ITEMS.map((item) => (
+          <SidebarNavLink
+            key={item.key}
+            teamId={teamId}
+            item={item}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function SidebarFoot({
+  teamId,
+  onNavigate,
+}: {
+  teamId: string | null;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div className="border-t border-sb-border px-3 pb-1 pt-3">
+      <nav className="flex flex-col gap-[2px] px-3" aria-label="More">
+        {teamId !== null ? (
+          <MembersNavLink teamId={teamId} onNavigate={onNavigate} />
+        ) : null}
+        <a
+          href={SOURCE_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`${NAV_ITEM} ${NAV_ITEM_IDLE}`}
+          onClick={onNavigate}
+        >
+          <GitHubNavIcon />
+          <span>Repo</span>
+        </a>
+      </nav>
+    </div>
+  );
+}
+
+function MembersNavLink({
+  teamId,
+  onNavigate,
+}: {
+  teamId: string;
+  onNavigate?: () => void;
+}) {
   const { can } = useTeamRole(teamId);
+  if (!can("iam.manage")) {
+    return null;
+  }
 
   return (
-    <>
-      <div className="px-3 pb-1 pt-3.5">
-        <nav className="flex flex-col gap-[2px] px-3" aria-label="Team">
-          {MAIN_NAV_ITEMS.map((item) => (
-            <SidebarNavLink
-              key={item.key}
-              teamId={teamId}
-              item={item}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </nav>
-      </div>
-      {can("iam.manage") && (
-        <div className="px-3 pb-1 pt-3.5">
-          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[.13em] text-fg-3 group-data-collapsed/app:text-center group-data-collapsed/app:text-[8px]">
-            Access
-          </div>
-          <nav className="flex flex-col gap-[2px] px-3" aria-label="Access">
-            {ACCESS_NAV_ITEMS.map((item) => (
-              <SidebarNavLink
-                key={item.key}
-                teamId={teamId}
-                item={item}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </nav>
-        </div>
-      )}
-    </>
+    <SidebarNavLink
+      teamId={teamId}
+      item={MEMBERS_NAV_ITEM}
+      onNavigate={onNavigate}
+    />
   );
 }
 
@@ -261,6 +276,14 @@ function NavIcon({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
+  );
+}
+
+function GitHubNavIcon() {
+  return (
+    <NavIcon>
+      <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+    </NavIcon>
   );
 }
 

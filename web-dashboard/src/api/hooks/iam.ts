@@ -34,7 +34,7 @@ import {
   type RolesListWireResponse,
 } from "../wire";
 
-/** `status` filter accepted by `GET /v1/iam/invitations` (status tabs). */
+/** `status` filter accepted by `GET /v1/iam/invitations`. */
 export type InvitationStatusFilter = TeamInvitationStatus | "all";
 
 /** Query keys for the IAM domain, lists scoped by team. */

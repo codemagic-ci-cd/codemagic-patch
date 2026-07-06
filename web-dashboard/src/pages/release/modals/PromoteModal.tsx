@@ -46,6 +46,9 @@ import {
   INPUT_STATE,
   SELECT_EXTRA,
   TEXTAREA_EXTRA,
+  TOGGLE,
+  TOGGLE_INPUT,
+  TOGGLE_TRACK,
 } from "../../../components/ui/form";
 
 export interface PromoteModalProps {
@@ -409,44 +412,32 @@ function PromoteModalContent({
             inheritedDisplay={release.isMandatory ? "Yes" : "No"}
             busy={busy}
           >
-            {/* Legacy `.field>label` (== `.field-label`) won on specificity
-                over `.toggle` for this direct-child toggle label, so it carried
-                the field-label box wholesale: display:block (which un-flexes the
-                row → the `.track` <span> collapses to the bare thumb) + the
-                13px/600/text color + a 7px bottom margin. The visual-contract
-                baseline captured exactly that; reproduce it verbatim. */}
-            <label
-              className="toggle mb-[7px] mt-0.5 block text-[13px] font-semibold text-fg"
-            >
+            <label className={TOGGLE}>
               <input
                 type="checkbox"
+                className={TOGGLE_INPUT}
                 checked={mandatory}
                 disabled={busy}
                 onChange={(event) => setMandatory(event.currentTarget.checked)}
               />
-              <span className="track" /> Mandatory
+              <span className={TOGGLE_TRACK} aria-hidden="true" />
+              Clients must install this update
             </label>
           </OverrideField>
           <div className={FIELD}>
             <span className={FIELD_LABEL}>Initial status</span>
-            {/* Legacy `.field>label` (== `.field-label`) won on specificity
-                over `.toggle` for this direct-child toggle label, so it carried
-                the field-label box wholesale: display:block (which un-flexes the
-                row → the `.track` <span> collapses to the bare thumb) + the
-                13px/600/text color + a 7px bottom margin. The visual-contract
-                baseline captured exactly that; reproduce it verbatim. */}
-            <label
-              className="toggle mb-[7px] mt-0.5 block text-[13px] font-semibold text-fg"
-            >
+            <label className={TOGGLE}>
               <input
                 type="checkbox"
+                className={TOGGLE_INPUT}
                 checked={createDisabled}
                 disabled={busy}
                 onChange={(event) =>
                   setCreateDisabled(event.currentTarget.checked)
                 }
               />
-              <span className="track" /> Create as disabled
+              <span className={TOGGLE_TRACK} aria-hidden="true" />
+              Create as disabled
             </label>
           </div>
         </div>

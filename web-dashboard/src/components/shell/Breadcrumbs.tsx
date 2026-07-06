@@ -1,16 +1,19 @@
-// Route-derived breadcrumbs ("mirror Team › App › Deployment ›
-// Release; IDs resolve to names (skeleton text while resolving)"). Entity ids
-// come from the route params (teamId/appId/depId/
-// releaseId) and resolve through the existing query hooks, cache-first — a
-// navigation from a list that already populated the cache paints names
-// instantly, otherwise a small inline Skeleton shows. Deployment names come
-// from the app's deployment list (`useDeployments`) because no
-// single-deployment GET exists (api/hooks/deployments.ts). Leaf-only routes
-// (apps/members/invitations/metrics/overview, /teams, /account/*) derive a
-// static label from the pathname so AppShell can render one <Breadcrumbs/>
-// above the Outlet for every screen. DOM/classes follow the
-// `.crumbs` nav structure (`›` separators, `.cur` leaf); each name component falls
-// back to the raw id when resolution fails so the trail never blanks.
+// Route-derived breadcrumbs for app hierarchy screens ("Apps › App ›
+// Deployment › Release; IDs resolve to names (skeleton text while resolving)").
+// In single-team OSS mode team-level leaf routes (overview, apps list,
+// members, metrics) omit breadcrumbs — the page <h1> already carries the
+// title. In multi-team mode every team-scoped trail is prefixed with the
+// team-name crumb (link to the team overview) since it disambiguates, and
+// team-level leaves keep a static label after it. Entity ids come
+// from the route params (teamId/appId/depId/releaseId) and resolve through
+// the existing query hooks, cache-first — a navigation from a list that
+// already populated the cache paints names instantly, otherwise a small inline
+// Skeleton shows. Deployment names come from the app's deployment list
+// (`useDeployments`) because no single-deployment GET exists
+// (api/hooks/deployments.ts). Account routes keep a short trail
+// (Account › Profile / API tokens). DOM/classes follow the `.crumbs` nav
+// structure (`›` separators, `.cur` leaf); each name component falls back to
+// the raw id when resolution fails so the trail never blanks.
 
 import { Fragment } from "react";
 import { Link, useLocation, useParams } from "react-router";
@@ -70,11 +73,10 @@ export function Breadcrumbs() {
   );
 }
 
-/** Static labels for team-scoped leaf segments. */
+/** Static labels for team-scoped leaf segments (multi-team trails only). */
 const TEAM_LEAF_LABELS = new Map<string, string>([
   ["apps", "Apps"],
   ["members", "Members"],
-  ["invitations", "Invitations"],
   ["metrics", "Metrics"],
 ]);
 
@@ -124,6 +126,13 @@ function buildCrumbs(
       return crumbs;
     }
 
+    // Team-level screens (overview, apps list, members, …): in single-team
+    // mode no breadcrumb — the page <h1> is the title. In multi-team mode the
+    // team crumb carries the disambiguating context, so keep the trail with a
+    // static leaf label.
+    if (!isMultiTeam) {
+      return [];
+    }
     const leaf = segments[2];
     if (leaf !== undefined) {
       const leafLabel = TEAM_LEAF_LABELS.get(leaf);
@@ -134,10 +143,6 @@ function buildCrumbs(
       crumbs.push({ key: "overview", node: "Overview" });
     }
     return crumbs;
-  }
-
-  if (segments[0] === "teams") {
-    return [{ key: "teams", node: "Teams" }];
   }
 
   if (segments[0] === "account") {
