@@ -52,12 +52,5 @@ scripts/dev/dashboard-preview.sh
 web-dashboard/.env.local
 web-dashboard/src/styles/app.local.css
 
-# Local full-stack dev overlay (mock GitHub + dashboard on :5173)
-docker-compose.dev.local.yml
-deploy/dev/
-scripts/dev/up.sh
-scripts/dev/mock-github.ts
-infra/pulumi/package.json
-
 # CLI global-install packing dir
 .tmp-pack/
