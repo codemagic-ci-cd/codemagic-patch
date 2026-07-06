@@ -1,7 +1,10 @@
 // Route-derived breadcrumbs for app hierarchy screens ("Apps › App ›
 // Deployment › Release; IDs resolve to names (skeleton text while resolving)").
-// Team-level leaf routes (overview, apps list, members, metrics)
-// omit breadcrumbs — the page <h1> already carries the title. Entity ids come
+// In single-team OSS mode team-level leaf routes (overview, apps list,
+// members, metrics) omit breadcrumbs — the page <h1> already carries the
+// title. In multi-team mode every team-scoped trail is prefixed with the
+// team-name crumb (link to the team overview) since it disambiguates, and
+// team-level leaves keep a static label after it. Entity ids come
 // from the route params (teamId/appId/depId/releaseId) and resolve through
 // the existing query hooks, cache-first — a navigation from a list that
 // already populated the cache paints names instantly, otherwise a small inline
@@ -70,6 +73,13 @@ export function Breadcrumbs() {
   );
 }
 
+/** Static labels for team-scoped leaf segments (multi-team trails only). */
+const TEAM_LEAF_LABELS = new Map<string, string>([
+  ["apps", "Apps"],
+  ["members", "Members"],
+  ["metrics", "Metrics"],
+]);
+
 function buildCrumbs(
   params: Readonly<Record<string, string | undefined>>,
   pathname: string,
@@ -79,7 +89,17 @@ function buildCrumbs(
   const segments = pathname.split("/").filter((segment) => segment.length > 0);
 
   if (teamId !== undefined) {
-    const crumbs: Crumb[] = [];
+    // Single-team OSS: the team root crumb is just the fixed `default-team`
+    // slug, so omit it; show it only in multi-team mode where it disambiguates.
+    const crumbs: Crumb[] = isMultiTeam
+      ? [
+          {
+            key: "team",
+            to: `/teams/${teamId}`,
+            node: <TeamName teamId={teamId} />,
+          },
+        ]
+      : [];
 
     if (appId !== undefined) {
       crumbs.push(
@@ -106,9 +126,23 @@ function buildCrumbs(
       return crumbs;
     }
 
-    // Team-level screens (overview, apps list, members, …) — no breadcrumb;
-    // the page <h1> is the title.
-    return [];
+    // Team-level screens (overview, apps list, members, …): in single-team
+    // mode no breadcrumb — the page <h1> is the title. In multi-team mode the
+    // team crumb carries the disambiguating context, so keep the trail with a
+    // static leaf label.
+    if (!isMultiTeam) {
+      return [];
+    }
+    const leaf = segments[2];
+    if (leaf !== undefined) {
+      const leafLabel = TEAM_LEAF_LABELS.get(leaf);
+      if (leafLabel !== undefined) {
+        crumbs.push({ key: leaf, node: leafLabel });
+      }
+    } else if (segments.length === 2) {
+      crumbs.push({ key: "overview", node: "Overview" });
+    }
+    return crumbs;
   }
 
   if (segments[0] === "account") {
