@@ -69,5 +69,10 @@ export function buildReleaseReactCommand(
     pushFlag(parts, "private-key-path", privateKeyPath);
   }
 
+  // release-react mutates server state; the CLI requires --yes unless --dry-run.
+  if (input.dryRun !== true) {
+    pushFlag(parts, "yes");
+  }
+
   return ["cmpatch release-react", ...parts].join(" ");
 }
