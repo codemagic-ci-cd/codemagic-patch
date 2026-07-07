@@ -49,10 +49,13 @@ export { canonicalizeEmail } from "./app/email";
 export {
   createOAuthSessionRouteHandlers,
   type CreateOAuthSessionRouteHandlersOptions,
+  type OAuthInitialAdminTeamMembershipInput,
+  type OAuthInitialAdminTeamMembershipService,
   type OAuthInvitationFulfillmentInput,
   type OAuthInvitationFulfillmentService,
   type OAuthSessionHandlerIdGenerator,
   type OAuthSessionRouteHandlers,
+  type OAuthSignInGrantService,
 } from "./app/oauthSessionHandlers";
 export {
   createAuthorizationService,

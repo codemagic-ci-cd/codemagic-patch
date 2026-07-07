@@ -15,6 +15,7 @@ Usage: scripts/selfhost/backup.sh [backup-root]
 
 Creates a timestamped backup directory containing:
   env.selfhost
+  docker-compose.selfhost.override.yml  (when the deployment uses one)
   postgres.dump
   minio-codemagic-patch.tar.gz
   versions.txt
@@ -91,6 +92,13 @@ trap backup_cleanup EXIT
 
 log_selfhost "writing backup to ${backup_dir_abs}"
 install -m 600 "$SELFHOST_ENV_FILE" "${backup_dir_abs}/env.selfhost"
+# The compose override is part of the deployment's identity (the env file may
+# even require it via SELFHOST_REQUIRE_COMPOSE_OVERRIDE); back it up alongside
+# the env file so a restore onto a fresh host is self-contained.
+if [ -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ]; then
+  install -m 600 "$SELFHOST_COMPOSE_OVERRIDE_FILE" \
+    "${backup_dir_abs}/docker-compose.selfhost.override.yml"
+fi
 
 {
   printf 'created_at=%s\n' "$timestamp"

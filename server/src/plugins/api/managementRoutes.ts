@@ -120,6 +120,17 @@ export function registerManagementRoutes(
         );
       }
 
+      if (result.outcome === "forbidden") {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "principal is not authorized to create teams",
+            status: 403,
+            typeSuffix: "forbidden",
+          }),
+        );
+      }
+
       return sendProblem(
         reply,
         createProblem({

@@ -15,7 +15,13 @@ import {
   InProcessJobQueue,
   S3StorageAdapter,
 } from "../adapters";
-import { createDatabasePool, migrateDatabase, type DatabasePool } from "../db";
+import {
+  createDatabasePool,
+  dbMigrations,
+  migrateDatabase,
+  type DatabasePool,
+  type SqlMigration,
+} from "../db";
 import type {
   ApiTokenId,
   AppId,
@@ -121,6 +127,7 @@ import {
   type OAuthInitialAdminTeamMembershipService,
   type OAuthInvitationFulfillmentService,
   type OAuthSessionHandlerIdGenerator,
+  type OAuthSignInGrantService,
 } from "../app/oauthSessionHandlers";
 import {
   createAuthorizationService,
@@ -212,6 +219,23 @@ export interface ManagementIdGenerator {
 
 export interface ServerRuntimeOptions {
   authNAdapter?: AuthNAdapter;
+  /**
+   * Replaces the built-in authorization service. The factory receives the
+   * runtime's database pool, so embedders can layer custom policy on top of
+   * (or delegate to) `createAuthorizationService(pool)`.
+   */
+  authorizationService?: (pool: DatabasePool) => AuthorizationService;
+  /**
+   * "auto" (default) idempotently provisions the fixed single-team setup on
+   * boot. "none" skips it for embedders that manage team provisioning
+   * themselves; the initial-admin bootstrap-team grant becomes a no-op.
+   */
+  bootstrapTeam?: "auto" | "none";
+  /**
+   * Additional migrations appended after the built-in chain. Tracked by name
+   * in the same schema_migration table, so names must be unique across both.
+   */
+  extraMigrations?: readonly SqlMigration[];
   githubDeviceAuthAdapter?: OAuthDeviceAuthAdapter;
   githubUserLookupService?: GitHubUserLookupService;
   logger?: RuntimeLogger;
@@ -275,7 +299,12 @@ export async function createServerRuntime(
 
   try {
     if (config.runMigrations) {
-      await migrateDatabase(pool);
+      await migrateDatabase(
+        pool,
+        options.extraMigrations?.length
+          ? [...dbMigrations, ...options.extraMigrations]
+          : undefined,
+      );
     }
 
     const releaseRepository = createPostgresReleaseRepository(pool);
@@ -292,7 +321,7 @@ export async function createServerRuntime(
       ? createControlPlaneAuthHandler(authRepository)
       : undefined;
     const authorizationService = authRepository
-      ? createAuthorizationService(pool)
+      ? (options.authorizationService?.(pool) ?? createAuthorizationService(pool))
       : undefined;
     const userAuthHandlers = authRepository
       ? createUserAuthHandlers(authRepository)
@@ -345,14 +374,17 @@ export async function createServerRuntime(
     const initialAdminEmailSet = new Set(
       config.initialAdminEmails.map((email) => canonicalizeEmail(email)),
     );
-    const initialAdminTeamMembershipService =
-      authRepository && initialAdminEmailSet.size > 0
-        ? createInitialAdminTeamMembershipService(
-            authRepository,
-            initialAdminEmailSet,
-            () => bootstrapTeamId,
-          )
-        : undefined;
+    const oauthSignInGrantService = !authRepository
+      ? undefined
+      : options.oauthSignInGrantService
+        ? options.oauthSignInGrantService(pool)
+        : initialAdminEmailSet.size > 0
+          ? createInitialAdminTeamMembershipService(
+              authRepository,
+              initialAdminEmailSet,
+              () => bootstrapTeamId,
+            )
+          : undefined;
     const oauthSessionHandlers =
       authRepository && (authNAdapter || githubDeviceAuthAdapter)
         ? createOAuthSessionRouteHandlers({
@@ -361,7 +393,7 @@ export async function createServerRuntime(
             deviceAuthAdapter: githubDeviceAuthAdapter,
             idGenerator: options.oauthSessionIdGenerator,
             initialAdminEmails: config.initialAdminEmails,
-            initialAdminTeamMembershipService,
+            initialAdminTeamMembershipService: oauthSignInGrantService,
             invitationFulfillmentService: iamInvitationRepository
               ? createIamInvitationFulfillmentService(
                   iamInvitationRepository,
@@ -402,7 +434,10 @@ export async function createServerRuntime(
     // Self-host single-team bootstrap: ensure the fixed `default-team` exists
     // (idempotently) once the schema is migrated. The id is captured so the
     // initial-admin membership service can grant ownership on sign-in.
-    if (managementRepository) {
+    // Skipped when the embedder opts out via bootstrapTeam: "none"; the
+    // initial-admin grant then short-circuits on the null team id.
+    if (managementRepository && (options.bootstrapTeam ?? "auto") === "auto") {
+      await assertSingleTeamScopeModel(pool);
       bootstrapTeamId = await ensureBootstrapTeam(
         managementRepository,
         DEFAULT_TEAM_NAME,
@@ -1750,6 +1785,38 @@ function toIamInvitationRouteModel(input: {
  * A team whose name already matches is reused (no-op); a unique-name conflict
  * from a concurrent boot is resolved by re-reading the team list.
  */
+/**
+ * The auto bootstrap is only safe on a database provisioned by this
+ * single-team assembly. Role bindings outside the team/app scope model are
+ * created only by multi-tenant assemblies (via extended migration bands and
+ * their own entrypoints); booting the single-team assembly against such a
+ * database — e.g. a lost compose override reverting a deployment's server
+ * command — would create a stray bootstrap team and silently drop that
+ * assembly's gating, so refuse loudly instead of proceeding.
+ */
+async function assertSingleTeamScopeModel(pool: DatabasePool): Promise<void> {
+  let rows: Array<{ scope_type: string }>;
+  try {
+    const result = await pool.query<{ scope_type: string }>(
+      "SELECT scope_type FROM role_binding WHERE scope_type NOT IN ('team', 'app') LIMIT 1",
+    );
+    rows = result.rows;
+  } catch (error) {
+    // Before the auth migrations there is no role_binding table and nothing
+    // to conflict with (undefined_table).
+    if ((error as { code?: string }).code === "42P01") {
+      return;
+    }
+    throw error;
+  }
+
+  if (rows.length > 0) {
+    throw new Error(
+      `database contains role bindings outside the single-team scope model (scope_type "${rows[0].scope_type}") — it belongs to a multi-tenant server assembly. Refusing to auto-create the bootstrap team: check that the deployment runs its intended entrypoint (e.g. the compose override that sets the server command), or pass bootstrapTeam: "none" when embedding.`,
+    );
+  }
+}
+
 async function ensureBootstrapTeam(
   repository: ReturnType<typeof createPostgresManagementRepository>,
   name: string,

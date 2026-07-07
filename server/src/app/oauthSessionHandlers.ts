@@ -72,6 +72,13 @@ export interface OAuthInitialAdminTeamMembershipService {
   ): Promise<void>;
 }
 
+/**
+ * Hook invoked after every successful OAuth sign-in — web callback and device
+ * flow alike — to grant memberships or roles. Embedders can supply their own
+ * implementation; the default is the initial-admin bootstrap-team grant.
+ */
+export type OAuthSignInGrantService = OAuthInitialAdminTeamMembershipService;
+
 export interface CreateOAuthSessionRouteHandlersOptions {
   accessTokenTtlSeconds: number;
   authNAdapter?: AuthNAdapter;

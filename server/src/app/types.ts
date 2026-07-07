@@ -56,6 +56,11 @@ export type TeamCreateHandlerResult =
       reason: "team_name_exists";
     }
   | {
+      // Never produced by the built-in handler; reserved for embedders that
+      // wrap the handler with their own authorization policy.
+      outcome: "forbidden";
+    }
+  | {
       outcome: "not_found";
       reason: "user_not_found";
     }

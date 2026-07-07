@@ -3,6 +3,12 @@
 SELFHOST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELFHOST_REPO_ROOT="$(cd "${SELFHOST_SCRIPT_DIR}/../.." && pwd)"
 SELFHOST_COMPOSE_FILE="${SELFHOST_COMPOSE_FILE:-${SELFHOST_REPO_ROOT}/docker-compose.selfhost.yml}"
+# Optional operator overlay, merged after the base file (standard compose
+# override semantics). Lets deployments layer local tweaks — extra environment,
+# resource limits, a different server command — that every maintenance script
+# (install/backup/restore/upgrade) then honors consistently. Ignored when the
+# file does not exist.
+SELFHOST_COMPOSE_OVERRIDE_FILE="${SELFHOST_COMPOSE_OVERRIDE_FILE:-${SELFHOST_REPO_ROOT}/docker-compose.selfhost.override.yml}"
 SELFHOST_ENV_FILE="${SELFHOST_ENV_FILE:-${SELFHOST_REPO_ROOT}/.env.selfhost}"
 SELFHOST_PROJECT_NAME="${SELFHOST_PROJECT_NAME:-codemagic-patch-selfhost}"
 SELFHOST_DEFAULT_TIMEOUT_SECONDS="${SELFHOST_TIMEOUT_SECONDS:-300}"
@@ -95,7 +101,44 @@ load_selfhost_env() {
   done <"$SELFHOST_ENV_FILE"
 }
 
+# A deployment whose env file sets SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true was
+# installed with a compose override that changes what the stack runs (e.g. a
+# different server command). Losing that file must not silently boot the base
+# stack, so every compose invocation fails until the override is restored.
+# The caller's environment wins over the env file, letting an operator bypass
+# deliberately with SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false. Snapshot that
+# value at source time: load_selfhost_env re-exports the env file's value
+# (usually true), which would otherwise overwrite the caller's bypass before
+# the guard ever checks it. Assign-if-unset so re-sourcing after a load keeps
+# the original snapshot.
+: "${SELFHOST_REQUIRE_COMPOSE_OVERRIDE_FROM_CALLER=${SELFHOST_REQUIRE_COMPOSE_OVERRIDE:-}}"
+
+selfhost_compose_override_required() {
+  case "$SELFHOST_REQUIRE_COMPOSE_OVERRIDE_FROM_CALLER" in
+    true | 1) return 0 ;;
+    '') ;;
+    *) return 1 ;;
+  esac
+  [ -f "$SELFHOST_ENV_FILE" ] &&
+    grep -Eq '^[[:space:]]*(export[[:space:]]+)?SELFHOST_REQUIRE_COMPOSE_OVERRIDE=["'\'']?(true|1)' \
+      "$SELFHOST_ENV_FILE"
+}
+
 compose_selfhost() {
+  if [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] && selfhost_compose_override_required; then
+    fail_selfhost "this deployment requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true in ${SELFHOST_ENV_FILE}), but the file is missing — running compose without it would silently revert the stack to the base configuration. Restore the override (re-run the installer that wrote it), or set SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false to proceed without it."
+  fi
+
+  if [ -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ]; then
+    docker compose \
+      --project-name "$SELFHOST_PROJECT_NAME" \
+      --env-file "$SELFHOST_ENV_FILE" \
+      -f "$SELFHOST_COMPOSE_FILE" \
+      -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" \
+      "$@"
+    return
+  fi
+
   docker compose \
     --project-name "$SELFHOST_PROJECT_NAME" \
     --env-file "$SELFHOST_ENV_FILE" \

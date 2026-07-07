@@ -43,6 +43,9 @@ tools/
 .env.selfhost
 .env.selfhost.*
 !.env.selfhost.example
+# Operator-local compose overlay (see scripts/selfhost/common.sh); its contents
+# are deployment-specific and may reference secrets, so never track it.
+docker-compose.selfhost.override.yml
 backups/
 
 .playwright-mcp

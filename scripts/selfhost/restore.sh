@@ -17,7 +17,8 @@ usage() {
 Usage: scripts/selfhost/restore.sh [options] <backup-directory>
 
 Options:
-  --restore-env         Replace .env.selfhost with env.selfhost from the backup.
+  --restore-env         Replace .env.selfhost (and docker-compose.selfhost.override.yml,
+                        when the backup contains one) with the backup's copies.
   --skip-smoke          Start the stack and check health, but skip publish smoke.
   --skip-safety-backup  Do not back up the current data before replacing it.
                         Unsafe: a failed restore becomes unrecoverable.
@@ -100,10 +101,28 @@ if [ ! -f "$SELFHOST_ENV_FILE" ] || [ "$RESTORE_ENV" -eq 1 ]; then
   log_selfhost "restored ${SELFHOST_ENV_FILE}"
 fi
 
+# The compose override travels with the env file (which may require it via
+# SELFHOST_REQUIRE_COMPOSE_OVERRIDE): restore it under the same conditions,
+# plus whenever the current one is missing — a lost override otherwise makes
+# every compose call below fail until the installer that wrote it is re-run.
+if [ -f "${BACKUP_DIR}/docker-compose.selfhost.override.yml" ] &&
+  { [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] || [ "$RESTORE_ENV" -eq 1 ]; }; then
+  install -m 600 "${BACKUP_DIR}/docker-compose.selfhost.override.yml" \
+    "$SELFHOST_COMPOSE_OVERRIDE_FILE"
+  log_selfhost "restored ${SELFHOST_COMPOSE_OVERRIDE_FILE}"
+fi
+
 load_selfhost_env
 # The restored env may predate mandatory OAuth (notably with --restore-env);
 # validate and backfill before any destructive step so the stack can boot.
 ensure_selfhost_oauth_env
+
+# Backups taken before the override was included cannot satisfy an env file
+# that requires one. Fail here, before any destructive step, instead of
+# tripping the compose guard mid-restore at the first compose call.
+if [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] && selfhost_compose_override_required; then
+  fail_selfhost "the restored env requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true) but neither this host nor the backup has it — this backup predates override inclusion. Re-run the installer that wrote the override (it reuses the restored env file), then re-run this restore."
+fi
 
 # DR7: assert values dereferenced after the wipe are present now, so a missing
 # one fails before the destructive step instead of tripping `set -u` afterward.

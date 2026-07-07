@@ -5,11 +5,18 @@ import { buildApp } from "../app/buildApp";
 import type { RuntimeConfig } from "./config";
 import {
   createServerRuntime,
+  type ServerRuntime,
   type ServerRuntimeOptions,
 } from "./createServerRuntime";
 
 export interface StartServerOptions
   extends Omit<ServerRuntimeOptions, "logger"> {
+  /**
+   * Wrap or replace runtime route handlers before the HTTP app is assembled.
+   * Lets embedders decorate handlers (e.g. with extra validation or policy)
+   * without re-implementing the runtime-to-app wiring.
+   */
+  decorateRuntime?: (runtime: ServerRuntime) => ServerRuntime;
   /** pino-compatible logger shared by HTTP and runtime logging. */
   loggerInstance?: FastifyBaseLogger;
 }
@@ -20,13 +27,18 @@ export async function startServer(
 ): Promise<FastifyInstance> {
   // There is exactly one shared logger: injected, or created here.
   // LOGGER=false silences it via pino's "silent" level.
-  const { loggerInstance: providedLoggerInstance, ...runtimeOptions } = options;
+  const {
+    decorateRuntime,
+    loggerInstance: providedLoggerInstance,
+    ...runtimeOptions
+  } = options;
   const loggerInstance =
     providedLoggerInstance ?? pino({ level: config.logger ? "info" : "silent" });
-  const runtime = await createServerRuntime(config, {
+  const baseRuntime = await createServerRuntime(config, {
     ...runtimeOptions,
     logger: loggerInstance,
   });
+  const runtime = decorateRuntime ? decorateRuntime(baseRuntime) : baseRuntime;
   const app = buildApp({
     apiTokenCreateHandler: runtime.apiTokenCreateHandler,
     apiTokenDeleteHandler: runtime.apiTokenDeleteHandler,
