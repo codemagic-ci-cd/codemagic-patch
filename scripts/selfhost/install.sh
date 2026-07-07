@@ -154,7 +154,7 @@ prompt_cloudflare() {
   # dashboard; only a scoped API Token works here (Bearer auth). Point users at
   # the right one before prompting so they don't paste the Global API Key.
   if [ -z "$CLOUDFLARE_API_TOKEN" ] && [ -t 0 ]; then
-    log_selfhost "Create the token at Cloudflare > My Profile > API Tokens > Create Token (NOT the Global API Key), scoped to Zone > Cache Purge for the storage zone."
+    log_selfhost "Create the token at Cloudflare > My Profile > API Tokens (user-owned) or <account> > Manage Account > API Tokens (account-owned, cfat_…) — NOT the Global API Key — scoped to Zone > Cache Purge for the storage zone."
   fi
 
   prompt_required CLOUDFLARE_API_TOKEN \
@@ -175,42 +175,22 @@ verify_cloudflare() {
   api_base="$(strip_trailing_slash \
     "${CLOUDFLARE_API_BASE_URL:-https://api.cloudflare.com/client/v4}")"
 
-  log_selfhost "verifying Cloudflare API token"
-  local token_body
-  token_body="$(curl -sS \
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-    "${api_base}/user/tokens/verify" 2>/dev/null || true)"
-  case "$token_body" in
-    *'"success":true'*) ;;
-    *)
-      fail_selfhost "Cloudflare token verification failed. Check CLOUDFLARE_API_TOKEN, or pass --skip-cloudflare-check to bypass."
-      ;;
-  esac
-  # A token can authenticate but be disabled/expired (verify still returns
-  # success:true with a non-active status); require status active.
-  case "$token_body" in
-    *'"status":"active"'*) ;;
-    *)
-      fail_selfhost "Cloudflare API token is not active (the verify endpoint did not report status active). Enable or rotate the token, or pass --skip-cloudflare-check to bypass."
-      ;;
-  esac
-
-  # Validate the token's actual capability rather than zone read. The runtime
-  # only ever calls POST /zones/{id}/purge_cache, which needs just Zone > Cache
+  # Validate the token's actual capability, nothing else. The runtime only
+  # ever calls POST /zones/{id}/purge_cache, which needs just Zone > Cache
   # Purge — a token scoped to that permission CANNOT read the zone (GET
-  # /zones/{id} requires Zone Read), so the old zone lookup rejected correctly
-  # scoped tokens. Instead exercise purge_cache itself: purging a synthetic URL
-  # is harmless at the edge, yet Cloudflare still validates the token, its
-  # cache-purge permission on this zone, the zone id, and that the URL hostname
-  # belongs to the zone while using the same URL-purge request shape the runtime
-  # uses. On reruns the prompt-set STORAGE_DOMAIN is empty, so fall back to the
+  # /zones/{id} requires Zone Read), so a zone lookup would reject correctly
+  # scoped tokens. Token-verify endpoints don't work as a gate either: they
+  # are split by ownership (/user/tokens/verify for user-owned tokens,
+  # /accounts/{account_id}/tokens/verify for account-owned `cfat_…` tokens)
+  # and the installer never collects an account id, so a single verify call
+  # would reject one valid kind or the other. Instead exercise purge_cache
+  # itself: purging a synthetic URL is harmless at the edge, yet Cloudflare
+  # still validates the token, its cache-purge permission on this zone, the
+  # zone id, and that the URL hostname belongs to the zone while using the
+  # same URL-purge request shape the runtime uses — for both token kinds. On
+  # reruns the prompt-set STORAGE_DOMAIN is empty, so fall back to the
   # env-file value.
   local storage_domain="${STORAGE_DOMAIN:-${CODEMAGIC_PATCH_STORAGE_DOMAIN:-}}"
-  if [ -z "$storage_domain" ]; then
-    warn_selfhost "storage domain unknown on this run; verified token validity only and skipped the zone/cache-purge capability check"
-    log_selfhost "Cloudflare credentials verified"
-    return 0
-  fi
 
   log_selfhost "verifying Cloudflare cache-purge access for zone ${CLOUDFLARE_ZONE_ID}"
   local purge_data purge_body

@@ -19,7 +19,6 @@ RUN apk add --no-cache build-base python3 linux-headers
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY cli/package.json ./cli/
 COPY client/package.json ./client/
-COPY infra/pulumi/package.json ./infra/pulumi/
 COPY server/package.json ./server/
 COPY shared/package.json ./shared/
 COPY web-dashboard/package.json ./web-dashboard/
