@@ -1,0 +1,22 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.search {
+  flex-shrink: 0;
+  padding: 0.55rem 0.75rem 0.35rem;
+}
+
+.menu {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 0.35rem;
+}
+
+.maintainedBy {
+  flex-shrink: 0;
+  margin-top: auto;
+}

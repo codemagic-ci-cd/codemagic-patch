@@ -1,0 +1,15 @@
+.navbarActions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: 0.25rem;
+}
+
+.colorModeToggle {
+  width: 2rem;
+  height: 2rem;
+}
+
+:global(.navbar__items--right) > :last-child {
+  padding-right: 0;
+}

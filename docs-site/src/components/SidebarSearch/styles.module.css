@@ -1,0 +1,191 @@
+.shell {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  height: 2rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.45rem;
+  background: var(--ifm-color-emphasis-100);
+  color: var(--ifm-font-color-secondary);
+  font-size: 0.8125rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.trigger:hover {
+  border-color: var(--ifm-color-emphasis-400);
+  background: var(--ifm-background-color);
+}
+
+.triggerLabel {
+  flex: 1;
+  text-align: left;
+}
+
+.triggerHint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid var(--ifm-color-emphasis-400);
+  border-radius: 0.3rem;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-secondary);
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--ifm-z-index-fixed) + 200);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(12vh, 6rem) 1.5rem 1.5rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+[data-theme='dark'] .overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.modal {
+  width: min(36rem, 100%);
+  padding: 0.85rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 0.75rem;
+  background: #ffffff;
+  isolation: isolate;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 24px 48px rgba(15, 23, 42, 0.18);
+  --search-local-modal-background: #ffffff;
+  --search-local-hit-background: #ffffff;
+  --search-local-hit-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  /* Plugin uses this for selected-row background */
+  --search-local-highlight-color: #eef1f4;
+  --search-local-hit-active-color: var(--ifm-font-color-base);
+}
+
+[data-theme='dark'] .modal {
+  background: #1b1b1d;
+  border-color: var(--ifm-color-emphasis-300);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.25),
+    0 24px 48px rgba(0, 0, 0, 0.45);
+  --search-local-modal-background: #1b1b1d;
+  --search-local-hit-background: #242526;
+  --search-local-hit-shadow: none;
+  /* Slightly lifted tint on dark background */
+  --search-local-highlight-color: #3a3d41;
+  --search-local-hit-active-color: var(--ifm-font-color-base);
+}
+
+.modal :global(.navbar__search) {
+  width: 100%;
+  margin: 0;
+}
+
+.modal :global(.searchBarContainer) {
+  margin-left: 0;
+  width: 100%;
+}
+
+.modal :global(.navbar__search-input) {
+  width: 100% !important;
+  height: 2.5rem;
+  border-radius: 0.55rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: #f5f6f7;
+  padding-left: 0.85rem;
+  padding-right: 3.25rem;
+}
+
+[data-theme='dark'] .modal :global(.navbar__search-input) {
+  background: #242526;
+}
+
+.modal :global(.navbar__search-input:focus) {
+  background: #ffffff;
+  border-color: var(--ifm-color-emphasis-400);
+  outline: none;
+}
+
+[data-theme='dark'] .modal :global(.navbar__search-input:focus) {
+  background: #1b1b1d;
+}
+
+.modal :global(.searchBar) {
+  width: 100%;
+}
+
+.modal :global(.dropdownMenu) {
+  position: static !important;
+  left: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  max-width: none;
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 0.55rem;
+  box-shadow: none;
+  background: #f5f6f7 !important;
+}
+
+[data-theme='dark'] .modal :global(.dropdownMenu) {
+  background: #242526 !important;
+  border-color: var(--ifm-color-emphasis-300);
+  box-shadow: none;
+}
+
+/* Hashed module classes — match by substring */
+.modal [class*='suggestion'][class*='cursor'] {
+  background-color: #eef1f4 !important;
+}
+
+[data-theme='dark'] .modal [class*='suggestion'][class*='cursor'] {
+  background-color: #3a3d41 !important;
+}
+
+.modal mark {
+  color: var(--ifm-color-primary-darkest) !important;
+  font-weight: 600;
+  background: var(--patch-search-mark-bg, rgba(37, 99, 235, 0.14)) !important;
+  padding: 0.05em 0.15em;
+  border-radius: 0.15em;
+}
+
+[data-theme='dark'] .modal mark {
+  color: var(--ifm-color-primary-lightest) !important;
+}
+
+.modal [class*='suggestion'][class*='cursor'],
+.modal [class*='suggestion'][class*='cursor'] mark,
+.modal [class*='suggestion'][class*='cursor'] [class*='hitTree'],
+.modal [class*='suggestion'][class*='cursor'] [class*='hitIcon'],
+.modal [class*='suggestion'][class*='cursor'] [class*='hitPath'] {
+  color: var(--ifm-font-color-base) !important;
+}
+
+.modal [class*='suggestion'][class*='cursor'] [class*='hitPath'],
+.modal [class*='suggestion'][class*='cursor'] [class*='hitTree'],
+.modal [class*='suggestion'][class*='cursor'] [class*='hitIcon'] {
+  color: var(--ifm-font-color-secondary) !important;
+}
