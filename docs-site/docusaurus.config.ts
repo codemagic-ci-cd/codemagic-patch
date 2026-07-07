@@ -25,13 +25,10 @@ const config: Config = {
     [
       'classic',
       {
-        // Docs are disabled while the site is homepage-only. Restore this
-        // block (and the docs/ directory) to bring documentation back:
-        // docs: {
-        //   sidebarPath: './sidebars.ts',
-        //   sidebarCollapsed: false,
-        // },
-        docs: false,
+        docs: {
+          sidebarPath: './sidebars.ts',
+          sidebarCollapsed: false,
+        },
         blog: false,
         theme: {
           customCss: './src/css/custom.css',
@@ -40,36 +37,35 @@ const config: Config = {
     ],
   ],
 
-  // docs-dependent plugins/themes, disabled until documentation returns:
-  // plugins: [
-  //   [
-  //     'docusaurus-plugin-llms',
-  //     {
-  //       generateLLMsTxt: true,
-  //       generateLLMsFullTxt: true,
-  //       generateMarkdownFiles: true,
-  //       title: 'Codemagic Patch documentation',
-  //       description:
-  //         'Self-hosted OTA updates for React Native: setup, SDK, cmpatch CLI, and operations.',
-  //       excludeImports: true,
-  //       removeDuplicateHeadings: true,
-  //     },
-  //   ],
-  // ],
+  plugins: [
+    [
+      'docusaurus-plugin-llms',
+      {
+        generateLLMsTxt: true,
+        generateLLMsFullTxt: true,
+        generateMarkdownFiles: true,
+        title: 'Codemagic Patch documentation',
+        description:
+          'Self-hosted OTA updates for React Native: setup, SDK, cmpatch CLI, and operations.',
+        excludeImports: true,
+        removeDuplicateHeadings: true,
+      },
+    ],
+  ],
 
   themes: [
     require.resolve('@docusaurus/theme-mermaid'),
-    // [
-    //   require.resolve('@easyops-cn/docusaurus-search-local'),
-    //   {
-    //     hashed: true,
-    //     language: ['en'],
-    //     docsRouteBasePath: '/docs',
-    //     indexBlog: false,
-    //     highlightSearchTermsOnTargetPage: true,
-    //     searchBarPosition: 'left',
-    //   },
-    // ],
+    [
+      require.resolve('@easyops-cn/docusaurus-search-local'),
+      {
+        hashed: true,
+        language: ['en'],
+        docsRouteBasePath: '/docs',
+        indexBlog: false,
+        highlightSearchTermsOnTargetPage: true,
+        searchBarPosition: 'left',
+      },
+    ],
   ],
 
   themeConfig: {
@@ -88,9 +84,15 @@ const config: Config = {
         src: 'img/logo.svg',
         href: '/',
       },
-      // Docs and Changelog navbar entries return together with the docs
-      // plugin (type: 'doc' items require it).
-      items: [],
+      items: [
+        {
+          type: 'doc',
+          docId: 'intro',
+          position: 'left',
+          label: 'Docs',
+        },
+        // Changelog navbar entry returns with docs/changelog.mdx.
+      ],
     },
     prism: {
       theme: prismThemes.github,

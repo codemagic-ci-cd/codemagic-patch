@@ -1,5 +1,10 @@
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
+/**
+ * Minimal docs set mirroring the repository root README. Pages beyond the
+ * README's scope (comparison, migration guides, SDK reference, FAQ,
+ * changelog, …) return incrementally from the docusaurus-experiment branch.
+ */
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     'intro',
@@ -7,12 +12,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Introduction',
       collapsed: false,
-      items: [
-        'introduction/local-quickstart',
-        'introduction/how-it-works',
-        'introduction/core-concepts',
-        'introduction/comparison',
-      ],
+      items: ['introduction/how-it-works', 'introduction/core-concepts'],
     },
     {
       type: 'category',
@@ -25,10 +25,8 @@ const sidebars: SidebarsConfig = {
           collapsible: false,
           items: [
             'setup/requirements',
-            'setup/local-development',
             'setup/self-host',
             'setup/cloudflare',
-            'setup/infrastructure',
             'setup/cli',
           ],
         },
@@ -51,39 +49,9 @@ const sidebars: SidebarsConfig = {
       label: 'Using Patch',
       collapsed: false,
       items: [
-        {
-          type: 'category',
-          label: 'Releases',
-          collapsible: false,
-          items: [
-            'using-patch/dashboard',
-            'using-patch/releasing-updates',
-            'using-patch/verify-test-release',
-            'using-patch/preparing-for-production',
-            'using-patch/production-control',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'Operations',
-          collapsible: false,
-          items: [
-            'using-patch/ci-integration',
-            'using-patch/analytics',
-            'using-patch/security',
-            'using-patch/code-signing',
-            'using-patch/delivery',
-          ],
-        },
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Migration',
-      collapsed: false,
-      items: [
-        'migration/migrating-from-codepush',
-        'migration/migrating-from-expo-updates',
+        'using-patch/releasing-updates',
+        'using-patch/code-signing',
+        'using-patch/delivery',
       ],
     },
     {
@@ -91,18 +59,13 @@ const sidebars: SidebarsConfig = {
       label: 'Reference',
       collapsed: false,
       items: [
-        'reference/sdk-reference',
         'reference/cli-reference',
         'reference/configuration',
         'reference/operations',
       ],
     },
     'troubleshooting',
-    'faq',
   ],
-
-  /** Changelog nav item only — keeps the left column without doc links */
-  changelogSidebar: [],
 };
 
 export default sidebars;

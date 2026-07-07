@@ -4,8 +4,11 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
-    "start": "docusaurus start --port 3002",
-    "build": "docusaurus build",
+    "ensure:md": "node -e \"const fs=require('fs');process.exit(fs.existsSync('build/docs/intro.md')?0:1)\" || npm run build",
+    "sync:md-static": "node ./scripts/sync-md-to-static.mjs",
+    "refresh:md": "npm run build && npm run sync:md-static",
+    "start": "npm run ensure:md && npm run sync:md-static && docusaurus start --port 3002",
+    "build": "docusaurus build && node ./scripts/apply-llms-descriptions.mjs && node ./scripts/sync-md-to-static.mjs",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",

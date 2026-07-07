@@ -14,7 +14,7 @@ const TOC_LINE =
   /^- \[([^\]]+)\]\(([^)]+)\)(?:: (.*))?$/;
 
 const LINK_RESOLUTION_NOTE =
-  'Doc links are site paths (e.g. `/docs/faq.md`). Resolve them against this file\'s origin — the host where you fetched `/llms.txt`.';
+  'Doc links are site paths (e.g. `/docs/troubleshooting.md`). Resolve them against this file\'s origin — the host where you fetched `/llms.txt`.';
 
 const LLMS_PREAMBLE = [
   LINK_RESOLUTION_NOTE,
@@ -22,16 +22,12 @@ const LLMS_PREAMBLE = [
   'Codemagic Patch is self-hosted over-the-air (OTA) updates for React Native — server, `cmpatch` CLI, and `@codemagic/react-native-patch` SDK.',
   '',
   '**Where to start**',
-  '- Try Patch locally → `/intro/local-quickstart.md`',
   '- How it works → `/docs/introduction/how-it-works.md`',
   '- Self-host in production → `/docs/setup/self-host.md`',
-  '- Migrate from CodePush → `/docs/migration/migrating-from-codepush.md`',
-  '- Migrate from Expo Updates → `/docs/migration/migrating-from-expo-updates.md`',
   '- CLI reference → `/docs/reference/cli-reference.md`',
-  '- SDK reference → `/docs/reference/sdk-reference.md`',
   '- Debugging OTA issues → `/docs/troubleshooting.md`',
   '',
-  'Sections below mirror the docs sidebar. **Optional** lists secondary pages (FAQ, changelog)—skip when you need a shorter context.',
+  'Sections below mirror the docs sidebar. **Optional** lists secondary pages—skip when you need a shorter context.',
 ];
 
 function toSitePath(url) {

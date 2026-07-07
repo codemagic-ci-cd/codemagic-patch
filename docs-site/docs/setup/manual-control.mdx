@@ -1,0 +1,65 @@
+---
+title: Manual control (advanced)
+description: >-
+  Use lower-level SDK APIs when you need fine-grained control over download,
+  install, and restart.
+llmsDescription: 'Low-level SDK — checkForUpdate, downloadUpdate, installUpdate, notifyAppReady.'
+---
+
+# Manual control (advanced)
+
+If you need to separate the steps, e.g. download silently but let the user decide when to restart, or gate updates behind a "What's new" prompt, use the lower-level functions instead of `sync()`:
+
+```ts
+import {
+  checkForUpdate,
+  downloadUpdate,
+  installUpdate,
+  notifyAppReady,
+  restartApp,
+  disallowRestart,
+  allowRestart,
+} from "@codemagic/react-native-patch";
+
+// 1) Confirm the running bundle is healthy (arms rollback). Call this once on
+//    startup if you are NOT using sync(), e.g. after your app finishes booting.
+await notifyAppReady();
+
+// 2) Check, then download with progress.
+const check = await checkForUpdate();
+if (check.action === "ota-update") {
+  const local = await downloadUpdate(check.remotePackage, (p) =>
+    console.log(p.receivedBytes, "/", p.totalBytes),
+  );
+
+  // 3) Install. With IMMEDIATE the bundle reloads now; with ON_NEXT_RESTART it
+  //    waits for the next launch.
+  await installUpdate(local, { installMode: "ON_NEXT_RESTART" });
+
+  // 4) Optionally force a reload yourself (e.g. after the user taps "Update now").
+  await restartApp(/* onlyIfUpdateIsPending */ true);
+}
+
+// Suppress restarts during a critical flow (checkout, video call, …), then re-enable.
+disallowRestart();
+// … later …
+allowRestart();
+```
+
+:::warning
+If you do not use `sync()`, you must call `notifyAppReady()` yourself once the app has booted successfully. Otherwise the SDK treats the new bundle as unverified and rolls it back on the next launch.
+:::
+
+## API summary
+
+| Function | Purpose |
+| --- | --- |
+| `sync(options?, onProgress?)` | End-to-end: confirm → check → download → install. Returns a `SyncStatus`; never throws. |
+| `checkForUpdate()` | Returns `{ action: "up-to-date" \| "ota-update" \| "embedded-revert", remotePackage? }` plus `isStoreUpdateAvailable` and `latestBinaryVersion`. |
+| `downloadUpdate(remotePackage, onProgress?)` | Downloads (patch or full bundle) and returns a `LocalPackage`. |
+| `installUpdate(target, options?)` | Stages/applies a downloaded package using an `installMode`. |
+| `notifyAppReady()` | Confirms the running bundle as good (rollback protection). |
+| `restartApp(onlyIfUpdateIsPending?)` | Reloads the JS bundle to apply a pending update. |
+| `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
+
+For when to check, install modes, and production UX patterns, see [Defining update checks](/docs/setup/defining-update-checks).

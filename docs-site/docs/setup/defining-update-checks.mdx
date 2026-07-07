@@ -1,0 +1,207 @@
+---
+title: Defining update checks
+description: >-
+  Configure client-side update checks with sync(), install modes, and mandatory
+  updates.
+llmsDescription: 'Client sync() — install modes, mandatory updates, AppState re-checks.'
+---
+
+# Defining update checks
+
+`sync()` is the one call most apps need on the client. It checks the server, downloads an update if one matches this deployment key and binary version, installs it, and confirms the running bundle is healthy, all in one invocation.
+
+## What `sync()` does
+
+On each call, in order:
+
+1. **`notifyAppReady()`**: marks the currently running bundle as healthy. If a freshly installed bundle crashes *before* `sync()` runs on the next launch, the SDK automatically reverts to the last known-good bundle. Because `sync()` calls this first, running it on every startup confirms the previous update and arms rollback for the next one.
+2. **Check** the server for a matching update.
+3. **Download** the new bundle (or a binary patch, with automatic fallback to the full bundle).
+4. **Install** according to the install mode you choose (see below).
+
+`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. With no options, optional updates apply on the next cold start; mandatory updates apply immediately.
+
+## Minimal integration
+
+Call `sync()` once, as early as possible after your root component mounts:
+
+```tsx
+// App.tsx
+import { useEffect } from "react";
+import { sync } from "@codemagic/react-native-patch";
+
+export default function App() {
+  useEffect(() => {
+    void sync();
+  }, []);
+
+  return <YourApp />;
+}
+```
+
+That is enough for internal builds. Production apps usually tune **when** to check and **how** updates apply; the sections below cover those levers. For step-by-step control (`checkForUpdate`, `downloadUpdate`, `installUpdate`), see [Manual control](/docs/setup/manual-control). For rollouts and mandatory flags on the server, see [Releasing updates](/docs/using-patch/releasing-updates).
+
+---
+
+## Why change the defaults
+
+Default install timing often clashes with what users expect:
+
+- **`ON_NEXT_RESTART`** (default for optional updates) waits until the process is killed and reopened. Users rarely cold-start mobile apps, so updates can sit pending for days.
+- **`ON_NEXT_RESUME`** applies when the app returns from the background. Useful for freshness, but abrupt without your own prompt: easy to mistake for a crash.
+- **`IMMEDIATE`** (default for mandatory updates) reloads the JS bundle as soon as install finishes.
+
+Pick explicit install modes, decide when to re-check (not only cold start), and add progress or confirmation UI so OTA feels intentional.
+
+---
+
+## When to check for updates
+
+`sync()` is safe to call more than once, concurrent calls resolve to `"sync-in-progress"`.
+
+| Trigger | Typical use |
+| --- | --- |
+| App launch | Catch updates published while the app was closed |
+| Return to foreground | Catch updates published while the user had the app open |
+| User action | "Check for updates" in settings, after login, etc. |
+
+Wire a foreground re-check with `AppState`:
+
+```ts
+import { AppState } from "react-native";
+import { sync } from "@codemagic/react-native-patch";
+
+AppState.addEventListener("change", (next) => {
+  if (next === "active") void sync();
+});
+```
+
+Combine with install modes below so resume-based installs do not surprise users mid-flow.
+
+---
+
+## Install modes
+
+Install mode controls *when* a downloaded bundle becomes active. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode`; everything else uses `installMode`.
+
+| Install mode | When the new bundle becomes active |
+| --- | --- |
+| `ON_NEXT_RESTART` | Next cold start *(default for non-mandatory)* |
+| `ON_NEXT_RESUME` | When the app returns to foreground after `minimumBackgroundDuration` |
+| `ON_NEXT_SUSPEND` | When the app goes to background after `minimumBackgroundDuration` |
+| `IMMEDIATE` | As soon as install finishes *(default for mandatory)* |
+
+```ts
+void sync({
+  installMode: "ON_NEXT_RESTART",
+  mandatoryInstallMode: "IMMEDIATE",
+  minimumBackgroundDuration: 60_000, // ms; for ON_NEXT_RESUME / ON_NEXT_SUSPEND
+});
+```
+
+### `minimumBackgroundDuration`
+
+For `ON_NEXT_RESUME` and `ON_NEXT_SUSPEND`, Patch only activates a pending update if the app was in the background for at least this many milliseconds. That avoids restarting someone who briefly switched to another app.
+
+Does not change behavior for `ON_NEXT_RESTART` or `IMMEDIATE`.
+
+---
+
+## Mandatory updates
+
+Publishing with `--mandatory` (CLI or dashboard) marks a release mandatory on the server. Eligible clients treat it as required, there is no casual "ignore" path for that release.
+
+On the client, `mandatoryInstallMode` controls *when* a mandatory update applies (default: `IMMEDIATE`).
+
+You can toggle mandatory on an existing release with `cmpatch release patch` or `promote` with no new app binary required. See [Releasing updates](/docs/using-patch/releasing-updates).
+
+:::info
+If a device skipped an older mandatory release, a later compatible update may still be treated as mandatory until the user catches up.
+:::
+
+---
+
+## Download progress and status
+
+Use the optional progress callback for a bar or status line:
+
+```tsx
+const result = await sync(
+  { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" },
+  ({ receivedBytes, totalBytes }) => {
+    const pct = totalBytes > 0 ? receivedBytes / totalBytes : 0;
+    // drive UI
+  },
+);
+```
+
+With [manual control](/docs/setup/manual-control), the same `{ receivedBytes, totalBytes }` shape is passed to `downloadUpdate()`.
+
+---
+
+## Release notes from the server
+
+Each OTA release can carry release notes (CLI `--release-notes`, dashboard, or CI). On the client, `RemotePackage.releaseNotes` is populated when `checkForUpdate()` returns `{ action: "ota-update" }`.
+
+Patch does not ship a built-in update dialog, show notes in your own UI before calling `installUpdate`, or after `sync()` returns `"update-installed"` for deferred install modes. Changing notes on the server does not require a new native binary; republish or patch the release metadata.
+
+---
+
+## Binary version mismatch and store updates
+
+The server targets updates with `targetBinaryVersion`. When the installed native binary is too old for the latest OTA on a deployment, `checkForUpdate()` (and therefore `sync()`) may return `{ action: "up-to-date" }` even though newer store builds exist.
+
+Every check result includes:
+
+| Field | Meaning |
+| --- | --- |
+| `isStoreUpdateAvailable` | Native binary on device is below the server's latest known store version |
+| `latestBinaryVersion` | Latest binary version the server knows for this app (from release metadata) |
+
+Use these to prompt a store update instead of silently doing nothing:
+
+```ts
+const check = await checkForUpdate();
+
+if (check.isStoreUpdateAvailable && check.latestBinaryVersion) {
+  // Show "Update from the App Store / Play Store", your UX
+}
+
+if (check.action === "ota-update") {
+  // proceed with download / install
+}
+```
+
+Server-side targeting is covered in [Releasing updates](/docs/using-patch/releasing-updates).
+
+---
+
+## Blocking restarts during critical UX
+
+`disallowRestart()` prevents Patch from programmatically reloading the JS bundle (including after `IMMEDIATE` installs) until `allowRestart()` runs. Typical pattern: block during checkout or onboarding, allow when the flow completes.
+
+```ts
+import { disallowRestart, allowRestart } from "@codemagic/react-native-patch";
+
+disallowRestart();
+// … critical flow …
+allowRestart(); // may flush a queued restart
+```
+
+Alternatively, prefer `ON_NEXT_RESTART` and call `restartApp()` only when your app knows it is safe. `disallowRestart` is for global `sync()` calls where you still need a no-interruption window.
+
+---
+
+## Summary
+
+| Goal | Primary API |
+| --- | --- |
+| End-to-end check, download, install | `sync()` |
+| Check on launch and when returning to foreground | `sync()` + `AppState` listener |
+| Less intrusive resume/suspend installs | `minimumBackgroundDuration`, `installMode` |
+| Force critical updates | Server `--mandatory`; client `mandatoryInstallMode` |
+| Progress UI | `sync(options, onProgress)` or `downloadUpdate(..., onProgress)` |
+| Show server release notes | `checkForUpdate()` → `remotePackage.releaseNotes` + your dialog |
+| Wrong store binary vs OTA channel | `isStoreUpdateAvailable`, `latestBinaryVersion` on check result |
+| No restart during checkout, etc. | `disallowRestart` / `allowRestart` |
+| Full control over each step | [Manual control](/docs/setup/manual-control) |

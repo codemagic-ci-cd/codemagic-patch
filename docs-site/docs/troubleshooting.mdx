@@ -1,0 +1,240 @@
+---
+sidebar_position: 7
+description: 'Diagnose common OTA issues with cmpatch doctor, logs, and integration checks.'
+llmsDescription: >-
+  Debug OTA failures — cmpatch doctor, logs, version mismatch, SDK, bundle
+  errors.
+---
+
+# Troubleshooting and debugging
+
+When an update does not install or behaves unexpectedly, the cause is usually a configuration mismatch, version targeting problem, SDK integration issue, or bundle error.
+
+## Debugging tools
+
+### `cmpatch doctor`
+
+Check local readiness before publishing:
+
+```bash
+cmpatch doctor --app MyApp-iOS --deployment Staging --verbose
+```
+
+### Server logs
+
+```bash
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml logs --tail=200 server
+```
+
+### Device logs
+
+Trace the update lifecycle on device:
+
+```text
+check for update → download bundle → install → restart
+```
+
+- Android: `adb logcat`, filter for Patch / React Native logs
+- iOS: Xcode console for simulator or connected device
+
+### Release inspection
+
+```bash
+cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
+cmpatch release list --app MyApp-iOS --deployment Staging --format table
+```
+
+### HTTP API spot checks
+
+The CLI and dashboard both call the same REST API under `/v1`. You do not need to call it directly for normal workflows, use `cmpatch` or the dashboard instead. These checks help when CI auth fails, the server looks unreachable, or you want to confirm what the server returned.
+
+**Health (no auth):**
+
+```bash
+curl -sS https://updates.example.com/health
+curl -sS https://updates.example.com/health/ready
+```
+
+`/health` confirms the process is up. `/health/ready` also checks Postgres connectivity (returns `503` if the database is down). It does not probe object storage — check `https://<storage-domain>/minio/health/ready` separately.
+
+**Authenticated check:**
+
+```bash
+curl -sS https://updates.example.com/v1/users/me \
+  -H "Authorization: Bearer $CODEMAGIC_PATCH_TOKEN"
+```
+
+Use a `cm_pat_…` token from `cmpatch token create`. A `200` confirms the server URL and token are valid. `401` with `authentication-required` usually means a missing, expired, or wrong token.
+
+**Reading errors:** Failed API calls return `application/problem+json` (RFC 7807) with `type`, `title`, `detail`, and `status`. The `type` URL often ends with a short suffix, useful ones when debugging:
+
+| Suffix | Usually means |
+| --- | --- |
+| `authentication-required` | Missing or invalid Bearer token |
+| `forbidden` | Token is valid but lacks permission for this resource |
+| `validation-error` | Request body or query failed validation (`errors` array has field details) |
+| `idempotency-in-progress` | A prior request with the same `Idempotency-Key` is still running, retry after `Retry-After` |
+| `not-found` | Wrong app, deployment, or release identifier |
+
+Pair API errors with [server logs](#server-logs) for the full request path on the server side.
+
+## Common update failures
+
+### Native binary without the SDK
+
+OTA updates only work on builds that already include `@codemagic/react-native-patch`. If users still run an older store binary from before SDK integration, releases publish successfully but no client picks them up.
+
+Symptoms:
+
+- Release appears in `cmpatch release list` but devices never update
+- No update-related activity in device logs
+
+Fix:
+
+1. Confirm [native setup](/docs/setup/native-setup) is complete
+2. Ship a new native build with the SDK and correct deployment key
+3. For Staging, an internal/dev build is enough; for Production, users need the new store binary
+
+See [Core concepts. SDK prerequisite](/docs/introduction/core-concepts#prerequisite-a-native-build-with-the-sdk).
+
+### Wrong binary version targeting
+
+Updates only install when the device's native version matches the release's target binary version.
+
+```bash
+cmpatch release-react --target-binary-version "1.2.0" ...
+```
+
+If you shipped a new store build but forgot to target its version, eligible devices will not receive the OTA.
+
+### Fingerprint mismatch
+
+Patch records a **native fingerprint** per binary version. The first release that targets a version (including a `--disabled` snapshot after a native build) sets the fingerprint devices must match. If a later OTA was built against a different native project, the server may accept the upload but **eligible devices never see it**.
+
+Symptoms:
+
+- Release shows as active in the dashboard or `cmpatch release list`, but devices stay on the old bundle
+- Server logs mention **binary version fingerprint disagreement** during reconcile
+- `cmpatch doctor` or local `cmpatch fingerprint` does not match what you expect for the installed binary
+
+Common causes:
+
+- Native files changed (`Podfile`, `build.gradle`, native modules, RN upgrade) but you kept the same `targetBinaryVersion` and only published JS
+- CI builds OTA on a different checkout or machine than the native build that users installed
+- You skipped the post-native-build `--disabled` snapshot, then published JS from a project state that does not match store binaries
+
+Fix:
+
+1. Compare fingerprints: `cmpatch fingerprint --platform ios` (or `android`) from the same tree that built the native binary users have installed
+2. After each **new native build**, run `release-react` with `--disabled --target-binary-version <version>` to record the fingerprint
+3. If the native layer actually changed, ship a new store binary with a bumped version, snapshot it, then publish OTA for that version
+
+See [Core concepts. Fingerprint](/docs/introduction/core-concepts#deployment-model).
+
+### Update downloaded but not visible yet
+
+With default `sync()` settings, optional updates use **`ON_NEXT_RESTART`**: the SDK can download and stage a release, but the new bundle does not run until the app process is killed and opened again.
+
+Symptoms:
+
+- Dashboard metrics show downloads, or `sync()` returns `"update-installed"`, but the UI still shows the old JS
+- QA reports "OTA doesn't work" after one launch
+- Update appears only after force-quitting the app (swipe away from recents), not after backgrounding
+
+Fix:
+
+1. **Cold-start twice** when testing: once to download, once to run the staged bundle
+2. For production, pick an install mode that matches your UX: `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`, or prompt the user then call `restartApp()`, see [Defining update checks](/docs/setup/defining-update-checks#install-modes)
+3. Wire `sync()` on foreground return so pending updates download while the app is open:
+
+```ts
+AppState.addEventListener("change", (next) => {
+  if (next === "active") void sync();
+});
+```
+
+Mandatory releases default to **`IMMEDIATE`** and reload as soon as install finishes, so they do not wait for a restart.
+
+### White flash when applying an update
+
+A brief **white or blank screen** while the app is in the foreground usually means the JS bundle **reloaded in place**. That is expected with **`mandatoryInstallMode: "IMMEDIATE"`** (the default for `--mandatory` releases): Patch reloads as soon as the download finishes, which can feel like a sudden reboot mid-session.
+
+Symptoms:
+
+- Flash of white or the splash screen while the user is actively using the app
+- Happens on mandatory releases, not on optional `ON_NEXT_RESTART` updates
+
+Fix:
+
+1. Reserve `--mandatory` for fixes that truly cannot wait
+2. Use a gentler client mode if the update is mandatory on the server but does not need an instant reload:
+
+```ts
+void sync({
+  installMode: "ON_NEXT_RESTART",
+  mandatoryInstallMode: "ON_NEXT_RESTART", // or ON_NEXT_RESUME
+});
+```
+
+3. During critical flows (checkout, video call), use `disallowRestart()` / `allowRestart()` so an immediate mandatory update waits until the flow completes, see [Defining update checks](/docs/setup/defining-update-checks#blocking-restarts-during-critical-ux)
+4. Keep your native splash screen configured so a reload shows branded loading instead of a bare white frame
+
+### Incorrect deployment key
+
+If the embedded `CodemagicPatchDeploymentKey` does not match the intended deployment, the app checks the wrong channel.
+
+Common mistakes:
+
+- Production key in a Staging build (or vice versa)
+- Same key shared across iOS and Android
+- Typo in `Info.plist` / `strings.xml` / Expo plugin config
+
+### `cmpatch release-react` run outside the project root
+
+The command must run from the React Native project root (where `package.json` and the bundle entry live).
+
+### Missing `notifyAppReady()` with manual flows
+
+If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Otherwise the SDK may roll back on the next launch.
+
+### CI cannot reach the server
+
+GitHub Actions and remote CI runners cannot call `http://127.0.0.1` or `localhost` on your laptop. Set `CODEMAGIC_PATCH_SERVER_URL` to a public Patch URL.
+
+## Server issues
+
+### Server won't boot / OAuth errors
+
+- `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` are set
+- `OAUTH_DEVICE_POLL_TOKEN_SECRET` and `WORKER_SHARED_SECRET` are each ≥ 32 chars
+- Under `REGISTRATION_MODE=invite_only`, `INITIAL_ADMIN_EMAILS` is non-empty
+
+### First admin sign-in rejected
+
+- `INITIAL_ADMIN_EMAILS` matches the GitHub account's verified primary email
+- OAuth callback URL is `https://<api-domain>/auth/callback` and Device Flow is enabled
+
+### Caddy certificate issuance is slow
+
+- API and storage DNS point at the host; ports 80/443 are open
+- With Cloudflare, keep the storage domain **DNS only** until the first certificate is issued: see [Cloudflare setup](/docs/setup/cloudflare)
+
+## Release published but app finds no update
+
+- `CodemagicPatchDeploymentKey` matches `cmpatch deployment list`
+- App binary version matches the release's target binary version
+- `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`
+- iOS and Android use separate deployment keys and apps
+
+## Release stuck processing
+
+```bash
+cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml logs --tail=200 server
+```
+
+## Source maps
+
+OTA bundles are minified. Upload source maps to Sentry, Datadog, or your error tracker for each release so production stack traces map back to source.

@@ -1,6 +1,6 @@
 # Codemagic Patch site
 
-Docusaurus site for [Codemagic Patch](https://github.com/codemagic-ci-cd/codemagic-patch). Currently serves only the public marketing homepage; documentation pages will be added back incrementally.
+Docusaurus site for [Codemagic Patch](https://github.com/codemagic-ci-cd/codemagic-patch): the public marketing homepage plus a minimal docs set mirroring the repository root README. Remaining documentation pages are added back incrementally.
 
 ## Local development
 
@@ -20,10 +20,10 @@ yarn workspace @codemagic/patch-docs-site build
 yarn workspace @codemagic/patch-docs-site serve -- --port 3002
 ```
 
-## Re-enabling docs
+## Adding docs back
 
-The docs plugin, local search, and the llms.txt pipeline are disabled while the site is homepage-only. To bring documentation back:
+The current `docs/` set covers what the repository root README covers. Pages beyond that scope (comparison, migration guides, SDK reference, FAQ, changelog, local quickstart/development, dashboard, infrastructure adapters, production control, CI integration, verify-test-release, analytics, security, preparing-for-production) live on the `docusaurus-experiment` / `docusaurus-homepage` branches. To restore one:
 
-1. Restore the `docs/` directory (see the `docusaurus-experiment` branch for content).
-2. Re-enable the commented `docs`, `docusaurus-plugin-llms`, and search-local blocks in `docusaurus.config.ts`, plus the navbar items.
-3. Restore the llms build steps in `package.json` scripts (`apply-llms-descriptions.mjs`, `sync-md-to-static.mjs` under `scripts/` are kept for this).
+1. `git checkout <branch> -- docs-site/docs/<page>.mdx`
+2. Add its doc id to `sidebars.ts` and `scripts/llms-sidebar-sections.mjs`.
+3. Build — `onBrokenLinks: 'throw'` will surface any links that still need targets.

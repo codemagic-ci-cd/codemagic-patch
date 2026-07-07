@@ -1,0 +1,50 @@
+---
+title: CLI command reference
+description: 'Reference for cmpatch commands, flags, and release workflows.'
+llmsDescription: 'cmpatch commands and flags — release-react, promote, rollback, doctor.'
+---
+
+# CLI command reference
+
+Run `cmpatch help` for grouped topics, or `cmpatch <command> --help` for full flags. Both `cmpatch` and `codemagic-patch` invoke the same binary.
+
+## Auth and config
+
+| Command | Description |
+| --- | --- |
+| `cmpatch login` / `logout` / `whoami` | GitHub device-flow sign-in / out / identity |
+| `cmpatch token create \| list \| revoke` | Manage personal access tokens (`cm_pat_…`) |
+| `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
+| `cmpatch init` | Write `codemagic-patch.config.json` for a project |
+| `cmpatch context` | Show the effective resolved context |
+
+## Apps and deployments
+
+| Command | Description |
+| --- | --- |
+| `cmpatch app create \| list \| show \| rename \| remove \| setting` | Manage apps (and code-signing) |
+| `cmpatch deployment create \| list \| rename \| remove \| clear` | Manage deployments |
+| `cmpatch deployment history \| metrics` | Release history / aggregate metrics |
+
+## Releases
+
+| Command | Description |
+| --- | --- |
+| `cmpatch release-react` | Build and publish from an RN project |
+| `cmpatch bundle` | Build a `.cmpatch` artifact without uploading |
+| `cmpatch release create` | Publish a pre-built bundle / `.cmpatch` |
+| `cmpatch release list \| show \| inspect` | Browse releases; `inspect --wait` to poll |
+| `cmpatch release patch \| enable \| disable` | Edit metadata / toggle availability |
+| `cmpatch release promote` | Copy a release to another deployment |
+| `cmpatch release rollback` | Revert to the previous release |
+| `cmpatch release metrics` | Metrics for one release |
+
+## Members and diagnostics
+
+| Command | Description |
+| --- | --- |
+| `cmpatch member add \| invite \| provision \| list \| remove …` | Team membership and invitations |
+| `cmpatch doctor` | Check local readiness before publishing |
+| `cmpatch fingerprint --platform ios\|android` | Compute the native fingerprint |
+
+List/metrics commands accept `--format table|json`.

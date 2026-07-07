@@ -1,0 +1,23 @@
+---
+title: How delivery works
+description: >-
+  How manifests and artifacts are stored and delivered to the SDK, including CDN
+  paths.
+llmsDescription: 'Manifest and artifact URL layout, storage paths, CDN delivery to SDK.'
+---
+
+# How delivery works
+
+For storage and delivery adapter variables, see the [Configuration reference](/docs/reference/configuration). Cloudflare CDN setup: [Cloudflare setup](/docs/setup/cloudflare). Most installs use the defaults from [Self-host](/docs/setup/self-host).
+
+The SDK reads these objects under your download base URL:
+
+```text
+<downloadBaseUrl>/<deploymentKey>/meta.json
+<downloadBaseUrl>/<deploymentKey>/<binaryVersion>/manifest.json
+<downloadBaseUrl>/<deploymentKey>/<binaryVersion>/<runningPackageHash>/manifest.json
+```
+
+- The manifest carries the full bundle URL and, when available, a binary patch URL. The SDK prefers the smaller patch and automatically falls back to the full bundle if the patch download or apply fails.
+- Bundle file names: iOS `main.jsbundle`, Android `index.android.bundle`.
+- The MinIO bucket (`codemagic-patch`) allows public reads of published artifacts but denies public reads under the `_internal/*` prefix (staged uploads).

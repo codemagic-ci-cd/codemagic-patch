@@ -1,0 +1,128 @@
+---
+title: Cloudflare setup
+description: >-
+  Put Cloudflare CDN in front of OTA artifact delivery with the optional
+  delivery adapter.
+llmsDescription: Optional Cloudflare CDN adapter for artifact delivery and cache purge.
+---
+
+# Cloudflare setup
+
+:::info
+The default [self-host](/docs/setup/self-host) install works without Cloudflare; clients download directly from your storage domain. Use this page when you want a CDN in front of downloads (`DELIVERY_ADAPTER=cloudflare`) or when you plan to use Cloudflare for DNS and TLS on your Patch domains.
+:::
+
+Patch integrates with Cloudflare in two common ways:
+
+| Use | Patch setting | When |
+| --- | --- | --- |
+| **CDN in front of storage** | `DELIVERY_ADAPTER=cloudflare` | Edge caching and automatic cache purge after each release; the usual reason to read this page |
+| **R2 object storage** | `STORAGE_ADAPTER=s3` + S3 endpoint | Replace bundled MinIO with managed storage at scale, see the [Configuration reference](/docs/reference/configuration) |
+
+The delivery adapter is configured at **initial install** (or by editing `.env.selfhost` before a rerun). Most adapter choices assume you already have DNS and, for CDN delivery, Cloudflare in front of the storage domain.
+
+## Domains and DNS
+
+Self-host needs two hostnames in the same zone (or with equivalent DNS control):
+
+| Domain | Example | Role |
+| --- | --- | --- |
+| API / dashboard | `updates.example.com` | `SERVER_URL`, `CodemagicPatchApiUrl` |
+| Storage | `storage.updates.example.com` | `PUBLIC_BASE_URL`, `CodemagicPatchDownloadBaseUrl` |
+
+Add **A** or **AAAA** records for both pointing at your Patch host's public IP.
+
+:::warning Certificate order matters
+Caddy obtains Let's Encrypt certificates over HTTP on port 80 during install. If Cloudflare proxies a domain **before** the certificate exists, the HTTP-01 challenge may fail and the install can hang.
+
+**During install:** set the **storage** record to **DNS only** (grey cloud). The API domain can stay DNS-only as well until certificates are issued.
+
+**After install succeeds:** switch the **storage** record to **Proxied** (orange cloud) so traffic flows through Cloudflare. You may proxy the API domain too if you want, that is independent of the delivery adapter.
+:::
+
+`PUBLIC_BASE_URL` stays `https://<storage-domain>/codemagic-patch` whether or not Cloudflare is in front. With the delivery adapter enabled, that URL is what clients fetch from and what Patch purges after releases.
+
+## Create a cache-purge API token
+
+The server calls Cloudflare's [Cache Purge API](https://developers.cloudflare.com/api/resources/cache/methods/purge/) after each release. You need a scoped **API Token**: not the account **Global API Key**.
+
+1. Cloudflare dashboard → **My Profile** → **API Tokens** → **Create Token**
+2. Use a custom token with:
+   - **Permissions:** Zone → **Cache Purge** → Purge
+   - **Zone Resources:** Include → the zone that contains your storage domain
+3. Create the token and copy it once, this becomes `CLOUDFLARE_API_TOKEN`
+
+The installer verifies the token by issuing a test cache purge against the zone (proving the token can purge and the storage domain belongs to it). Pass `--skip-cloudflare-check` only if you need to bypass verification temporarily.
+
+## Find your zone ID
+
+In the Cloudflare dashboard, open the zone that contains `storage.updates.example.com` (or your storage hostname). The **Zone ID** is on the zone overview page (right column). This becomes `CLOUDFLARE_ZONE_ID`.
+
+## Install with Cloudflare delivery
+
+Run [Self-host install](/docs/setup/self-host#install) with the Cloudflare flags on **first install** (they are written into `.env.selfhost` only when the env file is created):
+
+```bash
+scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --storage-domain storage.updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
+  --github-oauth-client-secret <github_client_secret> \
+  --cloudflare \
+  --cloudflare-api-token <cf_cache_purge_token> \
+  --cloudflare-zone-id <cf_zone_id>
+```
+
+When the installer finishes and `curl` checks pass:
+
+1. Confirm `https://storage.updates.example.com/minio/health/ready` works over HTTPS (storage still DNS-only).
+2. In Cloudflare DNS, set the **storage** record to **Proxied**.
+3. Re-test downloads; clients should reach MinIO through Cloudflare.
+
+The installer sets:
+
+| Variable | Value |
+| --- | --- |
+| `DELIVERY_ADAPTER` | `cloudflare` |
+| `CLOUDFLARE_API_TOKEN` | Your purge token |
+| `CLOUDFLARE_ZONE_ID` | Zone containing the storage domain |
+| `CLOUDFLARE_API_BASE_URL` | Optional override (defaults to `https://api.cloudflare.com/client/v4`) |
+
+On each release, Patch resolves public artifact URLs under `PUBLIC_BASE_URL` and purges those paths at the edge. Purge is best-effort, a failed purge does not roll back a release, but devices may see stale bundles until cache expiry. See [How delivery works](/docs/using-patch/delivery).
+
+## Enable Cloudflare delivery after install
+
+If you already have a running stack, edit `.env.selfhost` by hand:
+
+```bash
+DELIVERY_ADAPTER=cloudflare
+CLOUDFLARE_API_TOKEN=<cf_cache_purge_token>
+CLOUDFLARE_ZONE_ID=<cf_zone_id>
+```
+
+Then rerun the installer (it reuses the existing env file) or restart the Compose stack. The installer re-verifies Cloudflare credentials on every run when `DELIVERY_ADAPTER=cloudflare`.
+
+Passing `--cloudflare` on a **rerun** does not update an existing env file; edit the file instead.
+
+## Cloudflare R2 (optional storage)
+
+R2 is S3-compatible. To use it instead of bundled MinIO, set `STORAGE_ADAPTER=s3` and point the S3 variables at your R2 bucket and endpoint, full variable list in [Configuration reference](/docs/reference/configuration). R2 does not replace the delivery adapter: you can still front public downloads with Cloudflare CDN (`DELIVERY_ADAPTER=cloudflare`) while objects live in R2.
+
+That path is manual (not generated by `install.sh`). See the [Configuration reference](/docs/reference/configuration) for the storage and delivery adapter variables.
+
+## Verify
+
+```bash
+curl -fsS https://updates.example.com/health
+curl -fsS https://storage.updates.example.com/minio/health/ready
+```
+
+After publishing a release, confirm new bundles are reachable at the CDN URL and that a repeat check picks up the latest manifest (purge working). If devices see an old bundle, check server logs for purge failures.
+
+## Related
+
+- [Self-host](/docs/setup/self-host): default Compose install
+- [Configuration reference](/docs/reference/configuration): storage and delivery adapter variables
+- [Configuration reference](/docs/reference/configuration): all env vars
+- [Troubleshooting: Caddy certificate issuance](/docs/troubleshooting#caddy-certificate-issuance-is-slow): DNS and Cloudflare timing

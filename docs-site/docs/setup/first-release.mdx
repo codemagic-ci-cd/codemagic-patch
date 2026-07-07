@@ -1,0 +1,65 @@
+---
+title: Publish your first release
+description: 'Publish your first OTA release after server, CLI, app, and SDK setup.'
+llmsDescription: 'First OTA publish — cmpatch init, release-react, verify server processing.'
+---
+
+# Publish your first release
+
+This is the last step in Setup; it confirms your server, CLI, app, and SDK are wired correctly. After this, see Using Patch for ongoing release workflows.
+
+From your React Native project root, create the CLI context once:
+
+```bash
+cmpatch init \
+  --server-url https://updates.example.com \
+  --ios-app MyApp-iOS \
+  --android-app MyApp-Android \
+  --deployment Staging \
+  --yes
+```
+
+This writes `codemagic-patch.config.json` so later commands can omit `--server-url`/`--app`. Inspect the resolved context:
+
+```bash
+cmpatch context
+```
+
+Dry-run, then publish:
+
+```bash
+# Preview without uploading
+cmpatch release-react --platform ios --deployment Staging --dry-run
+cmpatch release-react --platform android --deployment Staging --dry-run
+
+# Publish
+cmpatch release-react --platform ios     --deployment Staging --release-notes "Fix onboarding crash" --yes
+cmpatch release-react --platform android --deployment Staging --release-notes "Fix onboarding crash" --yes
+```
+
+`release-react` analyzes the project, auto-detects the bundler (Metro or Expo), computes the target binary version + native fingerprint, builds the bundle, and uploads it. If auto-detection can't determine a value, pass it explicitly:
+
+```bash
+cmpatch release-react \
+  --platform ios \
+  --deployment Staging \
+  --target-binary-version 1.2.3 \
+  --bundler metro \
+  --entry-file index.js \
+  --yes
+```
+
+Watch processing complete:
+
+```bash
+cmpatch release list --app MyApp-iOS --deployment Staging --format table
+cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
+```
+
+:::tip
+`cmpatch bundle --platform ios` builds a `.cmpatch` artifact without uploading, useful for inspecting or publishing later via `cmpatch release create --bundle-path file.cmpatch`.
+:::
+
+## Next steps
+
+- [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow, rollouts, mandatory updates, rollbacks

@@ -36,7 +36,7 @@ const SECTIONS = [
       'Rollback from the dashboard or CLI',
       'Delta patches for smaller downloads',
     ],
-    link: GITHUB_URL,
+    link: '/docs/introduction/core-concepts',
     linkLabel: 'Core concepts',
     reverse: false,
     media: 'terminal' as const,
@@ -52,8 +52,8 @@ const SECTIONS = [
       'Native fingerprinting flags incompatible releases before they ship',
       'cmpatch CLI for CI; SDK with Expo config plugin',
     ],
-    link: GITHUB_URL,
-    linkLabel: 'Web dashboard',
+    link: '/docs/using-patch/releasing-updates',
+    linkLabel: 'Releasing updates',
     reverse: true,
     media: 'image' as const,
     imageAlt:
@@ -68,7 +68,7 @@ const SECTIONS = [
       'Storage and CDN adapters when you outgrow the defaults',
       'GitHub OAuth for CLI and dashboard sign-in',
     ],
-    link: GITHUB_URL,
+    link: '/docs/setup/self-host',
     linkLabel: 'Self-host guide',
     reverse: false,
     media: 'terminal' as const,
@@ -123,7 +123,7 @@ export default function Home(): ReactNode {
               Self-hosted over-the-air updates for React Native with dashboard and fingerprinting, all in one Compose.
             </p>
             <div className={styles.actions}>
-              <Link className={styles.primaryButton} to={GITHUB_URL}>
+              <Link className={styles.primaryButton} to="/docs/">
                 Read the docs
               </Link>
               <a

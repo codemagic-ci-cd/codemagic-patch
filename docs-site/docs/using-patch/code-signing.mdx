@@ -1,0 +1,36 @@
+---
+title: Code signing (optional)
+description: Sign OTA bundles so clients only install releases you publish.
+llmsDescription: 'Optional OTA signing — key generation, CLI release flag, SDK verification.'
+---
+
+# Code signing (optional)
+
+Require signed releases at app creation, or enable it later:
+
+```bash
+cmpatch app create  --name MySignedApp-iOS --require-code-signing
+cmpatch app setting --app MyApp-iOS --require-code-signing=true
+```
+
+When publishing a signed app, sign the package-hash JWT with your private key:
+
+```bash
+cmpatch release-react --platform ios --deployment Staging \
+  --private-key-path ./patch-private-key.pem --yes
+```
+
+To enforce verification on-device, embed the matching public key (`CodemagicPatchPublicKey`). In Expo plugin config, `publicKey` goes inside the per-platform block (`ios`, and likewise `android`):
+
+```json
+{
+  "ios": {
+    "deploymentKey": "ios-staging-deployment-key",
+    "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+    "apiUrl": "https://updates.example.com",
+    "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+  }
+}
+```
+
+With a `publicKey` configured, the client rejects any release whose manifest signature is missing or doesn't match.

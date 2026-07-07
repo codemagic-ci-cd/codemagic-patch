@@ -1,0 +1,41 @@
+---
+title: Install the CLI and sign in
+description: 'Install the cmpatch CLI, sign in with GitHub, and create API tokens for CI.'
+llmsDescription: 'Install cmpatch, GitHub OAuth login, API tokens, project config file.'
+---
+
+# Install the CLI and sign in
+
+You can do everything from the dashboard, but CI and scripting use the CLI. Install it globally from this repo:
+
+```bash
+corepack enable
+yarn install
+yarn cli:install-global   # builds and installs the `cmpatch` binary globally
+```
+
+Store defaults so you can omit `--server-url`/`--team` on every command:
+
+```bash
+cmpatch --version
+cmpatch config set server-url https://updates.example.com
+cmpatch config set team default-team
+```
+
+Sign in as the admin (completes a GitHub device-code approval in your browser; interactive runs also offer pasting a personal access token instead):
+
+```bash
+cmpatch login --server-url https://updates.example.com
+```
+
+Mint a token for CI:
+
+```bash
+cmpatch token create --name ci
+```
+
+The `cm_pat_...` value is shown once. Store it as a CI secret and supply it via the `CODEMAGIC_PATCH_TOKEN` env var or `--token`.
+
+:::info
+Auth precedence: `--token` → `CODEMAGIC_PATCH_TOKEN` → the credential saved by `cmpatch login` (stored in `~/.codemagic-patch/`).
+:::

@@ -1,0 +1,43 @@
+---
+title: How it works
+description: >-
+  How Patch works from publish to device: server, storage, SDK checks,
+  manifests, and rollback.
+llmsDescription: 'Patch architecture — server, storage, SDK flow, manifest delivery, rollback.'
+---
+
+# How it works
+
+```mermaid
+flowchart LR
+  cli["cmpatch / CI"] -->|release| api
+
+  subgraph host["Self-host server"]
+    direction TB
+    api["API + worker"]
+    store[("Postgres + MinIO")]
+    edge["Storage domain"]
+    api -->|publish| store --> edge
+  end
+
+  cdn{{"CDN (optional)"}}
+  sdk["App SDK"]
+
+  edge --> cdn -->|manifest + bundles| sdk
+  sdk -->|metrics| api
+```
+
+1. You publish a release with the CLI. It bundles your JS, computes a fingerprint, resolves a target binary version, and uploads to the API. The release worker then processes the upload and writes the bundle, patches, and manifest to object storage.
+2. On launch (or resume), the SDK fetches the manifest from your download base URL (the storage domain, or a CDN in front of it), not the API. It downloads the new bundle (or a smaller binary patch when available) from URLs in the manifest, then swaps it in on the next restart.
+3. The SDK reports download/install/success/failure metrics to the API control plane.
+
+Without a CDN, `CodemagicPatchDownloadBaseUrl` points at the storage domain directly (the CDN hop is skipped).
+
+The default self-host stack runs four services on a single Docker host:
+
+| Service | Role |
+| --- | --- |
+| Caddy | HTTPS/TLS (Let's Encrypt), API reverse proxy, dashboard, storage-domain proxy |
+| Server | API + release worker in one process (`MODE=all`) |
+| PostgreSQL | Control-plane data: apps, deployments, releases, IAM, metrics |
+| MinIO | S3-compatible object storage for public artifacts and internal uploads |
