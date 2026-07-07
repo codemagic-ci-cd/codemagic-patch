@@ -13,7 +13,7 @@ const RELEASE_COMMAND = `cmpatch release-react \\
   --platform ios \\
   --deployment Production \\
   --release-notes "Fix onboarding crash" \\
-  --rollout 25 \\
+  --rollout-percentage 25 \\
   --yes`;
 
 const INSTALL_COMMAND = `git clone https://github.com/codemagic-ci-cd/codemagic-patch
@@ -49,7 +49,7 @@ const SECTIONS = [
       'Everything you need to publish, monitor, and control releases in production.',
     bullets: [
       'Web dashboard for releases, metrics, and team access',
-      'Native fingerprinting so bundles only reach compatible binaries',
+      'Native fingerprinting flags incompatible releases before they ship',
       'cmpatch CLI for CI; SDK with Expo config plugin',
     ],
     link: GITHUB_URL,
@@ -64,7 +64,7 @@ const SECTIONS = [
     description:
       'Run Patch on your own infrastructure, with adapters if needed.',
     bullets: [
-      'One Docker Compose stack with API, worker, Postgres, object storage',
+      'One Docker Compose stack with server, Postgres, object storage, and HTTPS proxy',
       'Storage and CDN adapters when you outgrow the defaults',
       'GitHub OAuth for CLI and dashboard sign-in',
     ],
@@ -218,7 +218,7 @@ export default function Home(): ReactNode {
                   <tr>
                     <th scope="row">Binary diffs</th>
                     <td>Yes</td>
-                    <td>Yes</td>
+                    <td>File-level</td>
                     <td>Yes</td>
                   </tr>
                   <tr>
@@ -237,7 +237,7 @@ export default function Home(): ReactNode {
                     <th scope="row">License</th>
                     <td>EAS usage pricing</td>
                     <td>MIT</td>
-                    <td>Fair Source License</td>
+                    <td>Fair Source (FSL)</td>
                   </tr>
                 </tbody>
               </table>
