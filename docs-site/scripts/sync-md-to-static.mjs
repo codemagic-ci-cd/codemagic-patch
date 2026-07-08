@@ -43,4 +43,18 @@ try {
 }
 
 await copyMarkdownArtifacts(buildDir);
+
+const searchIndexSource = path.join(buildDir, 'search-index.json');
+const searchIndexDestination = path.join(staticDir, 'search-index.json');
+
+try {
+  await fs.access(searchIndexSource);
+  await fs.copyFile(searchIndexSource, searchIndexDestination);
+  console.log('sync-md-to-static: copied search-index.json from build/ to static/');
+} catch {
+  console.warn(
+    'sync-md-to-static: search-index.json not found in build/ — run "npm run build" for sidebar search in dev',
+  );
+}
+
 console.log('sync-md-to-static: copied markdown artifacts from build/ to static/');

@@ -214,24 +214,87 @@ function buildGroupedToc(registry, entries) {
 /** Strip MDX UI components from generated `.md` files shared with AI. */
 const UI_COMPONENT_LINE = /^\s*<[A-Z][A-Za-z0-9]*\s*\/?>\s*$/;
 
-async function patchGeneratedMarkdownForAi() {
-  const introMdPath = path.join(siteDir, 'build', 'docs', 'intro.md');
+const MD_AI_INDEX_BANNER =
+  "> **Documentation index:** fetch `/llms.txt` from this site's origin for the full table of contents and links to every page.";
 
-  try {
-    await fs.access(introMdPath);
-  } catch {
-    return;
+const MD_AI_INDEX_BANNER_LINE = /^> \*\*Documentation index:\*\*/;
+
+const INTRO_AI_ADMONITION_BLOCK =
+  /:::info Using these docs with AI\nUse this button to send your AI assistant to the full markdown index\.\n\n:::\n\n?/;
+
+async function walkBuildMarkdownFiles(dir) {
+  const entries = await fs.readdir(dir, {withFileTypes: true});
+  const files = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await walkBuildMarkdownFiles(fullPath)));
+      continue;
+    }
+
+    if (entry.name.endsWith('.md')) {
+      files.push(fullPath);
+    }
   }
 
-  const content = await fs.readFile(introMdPath, 'utf8');
-  const cleaned = content
+  return files;
+}
+
+function stripExistingAiBanner(content) {
+  const lines = content.split('\n');
+  if (!lines[0]?.match(MD_AI_INDEX_BANNER_LINE)) {
+    return content;
+  }
+
+  let index = 1;
+  while (index < lines.length && lines[index] === '') {
+    index += 1;
+  }
+
+  return lines.slice(index).join('\n');
+}
+
+function patchMarkdownContent(content, {isIntro = false} = {}) {
+  let patched = content
     .split('\n')
     .filter((line) => !UI_COMPONENT_LINE.test(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trimEnd();
 
-  await fs.writeFile(introMdPath, `${cleaned}\n`);
+  if (isIntro) {
+    patched = patched.replace(INTRO_AI_ADMONITION_BLOCK, '');
+  }
+
+  patched = stripExistingAiBanner(patched);
+
+  return `${MD_AI_INDEX_BANNER}\n\n${patched}\n`;
+}
+
+async function patchGeneratedMarkdownForAi() {
+  const buildDocsDir = path.join(siteDir, 'build', 'docs');
+
+  try {
+    await fs.access(buildDocsDir);
+  } catch {
+    return;
+  }
+
+  const markdownFiles = await walkBuildMarkdownFiles(buildDocsDir);
+  const introMdPath = path.join(buildDocsDir, 'intro.md');
+
+  for (const filePath of markdownFiles) {
+    const content = await fs.readFile(filePath, 'utf8');
+    const patched = patchMarkdownContent(content, {
+      isIntro: filePath === introMdPath,
+    });
+    await fs.writeFile(filePath, patched);
+  }
+
+  console.log(
+    `apply-llms-descriptions: patched ${markdownFiles.length} markdown files for AI`,
+  );
 }
 
 async function applyLlmsDescriptions() {
