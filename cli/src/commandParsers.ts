@@ -824,8 +824,7 @@ function parseDeploymentSelector(
 
   if (deploymentId !== undefined && nameFlagCount > 0) {
     return {
-      error:
-        "--deployment-id cannot be combined with --team-id, --team, --app, or --deployment",
+      error: "--deployment-id cannot be combined with --app or --deployment",
       ok: false,
       showHelp: true,
     };
@@ -870,15 +869,14 @@ function parseDeploymentSelector(
 
   if (nameFlagCount > 0) {
     return {
-      error:
-        "--app and --deployment must be provided with exactly one of --team-id or --team",
+      error: "--app and --deployment must be provided together",
       ok: false,
       showHelp: true,
     };
   }
 
   return {
-    error: "Missing required flag --deployment-id or --team/--app/--deployment",
+    error: "Missing required flag --deployment-id or --app/--deployment",
     ok: false,
     showHelp: true,
   };
@@ -996,7 +994,7 @@ function parseReleaseSelector(
   ) {
     return {
       error:
-        "--release-id cannot be combined with --deployment-id, --team, --app, --deployment, or --label",
+        "--release-id cannot be combined with --deployment-id, --app, --deployment, or --label",
       ok: false,
       showHelp: true,
     };
@@ -1029,8 +1027,7 @@ function parseReleaseSelector(
 
   if (releaseLabel !== undefined) {
     return {
-      error:
-        "Missing required flag --deployment-id or --team/--app/--deployment",
+      error: "Missing required flag --deployment-id or --app/--deployment",
       ok: false,
       showHelp: true,
     };
@@ -1038,7 +1035,7 @@ function parseReleaseSelector(
 
   return {
     error:
-      "Missing required flag --release-id or --deployment-id/--label or --team/--app/--deployment/--label",
+      "Missing required flag --release-id or --deployment-id/--label or --app/--deployment/--label",
     ok: false,
     showHelp: true,
   };
@@ -1218,7 +1215,7 @@ function parseAppSelector(
 
   if (appId !== undefined && nameFlagCount > 0) {
     return {
-      error: "--app-id cannot be combined with --team-id, --team, or --app",
+      error: "--app-id cannot be combined with --app",
       ok: false,
       showHelp: true,
     };
@@ -1257,7 +1254,7 @@ function parseAppSelector(
   }
 
   return {
-    error: "Missing required flag --app-id or --team/--app",
+    error: "Missing required flag --app-id or --app",
     ok: false,
     showHelp: true,
   };
@@ -2784,23 +2781,19 @@ function parsePromoteSourceReleaseSelector(
     };
   }
 
-  const nameFlagCount = [teamName, appName, sourceDeploymentName].filter(
+  const nameFlagCount = [appName, sourceDeploymentName].filter(
     (value) => value !== undefined,
   ).length;
 
-  if (nameFlagCount > 0 && nameFlagCount < 3) {
+  if (nameFlagCount === 1) {
     return {
-      error: "--team, --app, and --source-deployment must be provided together",
+      error: "--app and --source-deployment must be provided together",
       ok: false,
       showHelp: true,
     };
   }
 
-  if (
-    teamName !== undefined &&
-    appName !== undefined &&
-    sourceDeploymentName !== undefined
-  ) {
+  if (appName !== undefined && sourceDeploymentName !== undefined) {
     if (releaseLabel === undefined) {
       return {
         error: "Missing required flag --label",
@@ -2810,18 +2803,17 @@ function parsePromoteSourceReleaseSelector(
     }
 
     return {
-      deployment: {
-        appName,
-        deploymentName: sourceDeploymentName,
-        teamName,
-      },
+      deployment:
+        teamName !== undefined
+          ? { appName, deploymentName: sourceDeploymentName, teamName }
+          : { appName, deploymentName: sourceDeploymentName },
       releaseLabel,
     };
   }
 
   return {
     error:
-      "Missing required flag --release-id or --source-deployment-id/--label or --team/--app/--source-deployment/--label",
+      "Missing required flag --release-id or --source-deployment-id/--label or --app/--source-deployment/--label",
     ok: false,
     showHelp: true,
   };
@@ -2862,32 +2854,26 @@ function parsePromoteDestinationDeploymentSelector(
     return { deploymentId: destDeploymentId };
   }
 
-  const nameFlagCount = [teamName, appName, destDeploymentName].filter(
+  const nameFlagCount = [appName, destDeploymentName].filter(
     (value) => value !== undefined,
   ).length;
 
-  if (
-    teamName !== undefined &&
-    appName !== undefined &&
-    destDeploymentName !== undefined
-  ) {
-    return {
-      appName,
-      deploymentName: destDeploymentName,
-      teamName,
-    };
+  if (appName !== undefined && destDeploymentName !== undefined) {
+    return teamName !== undefined
+      ? { appName, deploymentName: destDeploymentName, teamName }
+      : { appName, deploymentName: destDeploymentName };
   }
 
   if (nameFlagCount > 0) {
     return {
-      error: "--team, --app, and --dest-deployment must be provided together",
+      error: "--app and --dest-deployment must be provided together",
       ok: false,
       showHelp: true,
     };
   }
 
   return {
-    error: "Missing required flag --dest-deployment-id or --team/--app/--dest-deployment",
+    error: "Missing required flag --dest-deployment-id or --app/--dest-deployment",
     ok: false,
     showHelp: true,
   };
@@ -3576,7 +3562,7 @@ export function parseMemberRemove(
     if (selectorFlagCount > 0) {
       return {
         error:
-          "--binding-id cannot be combined with --team-id, --team, --user-id, --email, or --role",
+          "--binding-id cannot be combined with --user-id, --email, or --role",
         ok: false,
         showHelp: true,
       };
