@@ -61,7 +61,7 @@ VALUES (
   'api_token_local_admin',
   'user_local_admin',
   'local-dev',
-  '2679bddfb542722802b276720b443698dbd7e6c890ac75d696c175029c6323d6',
+  '24331315d3d8bb8e182045ad03670042a0e2d30cf67813d0526a54438aaa77a8',
   'cm_pat_lo...'
 )
 ON CONFLICT (id) DO NOTHING;
