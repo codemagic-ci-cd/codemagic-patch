@@ -1,0 +1,121 @@
+.wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem 0.4rem 0.85rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 999px;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.trigger:hover {
+  border-color: var(--ifm-color-primary);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.triggerOpen,
+.trigger[aria-expanded='true'] {
+  border-color: var(--ifm-color-primary);
+  background: var(--ifm-color-emphasis-100);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.chevron {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--ifm-font-color-secondary);
+  transition: transform 0.15s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 20;
+  min-width: 11.5rem;
+  padding: 0.3rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.65rem;
+  background: var(--ifm-background-color);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--ifm-font-color-base);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.menuItem:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.menuItem + .menuItem {
+  margin-top: 0.1rem;
+}
+
+.menuIcon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  color: var(--ifm-font-color-secondary);
+}
+
+.menuLabel {
+  flex: 1;
+}
+
+.status {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ifm-color-success-dark);
+  text-align: right;
+}
+
+.statusError {
+  color: var(--ifm-color-danger);
+  max-width: 12rem;
+}
+
+[data-theme='dark'] .trigger {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] .menu {
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}

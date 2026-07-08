@@ -1,0 +1,23 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: var(--ifm-navbar-link-color);
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.link:hover {
+  color: var(--ifm-navbar-link-hover-color);
+  background: var(--ifm-color-emphasis-200);
+  text-decoration: none;
+}
+
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}

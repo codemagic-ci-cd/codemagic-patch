@@ -1,0 +1,111 @@
+---
+title: Production control
+description: 'Roll out, promote, roll back, and disable OTA releases in Production.'
+llmsDescription: 'Rollout %, mandatory flag, promote, rollback, disable releases.'
+---
+
+# Production control
+
+Once OTA updates are working in Production, use release controls to roll out safely: gradual rollouts, mandatory updates, and rollbacks. New to Production? Work through [Preparing for production](/docs/using-patch/preparing-for-production) first.
+
+:::info
+Examples assume `codemagic-patch.config.json` exists from `cmpatch init`. Set a default team with `cmpatch config set team default-team` or pass `--team`.
+:::
+
+For the Staging → Production workflow, see [Releasing updates](/docs/using-patch/releasing-updates).
+
+## Gradual rollout
+
+Rollouts deliver an update to only a percentage of eligible users first.
+
+```bash
+cmpatch release-react --platform ios --deployment Production \
+  --rollout-percentage 25 --release-notes "Gradual rollout" --yes
+```
+
+Typical progression:
+
+```text
+Release at 10% → monitor → increase → 50% → 100%
+```
+
+Adjust an existing rollout without republishing:
+
+```bash
+cmpatch release patch --app MyApp-iOS --deployment Production --label v5 \
+  --rollout-percentage 50 --yes
+```
+
+### Rollout constraints
+
+- One partial rollout per deployment at a time
+- Complete or disable the current rollout before publishing another update to the same deployment
+- Rollout percentage must be between 1 and 100
+
+These constraints prevent users on the same deployment from receiving conflicting versions.
+
+## Mandatory updates
+
+Mark critical fixes as mandatory so eligible users must install before continuing:
+
+```bash
+cmpatch release-react --platform ios --deployment Production --mandatory --yes
+```
+
+On the client, `mandatoryInstallMode` controls *when* a mandatory update applies (default: `IMMEDIATE`). See [Defining update checks](/docs/setup/defining-update-checks).
+
+Reserve mandatory updates for:
+
+- Critical crashes or data corruption
+- Security issues
+- Breaking API changes
+
+:::info
+If a device skipped an older mandatory release in the deployment history, a later compatible update may still be treated as mandatory until the user catches up.
+:::
+
+## Disable and re-enable
+
+Temporarily stop serving a release without deleting it:
+
+```bash
+cmpatch release disable --app MyApp-iOS --deployment Production --label v3 --yes
+cmpatch release enable  --app MyApp-iOS --deployment Production --label v3 --yes
+```
+
+## Roll back to the previous release
+
+Manual rollback for production incidents:
+
+```bash
+cmpatch release rollback --app MyApp-iOS --deployment Production --yes
+```
+
+### Automatic rollback
+
+The SDK rolls back if a new bundle crashes before `notifyAppReady()` runs. Because `sync()` calls `notifyAppReady()` first on startup, the default integration arms this protection automatically.
+
+If you use [manual control](/docs/setup/manual-control) instead of `sync()`, you must call `notifyAppReady()` after a successful boot, otherwise healthy updates can be reverted.
+
+## Promote from Staging to Production
+
+```bash
+cmpatch release promote \
+  --app MyApp-iOS \
+  --source-deployment Staging \
+  --dest-deployment Production \
+  --label v4 \
+  --yes
+```
+
+## Example production workflow
+
+```text
+release to Staging → validate
+→ promote to Production at 10% rollout
+→ monitor metrics
+→ increase rollout or mark mandatory if critical
+→ rollback if issues appear
+```
+
+See [Analytics](/docs/using-patch/analytics) for monitoring.

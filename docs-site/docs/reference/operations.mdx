@@ -1,0 +1,49 @@
+---
+title: Operations
+description: 'Back up, restore, upgrade, and smoke-test a self-hosted Patch installation.'
+llmsDescription: 'Self-host day-2 ops — backup, restore, upgrade, smoke test, Compose.'
+---
+
+# Operations
+
+All maintenance commands run against the `codemagic-patch-selfhost` Compose project.
+
+## Status and logs
+
+```bash
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml ps
+
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml logs -f server
+```
+
+## Backup
+
+Quiesces the server, dumps Postgres, mirrors the MinIO bucket:
+
+```bash
+scripts/selfhost/backup.sh
+# → backups/codemagic-patch-selfhost-<timestamp>/ : env.selfhost, postgres.dump,
+#   minio-codemagic-patch.tar.gz, versions.txt
+```
+
+## Restore
+
+```bash
+scripts/selfhost/restore.sh backups/codemagic-patch-selfhost-<timestamp>
+# also replace .env.selfhost from the backup:
+scripts/selfhost/restore.sh --restore-env backups/codemagic-patch-selfhost-<timestamp>
+```
+
+Restore always takes a pre-restore safety backup first (unless `--skip-safety-backup`).
+
+## Upgrade
+
+Backs up, updates server + Caddy images, then smoke-tests:
+
+```bash
+scripts/selfhost/upgrade.sh
+# pin a specific server image:
+scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
+```

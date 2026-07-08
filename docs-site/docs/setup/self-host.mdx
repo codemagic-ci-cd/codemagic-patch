@@ -1,0 +1,82 @@
+---
+title: Self-host the server
+description: >-
+  Install Patch on your own infrastructure with Docker Compose, TLS, and GitHub
+  OAuth.
+llmsDescription: 'Production self-host — install.sh, env, TLS, GitHub OAuth, first admin.'
+---
+
+# Self-host the server
+
+For a quick local try without domains or TLS, see [Run locally](/docs/setup/local-development) first.
+
+## Prepare a GitHub OAuth App
+
+Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. Create one OAuth App and collect:
+
+| Setting | Value |
+| --- | --- |
+| Homepage URL | `https://updates.example.com` |
+| Authorization callback URL | `https://updates.example.com/auth/callback` |
+| Enable Device Flow | Required for `cmpatch login` |
+| Client ID | e.g. `Iv1.xxxxxxxxxxxxxxxx` |
+| Client Secret | generated on the same app |
+
+:::info
+The first admin's email (`--email` below) must exactly match the verified primary email on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+:::
+
+## Install
+
+Clone [codemagic-patch](https://github.com/codemagic-ci-cd/codemagic-patch) onto the server and run the installer:
+
+```bash
+git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
+cd codemagic-patch
+
+scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --storage-domain storage.updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
+  --github-oauth-client-secret <github_client_secret>
+```
+
+The installer:
+
+- writes `.env.selfhost` with strong random secrets for Postgres, MinIO, the worker, and OAuth (it refuses to overwrite an existing file),
+- builds the server and Caddy (dashboard) images,
+- starts the Compose stack under project name `codemagic-patch-selfhost`,
+- waits for Caddy to obtain Let's Encrypt certificates (1–2 min) by polling `/health` and storage health, and
+- prepares the single fixed `default-team` on first boot.
+
+When it finishes you'll have:
+
+```text
+Dashboard:      https://updates.example.com/
+API URL:        https://updates.example.com           (app config: CodemagicPatchApiUrl)
+Download base:  https://storage.updates.example.com/codemagic-patch   (app config: CodemagicPatchDownloadBaseUrl)
+```
+
+Sign in to the dashboard with GitHub, then create apps and deployments (or use the CLI). See [Web dashboard](/docs/using-patch/dashboard).
+
+:::warning
+`.env.selfhost` holds production secrets. Back it up and never commit or expose it.
+:::
+
+## Verify
+
+```bash
+curl -fsS https://updates.example.com/health
+curl -fsS https://storage.updates.example.com/minio/health/ready
+
+# Unauthenticated smoke test
+scripts/selfhost/smoke.sh
+
+# After you create an API token (see CLI setup), run the full publish smoke test
+CODEMAGIC_PATCH_TOKEN=cm_pat_xxx scripts/selfhost/smoke.sh
+```
+
+## Cloudflare (optional)
+
+To front the storage domain with Cloudflare CDN and automatic cache purge after releases, complete [Cloudflare setup](/docs/setup/cloudflare) before install (DNS-only storage record during cert issuance, API token, install flags).

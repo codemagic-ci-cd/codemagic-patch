@@ -1,0 +1,117 @@
+---
+title: Comparison
+description: 'Compare Codemagic Patch with Expo Updates, hosted CodePush, and Hot Updater.'
+llmsDescription: 'Patch vs CodePush, Expo Updates, Hot Updater — hosting, licensing, trade-offs.'
+---
+
+# How Patch compares
+
+Codemagic Patch sits alongside other React Native OTA options. This page summarizes where they overlap and where they differ. For Patch-specific concepts, see [Core concepts](/docs/introduction/core-concepts).
+
+:::info
+Products change over time. Treat this as a high-level guide when evaluating options, not a feature matrix with guaranteed parity.
+:::
+
+## What most OTA tools share
+
+Patch, [Codemagic CodePush](https://docs.codemagic.io/rn-codepush/), [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/), and [Hot Updater](https://hot-updater.dev/) all target the same core problem: ship JavaScript and asset changes to installed apps without a full store release.
+
+Common ground includes:
+
+- Fingerprinting: detect when the native project changed so you do not ship an incompatible JS bundle
+- Binary diffs: prefer smaller patch downloads when only part of the bundle changed
+- Deployment channels: separate Staging from Production (or equivalent) so you can test before wide release
+- Client SDK: check, download, install, and apply updates on device with rollback when something goes wrong
+
+Differences show up in hosting, licensing, how much you operate yourself, and how tightly integrated a vendor stack is.
+
+---
+
+## vs Expo Updates
+
+The headline difference is build vs buy.
+
+| | Expo Updates | Codemagic Patch |
+| --- | --- | --- |
+| Hosting | Hosted-only (EAS) | Self-hosted; you run the stack |
+| Cost model | Free tier, then usage-based EAS pricing | Free to self-host under Fair Source; optional commercial license at scale |
+| Bare React Native | Works, but needs Expo modules in bare projects | Bare RN and Expo (prebuild plugin) |
+| Dashboard | Expo / EAS web UI | Patch web dashboard (releases, metrics, team roles) |
+
+Expo Updates is a strong default if you already use EAS Build and EAS Update together; fingerprinting and channel wiring are largely handled inside that ecosystem with minimal setup.
+
+Costs can climb quickly past free limits if you ship often or have a large install base. That is the main trade-off against running Patch yourself.
+
+Patch does not require EAS. You operate the server (Docker Compose or your own deployment), use `cmpatch` from CI or locally, and point the SDK at your API and storage domains. Setup is more involved, but you control hosting, scaling, and data.
+
+Both offer a team-facing UI for managing releases, not only CLI workflows.
+
+Migrating? See [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates).
+
+---
+
+## vs Codemagic CodePush
+
+Patch and Codemagic CodePush are sibling products from Codemagic, with a similar mental model (apps per platform, Staging / Production, `release-react`-style CLI flows), different delivery model.
+
+| | Codemagic CodePush | Codemagic Patch |
+| --- | --- | --- |
+| Hosting | Hosted by Codemagic (`codepush.pro`) | Self-hosted on your infrastructure |
+| Operations | No server to run | You install, backup, and upgrade the stack |
+| Authentication | CodePush access keys | GitHub OAuth + API tokens on your instance |
+| Data control | Codemagic-operated | Your Postgres, object storage, and domains |
+| Integration | Fits Codemagic CI users who want managed OTA | Fits teams that need on-prem, air-gapped, or custom hosting |
+
+Choose hosted CodePush when you want OTA without running a service. Choose Patch when you need full control of the update plane, custom domains, or deployment inside your own cloud.
+
+Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush).
+
+---
+
+## vs Hot Updater
+
+[Hot Updater](https://hot-updater.dev/) is a community-driven OTA toolkit with a different architecture and ops profile, plugin-based backends rather than a single integrated server product.
+
+| | Hot Updater | Codemagic Patch |
+| --- | --- | --- |
+| Hosting | Provider plugins (Supabase, Cloudflare, and others) | All-in-one Compose stack (Postgres, MinIO, API, dashboard) |
+| Architecture | Bring-your-own backend | Integrated server product you deploy anywhere Docker runs |
+| Local dev | Supported via provider plugins | Full stack can run locally |
+| Storage / CDN | Plugins are the main integration path | Built-in adapters; optional S3/GCS storage and Cloudflare delivery |
+| Update check | Your backend | Static manifest on storage or CDN |
+| Bundle download | Your storage (often CDN-backed) | Storage or CDN URLs from manifest |
+| Web console | Oriented toward editing released bundles | Release management, metrics, IAM, and team roles |
+| Stewardship | Community open source | Built and maintained by [Codemagic](https://codemagic.io) |
+| License | MIT | [Codemagic Fair Source License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) (FSL 1.1–based) |
+| Commercial use at scale | MIT, no MAU threshold | Free under Fair Source below 1M MAU; license required above that |
+
+Hot Updater is a good fit if you want MIT licensing and are comfortable assembling storage and hosting yourself. Patch targets teams that want an integrated server with dashboard and metrics, and optional vendor support for licensed deployments.
+
+---
+
+## Licensing
+
+Patch is released under the Codemagic Fair Source License (based on FSL 1.1, converting to Apache 2.0 after two years on each version). You may use, modify, and self-host Patch without a paid license while your monthly active users stay at or below one million. Above that threshold, you need a commercial license from Codemagic.
+
+Hot Updater is MIT. Expo Updates is tied to EAS pricing, not a source license on the client SDK. Codemagic CodePush is a hosted service with its own subscription terms.
+
+---
+
+## Install behavior and mandatory updates
+
+All of these tools support forcing critical updates and deferring optional ones, but defaults and APIs differ (e.g. CodePush `sync()` install modes, Patch `sync()` + `mandatoryInstallMode`, Expo's `Updates.reloadAsync()` patterns).
+
+Those details are worth comparing during integration, not at the hosting layer. For Patch behavior, see [Defining update checks](/docs/setup/defining-update-checks) and [Production control](/docs/using-patch/production-control).
+
+---
+
+## Choosing a path
+
+| If you… | Consider |
+| --- | --- |
+| Already live on EAS and want minimal setup | Expo Updates |
+| Want Codemagic to run OTA for you | Codemagic CodePush (hosted) |
+| Want to self-host with dashboard, metrics, and team IAM | Codemagic Patch |
+| Want MIT and BYO storage via plugins | Hot Updater |
+
+To try Patch locally, start with [Run locally](/docs/setup/local-development) or [Self-host](/docs/setup/self-host).

@@ -1,0 +1,98 @@
+---
+title: Web dashboard
+description: >-
+  Use the Patch web dashboard to manage releases, metrics, teams, and GitHub
+  Actions workflows.
+llmsDescription: 'Web UI — releases, metrics, team IAM, GitHub Actions dispatch, uploads.'
+---
+
+# Web dashboard
+
+The Patch web dashboard is served from your API domain (e.g. `https://updates.example.com/`). Sign in with GitHub OAuth, the same identity model as `cmpatch login`.
+
+Use the dashboard to browse teams, apps, and deployments; publish releases without memorizing CLI flags; and manage rollouts, promotion, and rollback from the UI.
+
+:::info
+The dashboard complements the CLI; it does not replace it. Some workflows (CI, scripting, `cmpatch doctor`) are CLI-only. Publishing can start in either place.
+:::
+
+## Navigation
+
+After sign-in you land in your team's workspace:
+
+| Area | What you do there |
+| --- | --- |
+| Apps | Create and rename apps; toggle code-signing requirements |
+| Deployments | Staging and Production channels per app; copy deployment keys |
+| Deployment detail | Release history, New release, deployment-level rollback |
+| Release detail | Per-release metrics, status, and lifecycle actions |
+| Members | Invite teammates and manage roles |
+| API tokens | Create and revoke `cm_pat_…` tokens for CI |
+
+Deployment keys shown in the UI are the values you embed in the app as `CodemagicPatchDeploymentKey`.
+
+## Publishing a release
+
+On a deployment detail page, click New release. You can choose how to publish:
+
+### Via CLI (command builder)
+
+Builds a ready-to-run `cmpatch release-react` command from form fields:
+
+- Platform (iOS / Android)
+- Rollout percentage
+- Target binary version
+- Release notes
+- Mandatory flag
+- Code-signing private key path (when required by the app)
+
+Copy the command and run it from your React Native project root or paste it into a CI job. The dashboard does not run the build for you; it generates the exact invocation with your server URL, app, and deployment filled in.
+
+### Bundle upload
+
+Upload a pre-built `.cmpatch` artifact (from `cmpatch bundle`) directly in the browser:
+
+1. Select or drop the `.cmpatch` file
+2. Set rollout, target binary version, release notes, and mandatory if needed
+3. Submit; the server queues the release worker job
+
+Use this when CI already produced the bundle, or you built offline and only need to publish.
+
+### GitHub Actions
+
+If GitHub Actions is configured for the deployment, a third path triggers your linked `workflow_dispatch` workflow with platform, branch, target binary, and release notes. Use GitHub Actions on the deployment page to link a repository and workflow.
+
+## Managing existing releases
+
+From release detail or the deployment release table, open actions on a release:
+
+| Action | Purpose |
+| --- | --- |
+| Edit metadata | Change release notes, target binary version, mandatory flag |
+| Rollout | Adjust rollout percentage on an active release |
+| Promote | Copy a release to another deployment (e.g. Staging → Production) |
+| Disable / Enable | Stop or resume serving a release |
+| Rollback | Revert the deployment to the previous release |
+
+Deployment-level rollback is also available from the deployment header when you need to revert without picking a specific row.
+
+These map to `cmpatch release patch`, `release promote`, `release enable`/`release disable`, and `release rollback`, see [Production control](/docs/using-patch/production-control).
+
+## Metrics
+
+The dashboard surfaces release status (`uploaded`, `processing`, `published`, `failed`, `disabled`) and metrics collected from the SDK. For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
+
+## API tokens
+
+Under API tokens, create personal access tokens for CI and automation. Tokens use the `cm_pat_…` prefix and are shown once at creation. See [Security and access](/docs/using-patch/security).
+
+## When to use the dashboard vs CLI
+
+| Prefer the dashboard | Prefer the CLI |
+| --- | --- |
+| Copy a `release-react` command with the right flags | Run releases from CI/CD |
+| Upload a `.cmpatch` without a terminal | Script bulk or repeated operations |
+| Promote, roll out, or roll back with confirmation dialogs | `cmpatch doctor`, `inspect --wait`, JSON output |
+| Browse release history and keys with the team | Air-gapped or SSH-only environments |
+
+For the Staging → Production workflow, see [Releasing updates](/docs/using-patch/releasing-updates).

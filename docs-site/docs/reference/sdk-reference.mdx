@@ -1,0 +1,306 @@
+---
+title: SDK reference
+description: Reference for the @codemagic/react-native-patch JavaScript API.
+llmsDescription: 'JS API — @codemagic/react-native-patch sync, install modes, error codes.'
+---
+
+# SDK reference
+
+JavaScript API for [`@codemagic/react-native-patch`](https://www.npmjs.com/package/@codemagic/react-native-patch): the React Native client SDK.
+
+For integration steps (native wiring, Expo plugin, first `sync()` call), see [Native setup](/docs/setup/native-setup) and [Defining update checks](/docs/setup/defining-update-checks). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
+
+## Requirements
+
+- React Native `0.76+` (Old and New Architecture)
+- Expo SDK 52+ with a **development build** (Expo Go is not supported)
+- Native config keys set at build time: see below
+
+## Native configuration
+
+The SDK reads configuration from native resources, not from a JS `configure()` call.
+
+| Key | Required | Description |
+| --- | --- | --- |
+| `CodemagicPatchDeploymentKey` | yes | Deployment key from `cmpatch deployment list` |
+| `CodemagicPatchApiUrl` | yes | Patch API origin (server `SERVER_URL`), e.g. `https://updates.example.com`. The SDK calls `/v1/...` under this host |
+| `CodemagicPatchDownloadBaseUrl` | yes | Artifact origin (server `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch` |
+| `CodemagicPatchPublicKey` | no | PEM public key when the app enforces release signature verification |
+
+Bare RN: set in `Info.plist` / `strings.xml` and wire bundle selection in AppDelegate / `MainApplication`. Expo: use the config plugin, [Native setup](/docs/setup/native-setup).
+
+If native code cannot determine the app binary version (`CFBundleShortVersionString` / `versionName`), the SDK no-ops and loads the embedded bundle.
+
+---
+
+## Functions
+
+### `sync(options?, onProgress?)`
+
+End-to-end update flow: confirm running bundle → check → download → install.
+
+```ts
+import { sync } from "@codemagic/react-native-patch";
+
+const status = await sync(
+  { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" },
+  ({ receivedBytes, totalBytes }) => { /* progress */ },
+);
+```
+
+| | |
+| --- | --- |
+| **Returns** | `Promise<SyncStatus>`, see [Sync status](#sync-status) |
+| **Throws** | Never, failures resolve to `"error"` |
+| **Concurrency** | Second call while one is running returns `"sync-in-progress"` |
+
+Calls `notifyAppReady()` first on every invocation. Uses `mandatoryInstallMode` when the remote release is mandatory; otherwise `installMode`. Defaults: optional → `ON_NEXT_RESTART`, mandatory → `IMMEDIATE`.
+
+If the server offers an update that [previously failed](/docs/troubleshooting) on this device, `sync()` returns `"up-to-date"` without retrying.
+
+---
+
+### `checkForUpdate()`
+
+Check the server without downloading.
+
+```ts
+import { checkForUpdate } from "@codemagic/react-native-patch";
+
+const result = await checkForUpdate();
+```
+
+| | |
+| --- | --- |
+| **Returns** | `Promise<UpdateCheckResult>` |
+| **Throws** | `CodemagicPatchError` on network/manifest failures |
+
+Every result includes `isStoreUpdateAvailable` and `latestBinaryVersion` for store-update prompts when OTA is not offered.
+
+---
+
+### `downloadUpdate(remotePackage, onProgress?)`
+
+Download the bundle (patch preferred, full bundle fallback) after a successful check.
+
+```ts
+const local = await downloadUpdate(result.remotePackage, onProgress);
+```
+
+| | |
+| --- | --- |
+| **Returns** | `Promise<LocalPackage>` |
+| **Throws** | `CodemagicPatchError`, e.g. `DOWNLOAD_IN_PROGRESS`, `INTEGRITY_ERROR`, `SIGNATURE_MISMATCH` |
+
+`remotePackage` must match the package from the latest `checkForUpdate()` that returned `{ action: "ota-update" }`.
+
+---
+
+### `installUpdate(target, options?)`
+
+Stage or apply a downloaded package, or handle an embedded revert from `checkForUpdate()`.
+
+```ts
+await installUpdate(local, { installMode: "ON_NEXT_RESTART" });
+```
+
+| | |
+| --- | --- |
+| **Arguments** | `InstallTarget`, `LocalPackage` from `downloadUpdate()`, or embedded-revert result from `checkForUpdate()` |
+| **Returns** | `Promise<void>` |
+| **Throws** | `CodemagicPatchError`, e.g. `NOT_DOWNLOADED`, `INVALID_UPDATE_TARGET` |
+
+`InstallOptions`: `installMode`, `minimumBackgroundDuration` (ms, for `ON_NEXT_RESUME` / `ON_NEXT_SUSPEND`).
+
+---
+
+### `notifyAppReady()`
+
+Mark the currently running bundle as healthy (rollback protection). Required on startup when **not** using `sync()`.
+
+```ts
+await notifyAppReady();
+```
+
+| | |
+| --- | --- |
+| **Returns** | `Promise<void>` |
+| **Throws** | Does not throw |
+
+If a pending update is running for the first time, this promotes it to the confirmed good bundle. `sync()` calls this automatically at the start of each run.
+
+---
+
+### `restartApp(onlyIfUpdateIsPending?)`
+
+Reload the JS bundle to apply a pending update.
+
+```ts
+await restartApp(true); // only reload if an update is waiting
+```
+
+| | |
+| --- | --- |
+| **Default** | `onlyIfUpdateIsPending = false` |
+| **Returns** | `Promise<void>` |
+
+No-op when `onlyIfUpdateIsPending` is true and there is no pending package. Respects [restart suppression](#restart-suppression).
+
+---
+
+### `disallowRestart()` / `allowRestart()`
+
+Block or unblock SDK-triggered reloads (including after `IMMEDIATE` installs).
+
+```ts
+disallowRestart();
+// … critical UX …
+allowRestart();
+```
+
+`allowRestart()` may flush a reload that was queued while blocked.
+
+---
+
+### `hydrate()`
+
+Ensure the SDK has loaded on-disk state before other calls. Called automatically by all public async APIs; export alias for `ensureHydrated()`.
+
+```ts
+import { hydrate } from "@codemagic/react-native-patch";
+await hydrate();
+```
+
+---
+
+## Types
+
+### `SyncOptions`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `installMode` | `InstallMode` | `ON_NEXT_RESTART` | When optional updates apply |
+| `mandatoryInstallMode` | `InstallMode` | `IMMEDIATE` | When mandatory updates apply |
+| `minimumBackgroundDuration` | `number` | `0` | Min background time (ms) before `ON_NEXT_RESUME` / `ON_NEXT_SUSPEND` activate |
+
+### `InstallMode`
+
+| Value | Behavior |
+| --- | --- |
+| `ON_NEXT_RESTART` | Apply on next cold start |
+| `ON_NEXT_RESUME` | Apply when returning to foreground (after `minimumBackgroundDuration`) |
+| `ON_NEXT_SUSPEND` | Apply when entering background (after `minimumBackgroundDuration`) |
+| `IMMEDIATE` | Reload as soon as install completes |
+
+### Sync status
+
+Values returned by `sync()`:
+
+| Status | Meaning |
+| --- | --- |
+| `"up-to-date"` | No applicable update, or skipped previously failed package |
+| `"update-installed"` | Downloaded and installed (may still be pending activation per install mode) |
+| `"embedded-revert-applied"` | Reverted to the embedded bundle per server manifest |
+| `"sync-in-progress"` | Another `sync()` is already running |
+| `"error"` | Check, download, or install failed (see internal state / logs; `sync()` does not throw) |
+
+### `UpdateCheckResult`
+
+Discriminated union on `action`:
+
+| `action` | Meaning |
+| --- | --- |
+| `"up-to-date"` | No OTA to install |
+| `"ota-update"` | `remotePackage` populated, call `downloadUpdate()` |
+| `"embedded-revert"` | Server instructs revert to embedded bundle, pass result to `installUpdate()` |
+
+All variants include:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `isStoreUpdateAvailable` | `boolean` | Device binary is below server's latest known store version |
+| `latestBinaryVersion` | `string \| null` | Latest binary version from server metadata |
+
+### `RemotePackage`
+
+Package offered by the server (from `checkForUpdate().remotePackage`):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `packageHash` | `string` | Content hash |
+| `label` | `string` | Release label (e.g. `v3`) |
+| `deploymentKey` | `string` | Deployment this release belongs to |
+| `releaseNotes` | `string \| null` | Server-provided notes |
+| `isMandatory` | `boolean` | Mandatory flag from server |
+| `fullBundleUrl` | `string \| null` | Full bundle download URL |
+| `patchUrl` | `string \| null` | Binary patch URL |
+| `fullBundleSize` | `number` | Full bundle size in bytes |
+| `patchSize` | `number \| null` | Patch size in bytes |
+| `previouslyFailed` | `boolean` | This package failed on device before |
+
+### `LocalPackage`
+
+Extends `RemotePackage` with:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `installedAt` | `string` | ISO timestamp when downloaded |
+| `source` | `"patch" \| "full_bundle"` | Which artifact type was used |
+
+### `DownloadProgress`
+
+```ts
+{ receivedBytes: number; totalBytes: number }
+```
+
+---
+
+## Errors
+
+Low-level APIs throw `CodemagicPatchError` with a `code` field. `sync()` catches errors and returns `"error"` instead.
+
+| Code | Typical cause |
+| --- | --- |
+| `NETWORK_ERROR` | Manifest fetch or download failed |
+| `INVALID_MANIFEST` | Malformed server manifest |
+| `SIGNATURE_MISMATCH` | Release signature verification failed |
+| `INTEGRITY_ERROR` | Hash or patch apply failed |
+| `DOWNLOAD_IN_PROGRESS` | Concurrent `downloadUpdate()` |
+| `SYNC_IN_PROGRESS` | Reserved for internal use |
+| `NOT_DOWNLOADED` | `installUpdate()` without prior download |
+| `INVALID_UPDATE_TARGET` | Wrong package passed to `installUpdate()` |
+
+```ts
+import { CodemagicPatchError, CodemagicPatchErrorCode } from "@codemagic/react-native-patch";
+
+try {
+  await checkForUpdate();
+} catch (error) {
+  if (error instanceof CodemagicPatchError) {
+    console.log(error.code, error.message);
+  }
+}
+```
+
+---
+
+## Restart suppression
+
+When `disallowRestart()` is active:
+
+- `IMMEDIATE` installs queue activation instead of reloading
+- `restartApp()` reloads only if no pending update is waiting (or suppression is lifted)
+
+Use during checkout, onboarding, or other flows where an unexpected reload would be disruptive. See [Defining update checks](/docs/setup/defining-update-checks#blocking-restarts-during-critical-ux).
+
+---
+
+## Boot order (native)
+
+On cold start, native bundle selection prefers, in order:
+
+1. Pending OTA package (downloaded, not yet active)
+2. Current confirmed OTA package
+3. Embedded bundle shipped with the app
+
+Wire this in AppDelegate / `MainApplication`, [Native setup](/docs/setup/native-setup).

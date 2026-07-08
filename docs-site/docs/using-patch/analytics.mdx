@@ -1,0 +1,62 @@
+---
+title: Analytics and metrics
+description: >-
+  Monitor download, install, success, and rollback metrics from the dashboard
+  and CLI.
+llmsDescription: 'Release metrics — downloads, installs, success, rollback via dashboard/CLI.'
+---
+
+# Analytics and metrics
+
+Patch records download, install, success, and failure events from the client SDK. Use the dashboard and CLI to monitor rollout health.
+
+The client posts events to `{apiUrl}/v1/metrics/events`. Metrics failures never block the update flow; the SDK queues and retries natively.
+
+## Dashboard
+
+The web dashboard is your team's control plane in the browser: apps, deployments, release history, New release (command builder or `.cmpatch` upload), promote/rollback/rollout actions, members, and API tokens.
+
+See [Web dashboard](/docs/using-patch/dashboard) for a full walkthrough. Open it at your API URL after [self-hosting](/docs/setup/self-host) (e.g. `https://updates.example.com/`).
+
+## CLI metrics
+
+### Deployment-level metrics
+
+```bash
+cmpatch deployment metrics --app MyApp-iOS --deployment Production --format table
+```
+
+Useful for overall adoption and health across all releases in a deployment.
+
+### Per-release metrics
+
+```bash
+cmpatch release metrics --app MyApp-iOS --deployment Production --label v4 --format table
+```
+
+Typical event types include Downloaded, Installed, Success, Failed, and Active.
+
+## What to watch during a rollout
+
+Install rate
+
+High downloads with low installs can indicate install-mode issues, binary version mismatches, or client errors.
+
+Failures and rollbacks
+
+Spikes after a release often mean a bad bundle or incompatible native project. Check [Debugging](/docs/troubleshooting) and consider [rollback](/docs/using-patch/production-control#roll-back-to-the-previous-release).
+
+Active count
+
+How many devices are running a given release label, helps confirm a gradual rollout is progressing.
+
+## Example rollout monitoring workflow
+
+```text
+release with --rollout-percentage 10
+→ watch deployment metrics for 24h
+→ increase rollout or promote to Production
+→ rollback if failure rate spikes
+```
+
+See [Production control](/docs/using-patch/production-control) for rollout commands.

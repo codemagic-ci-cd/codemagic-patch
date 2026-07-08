@@ -1,0 +1,82 @@
+---
+title: Security and access
+description: >-
+  How Patch handles authentication, team access, API tokens, and optional code
+  signing.
+llmsDescription: 'Auth — GitHub OAuth, API tokens, team roles, optional code signing.'
+---
+
+# Security and access
+
+Patch separates who can publish updates (CLI and dashboard auth) from whether clients trust updates (optional code signing).
+
+## Authentication
+
+### Dashboard sign-in
+
+The dashboard uses GitHub OAuth. Self-host installs require a GitHub OAuth App; the first admin email must match a verified primary GitHub address when `REGISTRATION_MODE=invite_only`.
+
+See [Self-host](/docs/setup/self-host) for OAuth App setup.
+
+### CLI sign-in
+
+Developers can use GitHub device flow:
+
+```bash
+cmpatch login --server-url https://updates.example.com
+```
+
+Credentials are stored locally in `~/.codemagic-patch/`.
+
+### API tokens (CI and automation)
+
+For CI and scripting, create personal access tokens:
+
+```bash
+cmpatch token create --name ci
+```
+
+- Prefix: `cm_pat_…`
+- Shown once at creation: store in your secret manager
+- Supply via `CODEMAGIC_PATCH_TOKEN` or `--token`
+- Revoke from the dashboard API tokens page when compromised
+
+:::warning
+Treat `cm_pat_…` tokens like production credentials. Scope pipeline access and rotate on schedule.
+:::
+
+### Auth precedence
+
+`--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`
+
+## Code signing (update integrity)
+
+Beyond server authentication, Patch supports cryptographic signing of release manifests so clients only install packages signed with your private key.
+
+Enable at app creation or later:
+
+```bash
+cmpatch app create --name MySignedApp-iOS --require-code-signing
+cmpatch app setting --app MyApp-iOS --require-code-signing=true
+```
+
+Publish signed releases:
+
+```bash
+cmpatch release-react --platform ios --deployment Staging \
+  --private-key-path ./patch-private-key.pem --yes
+```
+
+Embed the matching public key in native SDK config as `CodemagicPatchPublicKey` — see [Native setup](/docs/setup/native-setup) for `Info.plist`, `strings.xml`, or Expo plugin wiring. The SDK reads this value from the binary at launch, so **ship a new native build** (and reinstall on devices) before clients can verify signed OTAs. OTA updates cannot add or change the public key.
+
+With the key in the binary, the client rejects releases with missing or invalid signatures.
+
+## Self-host secrets
+
+`.env.selfhost` contains production secrets (Postgres, MinIO, OAuth, worker keys). Back it up and never commit it. See [Configuration reference](/docs/reference/configuration).
+
+## CI hygiene
+
+- Store `CODEMAGIC_PATCH_TOKEN` in CI secret stores only
+- Use separate tokens per pipeline or environment where possible
+- Release to Staging before Production ([CI integration](/docs/using-patch/ci-integration))

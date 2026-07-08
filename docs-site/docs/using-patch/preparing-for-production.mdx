@@ -1,0 +1,95 @@
+---
+title: Preparing for production
+description: >-
+  Checklist before shipping OTA to Production: Staging validation, signing, and
+  sync behavior.
+llmsDescription: 'Pre-prod checklist — signing, sync config, Staging validation, rollout plan.'
+---
+
+# Preparing for production
+
+Use this checklist after [Staging looks good](/docs/using-patch/verify-test-release#after-staging-looks-good) and before you ship OTA to real users. Each item links to the full guide; the goal is to catch gaps before the first Production release.
+
+## 1. Confirm Staging end to end
+
+QA should have validated on a build that matches how you test: correct deployment key, reachable server URLs, and a visible JS change after update. If not, finish [Verify a test release](/docs/using-patch/verify-test-release) first.
+
+## 2. Ship a Production native binary
+
+Production devices need a store (or production-track) build with the **Production** deployment key embedded, not Staging.
+
+- Copy the Production key from `cmpatch deployment list` or the [dashboard](/docs/using-patch/dashboard)
+- Wire `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` for Production in [Native setup](/docs/setup/native-setup)
+- Staging OTAs never reach users on the Production key, and vice versa
+
+See [Core concepts. Deployment model](/docs/introduction/core-concepts#deployment-model).
+
+## 3. Tune client sync by build
+
+Install timing (`installMode`, `mandatoryInstallMode`, when you call `sync()`) is **client-side only**. The server does not push different sync rules per deployment.
+
+Typical pattern:
+
+| Build | Deployment key | Sync behavior |
+| --- | --- | --- |
+| Internal / QA / debug | Staging | `IMMEDIATE` or frequent foreground checks for fast iteration |
+| App Store / Play Production | Production | `ON_NEXT_RESTART` or `ON_NEXT_RESUME` for gentler UX |
+
+Branch in app code using your existing build flavors (`__DEV__`, Xcode schemes, Gradle product flavors, Expo `extra`, etc.):
+
+```tsx
+import { sync } from "@codemagic/react-native-patch";
+
+void sync(
+  __DEV__
+    ? { installMode: "IMMEDIATE", mandatoryInstallMode: "IMMEDIATE" }
+    : { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "ON_NEXT_RESUME" },
+);
+```
+
+Also wire foreground re-checks if updates should download while the app is open. See [Defining update checks](/docs/setup/defining-update-checks).
+
+Reserve server-side `--mandatory` for fixes that truly cannot wait. Immediate mandatory reloads can flash a white screen mid-session, see [Troubleshooting. White flash](/docs/troubleshooting#white-flash-when-applying-an-update).
+
+## 4. Snapshot fingerprints in CI
+
+After each **native store build**, record the fingerprint before shipping JS-only OTAs:
+
+```bash
+cmpatch release-react --platform ios --deployment Production \
+  --disabled --target-binary-version "$APP_VERSION" --yes
+```
+
+Without this, later OTA releases can fail fingerprint checks for that binary version. See [CI integration](/docs/using-patch/ci-integration#native-fingerprint-snapshot-disabled).
+
+## 5. Check delivery and URLs
+
+Production phones must reach your Patch API and storage domains over **public HTTPS**, not `localhost` or a dev machine LAN IP.
+
+- Confirm `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`
+- Put a CDN in front of the storage domain if you expect large install bases, see [Delivery](/docs/using-patch/delivery) and [Cloudflare setup](/docs/setup/cloudflare)
+
+## 6. Optional: bundle signing
+
+If your app requires signed releases, configure keys before the first Production publish. See [Code signing](/docs/using-patch/security#code-signing-update-integrity).
+
+## 7. Plan the first Production release
+
+Do not jump straight to 100% of users:
+
+1. Publish or [promote](/docs/using-patch/releasing-updates#step-3-promote-to-production) to Production
+2. Start with a [gradual rollout](/docs/using-patch/production-control#gradual-rollout) (e.g. 10% → 50% → 100%)
+3. Watch [Analytics](/docs/using-patch/analytics) for download and failure spikes
+4. Know how to [roll back](/docs/using-patch/production-control#roll-back-to-the-previous-release) before you need it
+
+Day-to-day release controls: [Production control](/docs/using-patch/production-control).
+
+## 8. Harden the server
+
+Before opening the dashboard to a wider team, review [Security](/docs/using-patch/security) and [Operations](/docs/reference/operations) (backups, upgrades, monitoring).
+
+## Related
+
+- [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
+- [Troubleshooting](/docs/troubleshooting): version targeting, fingerprint mismatch, pending restart
+- [FAQ](/docs/faq): licensing, compatibility, self-hosting

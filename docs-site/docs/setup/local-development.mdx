@@ -1,0 +1,173 @@
+---
+title: Run locally
+description: >-
+  Run the full Patch stack locally with Docker Compose for evaluation and
+  development.
+llmsDescription: Local Patch dev stack via docker-compose.dev — no TLS or public DNS.
+---
+
+# Run locally
+
+:::info
+Use this to evaluate Patch or develop against the project on your laptop. For a shorter first run, start with the [Quickstart](/docs/). It is not a production deployment: no HTTPS, no public domains, and no bundled dashboard. For a real server, see [Self-host](/docs/setup/self-host).
+:::
+
+A Docker Compose dev stack (`docker-compose.dev.yml`) runs Postgres, MinIO, and the API + release worker on `localhost`. A seed step creates a demo team, app, deployment, and API token so you can publish a release without setting up GitHub OAuth or creating resources by hand.
+
+## Prerequisites
+
+- Docker + Docker Compose v2
+- Node.js `>=22.20.0` and Yarn `4.12.0` (via Corepack): for the CLI only
+
+:::tip CLI install on macOS
+If `corepack enable` fails because Homebrew already installed Yarn, run `npm install -g corepack --force` and retry, or build the CLI from `cli/` with `npm pack` and `npm install -g` the resulting `.tgz`.
+:::
+
+## Start the stack
+
+From the project root:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+The first run builds the server image and may take a few minutes. Wait until the `server` service is healthy, then verify:
+
+```bash
+curl -fsS http://127.0.0.1:3000/health
+curl -fsS http://127.0.0.1:3000/health/ready
+curl -fsS http://127.0.0.1:9100/minio/health/ready
+```
+
+`/health/ready` checks Postgres and object storage connectivity.
+
+### Tear down
+
+Stops containers and deletes dev data (Postgres + MinIO volumes):
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
+## Local endpoints
+
+| Service | URL | Notes |
+| --- | --- | --- |
+| API | `http://127.0.0.1:3000` | Control plane + metrics |
+| Artifact downloads | `http://localhost:9100/codemagic-patch` | Public OTA prefix on MinIO |
+| MinIO console | `http://localhost:9101` | Login: `minio` / `minio12345` |
+| Postgres | `localhost:55433` | DB `codemagic_patch_dev`, user/password `codemagic_patch` |
+
+GitHub OAuth values in the dev stack are placeholders that satisfy server startup checks. You authenticate with the seeded API token below, not `cmpatch login`.
+
+## Seeded fixtures
+
+After `up`, `examples/local-dev/seed.sql` attaches these fixtures to the bootstrap team (`default-team`):
+
+| Item | Value |
+| --- | --- |
+| Team | `default-team` |
+| App | `demo-app` |
+| Deployment | `staging` |
+| Deployment key | `dev_local_deployment_key` |
+| API token | `cm_pat_local-dev-token-change-me-00000001` |
+
+The token is for local use only. Do not reuse it outside your machine.
+
+## Install the CLI
+
+```bash
+corepack enable
+yarn install
+yarn cli:install-global
+```
+
+Configure the CLI to talk to the local API:
+
+```bash
+export CODEMAGIC_PATCH_TOKEN=cm_pat_local-dev-token-change-me-00000001
+
+cmpatch config set server-url http://127.0.0.1:3000
+cmpatch config set team default-team
+```
+
+Confirm the seeded app is visible:
+
+```bash
+cmpatch app list
+cmpatch deployment list --app demo-app
+```
+
+## Publish a test release
+
+From a React Native project root (with the SDK integrated), point at the seeded deployment:
+
+```bash
+cmpatch init \
+  --server-url http://127.0.0.1:3000 \
+  --ios-app demo-app \
+  --deployment staging \
+  --yes
+
+cmpatch release-react --platform ios --deployment staging --release-notes "Local smoke test" --yes
+```
+
+Without a React Native project, publish the repo fixture instead:
+
+```bash
+cmpatch release create \
+  --server-url http://127.0.0.1:3000 \
+  --app demo-app \
+  --deployment staging \
+  --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \
+  --platform ios \
+  --target-binary-version 1.0.0 \
+  --fingerprint local-quickstart \
+  --release-notes "Local smoke test" \
+  --yes
+```
+
+From an RN project root, you can dry-run first with `cmpatch release-react --platform ios --deployment staging --dry-run` after `cmpatch init`.
+
+## Point your app at localhost
+
+Use these values in native config or the Expo plugin:
+
+| Config key | Local value |
+| --- | --- |
+| `CodemagicPatchApiUrl` | `http://127.0.0.1:3000` |
+| `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
+| `CodemagicPatchDeploymentKey` | `dev_local_deployment_key` |
+
+:::warning
+Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the simulator does. Use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs, and ensure `PUBLIC_BASE_URL` in the dev stack matches what the device can fetch. The default Compose file uses `http://localhost:9100/codemagic-patch`, which works for iOS Simulator on the same Mac.
+:::
+
+## Web dashboard (optional)
+
+The dev Compose file does not serve the dashboard, only the API. Contributors working on the dashboard run the Vite dev server separately:
+
+```bash
+yarn workspace web-dashboard dev
+```
+
+Open `http://localhost:5173`. The dev server proxies `/v1` and `/health` to `http://127.0.0.1:3000`.
+
+For dashboard sign-in testing without a real GitHub OAuth App, use `docker-compose.dev.local.yml`; it wires the API to a local mock GitHub service.
+
+## Local vs self-host
+
+| | Local dev stack | Self-host installer |
+| --- | --- | --- |
+| Purpose | Try Patch / develop on your machine | Production-like deployment |
+| HTTPS / domains | No | Yes (Let's Encrypt) |
+| Dashboard | Run separately via Vite (optional) | Served by Caddy |
+| Auth | Seeded API token | GitHub OAuth + dashboard sign-in |
+| Object storage | MinIO on `localhost:9100` | MinIO behind storage domain |
+
+## Next steps
+
+- [Self-host](/docs/setup/self-host): deploy for real users
+- [Native setup](/docs/setup/native-setup): integrate the SDK
+- [First release](/docs/setup/first-release): end-to-end publish workflow
+- [Verify a test release](/docs/using-patch/verify-test-release): confirm OTA on simulator or device

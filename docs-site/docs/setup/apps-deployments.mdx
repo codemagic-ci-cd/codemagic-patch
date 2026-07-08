@@ -1,0 +1,23 @@
+---
+title: Create apps and deployments
+description: >-
+  Create Patch apps and Staging or Production deployments, with separate keys
+  per platform.
+llmsDescription: Create apps and Staging/Production deployments — one key per platform.
+---
+
+# Create apps and deployments
+
+Keep iOS and Android in separate apps:
+
+```bash
+cmpatch app create --name MyApp-iOS
+cmpatch app create --name MyApp-Android
+
+cmpatch deployment list --app MyApp-iOS --format table
+cmpatch deployment list --app MyApp-Android --format table
+```
+
+`app create` automatically creates the `Staging` and `Production` deployments. The `DEPLOYMENT_KEY` column from `deployment list` is the value your app embeds (`CodemagicPatchDeploymentKey`).
+
+The same operations are available in the [web dashboard](/docs/using-patch/dashboard): browse to your app, open a deployment, and copy keys from the UI.

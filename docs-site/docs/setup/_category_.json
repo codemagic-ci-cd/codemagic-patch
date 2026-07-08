@@ -1,0 +1,8 @@
+{
+  "label": "Setup",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Install the server, CLI, apps, and SDK, through your first release."
+  }
+}

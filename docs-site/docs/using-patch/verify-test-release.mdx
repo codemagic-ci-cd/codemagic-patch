@@ -1,0 +1,121 @@
+---
+title: Verify a test release
+description: Confirm a published update reaches a device or simulator before moving on.
+llmsDescription: 'Device OTA verification loop — native build, publish, confirm SDK pickup.'
+---
+
+# Verify a test release
+
+Publishing with `cmpatch release-react` only confirms the server accepted the bundle. This page closes the loop: **install a native build → publish a JS change → confirm the app on device picks it up.**
+
+Use **Staging** (or your local dev deployment) until you are confident, not Production.
+
+## Before you start
+
+The app on device must already satisfy:
+
+| Requirement | Why |
+| --- | --- |
+| Patch SDK in the **native binary** | OTA cannot add the SDK after install, [Core concepts](/docs/introduction/core-concepts#prerequisite-a-native-build-with-the-sdk) |
+| `CodemagicPatchDeploymentKey` matches the deployment you publish to | Wrong key → manifest 404 or wrong channel |
+| `CodemagicPatchApiUrl` and `CodemagicPatchDownloadBaseUrl` reachable from the device | Simulator can use `localhost`; phones and TestFlight builds need LAN or public HTTPS URLs |
+| Running **binary version** matches the release's `targetBinaryVersion` | Mismatch → server offers no update |
+| `sync()` (or manual check/download/install) runs on launch or resume | No check → no download, [Defining update checks](/docs/setup/defining-update-checks) |
+
+If you have not published yet, start with [First release](/docs/setup/first-release).
+
+## Choose how the test app is installed
+
+Where the app runs determines which server URLs work.
+
+| How you install | Typical use | Server URLs |
+| --- | --- | --- |
+| **iOS Simulator / same-machine dev build** | Local Patch stack on your Mac | `http://127.0.0.1:3000` + `http://localhost:9100/codemagic-patch`, [Run locally](/docs/setup/local-development#point-your-app-at-localhost) |
+| **Physical device (USB / local debug build)** | Dev phone on your desk | Your machine's LAN IP (not `localhost`), or a [self-host](/docs/setup/self-host) domain |
+| **TestFlight, Play internal testing, or other test track** | QA validates Staging like real users | Public HTTPS API + storage domains from self-host |
+
+You do not need separate guides for each path; the test loop is the same. Only the URLs and how you install the binary differ.
+
+:::tip
+For self-host Staging, most teams ship an internal or TestFlight build with the **Staging** deployment key embedded, then OTA against `https://updates.example.com`. Production users stay on the **Production** key until you promote.
+:::
+
+## The test loop
+
+Make one visible change in JS (e.g. button label or debug banner), then run through this sequence.
+
+### 1. Confirm the release is published on the server
+
+```bash
+cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
+```
+
+Status should reach **published** (not stuck in `uploaded` or `processing`). In the [dashboard](/docs/using-patch/dashboard), open the deployment release table and confirm the label appears as **Published**.
+
+### 2. Publish the JS change
+
+```bash
+cmpatch release-react \
+  --platform ios \
+  --deployment Staging \
+  --release-notes "Verify OTA" \
+  --yes
+```
+
+Wait for processing again (`inspect --wait` or dashboard).
+
+### 3. Trigger an update check on device
+
+Cold-start the app or bring it to foreground, however you wired `sync()` ([Defining update checks](/docs/setup/defining-update-checks)).
+
+Default `sync()` uses `ON_NEXT_RESTART` for optional updates, so you may need to **kill and reopen** the app twice: once to download, once to run the new bundle.
+
+For faster iteration during testing, use immediate apply:
+
+```tsx
+import { sync } from "@codemagic/react-native-patch";
+
+void sync({ installMode: "IMMEDIATE" });
+```
+
+### 4. Confirm it worked
+
+| Signal | What to look for |
+| --- | --- |
+| **UI** | Your JS change is visible after reload |
+| **SDK** | `sync()` resolves to `"update-installed"` (or `"up-to-date"` if already on latest) |
+| **Dashboard** | Download / success metrics tick up on the release, [Analytics](/docs/using-patch/analytics) |
+| **CLI** | `cmpatch release inspect …` shows client activity for the label |
+
+Repeat on Android if you ship both platforms, separate apps and deployment keys per platform.
+
+## Quick checks when nothing updates
+
+| Symptom | Likely cause |
+| --- | --- |
+| Release **Published** but device unchanged | Install mode needs a second launch; or `sync()` not called |
+| No update offered | Binary version mismatch, compare app version to `--target-binary-version` on the release |
+| Network errors in logs | Device cannot reach API or storage URL (common with `localhost` on a physical phone) |
+| Wrong bundle | Deployment key in the binary does not match the deployment you published to |
+
+Full list: [Troubleshooting](/docs/troubleshooting). CLI sanity check before publishing:
+
+```bash
+cmpatch doctor --app MyApp-iOS --deployment Staging --verbose
+```
+
+## After Staging looks good
+
+When QA is satisfied on Staging, follow [Preparing for production](/docs/using-patch/preparing-for-production) before your first Production release. In short:
+
+1. [Promote](/docs/using-patch/releasing-updates#step-3-promote-to-production) the release to Production with no rebuild required, or publish a new release directly to Production when ready
+2. Use [Production control](/docs/using-patch/production-control) for rollouts and rollbacks on live users
+
+Production devices must use a native binary built with the **Production** deployment key. Staging OTAs never reach them.
+
+## Related
+
+- [First release](/docs/setup/first-release): initial publish
+- [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
+- [Run locally](/docs/setup/local-development): simulator + local stack
+- [Native setup](/docs/setup/native-setup): SDK and config keys

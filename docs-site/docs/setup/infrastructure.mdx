@@ -1,0 +1,121 @@
+---
+title: Infrastructure adapters
+description: >-
+  Configure external storage and CDN delivery adapters when you outgrow the
+  default Compose stack.
+llmsDescription: 'Storage and delivery adapters — S3, GCS, MinIO, base-url, Cloudflare.'
+---
+
+# Infrastructure adapters
+
+:::info
+Most teams use the default [self-host](/docs/setup/self-host) Compose stack and never touch adapter settings. This page is for higher-scale or custom deployments, external object storage, a CDN in front of downloads, or splitting the API and worker.
+:::
+
+Patch is an integrated product, not a plugin marketplace. Under the hood it has two fixed integration points, storage adapters and delivery adapters, that let you swap backends without changing the CLI, dashboard, or SDK.
+
+See [How it works](/docs/introduction/how-it-works) for the end-to-end flow. This page explains what you can configure on the server side.
+
+## Two layers
+
+| Layer | Question it answers | Env var |
+| --- | --- | --- |
+| Storage adapter | Where are bundles and manifests stored? | `STORAGE_ADAPTER` |
+| Delivery adapter | What public URLs do clients download from, and how is the cache invalidated? | `DELIVERY_ADAPTER` |
+
+The API and worker read and write artifacts through the storage adapter. When a release is published, the delivery adapter resolves stable public URLs (embedded in manifests) and optionally purges a CDN cache.
+
+The server never serves OTA artifacts from the API domain; clients fetch from your download base URL. See [How delivery works](/docs/using-patch/delivery).
+
+## Defaults (self-host installer)
+
+`scripts/selfhost/install.sh` sets up:
+
+- `STORAGE_ADAPTER=s3` with bundled MinIO
+- `DELIVERY_ADAPTER=base-url`: clients fetch directly from `PUBLIC_BASE_URL`
+- `PUBLIC_BASE_URL` on your storage domain, e.g. `https://storage.updates.example.com/codemagic-patch`
+- `MODE=all`: API and release worker in one process
+
+That single-host layout is enough for most installs.
+
+## Storage adapter
+
+Controls where release artifacts live.
+
+| Value | Typical use |
+| --- | --- |
+| `s3` | Default. MinIO in the Compose stack, or any S3-compatible store (AWS S3, Cloudflare R2, etc.) |
+| `gcs` | Google Cloud Storage with separate public and internal buckets |
+| `memory` | Local development and tests only, not for production |
+
+### S3-compatible storage
+
+Used by the default self-host stack (MinIO) and for external object storage at scale.
+
+Key variables (full list in [Configuration reference](/docs/reference/configuration)):
+
+| Variable | Role |
+| --- | --- |
+| `S3_BUCKET` | Bucket name (required when `STORAGE_ADAPTER=s3`) |
+| `S3_ENDPOINT` | Custom endpoint for MinIO or S3-compatible services |
+| `S3_FORCE_PATH_STYLE` | `true` for MinIO; often `false` for AWS |
+| `S3_REGION` | AWS region (default `us-east-1`) |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Credentials, or omit both to use the host's default credential chain |
+
+`PUBLIC_BASE_URL` must point at the publicly readable origin for artifacts: the storage domain in a default install, or your CDN domain if fronted.
+
+### Google Cloud Storage
+
+Set `STORAGE_ADAPTER=gcs` with:
+
+- `GCS_PUBLIC_BUCKET`: artifacts clients download
+- `GCS_INTERNAL_BUCKET`: staged uploads (`_internal/*`); must be a different bucket
+
+GCS is not part of the default Compose installer. Use it when you run Patch on GCP infrastructure instead of the bundled MinIO container.
+
+## Delivery adapter
+
+Controls how storage keys become client-facing download URLs and whether the server purges an edge cache after each release.
+
+| Value | Typical use |
+| --- | --- |
+| `base-url` | Default. URLs are `PUBLIC_BASE_URL` + storage key. No CDN integration. |
+| `cloudflare` | Storage domain is proxied through Cloudflare; server calls the Cache Purge API after releases |
+
+With `base-url`, clients hit your storage domain directly (Caddy → MinIO in the default stack).
+
+With `cloudflare`, manifest URLs still use `PUBLIC_BASE_URL`, which should be the Cloudflare-fronted domain, and Patch purges cached objects so new releases propagate. Setup: [Cloudflare setup](/docs/setup/cloudflare).
+
+Purge is best-effort: a failed purge does not roll back a release, but you may see stale bundles at the edge until the cache expires.
+
+## When adapters matter
+
+You usually need to think about adapters when:
+
+- Download volume or geographic reach outgrows a single origin: add Cloudflare ([Cloudflare setup](/docs/setup/cloudflare))
+- You want managed object storage instead of bundled MinIO: point `STORAGE_ADAPTER=s3` at AWS S3 or R2, or use `gcs` on GCP
+- You split processes for scale: `MODE=api` and `MODE=worker` on separate hosts (worker routes are not exposed publicly in the self-host Caddy config)
+
+You usually do not need to change adapters when:
+
+- You are evaluating Patch or running a single Docker host
+- You publish through `cmpatch` and the dashboard on the default installer layout
+
+## Client config stays the same
+
+Adapter changes are server-side. Apps still need two URLs:
+
+| App config | Points at |
+| --- | --- |
+| `CodemagicPatchApiUrl` | API / control plane (metrics, auth) |
+| `CodemagicPatchDownloadBaseUrl` | `PUBLIC_BASE_URL`, storage domain or CDN-fronted equivalent |
+
+If you add a CDN, `CodemagicPatchDownloadBaseUrl` should match the CDN-facing base URL clients actually fetch from, not the raw MinIO origin.
+
+## Related
+
+- [Configuration reference](/docs/reference/configuration): all env vars
+- [How delivery works](/docs/using-patch/delivery): manifest paths and public vs internal objects
+- [Cloudflare setup](/docs/setup/cloudflare): DNS, CDN delivery adapter, install flags
+- [Self-host](/docs/setup/self-host): default install
+- [Operations](/docs/reference/operations): backup, restore, upgrade

@@ -1,0 +1,32 @@
+---
+title: Requirements
+description: >-
+  What you need to self-host Patch: Docker, domains, GitHub OAuth, and supported
+  CLI and RN versions.
+llmsDescription: 'Self-host prerequisites — Docker, domains, GitHub OAuth, CLI and RN versions.'
+---
+
+# Requirements
+
+## Server host
+
+For trying Patch on your laptop without domains or TLS, see [Run locally](/docs/setup/local-development).
+
+Self-hosting requires:
+
+- Docker + Docker Compose v2, and `curl`
+- Public inbound access on ports 80 and 443
+- Two domains with DNS A/AAAA records pointing at the host: one for the API/dashboard, one for artifact storage. They must differ:
+  - API/dashboard: e.g. `updates.example.com`
+  - Storage: e.g. `storage.updates.example.com`
+- A GitHub OAuth App (see [Self-host](/docs/setup/self-host))
+- Using Cloudflare for DNS or CDN? See [Cloudflare setup](/docs/setup/cloudflare) before install
+
+## Building / using the CLI (local or CI)
+
+- Node.js `>=22.20.0`
+- Yarn `4.12.0` (via Corepack)
+
+## React Native app
+
+- React Native `>=0.76`, React `>=18`

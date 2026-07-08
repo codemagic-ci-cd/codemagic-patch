@@ -1,0 +1,154 @@
+---
+title: CI integration
+description: >-
+  Publish OTA updates automatically from GitHub Actions, Codemagic, or other CI
+  systems.
+llmsDescription: 'Automate cmpatch release-react in GitHub Actions, Codemagic, other CI.'
+---
+
+# CI integration
+
+Patch updates can be published from a developer machine or automated in CI. Releasing from CI keeps OTA delivery aligned with your build and test pipeline.
+
+Typical flow:
+
+```text
+commit → CI build → tests pass → cmpatch release-react → update deployed
+```
+
+## Native fingerprint snapshot (`--disabled`)
+
+After a **native store or internal build**, run `release-react` once with **`--disabled`** and **`--target-binary-version`** matching that build. Patch records the native fingerprint for that binary version without serving the bundle to devices, later OTA releases for the same version are checked against it.
+
+## Prerequisites
+
+Your pipeline needs:
+
+1. Node.js `>=22.20.0` and the `cmpatch` CLI installed (see below)
+2. A Patch API token (`cm_pat_…`) with permission to publish
+3. Your server URL reachable from the CI runner (not `localhost` unless the runner is on the same host)
+
+### Install cmpatch in CI
+
+The npm package name is `codemagic-patch` (command: `cmpatch`). It is **not on the public npm registry yet**, so `npm install -g codemagic-patch` fails today.
+
+Until a release is published, build the CLI from the [codemagic-patch](https://github.com/codemagic-ci-cd/codemagic-patch) repository in your pipeline (same sources as [Install the CLI](/docs/setup/cli)):
+
+```bash
+git clone --depth 1 https://github.com/codemagic-ci-cd/codemagic-patch.git /tmp/codemagic-patch
+cd /tmp/codemagic-patch
+corepack enable
+yarn install --no-immutable
+yarn workspace @codemagic/patch-shared build
+yarn workspace codemagic-patch build
+CMPATCH="node /tmp/codemagic-patch/cli/dist/cmpatch.js"
+```
+
+Use `$CMPATCH` (or add `cli/dist` to your path) in later steps. When `codemagic-patch` is published to npm, you can switch to `npm install -g codemagic-patch`.
+
+Create a token:
+
+```bash
+cmpatch token create --name ci
+```
+
+Store the `cm_pat_…` value as a secret. It is shown only once.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `CODEMAGIC_PATCH_TOKEN` | API token for `cmpatch` (or pass `--token`) |
+| `CODEMAGIC_PATCH_SERVER_URL` | Your Patch API URL, e.g. `https://updates.example.com` |
+
+Auth precedence: `--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`.
+
+## Codemagic
+
+Run the same commands you would locally after a successful build:
+
+```yaml
+scripts:
+  - name: Install cmpatch
+    script: |
+      git clone --depth 1 https://github.com/codemagic-ci-cd/codemagic-patch.git /tmp/codemagic-patch
+      cd /tmp/codemagic-patch
+      corepack enable
+      yarn install --no-immutable
+      yarn workspace @codemagic/patch-shared build
+      yarn workspace codemagic-patch build
+
+  - name: Release OTA update
+    script: |
+      CMPATCH="node /tmp/codemagic-patch/cli/dist/cmpatch.js"
+      $CMPATCH release-react \
+        --server-url "$CODEMAGIC_PATCH_SERVER_URL" \
+        --token "$CODEMAGIC_PATCH_TOKEN" \
+        --platform android \
+        --deployment Staging \
+        --yes
+```
+
+Add `--disabled --target-binary-version "$APP_VERSION"` on the step that runs right after a native build (omit both for JS-only OTA publishes).
+
+Store `CODEMAGIC_PATCH_TOKEN` and `CODEMAGIC_PATCH_SERVER_URL` as secure environment variables.
+
+If the project has `codemagic-patch.config.json` from `cmpatch init`, you can omit `--server-url` and app flags when defaults are set.
+
+## GitHub Actions
+
+```yaml
+- name: Install cmpatch
+  run: |
+    git clone --depth 1 https://github.com/codemagic-ci-cd/codemagic-patch.git /tmp/codemagic-patch
+    cd /tmp/codemagic-patch
+    corepack enable
+    yarn install --no-immutable
+    yarn workspace @codemagic/patch-shared build
+    yarn workspace codemagic-patch build
+
+- name: Release OTA update
+  env:
+    CODEMAGIC_PATCH_TOKEN: ${{ secrets.CODEMAGIC_PATCH_TOKEN }}
+    CODEMAGIC_PATCH_SERVER_URL: ${{ secrets.CODEMAGIC_PATCH_SERVER_URL }}
+  run: |
+    CMPATCH="node /tmp/codemagic-patch/cli/dist/cmpatch.js"
+    $CMPATCH release-react \
+      --server-url "$CODEMAGIC_PATCH_SERVER_URL" \
+      --token "$CODEMAGIC_PATCH_TOKEN" \
+      --platform ios \
+      --deployment Staging \
+      --yes
+```
+
+Same as Codemagic: add `--disabled --target-binary-version "$APP_VERSION"` after a native build step when you need a fingerprint snapshot.
+
+You can also trigger releases from the Patch dashboard via GitHub Actions (`workflow_dispatch`) when GitHub Actions integration is configured for a deployment.
+
+## Release strategies
+
+On every merge to main
+
+```text
+merge → CI build → tests pass → release to Staging (or Production)
+```
+
+On tags only
+
+```text
+tag v1.2.0 → CI build → release with --target-binary-version 1.2.0
+```
+
+Manual pipeline trigger
+
+Developer runs the workflow when ready to ship an OTA update.
+
+## Best practices
+
+- Store tokens as CI secrets; never commit them
+- Restrict who can trigger release pipelines
+- Release to `Staging` first; [promote to Production](/docs/using-patch/releasing-updates) after validation
+- Run `cmpatch doctor` in CI before publishing when debugging integration issues
+- [Monitor metrics](/docs/using-patch/analytics) after deployment
+
+See also: [CLI reference](/docs/reference/cli-reference) · [Security](/docs/using-patch/security)

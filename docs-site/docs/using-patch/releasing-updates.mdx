@@ -1,0 +1,152 @@
+---
+title: Releasing updates
+description: 'Publish and manage OTA updates from the dashboard, cmpatch CLI, or CI.'
+llmsDescription: 'Publish and manage OTA releases via CLI, dashboard, or CI pipelines.'
+---
+
+# Releasing updates
+
+This guide explains how to publish and manage OTA updates, from the dashboard, the `cmpatch` CLI, or CI.
+
+## Ways to publish
+
+| Method | Best for |
+| --- | --- |
+| [Dashboard → New release](/docs/using-patch/dashboard#publishing-a-release) | Command builder (copy `release-react`) or `.cmpatch` bundle upload in the browser |
+| CLI | Local dev, scripts, and pipelines (`cmpatch release-react`) |
+| CI | Automated releases after build/test, [CI integration](/docs/using-patch/ci-integration) |
+| GitHub Actions | Trigger a linked workflow from the dashboard, [Dashboard](/docs/using-patch/dashboard#github-actions) |
+
+### Dashboard: command builder or bundle upload
+
+On a deployment page, New release offers two main UI paths:
+
+**Via CLI**: the dashboard builds a `cmpatch release-react` command from your choices (platform, rollout %, target binary version, release notes, mandatory). Copy and run it from your project directory or CI. Patch does not compile the bundle in the browser.
+
+**Bundle upload**: drag or select a `.cmpatch` file produced by `cmpatch bundle`. Set metadata and upload; the server ingests the artifact and queues processing.
+
+Full UI walkthrough: [Web dashboard](/docs/using-patch/dashboard).
+
+### CLI: one-shot publish from source
+
+From your React Native project root:
+
+```bash
+cmpatch release-react --platform ios --deployment Staging --release-notes "Fix onboarding crash" --yes
+```
+
+`release-react` bundles JS, computes fingerprint and target binary version, and uploads in one step.
+
+## Recommended workflow: Staging → Production
+
+Use a Staging → Production promotion flow so every update is tested before reaching end users.
+
+### Step 1: Release to Staging
+
+Via CLI:
+
+```bash
+cmpatch release-react --platform ios --deployment Staging --release-notes "Fix onboarding crash" --yes
+```
+
+Or use New release in the dashboard (command builder or bundle upload).
+
+At this stage:
+
+- The update is not visible to production users
+- You can validate functionality and stability
+- Multiple iterations can be released without production impact
+
+### Step 2: Validate in Staging
+
+Test thoroughly before promoting. Typical checks:
+
+- App launch and navigation
+- New features and UI changes
+- Regression testing
+- Crash-free behavior on target devices
+- Compatibility with supported binary versions
+
+### Step 3: Promote to Production
+
+After validation, promote the same release with no rebuild required.
+
+CLI:
+
+```bash
+cmpatch release promote \
+  --app MyApp-iOS \
+  --source-deployment Staging \
+  --dest-deployment Production \
+  --label v4 \
+  --yes
+```
+
+Dashboard: open the release on Staging and use Promote, or use deployment actions. See [Web dashboard](/docs/using-patch/dashboard#managing-existing-releases).
+
+```text
+Release to Staging → Internal testing & QA → Promote to Production
+```
+
+## What gets uploaded
+
+A Patch release includes:
+
+- JavaScript bundle
+- Static assets (images, fonts, etc.)
+- Release metadata (deployment, binary version, rollout, etc.)
+
+Patch does not include native binaries (`.apk` / `.ipa`). Any native code change must go through the app stores.
+
+## Version control
+
+Patch uses a two-layer versioning model.
+
+1. Native app version (binary version)
+
+The version from the App Store / Play Store (`CFBundleShortVersionString` on iOS, `versionName` on Android). This is the baseline the OTA update must be compatible with.
+
+2. Patch release version
+
+Each release is a JavaScript + asset bundle on top of a native binary. Releases are ordered within a deployment history and can be rolled back independently of store releases.
+
+### Target binary version
+
+`cmpatch release-react` auto-detects the target binary version from your native project. You can override it in the CLI or command builder:
+
+```bash
+cmpatch release-react \
+  --platform ios \
+  --deployment Staging \
+  --target-binary-version "1.2.0" \
+  --yes
+```
+
+Semantic ranges are supported (e.g. `^1.2.0`, `~1.2.0`) so patch-level store builds can receive the same OTA channel.
+
+Only apps whose running binary version matches the release's target receive the update.
+
+## Dry runs and inspection
+
+Preview without uploading:
+
+```bash
+cmpatch release-react --platform ios --deployment Staging --dry-run
+```
+
+Watch processing and inspect a release:
+
+```bash
+cmpatch release list --app MyApp-iOS --deployment Staging --format table
+cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
+```
+
+In the dashboard, open the deployment or release detail page to see status and metrics.
+
+## Next steps
+
+- [Verify a test release](/docs/using-patch/verify-test-release): confirm devices receive Staging updates before promoting
+- [Web dashboard](/docs/using-patch/dashboard): UI overview, tokens, team management
+- [Production control](/docs/using-patch/production-control): rollouts, mandatory updates, rollbacks
+- [CI integration](/docs/using-patch/ci-integration): automate releases in pipelines
+- [Analytics](/docs/using-patch/analytics): monitor adoption and failures

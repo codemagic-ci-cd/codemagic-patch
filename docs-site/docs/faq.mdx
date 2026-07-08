@@ -1,0 +1,55 @@
+---
+title: FAQs
+description: >-
+  Answers to common questions about Patch, licensing, Expo, CodePush, and
+  self-hosting.
+llmsDescription: 'FAQ — licensing, Expo, CodePush, self-host, what can ship OTA, where to debug.'
+---
+
+# FAQs
+
+Short answers to common questions. For setup steps and deeper topics, follow the links.
+
+## What is Codemagic Patch?
+
+Self-hosted over-the-air (OTA) updates for React Native. You run the server, publish JS bundle updates with the CLI or dashboard, and installed apps pull those updates through the Patch SDK. See [How it works](/docs/introduction/how-it-works).
+
+## Do I need Codemagic CI?
+
+No. Patch works with any CI (GitHub Actions, Bitrise, your laptop). Codemagic is the vendor behind Patch, not a required platform. See [CI integration](/docs/using-patch/ci-integration).
+
+## Is Patch free?
+
+You can self-host under the [Codemagic Fair Source License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) at no charge while you stay at or below one million monthly active users. Above that, you need a commercial license from Codemagic. See [How Patch compares](/docs/introduction/comparison#licensing).
+
+## How is Patch different from Codemagic CodePush?
+
+CodePush is a hosted service run by Codemagic. Patch is the same general model (apps, deployments, `release-react`-style flows) but you host the stack yourself and control your data. See [Comparison](/docs/introduction/comparison#vs-codemagic-codepush) or [Migrating from CodePush](/docs/migration/migrating-from-codepush).
+
+## Does Patch work with Expo?
+
+Yes. Patch supports bare React Native and Expo projects (including the prebuild plugin). You point the SDK at your Patch server instead of EAS Update. See [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates).
+
+## What can I ship over the air?
+
+JavaScript, React components, and bundled assets that stay compatible with the native binary already on the device. Native code changes, new permissions, and SDK upgrades still need a store release. See [Core concepts](/docs/introduction/core-concepts#javascript-layer-vs-native-layer).
+
+## Do users need to update from the app store for every release?
+
+Only when the native layer changed. Routine JS fixes and UI updates can roll out OTA; the SDK checks your server on launch or resume. Users typically restart the app to apply the new bundle.
+
+## Do I have to run my own server?
+
+Patch is self-hosted. For a quick try on your laptop, see [Quickstart](/docs/). For production you need a host with Docker, two domains, and a GitHub OAuth app. See [Self-host](/docs/setup/self-host) and [Requirements](/docs/setup/requirements).
+
+## Where do bundles get downloaded from?
+
+The SDK reads manifests and downloads bundles from your **storage domain** (or a CDN in front of it), not from the API. The API is the control plane for publishing, auth, and metrics. See [How it works](/docs/introduction/how-it-works).
+
+## Can Staging and Production use different sync behavior?
+
+Yes, but only on the **client**, not from the server. `installMode` and related options are set in your app code. The usual approach is separate native builds (Staging key vs Production key) and branch `sync()` options by build flavor. See [Preparing for production](/docs/using-patch/preparing-for-production#3-tune-client-sync-by-build).
+
+## Something isn't working. Where do I start?
+
+Check [Troubleshooting](/docs/troubleshooting) for `cmpatch doctor`, log commands, and common failure modes (version targeting, SDK integration, bundle errors).

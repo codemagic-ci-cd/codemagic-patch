@@ -1,0 +1,108 @@
+---
+title: Migrating from CodePush
+description: Move from Codemagic CodePush or react-native-code-push to self-hosted Patch.
+llmsDescription: 'CodePush to Patch — SDK swap, deployment keys, server URL, CLI mapping.'
+---
+
+# Migrating from CodePush
+
+This guide covers moving from [Codemagic CodePush](https://docs.codemagic.io/rn-codepush/) (hosted) or a `@code-push-next/react-native-code-push` integration to self-hosted Codemagic Patch. For a feature-level comparison, see [How Patch compares](/docs/introduction/comparison#vs-codemagic-codepush).
+
+:::warning
+The Patch SDK ships in the **native binary**. Plan a store release (or internal distribution build) that embeds Patch before OTA updates can run through your Patch server. You cannot swap the update client purely over the air.
+:::
+
+## Concept mapping
+
+| CodePush | Codemagic Patch |
+| --- | --- |
+| Hosted service (`codepush.pro`) | [Self-hosted](/docs/setup/self-host) stack on your domains |
+| App access key / service token | GitHub OAuth (dashboard) + `cm_pat_…` API tokens (CLI/CI) |
+| Deployment key in native config | `CodemagicPatchDeploymentKey` ([same idea](/docs/setup/apps-deployments)) |
+| `Staging` / `Production` deployments | Same channel names by default |
+| `codePush.sync()` / HOC wrapper | [`sync()`](/docs/setup/defining-update-checks) from `@codemagic/react-native-patch` |
+| `release-react` (CodePush CLI) | `cmpatch release-react` |
+| `--mandatory`, rollout, target binary version | Same flags on `cmpatch release-react` / `release patch` |
+| `notifyAppReady()` | Called automatically by `sync()`; [manual](/docs/setup/manual-control) if not using `sync()` |
+
+Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, etc.) and `mandatoryInstallMode` map closely, see [Defining update checks](/docs/setup/defining-update-checks).
+
+## 1. Stand up Patch
+
+Follow [Self-host](/docs/setup/self-host) (or [Run locally](/docs/setup/local-development) to try the stack first). You need:
+
+- API URL → `CodemagicPatchApiUrl`
+- Download base URL → `CodemagicPatchDownloadBaseUrl`
+
+Create apps and deployments to mirror your CodePush layout (one app per platform is the usual pattern):
+
+```bash
+cmpatch app create --name MyApp-iOS
+cmpatch app create --name MyApp-Android
+cmpatch deployment list --app MyApp-iOS --format table
+```
+
+Copy each deployment key into native config when you integrate the SDK.
+
+## 2. Replace the client SDK
+
+Remove CodePush from dependencies and native projects:
+
+```bash
+yarn remove @code-push-next/react-native-code-push   # or your CodePush package name
+yarn add @codemagic/react-native-patch
+cd ios && pod install && cd ..
+```
+
+Wire Patch per [Native setup](/docs/setup/native-setup): bare RN (Info.plist / `strings.xml` + bundle selection) or Expo (config plugin + `prebuild`).
+
+Replace CodePush calls in JS:
+
+```tsx
+// Before (CodePush)
+import codePush from "@code-push-next/react-native-code-push";
+codePush.sync({ installMode: codePush.InstallMode.ON_NEXT_RESTART });
+
+// After (Patch)
+import { sync } from "@codemagic/react-native-patch";
+void sync({ installMode: "ON_NEXT_RESTART" });
+```
+
+Remove the `codePush(...)(App)` HOC if you used it, call `sync()` from a `useEffect` or app entry instead. Class-component HOC hooks (`codePushDownloadDidProgress`, etc.) have no direct equivalent; use `sync(options, onProgress)` or [manual control](/docs/setup/manual-control).
+
+## 3. Point CI at Patch
+
+Install and authenticate the Patch CLI ([Install the CLI](/docs/setup/cli)):
+
+```bash
+cmpatch config set server-url https://updates.example.com
+cmpatch token create --name ci   # store cm_pat_… as a CI secret
+```
+
+Swap CodePush release steps for:
+
+```bash
+cmpatch release-react \
+  --platform ios \
+  --deployment Production \
+  --release-notes "…" \
+  --yes
+```
+
+See [CI integration](/docs/using-patch/ci-integration): including `--disabled` after native builds to snapshot the fingerprint for a new binary version.
+
+## 4. Cut over
+
+1. **Publish a native build** with the Patch SDK and deployment keys embedded (Staging first).
+2. **Publish an OTA release** to that deployment with `cmpatch release-react` targeting the same binary version users install.
+3. Validate on Staging, then repeat for Production.
+4. Decommission CodePush releases once no active binaries still call the old service.
+
+## Checklist
+
+- [ ] Patch server running with HTTPS and GitHub OAuth configured
+- [ ] Apps and deployments created; keys copied into native config
+- [ ] CodePush package and native wiring removed; Patch SDK integrated
+- [ ] `sync()` (or manual API) replaces CodePush sync/HOC
+- [ ] CI secrets and release commands updated to `cmpatch`
+- [ ] New store/internal binary shipped; OTA tested on Staging before Production

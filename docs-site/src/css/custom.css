@@ -1,0 +1,376 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+/* Override Infima/Docusaurus defaults — html beats :root specificity */
+html {
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-darkest: #1e3a8a;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-color-primary-lightest: #93c5fd;
+  --ifm-link-color: #2563eb;
+  --ifm-link-hover-color: #1d4ed8;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --patch-table-header-bg: #f8fafc;
+
+  /* Typography — matches sidebar nav: medium weight, tighter scale */
+  --patch-font-size-ui: 0.8125rem;
+  --patch-font-size-sidebar: 0.9375rem;
+  --patch-font-weight-ui: 500;
+  --patch-font-weight-ui-strong: 600;
+
+  --ifm-font-size-base: 93.75%;
+  --ifm-line-height-base: 1.65;
+  --ifm-font-weight-semibold: 600;
+  --ifm-font-weight-bold: 600;
+  --ifm-heading-font-weight: 500;
+  --ifm-heading-line-height: 1.3;
+
+  --ifm-h1-font-size: 1.5rem;
+  --ifm-h2-font-size: 1.3125rem;
+  --ifm-h3-font-size: 1.0625rem;
+  --ifm-h4-font-size: 0.9375rem;
+  --ifm-h5-font-size: 0.875rem;
+  --ifm-h6-font-size: 0.8125rem;
+
+  /* Nav chrome — grey active states in sidebar/nav */
+  --ifm-menu-color-active: var(--ifm-font-color-base);
+  --ifm-menu-color-background-active: var(--ifm-color-emphasis-100);
+  --ifm-menu-color-background-hover: var(--ifm-color-emphasis-100);
+
+  /* Docs layout */
+  --doc-sidebar-width: 268px;
+
+  /* Search term highlights on doc pages */
+  --patch-search-mark-bg: rgba(37, 99, 235, 0.14);
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+html[data-theme='dark'] {
+  --ifm-color-primary: #60a5fa;
+  --ifm-color-primary-dark: #3b82f6;
+  --ifm-color-primary-darker: #2563eb;
+  --ifm-color-primary-darkest: #1d4ed8;
+  --ifm-color-primary-light: #93c5fd;
+  --ifm-color-primary-lighter: #bfdbfe;
+  --ifm-color-primary-lightest: #dbeafe;
+  --ifm-link-color: #60a5fa;
+  --ifm-link-hover-color: #93c5fd;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --patch-table-header-bg: rgba(37, 99, 235, 0.14);
+  --patch-search-mark-bg: rgba(96, 165, 250, 0.22);
+}
+
+/* Doc tables — card-style instead of heavy Infima grid borders */
+.markdown table {
+  display: table;
+  width: 100%;
+  margin: 1.25rem 0 1.5rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 0.65rem;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: var(--patch-font-size-ui);
+  line-height: 1.45;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.markdown table thead tr {
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.markdown table thead {
+  background: var(--patch-table-header-bg);
+}
+
+.markdown table tr {
+  border-top: none;
+  background: var(--ifm-background-color);
+}
+
+.markdown table tr:nth-child(2n) {
+  background: var(--ifm-background-color);
+}
+
+.markdown table tbody tr:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.markdown table th,
+.markdown table td {
+  border: none;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  padding: 0.7rem 0.9rem;
+  vertical-align: top;
+}
+
+.markdown table tr:last-child th,
+.markdown table tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown table th {
+  background: transparent;
+  color: var(--ifm-font-color-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.markdown table td {
+  color: var(--ifm-font-color-base);
+}
+
+.markdown table td code,
+.markdown table th code {
+  font-size: 0.84em;
+  border: none;
+  background: var(--ifm-color-emphasis-200);
+  padding: 0.1em 0.35em;
+}
+
+[data-theme='dark'] .markdown table {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] .markdown table td code,
+[data-theme='dark'] .markdown table th code {
+  background: var(--ifm-color-emphasis-300);
+}
+
+/* Sidebar navigation */
+.theme-doc-sidebar-menu .menu__link {
+  font-size: var(--patch-font-size-sidebar);
+  font-weight: 400;
+  color: var(--ifm-font-color-secondary);
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+/* Minimal expand/collapse chevrons on top-level sections (caret is on the link, not .menu__caret) */
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link--sublist-caret:after {
+  content: '';
+  background: none !important;
+  filter: none !important;
+  min-width: 0.5rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-left: auto;
+  border-right: 1px solid var(--ifm-font-color-secondary);
+  border-bottom: 1px solid var(--ifm-font-color-secondary);
+  opacity: 0.4;
+  transform: rotate(45deg) !important;
+  transition: transform 0.15s linear, opacity 0.15s linear;
+}
+
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-1.menu__list-item--collapsed > .menu__list-item-collapsible > .menu__link--sublist-caret:after {
+  transform: rotate(-45deg) !important;
+}
+
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link--sublist-caret:hover:after {
+  opacity: 0.6;
+}
+
+/* Top-level sections and single pages */
+.theme-doc-sidebar-menu > .menu__list > .menu__list-item > .menu__link,
+.theme-doc-sidebar-menu > .menu__list > .menu__list-item-collapsible > .menu__link {
+  font-weight: 400;
+}
+
+/* Nested pages */
+.theme-doc-sidebar-menu .menu__list .menu__list .menu__link {
+  font-weight: 400;
+}
+
+.theme-doc-sidebar-menu .menu__link--active {
+  font-weight: 400;
+  color: var(--ifm-font-color-base);
+}
+
+.theme-doc-sidebar-menu .menu__link:hover,
+.theme-doc-sidebar-menu .menu__link--active:hover {
+  color: var(--ifm-font-color-base);
+}
+
+/* Nested sidebar subsection labels (Server, App & SDK, Releases, Operations) */
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link,
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link.menu__link--active,
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link:hover,
+.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link.menu__link--active:hover {
+  font-weight: 400;
+  color: var(--ifm-font-color-secondary);
+  background: transparent;
+  cursor: default;
+  padding-top: 0.65rem;
+  padding-bottom: 0.2rem;
+}
+
+.navbar__link--active,
+.navbar__link--active:hover {
+  color: var(--ifm-navbar-link-color);
+}
+
+/* Docs main — slightly more horizontal gutter without touching the grid */
+@media (min-width: 997px) {
+  main[class*='docMainContainer'] {
+    --ifm-spacing-horizontal: 1.5rem;
+  }
+}
+
+/* Doc content — override Infima's oversized markdown heading scale */
+.markdown {
+  --ifm-leading: 1.45rem;
+}
+
+/* Docusaurus wraps the page title in <header><h1>…</h1></header> */
+.theme-doc-markdown header h1,
+.markdown > h1:first-child {
+  --ifm-h1-font-size: 1.375rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin-bottom: 1rem;
+}
+
+.markdown > h2 {
+  --ifm-h2-font-size: 1.3125rem;
+  font-weight: 500;
+}
+
+.markdown > h3 {
+  --ifm-h3-font-size: 1.0625rem;
+  font-weight: 500;
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 500;
+}
+
+@media (max-width: 576px) {
+  .theme-doc-markdown header h1,
+  .markdown > h1:first-child {
+    --ifm-h1-font-size: 1.25rem;
+  }
+
+  .markdown > h2 {
+    --ifm-h2-font-size: 1.1875rem;
+  }
+
+  .markdown > h3 {
+    --ifm-h3-font-size: 1rem;
+  }
+}
+
+/* Chrome: navbar, breadcrumbs, TOC */
+.navbar__brand .navbar__title {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: var(--ifm-navbar-link-color);
+}
+
+.navbar__brand:hover .navbar__title {
+  color: var(--ifm-navbar-link-hover-color);
+}
+
+.breadcrumbs__item,
+.breadcrumbs__link {
+  font-size: var(--patch-font-size-ui);
+  font-weight: var(--patch-font-weight-ui);
+}
+
+.table-of-contents__link {
+  font-size: var(--patch-font-size-ui);
+  font-weight: var(--patch-font-weight-ui);
+}
+
+.table-of-contents__link--active {
+  font-weight: var(--patch-font-weight-ui-strong);
+  color: var(--ifm-link-color);
+}
+
+.theme-doc-markdown a {
+  color: var(--ifm-link-color);
+}
+
+.theme-doc-markdown a:hover {
+  color: var(--ifm-link-hover-color);
+}
+
+/* Search term highlights on target pages (highlightSearchTermsOnTargetPage) */
+.theme-doc-markdown mark,
+article mark {
+  background: var(--patch-search-mark-bg);
+  color: inherit;
+  padding: 0.05em 0.15em;
+  border-radius: 0.15em;
+}
+
+.table-of-contents__left-border {
+  border-left-width: 1px;
+}
+
+/* Mermaid diagrams */
+.docusaurus-mermaid-container {
+  margin: 1.25rem 0 1.5rem;
+  text-align: center;
+}
+
+.docusaurus-mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Changelog: tight entry blocks, clear separation between entries */
+.patch-changelog .theme-doc-markdown header h1,
+.patch-changelog .markdown > h1:first-child {
+  margin-bottom: 1.25rem;
+}
+
+.patch-changelog .markdown > h2 {
+  margin-top: 3rem;
+  margin-bottom: 0.2rem;
+}
+
+.patch-changelog .markdown > h2:first-of-type {
+  margin-top: 1.5rem;
+}
+
+.patch-changelog .markdown > h2 + p {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: var(--ifm-font-color-secondary);
+  font-size: 0.9375rem;
+}
+
+.patch-changelog .markdown > h2 + p + p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.patch-changelog .markdown > h2 + p + ul,
+.patch-changelog .markdown > h2 + p + p + ul {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+.patch-changelog .markdown > h2 + p + ul li,
+.patch-changelog .markdown > h2 + p + p + ul li {
+  margin-bottom: 0.35rem;
+}
+
+.patch-changelog .markdown > h2 + p + ul li:last-child,
+.patch-changelog .markdown > h2 + p + p + ul li:last-child {
+  margin-bottom: 0;
+}
+

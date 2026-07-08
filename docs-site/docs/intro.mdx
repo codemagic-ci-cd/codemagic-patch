@@ -1,0 +1,171 @@
+---
+sidebar_position: 1
+slug: /
+title: Quickstart
+description: >-
+  Run Patch on your laptop in about 10 minutes with Docker - no domains, HTTPS,
+  or GitHub OAuth.
+llmsDescription: >-
+  10-min local Patch trial. Docker dev stack, test release, no OAuth or public
+  domains.
+---
+
+import CopyLlmsFullLink from '@site/src/components/CopyLlmsFullLink';
+
+# Quickstart
+
+Try Codemagic Patch on your laptop in about **10 minutes**: no domains, HTTPS, or GitHub OAuth. You will run the server locally and publish a test OTA release with the CLI.
+You will see the full publish path: bundle -> upload -> server processing -> artifact in storage, then the release in the web UI. App-level verification comes after SDK integration.
+
+:::info Using these docs with AI
+Use this button to send your AI assistant to the full markdown index.
+
+<CopyLlmsFullLink />
+:::
+
+## What you need
+
+- [Docker](https://docs.docker.com/get-docker/) + Docker Compose v2
+- Node.js `>=22.20.0` and Yarn `4.12.0` (via [Corepack](https://nodejs.org/api/corepack.html))
+- A clone of [codemagic-patch](https://github.com/codemagic-ci-cd/codemagic-patch)
+
+:::tip CLI install on macOS
+If `corepack enable` fails because Homebrew already installed Yarn, run `npm install -g corepack --force` and retry, or build the CLI from `cli/` with `npm pack` and `npm install -g` the resulting `.tgz`.
+:::
+
+## Steps
+
+### 1. Start the local server
+
+From the repo root:
+
+```bash
+git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
+cd codemagic-patch
+
+docker compose -f docker-compose.dev.yml -f docker-compose.dev.local.yml up --build
+```
+
+The `dev.local` overlay adds a mock GitHub OAuth service so you can sign in to the dashboard on localhost. The dev stack does not serve the UI itself; you will start that in step 4.
+
+The first run builds the server image; allow a few minutes. When the `server` container is healthy, open a second terminal and verify:
+
+```bash
+curl -fsS http://127.0.0.1:3000/health/ready
+curl -fsS http://127.0.0.1:9100/minio/health/ready
+```
+
+Both should return successfully.
+
+### 2. Install the CLI
+
+In the same repo (new terminal, server still running):
+
+```bash
+corepack enable
+yarn install
+yarn cli:install-global
+```
+
+Point the CLI at the local stack with the seeded API token (created automatically on first boot):
+
+```bash
+export CODEMAGIC_PATCH_TOKEN=cm_pat_local-dev-token-change-me-00000001
+
+cmpatch config set server-url http://127.0.0.1:3000
+cmpatch config set team default-team
+```
+
+Confirm the demo app exists:
+
+```bash
+cmpatch app list
+cmpatch deployment list --app demo-app
+```
+
+You should see app `demo-app` and deployment `staging`.
+
+### 3. Publish a test release
+
+From any React Native project root (with Patch integrated, see [Native setup](/docs/setup/native-setup) if you need the SDK first):
+
+```bash
+cmpatch init \
+  --server-url http://127.0.0.1:3000 \
+  --ios-app demo-app \
+  --deployment staging \
+  --yes
+
+cmpatch release-react \
+  --platform ios \
+  --deployment staging \
+  --release-notes "Local quickstart" \
+  --yes
+```
+
+No RN app yet? Publish the bundled fixture instead (from the repo root, with `CODEMAGIC_PATCH_TOKEN` still set):
+
+```bash
+cmpatch release create \
+  --server-url http://127.0.0.1:3000 \
+  --app demo-app \
+  --deployment staging \
+  --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \
+  --platform ios \
+  --target-binary-version 1.0.0 \
+  --fingerprint local-quickstart \
+  --release-notes "Local quickstart" \
+  --yes
+```
+
+`release-react --dry-run` also works, but only from a React Native project root where the CLI can detect the target binary version (run `cmpatch init` there first).
+
+Watch the release finish processing:
+
+```bash
+cmpatch release list --app demo-app --deployment staging --format table
+cmpatch release inspect --app demo-app --deployment staging --label v1 --wait
+```
+
+When status is **published**, the bundle is in local MinIO and ready for clients to fetch.
+
+### 4. Open the dashboard and view the release
+
+In a third terminal (API still running, from the repo root):
+
+```bash
+yarn workspace web-dashboard dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). Sign in with **GitHub** (the mock OAuth service from step 1).
+
+Then open **demo-app** -> **staging**. You should see your release (e.g. `v1`) with status **Published**, the same label `cmpatch release inspect` reported in step 3.
+
+The Vite dev server proxies API calls to `http://127.0.0.1:3000`. More detail: [Run locally - web dashboard](/docs/setup/local-development#web-dashboard-optional).
+
+## What you just ran
+
+| Piece | Local value |
+| --- | --- |
+| API | `http://127.0.0.1:3000` |
+| Artifact downloads | `http://localhost:9100/codemagic-patch` |
+| Deployment key (for app config) | `dev_local_deployment_key` |
+| Seeded app / deployment | `demo-app` / `staging` |
+
+To receive updates in an app, embed those URLs and the deployment key in [Native setup](/docs/setup/native-setup), then follow [Verify a test release](/docs/using-patch/verify-test-release).
+
+:::warning
+The seeded token is for local evaluation only. Do not reuse it in production.
+:::
+
+## Where to go next
+
+| Goal | Page |
+| --- | --- |
+| Full local dev setup (dashboard, Postgres, endpoints) | [Run locally](/docs/setup/local-development) |
+| Install and configure the app SDK | [Native setup](/docs/setup/native-setup) |
+| Coming from CodePush or Expo Updates | [Migration](/docs/migration/migrating-from-codepush) |
+| After SDK setup, confirm update behavior on simulator/device | [Verify a test release](/docs/using-patch/verify-test-release) |
+
+Notable releases of the Patch stack (server, CLI, SDK) are in [Changelog](/docs/changelog).
+
