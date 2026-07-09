@@ -46,13 +46,13 @@ These constraints prevent users on the same deployment from receiving conflictin
 
 ## Mandatory updates
 
-Mark critical fixes as mandatory so eligible users must install before continuing:
+Mark critical fixes as mandatory so eligible clients apply them under `mandatoryInstallMode` without waiting for `installMode` conditions:
 
 ```bash
 cmpatch release-react --platform ios --deployment Production --mandatory --yes
 ```
 
-On the client, `mandatoryInstallMode` controls *when* a mandatory update applies (default: `IMMEDIATE`). See [Applying updates](/docs/setup/applying-updates).
+On the client, `mandatoryInstallMode` controls when that apply happens (default: `IMMEDIATE`). See [Applying updates](/docs/setup/applying-updates).
 
 Reserve mandatory updates for:
 

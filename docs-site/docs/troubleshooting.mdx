@@ -134,7 +134,7 @@ See [Core concepts. Fingerprint](/docs/introduction/core-concepts#deployment-mod
 
 ### Update downloaded but not visible yet
 
-With default `sync()` settings, optional updates use **`ON_NEXT_RESTART`**: the SDK can download and stage a release, but the new bundle does not run until the app process is killed and opened again.
+With default `sync()` settings, non-mandatory releases use **`ON_NEXT_RESTART`**: the SDK can download and stage a release, but the new bundle does not run until the app process is killed and opened again.
 
 Symptoms:
 
@@ -163,7 +163,7 @@ A brief **white or blank screen** while the app is in the foreground usually mea
 Symptoms:
 
 - Flash of white or the splash screen while the user is actively using the app
-- Happens on mandatory releases, not on optional `ON_NEXT_RESTART` updates
+- Happens on mandatory releases, not when a non-mandatory release is waiting on `ON_NEXT_RESTART`
 
 Fix:
 

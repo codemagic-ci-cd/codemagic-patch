@@ -21,7 +21,7 @@ On each call, in order:
 3. **Download** the new bundle (or a binary patch, with automatic fallback to the full bundle).
 4. **Install** according to the install mode you choose (see [Applying updates](/docs/setup/applying-updates)).
 
-`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. With no options, optional updates apply on the next cold start; mandatory updates apply immediately.
+`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. With no options, non-mandatory releases wait for the next cold start (`installMode`); mandatory releases apply immediately (`mandatoryInstallMode`).
 
 ## Minimal integration
 

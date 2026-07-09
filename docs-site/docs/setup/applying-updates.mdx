@@ -8,32 +8,26 @@ llmsDescription: 'Client apply timing — install modes, mandatoryInstallMode, p
 
 # Applying updates
 
-After Patch downloads an update, install mode controls when that bundle becomes active. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode`; everything else uses `installMode`.
+After Patch downloads an update, install mode controls when that bundle becomes active. Non-mandatory releases wait for the condition set in `installMode`. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode` instead and do not wait for that looser timing.
 
 For when the app checks and downloads updates, see [Checking for updates](/docs/setup/checking-for-updates).
 
-## Why change the defaults
-
-Default install timing often clashes with what users expect:
-
-- **`ON_NEXT_RESTART`** (default for optional updates) waits until the process is killed and reopened. Users rarely cold-start mobile apps, so updates can sit pending for days.
-- **`ON_NEXT_RESUME`** applies when the app returns from the background. Useful for freshness, but abrupt without your own prompt: easy to mistake for a crash.
-- **`IMMEDIATE`** (default for mandatory updates) reloads the JS bundle as soon as install finishes.
-
-Pick explicit install modes, decide when to re-check (not only cold start), and add progress or confirmation UI so OTA feels intentional.
-
 ## Install modes
+
+`installMode` sets when a non-mandatory release becomes active: the client waits for restart, background, or resume (see table). Mandatory releases skip that path and use `mandatoryInstallMode` instead (default: `IMMEDIATE`).
 
 | Install mode | When the new bundle becomes active |
 | --- | --- |
-| `ON_NEXT_RESTART` | Next cold start *(default for non-mandatory)* |
-| `ON_NEXT_RESUME` | When the app returns to foreground after `minimumBackgroundDuration` |
+| `ON_NEXT_RESTART` | Next cold start *(default `installMode`)* |
 | `ON_NEXT_SUSPEND` | When the app goes to background after `minimumBackgroundDuration` |
-| `IMMEDIATE` | As soon as install finishes *(default for mandatory)* |
+| `ON_NEXT_RESUME` | When the app returns to foreground after `minimumBackgroundDuration` |
+| `IMMEDIATE` | As soon as install finishes *(default `mandatoryInstallMode`)* |
+
+`ON_NEXT_RESTART` is the default `installMode` and works well for Staging, where developers restart the app on purpose. In Production, an update applying on restart can cause unwanted behavior. `ON_NEXT_SUSPEND` is a common `installMode` for Production: the bundle activates when the user backgrounds the app after `minimumBackgroundDuration`, without interrupting an open session.
 
 ```ts
 void sync({
-  installMode: "ON_NEXT_RESTART",
+  installMode: "ON_NEXT_SUSPEND",
   mandatoryInstallMode: "IMMEDIATE",
   minimumBackgroundDuration: 60_000, // ms; for ON_NEXT_RESUME / ON_NEXT_SUSPEND
 });
@@ -49,12 +43,12 @@ Does not change behavior for `ON_NEXT_RESTART` or `IMMEDIATE`.
 
 Sync and apply behavior is client-side. The server does not push different `sync()` rules per deployment.
 
-In practice, teams map Staging and Production to different app builds (different deployment keys), then branch `sync()` options by build flavor or environment:
+Teams can map Staging and Production to different app builds (different deployment keys), then branch `sync()` options by build flavor or environment:
 
 ```ts
 void sync(
   __DEV__
-    ? { installMode: "IMMEDIATE", mandatoryInstallMode: "IMMEDIATE" }
+    ? { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" }
     : {
         installMode: "ON_NEXT_SUSPEND",
         mandatoryInstallMode: "ON_NEXT_RESUME",
@@ -63,13 +57,13 @@ void sync(
 );
 ```
 
-Use this when you want fast apply in Staging and gentler timing in Production.
+This matches the common pattern: `ON_NEXT_RESTART` in Staging, `ON_NEXT_SUSPEND` in Production.
 
 ## Mandatory updates
 
-Publishing with `--mandatory` (CLI or dashboard) marks a release mandatory on the server. Eligible clients treat it as required; there is no casual "ignore" path for that release.
+Publishing with `--mandatory` (CLI or dashboard) marks a release mandatory on the server. Eligible clients install it under `mandatoryInstallMode` rather than waiting for `installMode` conditions.
 
-On the client, `mandatoryInstallMode` controls *when* a mandatory update applies (default: `IMMEDIATE`).
+On the client, `mandatoryInstallMode` controls when that apply happens (default: `IMMEDIATE`, as soon as the download finishes).
 
 You can toggle mandatory on an existing release with `cmpatch release patch` or `promote` with no new app binary required. See [Production control](/docs/using-patch/production-control).
 
@@ -117,7 +111,7 @@ Alternatively, prefer `ON_NEXT_RESTART` and call `restartApp()` only when your a
 
 | Goal | Primary API |
 | --- | --- |
-| Less intrusive resume/suspend installs | `minimumBackgroundDuration`, `installMode` |
-| Force critical updates | Server `--mandatory`; client `mandatoryInstallMode` |
+| Less intrusive apply timing | `installMode`, `minimumBackgroundDuration` |
+| Critical fixes without waiting for install conditions | Server `--mandatory`; client `mandatoryInstallMode` |
 | No restart during checkout, etc. | `disallowRestart` / `allowRestart` |
 | Full control over each step | [Manual control](/docs/setup/manual-control) |

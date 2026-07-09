@@ -54,7 +54,7 @@ const status = await sync(
 | **Throws** | Never, failures resolve to `"error"` |
 | **Concurrency** | Second call while one is running returns `"sync-in-progress"` |
 
-Calls `notifyAppReady()` first on every invocation. Uses `mandatoryInstallMode` when the remote release is mandatory; otherwise `installMode`. Defaults: optional → `ON_NEXT_RESTART`, mandatory → `IMMEDIATE`.
+Calls `notifyAppReady()` first on every invocation. Uses `mandatoryInstallMode` when the remote release is mandatory; otherwise `installMode`. Defaults: non-mandatory → `ON_NEXT_RESTART`, mandatory → `IMMEDIATE`.
 
 If the server offers an update that [previously failed](/docs/troubleshooting) on this device, `sync()` returns `"up-to-date"` without retrying.
 
@@ -179,8 +179,8 @@ await hydrate();
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `installMode` | `InstallMode` | `ON_NEXT_RESTART` | When optional updates apply |
-| `mandatoryInstallMode` | `InstallMode` | `IMMEDIATE` | When mandatory updates apply |
+| `installMode` | `InstallMode` | `ON_NEXT_RESTART` | When non-mandatory releases apply |
+| `mandatoryInstallMode` | `InstallMode` | `IMMEDIATE` | When mandatory releases apply |
 | `minimumBackgroundDuration` | `number` | `0` | Min background time (ms) before `ON_NEXT_RESUME` / `ON_NEXT_SUSPEND` activate |
 
 ### `InstallMode`

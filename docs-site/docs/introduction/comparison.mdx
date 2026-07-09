@@ -99,7 +99,7 @@ Hot Updater is MIT. Expo Updates is tied to EAS pricing, not a source license on
 
 ## Install behavior and mandatory updates
 
-All of these tools support forcing critical updates and deferring optional ones, but defaults and APIs differ (e.g. CodePush `sync()` install modes, Patch `sync()` + `mandatoryInstallMode`, Expo's `Updates.reloadAsync()` patterns).
+All of these tools support forcing critical updates and deferring apply timing on non-mandatory releases, but defaults and APIs differ (e.g. CodePush `sync()` install modes, Patch `sync()` + `mandatoryInstallMode`, Expo's `Updates.reloadAsync()` patterns).
 
 Those details are worth comparing during integration, not at the hosting layer. For Patch behavior, see [Checking for updates](/docs/setup/checking-for-updates), [Applying updates](/docs/setup/applying-updates), and [Production control](/docs/using-patch/production-control).
 
