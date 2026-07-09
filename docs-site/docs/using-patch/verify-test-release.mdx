@@ -20,7 +20,7 @@ The app on device must already satisfy:
 | `CodemagicPatchDeploymentKey` matches the deployment you publish to | Wrong key → manifest 404 or wrong channel |
 | `CodemagicPatchApiUrl` and `CodemagicPatchDownloadBaseUrl` reachable from the device | Simulator can use `localhost`; phones and TestFlight builds need LAN or public HTTPS URLs |
 | Running **binary version** matches the release's `targetBinaryVersion` | Mismatch → server offers no update |
-| `sync()` (or manual check/download/install) runs on launch or resume | No check → no download, [Defining update checks](/docs/setup/defining-update-checks) |
+| `sync()` (or manual check/download/install) runs on launch or resume | No check → no download, [Update behavior](/docs/setup/update-behavior) |
 
 If you have not published yet, start with [First release](/docs/setup/first-release).
 
@@ -66,7 +66,7 @@ Wait for processing again (`inspect --wait` or dashboard).
 
 ### 3. Trigger an update check on device
 
-Cold-start the app or bring it to foreground, however you wired `sync()` ([Defining update checks](/docs/setup/defining-update-checks)).
+Cold-start the app or bring it to foreground, however you wired `sync()` ([Update behavior](/docs/setup/update-behavior)).
 
 Default `sync()` uses `ON_NEXT_RESTART` for optional updates, so you may need to **kill and reopen** the app twice: once to download, once to run the new bundle.
 

@@ -145,7 +145,7 @@ Symptoms:
 Fix:
 
 1. **Cold-start twice** when testing: once to download, once to run the staged bundle, see [Verify a test release](/docs/using-patch/verify-test-release#3-trigger-an-update-check-on-device)
-2. For production, pick an install mode that matches your UX: `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`, or prompt the user then call `restartApp()`, see [Defining update checks](/docs/setup/defining-update-checks#install-modes)
+2. For production, pick an install mode that matches your UX: `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`, or prompt the user then call `restartApp()`, see [Update behavior](/docs/setup/update-behavior#install-modes)
 3. Wire `sync()` on foreground return so pending updates download while the app is open:
 
 ```ts
@@ -177,7 +177,7 @@ void sync({
 });
 ```
 
-3. During critical flows (checkout, video call), use `disallowRestart()` / `allowRestart()` so an immediate mandatory update waits until the flow completes, see [Defining update checks](/docs/setup/defining-update-checks#blocking-restarts-during-critical-ux)
+3. During critical flows (checkout, video call), use `disallowRestart()` / `allowRestart()` so an immediate mandatory update waits until the flow completes, see [Update behavior](/docs/setup/update-behavior#blocking-restarts-during-critical-ux)
 4. Keep your native splash screen configured so a reload shows branded loading instead of a bare white frame
 
 ### Incorrect deployment key

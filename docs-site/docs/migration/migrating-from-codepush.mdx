@@ -20,12 +20,12 @@ The Patch SDK ships in the **native binary**. Plan a store release (or internal 
 | App access key / service token | GitHub OAuth (dashboard) + `cm_pat_…` API tokens (CLI/CI) |
 | Deployment key in native config | `CodemagicPatchDeploymentKey` ([same idea](/docs/setup/apps-deployments)) |
 | `Staging` / `Production` deployments | Same channel names by default |
-| `codePush.sync()` / HOC wrapper | [`sync()`](/docs/setup/defining-update-checks) from `@codemagic/react-native-patch` |
+| `codePush.sync()` / HOC wrapper | [`sync()`](/docs/setup/update-behavior) from `@codemagic/react-native-patch` |
 | `release-react` (CodePush CLI) | `cmpatch release-react` |
 | `--mandatory`, rollout, target binary version | Same flags on `cmpatch release-react` / `release patch` |
 | `notifyAppReady()` | Called automatically by `sync()`; [manual](/docs/setup/manual-control) if not using `sync()` |
 
-Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, etc.) and `mandatoryInstallMode` map closely, see [Defining update checks](/docs/setup/defining-update-checks).
+Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, etc.) and `mandatoryInstallMode` map closely, see [Update behavior](/docs/setup/update-behavior).
 
 ## 1. Stand up Patch
 

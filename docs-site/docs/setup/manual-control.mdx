@@ -62,4 +62,18 @@ If you do not use `sync()`, you must call `notifyAppReady()` yourself once the a
 | `restartApp(onlyIfUpdateIsPending?)` | Reloads the JS bundle to apply a pending update. |
 | `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
 
-For when to check, install modes, and production UX patterns, see [Defining update checks](/docs/setup/defining-update-checks).
+For when to check, install modes, and production UX patterns, see [Update behavior](/docs/setup/update-behavior).
+
+## UX hook points in manual flow
+
+Manual control is where most teams wire "Check for updates" and "Apply update" buttons.
+
+Typical mapping:
+
+- `checkForUpdate()` powers "Check now"
+- `downloadUpdate()` progress powers download indicators
+- `installUpdate(..., { installMode })` decides when a downloaded update becomes active
+- `restartApp(true)` powers explicit "Restart now" actions
+- `disallowRestart()` / `allowRestart()` protect critical screens while a pending update exists
+
+Use these hooks to connect Patch behavior to your app's existing prompt, splash, and navigation patterns.

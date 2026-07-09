@@ -20,7 +20,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 | Update channel (`preview`, `production`, …) | Deployment (`Staging`, `Production`, …) |
 | `runtimeVersion` / fingerprint (EAS) | `targetBinaryVersion` + native [fingerprint](/docs/introduction/core-concepts) |
 | `eas update` | `cmpatch release-react` |
-| `Updates.checkForUpdateAsync()` / `fetchUpdateAsync()` | [`sync()`](/docs/setup/defining-update-checks) or `checkForUpdate()` + `downloadUpdate()` + `installUpdate()` |
+| `Updates.checkForUpdateAsync()` / `fetchUpdateAsync()` | [`sync()`](/docs/setup/update-behavior) or `checkForUpdate()` + `downloadUpdate()` + `installUpdate()` |
 | `Updates.reloadAsync()` | `restartApp()` (or install mode `IMMEDIATE`) |
 | `expo-updates` config in `app.config` | `@codemagic/react-native-patch` [config plugin](/docs/setup/native-setup#option-b--expo-prebuild) |
 | EAS project credentials | GitHub OAuth + `cm_pat_…` tokens on your Patch instance |
@@ -78,7 +78,7 @@ import { sync } from "@codemagic/react-native-patch";
 void sync();
 ```
 
-Tune when checks run and install timing in [Defining update checks](/docs/setup/defining-update-checks).
+Tune when checks run and install timing in [Update behavior](/docs/setup/update-behavior).
 
 ## 3. Move publishing off EAS Update
 

@@ -1,12 +1,12 @@
 ---
-title: Defining update checks
+title: Update behavior
 description: >-
   Configure client-side update checks with sync(), install modes, and mandatory
   updates.
 llmsDescription: 'Client sync() — install modes, mandatory updates, AppState re-checks.'
 ---
 
-# Defining update checks
+# Update behavior
 
 `sync()` is the one call most apps need on the client. It checks the server, downloads an update if one matches this deployment key and binary version, installs it, and confirms the running bundle is healthy, all in one invocation.
 
@@ -107,6 +107,26 @@ Does not change behavior for `ON_NEXT_RESTART` or `IMMEDIATE`.
 
 ---
 
+## Different behavior per deployment
+
+Teams can Staging and Production to different app builds (different deployment keys), then branch `sync()` options by build flavor or environment:
+
+```ts
+void sync(
+  __DEV__
+    ? { installMode: "IMMEDIATE", mandatoryInstallMode: "IMMEDIATE" }
+    : {
+        installMode: "ON_NEXT_SUSPEND",
+        mandatoryInstallMode: "ON_NEXT_RESUME",
+        minimumBackgroundDuration: 300_000, // 5 min
+      },
+);
+```
+
+Use this when you want fast updates in Staging and gentler apply timing in Production.
+
+---
+
 ## Mandatory updates
 
 Publishing with `--mandatory` (CLI or dashboard) marks a release mandatory on the server. Eligible clients treat it as required, there is no casual "ignore" path for that release.
@@ -136,6 +156,30 @@ const result = await sync(
 ```
 
 With [manual control](/docs/setup/manual-control), the same `{ receivedBytes, totalBytes }` shape is passed to `downloadUpdate()`.
+
+---
+
+## UX hook points
+
+Patch does not ship built-in prompts, splash transitions, or update dialogs. Your app decides the UX.
+
+Common hook points:
+
+- `sync()` result (`"update-installed"`, `"up-to-date"`, `"error"`) to decide whether to show messaging
+- progress callback (`receivedBytes`, `totalBytes`) for progress UI
+- `checkForUpdate()` + `remotePackage.releaseNotes` for "update available" text
+- `disallowRestart()` / `allowRestart()` to avoid restarts during critical flows
+
+For button-driven flows (check now, download now, apply now), see [Manual control](/docs/setup/manual-control).
+
+### Splash screen timing
+
+If you apply updates around app launch, treat splash behavior as app UX policy:
+
+- defer apply to next restart/resume for less disruptive startup
+- or keep splash visible while checking/downloading when fast-first-update UX matters more
+
+Patch exposes install timing and restart controls; your app owns the splash implementation details.
 
 ---
 
