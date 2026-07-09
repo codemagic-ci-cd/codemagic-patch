@@ -1,0 +1,123 @@
+---
+title: Applying updates
+description: >-
+  Control when downloaded OTA bundles become active with install modes,
+  mandatory apply timing, and UX hook points.
+llmsDescription: 'Client apply timing — install modes, mandatoryInstallMode, per-deployment behavior, restart guards.'
+---
+
+# Applying updates
+
+After Patch downloads an update, install mode controls when that bundle becomes active. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode`; everything else uses `installMode`.
+
+For when the app checks and downloads updates, see [Checking for updates](/docs/setup/checking-for-updates).
+
+## Why change the defaults
+
+Default install timing often clashes with what users expect:
+
+- **`ON_NEXT_RESTART`** (default for optional updates) waits until the process is killed and reopened. Users rarely cold-start mobile apps, so updates can sit pending for days.
+- **`ON_NEXT_RESUME`** applies when the app returns from the background. Useful for freshness, but abrupt without your own prompt: easy to mistake for a crash.
+- **`IMMEDIATE`** (default for mandatory updates) reloads the JS bundle as soon as install finishes.
+
+Pick explicit install modes, decide when to re-check (not only cold start), and add progress or confirmation UI so OTA feels intentional.
+
+## Install modes
+
+| Install mode | When the new bundle becomes active |
+| --- | --- |
+| `ON_NEXT_RESTART` | Next cold start *(default for non-mandatory)* |
+| `ON_NEXT_RESUME` | When the app returns to foreground after `minimumBackgroundDuration` |
+| `ON_NEXT_SUSPEND` | When the app goes to background after `minimumBackgroundDuration` |
+| `IMMEDIATE` | As soon as install finishes *(default for mandatory)* |
+
+```ts
+void sync({
+  installMode: "ON_NEXT_RESTART",
+  mandatoryInstallMode: "IMMEDIATE",
+  minimumBackgroundDuration: 60_000, // ms; for ON_NEXT_RESUME / ON_NEXT_SUSPEND
+});
+```
+
+### `minimumBackgroundDuration`
+
+For `ON_NEXT_RESUME` and `ON_NEXT_SUSPEND`, Patch only activates a pending update if the app was in the background for at least this many milliseconds. That avoids restarting someone who briefly switched to another app.
+
+Does not change behavior for `ON_NEXT_RESTART` or `IMMEDIATE`.
+
+## Different behavior per deployment
+
+Sync and apply behavior is client-side. The server does not push different `sync()` rules per deployment.
+
+In practice, teams map Staging and Production to different app builds (different deployment keys), then branch `sync()` options by build flavor or environment:
+
+```ts
+void sync(
+  __DEV__
+    ? { installMode: "IMMEDIATE", mandatoryInstallMode: "IMMEDIATE" }
+    : {
+        installMode: "ON_NEXT_SUSPEND",
+        mandatoryInstallMode: "ON_NEXT_RESUME",
+        minimumBackgroundDuration: 300_000, // 5 min
+      },
+);
+```
+
+Use this when you want fast apply in Staging and gentler timing in Production.
+
+## Mandatory updates
+
+Publishing with `--mandatory` (CLI or dashboard) marks a release mandatory on the server. Eligible clients treat it as required; there is no casual "ignore" path for that release.
+
+On the client, `mandatoryInstallMode` controls *when* a mandatory update applies (default: `IMMEDIATE`).
+
+You can toggle mandatory on an existing release with `cmpatch release patch` or `promote` with no new app binary required. See [Production control](/docs/using-patch/production-control).
+
+:::info
+If a device skipped an older mandatory release, a later compatible update may still be treated as mandatory until the user catches up.
+:::
+
+## UX hook points
+
+Patch does not ship built-in prompts, splash transitions, or update dialogs. Your app decides the UX.
+
+Common hook points:
+
+- `sync()` result (`"update-installed"`, `"up-to-date"`, `"error"`) to decide whether to show messaging
+- progress callback (`receivedBytes`, `totalBytes`) for progress UI
+- `checkForUpdate()` + `remotePackage.releaseNotes` for "update available" text
+- `disallowRestart()` / `allowRestart()` to avoid restarts during critical flows
+
+For button-driven flows (check now, download now, apply now), see [Manual control](/docs/setup/manual-control).
+
+### Splash screen timing
+
+If you apply updates around app launch, treat splash behavior as app UX policy:
+
+- defer apply to next restart/resume for less disruptive startup
+- or keep splash visible while checking/downloading when fast-first-update UX matters more
+
+Patch exposes install timing and restart controls; your app owns the splash implementation details.
+
+## Blocking restarts during critical UX
+
+`disallowRestart()` prevents Patch from programmatically reloading the JS bundle (including after `IMMEDIATE` installs) until `allowRestart()` runs. Typical pattern: block during checkout or onboarding, allow when the flow completes.
+
+```ts
+import { disallowRestart, allowRestart } from "@codemagic/react-native-patch";
+
+disallowRestart();
+// … critical flow …
+allowRestart(); // may flush a queued restart
+```
+
+Alternatively, prefer `ON_NEXT_RESTART` and call `restartApp()` only when your app knows it is safe. `disallowRestart` is for global `sync()` calls where you still need a no-interruption window.
+
+## Summary
+
+| Goal | Primary API |
+| --- | --- |
+| Less intrusive resume/suspend installs | `minimumBackgroundDuration`, `installMode` |
+| Force critical updates | Server `--mandatory`; client `mandatoryInstallMode` |
+| No restart during checkout, etc. | `disallowRestart` / `allowRestart` |
+| Full control over each step | [Manual control](/docs/setup/manual-control) |

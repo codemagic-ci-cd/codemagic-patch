@@ -8,7 +8,7 @@ llmsDescription: 'JS API — @codemagic/react-native-patch sync, install modes, 
 
 JavaScript API for [`@codemagic/react-native-patch`](https://www.npmjs.com/package/@codemagic/react-native-patch): the React Native client SDK.
 
-For integration steps (native wiring, Expo plugin, first `sync()` call), see [Native setup](/docs/setup/native-setup) and [Update behavior](/docs/setup/update-behavior). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
+For integration steps (native wiring, Expo plugin, first `sync()` call), see [Native setup](/docs/setup/native-setup) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
 
 ## Requirements
 
@@ -291,7 +291,7 @@ When `disallowRestart()` is active:
 - `IMMEDIATE` installs queue activation instead of reloading
 - `restartApp()` reloads only if no pending update is waiting (or suppression is lifted)
 
-Use during checkout, onboarding, or other flows where an unexpected reload would be disruptive. See [Update behavior](/docs/setup/update-behavior#blocking-restarts-during-critical-ux).
+Use during checkout, onboarding, or other flows where an unexpected reload would be disruptive. See [Applying updates](/docs/setup/applying-updates#blocking-restarts-during-critical-ux).
 
 ---
 

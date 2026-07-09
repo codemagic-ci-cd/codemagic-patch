@@ -1,0 +1,123 @@
+---
+title: Checking for updates
+description: >-
+  Wire sync() on the client to check for and download OTA updates on launch,
+  resume, or user action.
+llmsDescription: 'Client update checks — sync(), AppState re-checks, progress, release notes, store fallback.'
+---
+
+# Checking for updates
+
+`sync()` is the one call most apps need on the client. It checks the server, downloads an update if one matches this deployment key and binary version, installs it, and confirms the running bundle is healthy, all in one invocation.
+
+This page covers when and how to check and download. For when a downloaded update becomes active, see [Applying updates](/docs/setup/applying-updates).
+
+## What `sync()` does
+
+On each call, in order:
+
+1. **`notifyAppReady()`**: marks the currently running bundle as healthy. If a freshly installed bundle crashes *before* `sync()` runs on the next launch, the SDK automatically reverts to the last known-good bundle. Because `sync()` calls this first, running it on every startup confirms the previous update and arms rollback for the next one.
+2. **Check** the server for a matching update.
+3. **Download** the new bundle (or a binary patch, with automatic fallback to the full bundle).
+4. **Install** according to the install mode you choose (see [Applying updates](/docs/setup/applying-updates)).
+
+`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. With no options, optional updates apply on the next cold start; mandatory updates apply immediately.
+
+## Minimal integration
+
+Call `sync()` once, as early as possible after your root component mounts:
+
+```tsx
+// App.tsx
+import { useEffect } from "react";
+import { sync } from "@codemagic/react-native-patch";
+
+export default function App() {
+  useEffect(() => {
+    void sync();
+  }, []);
+
+  return <YourApp />;
+}
+```
+
+That is enough for internal builds. Production apps usually tune when to check and how updates apply. For step-by-step control (`checkForUpdate`, `downloadUpdate`, `installUpdate`), see [Manual control](/docs/setup/manual-control). For rollouts and mandatory flags on the server, see [Production control](/docs/using-patch/production-control).
+
+## When to check for updates
+
+`sync()` is safe to call more than once. Concurrent calls resolve to `"sync-in-progress"`.
+
+| Trigger | Typical use |
+| --- | --- |
+| App launch | Catch updates published while the app was closed |
+| Return to foreground | Catch updates published while the user had the app open |
+| User action | "Check for updates" in settings, after login, etc. |
+
+Wire a foreground re-check with `AppState`:
+
+```ts
+import { AppState } from "react-native";
+import { sync } from "@codemagic/react-native-patch";
+
+AppState.addEventListener("change", (next) => {
+  if (next === "active") void sync();
+});
+```
+
+Combine with install modes from [Applying updates](/docs/setup/applying-updates) so resume-based installs do not surprise users mid-flow.
+
+## Download progress and status
+
+Use the optional progress callback for a bar or status line:
+
+```tsx
+const result = await sync(
+  { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" },
+  ({ receivedBytes, totalBytes }) => {
+    const pct = totalBytes > 0 ? receivedBytes / totalBytes : 0;
+    // drive UI
+  },
+);
+```
+
+With [manual control](/docs/setup/manual-control), the same `{ receivedBytes, totalBytes }` shape is passed to `downloadUpdate()`.
+
+Use `sync()` result statuses (`"update-installed"`, `"up-to-date"`, `"error"`) to decide whether to show messaging after a check completes.
+
+## Release notes from the server
+
+Each OTA release can carry release notes (CLI `--release-notes`, dashboard, or CI). On the client, `RemotePackage.releaseNotes` is populated when `checkForUpdate()` returns `{ action: "ota-update" }`.
+
+Patch does not ship a built-in update dialog. Show notes in your own UI before calling `installUpdate`, or after `sync()` returns `"update-installed"` for deferred install modes. Changing notes on the server does not require a new native binary; republish or patch the release metadata.
+
+## Binary version mismatch and store updates
+
+The server targets updates with `targetBinaryVersion`. When the installed native binary is too old for the latest OTA on a deployment, `checkForUpdate()` (and therefore `sync()`) may return `{ action: "up-to-date" }` even though newer store builds exist.
+
+Every check result includes:
+
+| Field | Meaning |
+| --- | --- |
+| `isStoreUpdateAvailable` | Native binary on device is below the server's latest known store version |
+| `latestBinaryVersion` | Latest binary version the server knows for this app (from release metadata) |
+
+Use these to prompt a store update instead of silently doing nothing:
+
+```ts
+const check = await checkForUpdate();
+
+if (check.isStoreUpdateAvailable && check.latestBinaryVersion) {
+  // Show "Update from the App Store / Play Store", your UX
+}
+
+if (check.action === "ota-update") {
+  // proceed with download / install
+}
+```
+
+Server-side targeting is covered in [Production control](/docs/using-patch/production-control).
+
+## Next steps
+
+- [Applying updates](/docs/setup/applying-updates): install modes, staging vs production behavior, mandatory apply timing
+- [Manual control](/docs/setup/manual-control): button-driven check, download, and apply flows

@@ -38,7 +38,8 @@ const sidebars: SidebarsConfig = {
           items: [
             'setup/apps-deployments',
             'setup/native-setup',
-            'setup/update-behavior',
+            'setup/checking-for-updates',
+            'setup/applying-updates',
             'setup/manual-control',
             'setup/first-release',
           ],

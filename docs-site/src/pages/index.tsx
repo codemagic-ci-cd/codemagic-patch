@@ -56,7 +56,7 @@ const SECTIONS = [
       'Options to download and install updates while the app is in the background',
       'Critical updates can be wired to user approval buttons',
     ],
-    link: '/docs/setup/update-behavior',
+    link: '/docs/setup/applying-updates',
     linkLabel: 'Install modes',
     reverse: false,
     media: 'terminal' as const,
