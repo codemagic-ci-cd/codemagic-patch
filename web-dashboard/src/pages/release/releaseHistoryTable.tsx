@@ -1,7 +1,7 @@
 // Release history table layout (DeploymentDetailPage).
 //
 // - release / actions: shrink-to-content (w-[1%]).
-// - note: default width; absorbs leftover space.
+// - note: single-line truncate (~38ch) on the cell text.
 // - data: shared preset for status, rollout, target, and metric columns.
 
 import { TBL_TD, TBL_TH } from "../../components/ui/table";

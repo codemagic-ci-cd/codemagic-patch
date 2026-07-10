@@ -690,7 +690,7 @@ function ReleaseRow({
           <span className="text-fg-3">—</span>
         ) : (
           <span
-            className="block truncate text-[13px] font-medium text-fg"
+            className="block max-w-[38ch] truncate text-[13px] font-medium text-fg"
             title={release.releaseNotes}
           >
             {release.releaseNotes}
@@ -962,7 +962,7 @@ function ReleaseTableSkeleton() {
                 <Skeleton width={90} variant="text" />
               </td>
               <td className={releaseHistoryCol.td.note}>
-                <Skeleton width={180} variant="text" />
+                <Skeleton width="38ch" variant="text" />
               </td>
               <td className={releaseHistoryCol.td.data}>
                 <Skeleton width={84} variant="text" />
