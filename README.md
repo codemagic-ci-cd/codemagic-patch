@@ -1,5 +1,7 @@
 # Codemagic Patch
 
+[![Discord](https://img.shields.io/discord/1131597315707261018?logo=discord&label=Discord)](https://codemagic.io/discord/) &nbsp; [![GitHub Stars](https://img.shields.io/github/stars/codemagic-ci-cd/codemagic-patch)](https://github.com/codemagic-ci-cd/codemagic-patch) &nbsp; [![Follow @codemagicio](https://img.shields.io/twitter/follow/codemagicio?style=social)](https://x.com/codemagicio) &nbsp; [![LinkedIn](https://img.shields.io/badge/Follow%20on%20LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/company/16170400)
+
 Codemagic Patch is a **self-hosted over-the-air (OTA) update service for React Native apps**. Ship JavaScript/asset updates straight to installed apps — no app-store review for changes that live in your JS bundle.
 
 This monorepo contains everything you need to run the service yourself and wire it into an app:
