@@ -14,8 +14,8 @@
 // developer" tip per the RBAC matrix) × release status via model/release.ts
 // (canDisable/canEnable/canPatchRollout; promote = any published; the header
 // Rollback uses canRollback over the loaded rows' published count). Release
-// `status` (StatusChip) and worker `job.status` (JobBadge) render as DISTINCT
-// columns, never conflated. Lifecycle modals: every
+// `status` (StatusChip) renders in the history table; worker job status is
+// omitted from this table (see release detail for job state). Lifecycle modals: every
 // action funnels into the shared useReleaseActions coordinator's
 // `openAction(type, release)`, which mounts RolloutModal / StatusModal /
 // PromoteModal / RollbackModal. Empty history → New release CTA (CLI or bundle
@@ -39,7 +39,6 @@ import { apiServerUrl } from "../lib/cliSnippet";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
-import { JobBadge } from "../components/ui/JobBadge";
 import { RolloutBar } from "../components/ui/RolloutBar";
 import { Skeleton } from "../components/ui/Skeleton";
 import { StatusChip } from "../components/ui/StatusChip";
@@ -56,6 +55,10 @@ import {
 } from "../model/release";
 import { useTeamRole } from "../rbac/useTeamRole";
 import { NewReleaseModal } from "./release/modals/NewReleaseModal";
+import {
+  ReleaseHistoryTableHead,
+  releaseHistoryCol,
+} from "./release/releaseHistoryTable";
 import { useReleaseActions } from "./release/modals/useReleaseActions";
 import type { ReleaseListItem } from "../api/types";
 import type { Deployment } from "../model/deployment";
@@ -77,10 +80,6 @@ import {
 } from "../components/ui/stat";
 import {
   TBL,
-  TBL_NUM,
-  TBL_RIGHT,
-  TBL_TD,
-  TBL_TH,
   TBL_TR,
   TBL_WRAP,
 } from "../components/ui/table";
@@ -277,18 +276,7 @@ function DeploymentDetail({
         <div className={TBL_WRAP}>
           <table className={TBL}>
             <thead>
-              <tr>
-                <th className={TBL_TH}>Release</th>
-                <th className={TBL_TH}>Status</th>
-                <th className={TBL_TH}>Job</th>
-                <th className={TBL_TH}>Rollout</th>
-                <th className={TBL_TH}>Target</th>
-                <th className={`${TBL_TH} ${TBL_RIGHT}`}>Active users</th>
-                <th className={`${TBL_TH} ${TBL_RIGHT}`}>Success / Failed</th>
-                <th className={TBL_TH}>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
+              <ReleaseHistoryTableHead />
             </thead>
             <tbody>
               {rows.map((item) => (
@@ -615,7 +603,7 @@ function ReleaseRow({
   onAction: (action: DeploymentReleaseAction, release: Release) => void;
   resolveUser: (userId: string | null) => string | null;
 }) {
-  const { release, job, metrics } = item;
+  const { release, metrics } = item;
 
   // Status gating (model/release.ts) decides WHICH actions exist; role
   // gating decides enabled vs disabled-with-tooltip.
@@ -661,9 +649,11 @@ function ReleaseRow({
 
   return (
     <tr className={TBL_TR}>
-      <td className={TBL_TD}>
+      <td className={releaseHistoryCol.td.release}>
         <div className={CELL_MAIN}>
-          <Link to={releasePath}>{release.releaseLabel}</Link>{" "}
+          <Link className="font-semibold" to={releasePath}>
+            {release.releaseLabel}
+          </Link>{" "}
           {release.isMandatory ? (
             <span className={`${PIN} ${PIN_TONE.mandatory}`}>
               <AlertIcon />
@@ -695,42 +685,53 @@ function ReleaseRow({
           </time>
         </div>
       </td>
-      <td className={TBL_TD}>
-        <StatusChip status={release.status} />
-      </td>
-      <td className={TBL_TD}>
-        {job === null ? (
+      <td className={releaseHistoryCol.td.note}>
+        {release.releaseNotes === null || release.releaseNotes.trim() === "" ? (
           <span className="text-fg-3">—</span>
         ) : (
-          <JobBadge status={job.status} />
+          <span
+            className="block truncate text-[13px] font-medium text-fg"
+            title={release.releaseNotes}
+          >
+            {release.releaseNotes}
+          </span>
         )}
       </td>
-      <td className={TBL_TD}>
+      <td className={releaseHistoryCol.td.data}>
+        <StatusChip status={release.status} />
+      </td>
+      <td className={releaseHistoryCol.td.data}>
         <RolloutBar
           percentage={release.rolloutPercentage}
           ariaLabel={`Rollout for ${release.releaseLabel}`}
+          compact
         />
       </td>
-      <td className={TBL_TD}>
-        <code className="mono text-[12px]">
-          {release.targetBinaryVersion}
-        </code>
+      <td className={releaseHistoryCol.td.data}>
+        {release.targetBinaryVersion}
       </td>
-      <td className={`${TBL_TD} ${TBL_NUM}`}>
+      <td className={releaseHistoryCol.td.data}>
         {metrics === undefined ? (
           <span className="text-fg-3">—</span>
         ) : (
           formatCount(metrics.active)
         )}
       </td>
-      <td className={`${TBL_TD} ${TBL_NUM}`}>
+      <td className={releaseHistoryCol.td.data}>
         {metrics === undefined ? (
           <span className="text-fg-3">—</span>
         ) : (
-          `${formatCount(metrics.success)} / ${formatCount(metrics.failed)}`
+          formatCount(metrics.success)
         )}
       </td>
-      <td className={`${TBL_TD} ${TBL_RIGHT}`}>
+      <td className={releaseHistoryCol.td.data}>
+        {metrics === undefined ? (
+          <span className="text-fg-3">—</span>
+        ) : (
+          formatCount(metrics.failed)
+        )}
+      </td>
+      <td className={releaseHistoryCol.td.actions}>
         {items.length === 0 ? null : (
           <RowKebab releaseLabel={release.releaseLabel} items={items} />
         )}
@@ -952,46 +953,36 @@ function ReleaseTableSkeleton() {
     <div className={TBL_WRAP} role="status" aria-label="Loading releases">
       <table className={TBL}>
         <thead>
-          <tr>
-            <th className={TBL_TH}>Release</th>
-            <th className={TBL_TH}>Status</th>
-            <th className={TBL_TH}>Job</th>
-            <th className={TBL_TH}>Rollout</th>
-            <th className={TBL_TH}>Target</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Active users</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Success / Failed</th>
-            <th className={TBL_TH} aria-hidden="true" />
-          </tr>
+          <ReleaseHistoryTableHead actionsLabel={null} />
         </thead>
         <tbody>
           {[0, 1, 2].map((row) => (
             <tr key={row} className={TBL_TR}>
-              <td className={TBL_TD}>
-                <Skeleton width={110} variant="text" />
+              <td className={releaseHistoryCol.td.release}>
+                <Skeleton width={90} variant="text" />
               </td>
-              <td className={TBL_TD}>
+              <td className={releaseHistoryCol.td.note}>
+                <Skeleton width={180} variant="text" />
+              </td>
+              <td className={releaseHistoryCol.td.data}>
                 <Skeleton width={84} variant="text" />
               </td>
-              <td className={TBL_TD}>
-                <Skeleton width={84} variant="text" />
+              <td className={releaseHistoryCol.td.data}>
+                <Skeleton width={65} variant="text" />
               </td>
-              <td className={TBL_TD}>
-                <Skeleton width={96} variant="text" />
+              <td className={releaseHistoryCol.td.data}>
+                <Skeleton width={36} variant="text" />
               </td>
-              <td className={TBL_TD}>
-                <Skeleton width={64} variant="text" />
+              <td className={releaseHistoryCol.td.data}>
+                <Skeleton width={28} variant="text" />
               </td>
-              <td className={`${TBL_TD} ${TBL_NUM}`}>
-                <span className="flex justify-end">
-                  <Skeleton width={48} variant="text" />
-                </span>
+              <td className={releaseHistoryCol.td.data}>
+                <Skeleton width={28} variant="text" />
               </td>
-              <td className={`${TBL_TD} ${TBL_NUM}`}>
-                <span className="flex justify-end">
-                  <Skeleton width={64} variant="text" />
-                </span>
+              <td className={releaseHistoryCol.td.data}>
+                <Skeleton width={28} variant="text" />
               </td>
-              <td className={TBL_TD} />
+              <td className={releaseHistoryCol.td.actions} />
             </tr>
           ))}
         </tbody>

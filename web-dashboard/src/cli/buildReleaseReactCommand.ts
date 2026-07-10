@@ -9,6 +9,7 @@ export interface ReleaseReactCommandInput {
   deploymentName: string;
   platform: ReleaseReactPlatform;
   targetBinaryVersion?: string;
+  releaseNotes?: string;
   rolloutPercentage?: number;
   mandatory?: boolean;
   disabled?: boolean;
@@ -48,6 +49,8 @@ export function buildReleaseReactCommand(
   if (targetVersion !== undefined && targetVersion.length > 0) {
     pushFlag(parts, "target-binary-version", targetVersion);
   }
+
+  pushFlag(parts, "release-notes", input.releaseNotes);
 
   const rollout = input.rolloutPercentage ?? 100;
   if (rollout !== 100) {

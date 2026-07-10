@@ -8,8 +8,14 @@
 
 export const ROLLOUT = "flex min-w-[130px] items-center gap-2.5";
 
+export const ROLLOUT_COMPACT =
+  "inline-flex w-[65px] items-center gap-1.5";
+
 export const ROLLOUT_TRACK =
   "h-[7px] flex-1 overflow-hidden rounded-pill bg-surface-3";
+
+export const ROLLOUT_TRACK_COMPACT =
+  "h-[7px] w-[22px] shrink-0 overflow-hidden rounded-pill bg-surface-3";
 
 export const ROLLOUT_FILL =
   "h-full rounded-pill bg-[linear-gradient(90deg,var(--color-blue),var(--color-aqua))]";
@@ -23,17 +29,20 @@ export interface RolloutBarProps {
   percentage: number;
   /** Accessible name for the progressbar. */
   ariaLabel?: string;
+  /** Narrow layout for dense tables (~half the default width). */
+  compact?: boolean;
 }
 
 export function RolloutBar({
   percentage,
   ariaLabel = "Rollout percentage",
+  compact = false,
 }: RolloutBarProps) {
   const pct = Math.min(100, Math.max(0, Math.round(percentage)));
   return (
-    <div className={ROLLOUT}>
+    <div className={compact ? ROLLOUT_COMPACT : ROLLOUT}>
       <div
-        className={ROLLOUT_TRACK}
+        className={compact ? ROLLOUT_TRACK_COMPACT : ROLLOUT_TRACK}
         role="progressbar"
         aria-label={ariaLabel}
         aria-valuemin={0}
@@ -47,7 +56,11 @@ export function RolloutBar({
         />
       </div>
       <span
-        className="min-w-[38px] text-right font-mono text-[12px] font-semibold text-fg-2"
+        className={
+          compact
+            ? "min-w-[32px] text-right font-mono text-[11px] font-semibold text-fg-2"
+            : "min-w-[38px] text-right font-mono text-[12px] font-semibold text-fg-2"
+        }
         aria-hidden="true"
       >
         {pct}%
