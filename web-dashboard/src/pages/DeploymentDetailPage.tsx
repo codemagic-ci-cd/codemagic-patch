@@ -57,6 +57,7 @@ import { useTeamRole } from "../rbac/useTeamRole";
 import { NewReleaseModal } from "./release/modals/NewReleaseModal";
 import {
   ReleaseHistoryTableHead,
+  ReleaseNoteText,
   releaseHistoryCol,
 } from "./release/releaseHistoryTable";
 import { useReleaseActions } from "./release/modals/useReleaseActions";
@@ -689,12 +690,7 @@ function ReleaseRow({
         {release.releaseNotes === null || release.releaseNotes.trim() === "" ? (
           <span className="text-fg-3">—</span>
         ) : (
-          <span
-            className="block max-w-[38ch] truncate text-[13px] font-medium text-fg"
-            title={release.releaseNotes}
-          >
-            {release.releaseNotes}
-          </span>
+          <ReleaseNoteText text={release.releaseNotes} />
         )}
       </td>
       <td className={releaseHistoryCol.td.data}>
