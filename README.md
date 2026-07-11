@@ -16,7 +16,7 @@ This monorepo contains everything you need to run the service yourself and wire 
 
 ## Quickstart — try it locally
 
-Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login.
+Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. All you need installed is **Docker (with Compose v2)** and **Node.js ≥ 22** for the CLI.
 
 ```bash
 git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
@@ -24,42 +24,54 @@ cd codemagic-patch
 ./scripts/local-eval/up.sh
 ```
 
-The script brings up the stack, installs the `cmpatch` CLI globally, and prints a ready banner. You get:
+The script brings up the stack, installs the `cmpatch` CLI globally, seeds a demo app, and prints a ready banner with everything you need:
 
-- **Dashboard** — <http://localhost:8080>
+- **Dashboard** — <http://localhost:8080> (sign in with the prefilled one-click local login)
 - **API** — <http://localhost:3000>
+- A seeded **demo app** and API token
 
-Watch it process and publish in the dashboard. To see an update **apply on a running app** (iOS simulator / Android emulator), continue with the [on-device demo](examples/on-device-demo/README.md).
+To see an update **apply on a running app** (iOS simulator / Android emulator), continue with the [on-device demo](examples/on-device-demo).
 
-Tear everything down with:
+The evaluation stack is defined in `docker-compose.dev.yml` (not the self-host compose file). Tear everything down with:
 
 ```bash
 docker compose -f docker-compose.dev.yml down -v
 ```
 
-> ⚠️ **Evaluation only — not a deployment.**  To self-host for real, follow [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host).
+> ⚠️ **Evaluation only — not a deployment.** Authentication is disabled and all ports bind to localhost. To self-host for real, follow [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host).
 
 ---
 
 ## Table of contents
 
+**Get started**
+
 1. [Quickstart — try it locally](#quickstart--try-it-locally)
 2. [How it works](#how-it-works)
 3. [Core concepts](#core-concepts)
-4. [Repository layout](#repository-layout)
-5. [Requirements](#requirements)
-6. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
-7. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
-8. [Part 3 — Create apps & deployments](#part-3--create-apps--deployments)
-9. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
-10. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
-11. [Managing releases](#managing-releases)
-12. [Code signing (optional)](#code-signing-optional)
-13. [How delivery works](#how-delivery-works)
-14. [Operations](#operations)
+4. [Requirements](#requirements)
+
+**Set up for real**
+
+5. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
+6. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
+7. [Part 3 — Create apps & deployments](#part-3--create-apps--deployments)
+8. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
+9. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
+
+**Day-to-day**
+
+10. [Managing releases](#managing-releases)
+11. [Code signing (optional)](#code-signing-optional)
+12. [Operations](#operations)
+13. [Troubleshooting](#troubleshooting)
+
+**Reference**
+
+14. [How delivery works](#how-delivery-works)
 15. [Configuration reference](#configuration-reference)
 16. [CLI command reference](#cli-command-reference)
-17. [Troubleshooting](#troubleshooting)
+17. [Repository layout](#repository-layout)
 
 ---
 
@@ -109,22 +121,6 @@ The default self-host stack runs four services on a single Docker host:
 
 ---
 
-## Repository layout
-
-| Path               | Package                   | Description                                                          |
-| ------------------ | ------------------------- | ------------------------------------------------------------------- |
-| `server/`          | `@codemagic/patch-server` | Fastify API + release/manifest worker                               |
-| `client/`          | `@codemagic/react-native-patch` | React Native SDK + Expo config plugin (`app.plugin.js`)             |
-| `cli/`             | `codemagic-patch`         | The `cmpatch` CLI                                                    |
-| `web-dashboard/`   | `web-dashboard`           | React SPA dashboard (served by Caddy)                               |
-| `shared/`          | `@codemagic/patch-shared` | Types and helpers shared across packages                            |
-| `deploy/selfhost/` | —                         | Caddyfile, MinIO bucket policy, dashboard image build               |
-| `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
-| `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
-| `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
-
----
-
 ## Requirements
 
 > Just evaluating? The [Quickstart](#quickstart--try-it-locally) needs none of this — only Docker.
@@ -170,7 +166,7 @@ Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. 
 Clone the repo onto the server and run the installer:
 
 ```bash
-git clone <this-repository-url> codemagic-patch
+git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
 cd codemagic-patch
 
 scripts/selfhost/install.sh \
@@ -234,7 +230,7 @@ The token needs **Zone → Cache Purge** permission. Keep the storage domain **D
 
 ## Part 2 — Install the CLI and sign in
 
-You can do everything from the dashboard, but CI and scripting use the CLI. Install it globally from this repo:
+You can do everything from the dashboard, but CI and scripting use the CLI. The CLI is built from this repo (only the app SDK `@codemagic/react-native-patch` is on npm). Install it globally:
 
 ```bash
 corepack enable
@@ -300,6 +296,8 @@ The SDK is configured through four native values (injected at build time):
 | `CodemagicPatchDownloadBaseUrl` | your **Download base** URL (ends with `/codemagic-patch`) |
 | `CodemagicPatchApiUrl`          | your **API** URL                                        |
 | `CodemagicPatchPublicKey`       | *(optional)* PEM public key for code-signing enforcement |
+
+> The snippets below use placeholder values (`ios-staging-deployment-key`, `https://updates.example.com`, …) — substitute your own deployment keys and URLs from Parts 1 and 3.
 
 ### Option A — Bare React Native
 
@@ -686,22 +684,6 @@ With a `publicKey` configured, the client **rejects** any release whose manifest
 
 ---
 
-## How delivery works
-
-The SDK reads these objects under your **Download base** URL:
-
-```text
-<downloadBaseUrl>/<deploymentKey>/meta.json
-<downloadBaseUrl>/<deploymentKey>/<binaryVersion>/manifest.json
-<downloadBaseUrl>/<deploymentKey>/<binaryVersion>/<runningPackageHash>/manifest.json
-```
-
-- The manifest carries the full bundle URL and, when available, a **binary patch** URL. The SDK prefers the smaller patch and automatically falls back to the full bundle if the patch download or apply fails.
-- Bundle file names: iOS `main.jsbundle`, Android `index.android.bundle`.
-- The MinIO bucket (`codemagic-patch`) allows public reads of published artifacts but **denies** public reads under the `_internal/*` prefix (staged uploads).
-
----
-
 ## Operations
 
 All maintenance commands run against the `codemagic-patch-selfhost` Compose project.
@@ -741,6 +723,63 @@ scripts/selfhost/upgrade.sh
 # pin a specific server image:
 scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
 ```
+
+---
+
+## Troubleshooting
+
+**Server won't boot / OAuth errors**
+
+- `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` are set.
+- `OAUTH_DEVICE_POLL_TOKEN_SECRET` and `WORKER_SHARED_SECRET` are each ≥ 32 chars.
+- Under `REGISTRATION_MODE=invite_only`, `INITIAL_ADMIN_EMAILS` is non-empty.
+
+**First admin sign-in rejected**
+
+- `INITIAL_ADMIN_EMAILS` matches the GitHub account's **verified primary** email.
+- The OAuth App callback URL is `https://<api-domain>/auth/callback` and **Device Flow** is enabled.
+
+**Caddy certificate issuance is slow**
+
+- API/storage DNS records point at the host; ports 80/443 are open.
+- With Cloudflare, keep the storage domain **DNS-only** until the first certificate is issued.
+
+**Release published but the app finds no update**
+
+- The app's embedded `CodemagicPatchDeploymentKey` matches the key from `cmpatch deployment list`.
+- The app's binary version matches the release's target binary version.
+- `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`.
+- iOS and Android use **separate** deployment keys.
+
+**Release stuck processing**
+
+```bash
+cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml logs --tail=200 server
+```
+
+**Check local readiness before publishing**
+
+```bash
+cmpatch doctor --app MyApp-iOS --deployment Staging --verbose
+```
+
+---
+
+## How delivery works
+
+The SDK reads these objects under your **Download base** URL:
+
+```text
+<downloadBaseUrl>/<deploymentKey>/meta.json
+<downloadBaseUrl>/<deploymentKey>/<binaryVersion>/manifest.json
+<downloadBaseUrl>/<deploymentKey>/<binaryVersion>/<runningPackageHash>/manifest.json
+```
+
+- The manifest carries the full bundle URL and, when available, a **binary patch** URL. The SDK prefers the smaller patch and automatically falls back to the full bundle if the patch download or apply fails.
+- Bundle file names: iOS `main.jsbundle`, Android `index.android.bundle`.
+- The MinIO bucket (`codemagic-patch`) allows public reads of published artifacts but **denies** public reads under the `_internal/*` prefix (staged uploads).
 
 ---
 
@@ -829,41 +868,16 @@ List/metrics commands accept `--format table|json`.
 
 ---
 
-## Troubleshooting
+## Repository layout
 
-**Server won't boot / OAuth errors**
-
-- `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` are set.
-- `OAUTH_DEVICE_POLL_TOKEN_SECRET` and `WORKER_SHARED_SECRET` are each ≥ 32 chars.
-- Under `REGISTRATION_MODE=invite_only`, `INITIAL_ADMIN_EMAILS` is non-empty.
-
-**First admin sign-in rejected**
-
-- `INITIAL_ADMIN_EMAILS` matches the GitHub account's **verified primary** email.
-- The OAuth App callback URL is `https://<api-domain>/auth/callback` and **Device Flow** is enabled.
-
-**Caddy certificate issuance is slow**
-
-- API/storage DNS records point at the host; ports 80/443 are open.
-- With Cloudflare, keep the storage domain **DNS-only** until the first certificate is issued.
-
-**Release published but the app finds no update**
-
-- The app's embedded `CodemagicPatchDeploymentKey` matches the key from `cmpatch deployment list`.
-- The app's binary version matches the release's target binary version.
-- `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`.
-- iOS and Android use **separate** deployment keys.
-
-**Release stuck processing**
-
-```bash
-cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
-docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
-  -f docker-compose.selfhost.yml logs --tail=200 server
-```
-
-**Check local readiness before publishing**
-
-```bash
-cmpatch doctor --app MyApp-iOS --deployment Staging --verbose
-```
+| Path               | Package                   | Description                                                          |
+| ------------------ | ------------------------- | ------------------------------------------------------------------- |
+| `server/`          | `@codemagic/patch-server` | Fastify API + release/manifest worker                               |
+| `client/`          | `@codemagic/react-native-patch` | React Native SDK + Expo config plugin (`app.plugin.js`)             |
+| `cli/`             | `codemagic-patch`         | The `cmpatch` CLI                                                    |
+| `web-dashboard/`   | `web-dashboard`           | React SPA dashboard (served by Caddy)                               |
+| `shared/`          | `@codemagic/patch-shared` | Types and helpers shared across packages                            |
+| `deploy/selfhost/` | —                         | Caddyfile, MinIO bucket policy, dashboard image build               |
+| `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
+| `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
+| `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
