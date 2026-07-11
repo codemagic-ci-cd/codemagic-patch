@@ -16,7 +16,7 @@ This monorepo contains everything you need to run the service yourself and wire 
 
 ## Quickstart — try it locally
 
-Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. All you need installed is **Docker (with Compose v2)** and **Node.js ≥ 22** for the CLI.
+Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. The only prerequisites are **Docker (with Compose v2)** and **Node.js ≥ 22** (for the CLI).
 
 ```bash
 git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
@@ -24,7 +24,7 @@ cd codemagic-patch
 ./scripts/local-eval/up.sh
 ```
 
-The script brings up the stack, installs the `cmpatch` CLI globally, seeds a demo app, and prints a ready banner with everything you need:
+The script brings up the stack, installs the `cmpatch` CLI globally, seeds a demo app, and prints a ready banner:
 
 - **Dashboard** — <http://localhost:8080> (sign in with the prefilled one-click local login)
 - **API** — <http://localhost:3000>
@@ -38,20 +38,20 @@ The evaluation stack is defined in `docker-compose.dev.yml` (not the self-host c
 docker compose -f docker-compose.dev.yml down -v
 ```
 
-> ⚠️ **Evaluation only — not a deployment.** Authentication is disabled and all ports bind to localhost. To self-host for real, follow [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host).
+> ⚠️ **Evaluation only — not a deployment.** Authentication is disabled and all ports bind to localhost. For a production deployment, follow [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host).
 
 ---
 
 ## Table of contents
 
-**Get started**
+**Getting started**
 
 1. [Quickstart — try it locally](#quickstart--try-it-locally)
 2. [How it works](#how-it-works)
 3. [Core concepts](#core-concepts)
 4. [Requirements](#requirements)
 
-**Set up for real**
+**Production setup**
 
 5. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
 6. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
@@ -59,7 +59,7 @@ docker compose -f docker-compose.dev.yml down -v
 8. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
 9. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
 
-**Day-to-day**
+**Release management & operations**
 
 10. [Managing releases](#managing-releases)
 11. [Code signing (optional)](#code-signing-optional)
@@ -123,7 +123,7 @@ The default self-host stack runs four services on a single Docker host:
 
 ## Requirements
 
-> Just evaluating? The [Quickstart](#quickstart--try-it-locally) needs none of this — only Docker.
+> These requirements apply to a production self-host deployment. The local [Quickstart](#quickstart--try-it-locally) requires only Docker and Node.js.
 
 **Server host**
 
@@ -252,7 +252,7 @@ Sign in as the admin (completes a GitHub device-code approval in your browser):
 cmpatch login --server-url https://updates.example.com
 ```
 
-Mint a token for CI:
+Create an API token for CI:
 
 ```bash
 cmpatch token create --name ci
