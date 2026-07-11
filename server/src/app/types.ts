@@ -426,8 +426,15 @@ export interface PublicAuthAuditContext {
 }
 
 export interface OAuthWebConfig {
+  /**
+   * Base URL the dashboard prepends to the authorize path. Absent = GitHub
+   * mode (github.com); "" = same-origin (the SPA's own consent route).
+   */
+  authorizeBaseUrl?: string;
   clientId: string;
-  provider: "github";
+  /** Absent = normal GitHub mode; "local-dev" switches the dashboard login. */
+  mode?: string;
+  provider: string;
   scopes: string;
 }
 

@@ -1,0 +1,39 @@
+# Local evaluation dashboard — plain HTTP on :8080, no ACME/TLS. Reuses the
+# self-host Caddy image unchanged (deploy/selfhost/Dockerfile.caddy); only
+# this Caddyfile differs, so the evaluation stack serves the same shippable
+# dashboard artifact as production and the two cannot drift silently.
+
+{
+	auto_https off
+}
+
+:8080 {
+	encode zstd gzip
+
+	# Same-origin API: the SPA's empty VITE_API_BASE_URL default resolves to
+	# window.location.origin, so proxying /v1/* here needs no CORS work.
+	handle /v1/* {
+		reverse_proxy server:3000
+	}
+
+	# /health* (both /health and /health/ready) is proxied EXPLICITLY: the
+	# server's health routes live outside /v1, and without this block the SPA
+	# fallback would answer 200 with index.html — a false-positive for any
+	# reachability check pointed at the proxy.
+	handle /health* {
+		reverse_proxy server:3000
+	}
+
+	# /worker/* is intentionally not proxied — same reasoning as the
+	# self-host Caddyfile: MODE=all reconciles in-process.
+
+	handle {
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
+		header {
+			Content-Security-Policy "default-src 'self'; connect-src 'self'"
+			-Server
+		}
+	}
+}

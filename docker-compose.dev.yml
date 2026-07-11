@@ -1,18 +1,22 @@
-# ⚠ NOT THE SELF-HOST STACK. This is an internal development / test stack:
-# Postgres + MinIO + the API server only. It does NOT serve the web dashboard,
-# so bringing it up does not give you a usable CodemagicPatch deployment.
+# ⚠ NOT A DEPLOYMENT. This is the LOCAL EVALUATION / development stack:
+# Postgres + MinIO + the API server + the web dashboard, with authentication
+# replaced by a local sign-in page (any email works — the server runs the
+# dedicated dist/localDev/entry.js entrypoint and refuses to start without
+# the explicit opt-ins below). Every published port binds to 127.0.0.1; never
+# expose this stack beyond your machine.
 #
-# To self-host, run:  scripts/selfhost/install.sh
-# (it provisions secrets and brings up the full stack — dashboard included —
-# from docker-compose.selfhost.yml). See that file and the installer's --help.
+# To self-host for real, run:  scripts/selfhost/install.sh
+# (it provisions secrets and brings up the production stack — real GitHub
+# OAuth, TLS — from docker-compose.selfhost.yml). The local entrypoint is
+# structurally unreachable there: its stock CMD is dist/main.js.
 #
-# Local development stack for Codemagic Patch.
-#
-# Brings up Postgres + MinIO + the server in MODE=all, runs migrations on
-# boot, and creates the single team named by INITIAL_TEAM_NAME (default-team)
-# during server startup. seed.sql then attaches a demo app / deployment / API
-# token to that team so the CLI can issue a release without first calling
-# control-plane CRUD APIs.
+# Brings up the full local stack in MODE=all, runs migrations on boot, and
+# creates the single team named by INITIAL_TEAM_NAME (default-team) during
+# server startup. seed.sql then attaches a demo app / deployment / API token
+# to that team so the CLI can issue a release without first calling
+# control-plane CRUD APIs. The dashboard is served at http://localhost:8080 —
+# sign in as local-admin@example.com (prefilled) to land on the seeded owner
+# account; `cmpatch login --server-url http://localhost:3000` approves instantly.
 #
 # Usage:
 #   docker compose -f docker-compose.dev.yml up --build
@@ -37,7 +41,7 @@ services:
       POSTGRES_PASSWORD: codemagic_patch
       POSTGRES_USER: codemagic_patch
     ports:
-      - "55433:5432"
+      - "127.0.0.1:55433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U codemagic_patch -d codemagic_patch_dev"]
       interval: 2s
@@ -55,8 +59,8 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio12345
     ports:
-      - "9100:9000" # S3 API
-      - "9101:9001" # Web console
+      - "127.0.0.1:9100:9000" # S3 API
+      - "127.0.0.1:9101:9001" # Web console
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
       interval: 2s
@@ -92,6 +96,11 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
+    # Local evaluation entrypoint: injects the local (no-GitHub) auth adapters.
+    # The image's stock CMD stays dist/main.js, so a production deployment
+    # structurally cannot run local auth — this override plus the two env
+    # opt-ins below are the only way in.
+    command: ["node", "dist/localDev/entry.js"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,12 +116,23 @@ services:
       RUN_MIGRATIONS: "true"
       DATABASE_URL: postgresql://codemagic_patch:codemagic_patch@postgres:5432/codemagic_patch_dev
       WORKER_SHARED_SECRET: dev-worker-secret-change-me-0000000001
-      # GitHub OAuth is mandatory for MODE=all to boot. Local dev uses the seeded
-      # API token (not OAuth login), so these are placeholder values that only
-      # satisfy the startup check; the device-flow routes are unused here.
-      GITHUB_OAUTH_CLIENT_ID: dev-local-github-oauth-client-id
-      GITHUB_OAUTH_CLIENT_SECRET: secret
+      # Explicit local-auth opt-ins (entry.ts refuses to start without both;
+      # the image bakes NODE_ENV=production, so overriding it here is
+      # deliberate — a copy-pasted `command:` override alone still refuses).
+      CODEMAGIC_PATCH_LOCAL_AUTH: "1"
+      NODE_ENV: development
+      # The device poll-token machinery is real even with the faked identity
+      # provider — `cmpatch login` mints and verifies genuine poll tokens.
       OAUTH_DEVICE_POLL_TOKEN_SECRET: dev-oauth-device-poll-token-secret-000001
+      # Printed by `cmpatch login` as the verification link; must be the
+      # host-reachable dashboard URL (the container cannot derive the host
+      # port mapping). Cosmetic — device approval is instant.
+      CODEMAGIC_PATCH_LOCAL_DASHBOARD_URL: http://localhost:8080
+      # Open registration on purpose: signing in as alice@/bob@example.com is
+      # how an evaluator exercises teams, invitations, and RBAC without
+      # multiple GitHub accounts. local-admin@example.com (below) lands on
+      # the seeded owner account via the email link.
+      REGISTRATION_MODE: open
       INITIAL_ADMIN_EMAILS: local-admin@example.com
       # The server creates the fixed `default-team` on boot (idempotently);
       # seed.sql then attaches the demo app/deployment/token to it by name.
@@ -133,12 +153,40 @@ services:
       # storage".
       PUBLIC_BASE_URL: http://localhost:9100/codemagic-patch
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test:
         [
           "CMD-SHELL",
           "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  dashboard:
+    # Same image as the self-host stack (the SPA is built with default VITE_*
+    # values — empty API base = same-origin), so the evaluation stack serves
+    # the real shippable dashboard artifact. Only the Caddyfile differs:
+    # plain HTTP :8080, /v1/* and /health* proxied to the server.
+    build:
+      context: .
+      dockerfile: deploy/selfhost/Dockerfile.caddy
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./deploy/local-dev/Caddyfile:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      # Through the proxy on purpose: /health* has an explicit handle block,
+      # so this fails loudly if the proxy config regresses (the SPA fallback
+      # would otherwise answer any path with index.html).
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1",
         ]
       interval: 5s
       timeout: 5s

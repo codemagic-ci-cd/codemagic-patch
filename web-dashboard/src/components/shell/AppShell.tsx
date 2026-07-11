@@ -19,9 +19,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Outlet, useParams } from "react-router";
 
+import { useIsLocalDevSession } from "../../api/hooks/me";
 import { useTeams } from "../../api/hooks/teams";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { clearLastTeamId, readLastTeamId, writeLastTeamId } from "./lastTeam";
+import { EVAL_BANNER_HEIGHT_PX, LocalEvalBanner } from "./LocalEvalBanner";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { Sidebar } from "./Sidebar";
 import { classifyTeamRoute } from "./teamResolution";
@@ -66,6 +68,9 @@ export function AppShell() {
   // on Esc / overlay-click, and on resize past the breakpoint; routes outside
   // the shell (e.g. /login) unmount it entirely.
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
+  // Drives the --eval-banner-h sticky-offset reservation (see the grid div).
+  // Session-derived (whoami is already fetched for RBAC) — no extra request.
+  const localDevMode = useIsLocalDevSession();
 
   // Remember only a team the caller is confirmed to belong to. Persisting an
   // unvalidated teamId is what let a stale id (self-host DB reset → new
@@ -100,12 +105,24 @@ export function AppShell() {
   const activeTeamId = teamId ?? readLastTeamId();
 
   return (
-    // `[display:grid]` not `grid`: the legacy `.grid{display:grid;gap:18px}`
-    // component class (still used by page grids) shares the `grid` token and
-    // would inject an 18px column gap between the sidebar and main column.
+    <>
+    <LocalEvalBanner />
+    {/* `[display:grid]` not `grid`: the legacy `.grid{display:grid;gap:18px}`
+        component class (still used by page grids) shares the `grid` token and
+        would inject an 18px column gap between the sidebar and main column.
+        `--eval-banner-h` reserves the sticky evaluation banner's height so
+        the TopBar/Sidebar sticky offsets clear it instead of sliding under
+        it on scroll (0px whenever the banner is absent). */}
     <div
       className="group/app [display:grid] min-h-screen grid-cols-[var(--sb-w)_1fr] data-collapsed:[--sb-w:76px] max-shell:grid-cols-[1fr]"
       data-collapsed={collapsed || undefined}
+      style={
+        {
+          "--eval-banner-h": localDevMode
+            ? `${EVAL_BANNER_HEIGHT_PX}px`
+            : "0px",
+        } as React.CSSProperties
+      }
     >
       {/* Skip-to-content (WCAG 2.4.1): first focusable element, off-screen until
           focused, jumps past the sidebar to the routed content. */}
@@ -137,5 +154,6 @@ export function AppShell() {
         </div>
       </main>
     </div>
+    </>
   );
 }

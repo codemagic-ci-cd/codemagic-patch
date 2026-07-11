@@ -151,8 +151,12 @@ export interface OAuthRefreshWire {
 }
 
 export interface OAuthWebConfigWire {
+  /** Optional; absent = github.com, "" = same-origin. */
+  authorize_base_url?: string;
   client_id: string;
-  provider: "github";
+  /** Optional; absent = normal GitHub mode. */
+  mode?: string;
+  provider: string;
   scopes: string;
 }
 

@@ -149,8 +149,12 @@ export interface RefreshWireResponse {
 
 export interface OAuthWebConfigWire {
   client_id: string;
-  provider: "github";
+  provider: string;
   scopes: string;
+  /** Optional; absent = normal GitHub mode. */
+  mode?: string;
+  /** Optional; absent = github.com, "" = same-origin. */
+  authorize_base_url?: string;
 }
 
 export interface RoleWire {
@@ -485,6 +489,11 @@ export function fromOAuthWebConfigWire(
     clientId: config.client_id,
     provider: config.provider,
     scopes: config.scopes,
+    // "" is a present value (same-origin authorize) — key on undefined only.
+    ...(config.mode === undefined ? {} : { mode: config.mode }),
+    ...(config.authorize_base_url === undefined
+      ? {}
+      : { authorizeBaseUrl: config.authorize_base_url }),
   };
 }
 

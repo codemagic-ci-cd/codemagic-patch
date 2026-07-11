@@ -49,7 +49,6 @@ export interface GitHubOAuthConfig {
   clientId: string;
   clientSecret?: string;
   oauthBaseUrl: string;
-  pollTokenSecret: string;
   scopes: string;
 }
 
@@ -73,6 +72,12 @@ export interface RuntimeConfig {
   maxUploadSizeBytes: number;
   mode: ServerMode;
   oauthAccessTokenTtlSeconds: number;
+  /**
+   * Secret for signing device-flow poll tokens. Parsed independently of the
+   * GitHub OAuth config so injected device adapters (local-dev entry, embedders)
+   * can enable the device flow without a GitHub client id.
+   */
+  oauthDevicePollTokenSecret?: string;
   oauthRefreshTokenTtlDays: number;
   patchWindow: number | null;
   port: number;
@@ -91,6 +96,7 @@ export function resolveRuntimeConfig(
   const storageAdapter = resolveStorageAdapter(env.STORAGE_ADAPTER);
   const mode = resolveMode(env.MODE);
   const deliveryAdapter = resolveDeliveryAdapter(env.DELIVERY_ADAPTER);
+  const githubOAuth = resolveGitHubOAuthConfig(env);
 
   return {
     cloudflare:
@@ -104,7 +110,7 @@ export function resolveRuntimeConfig(
     databaseSearchPath: resolveDatabaseSearchPath(env.DATABASE_SEARCH_PATH),
     databaseUrl: resolveDatabaseUrl(env.DATABASE_URL, mode),
     deliveryAdapter,
-    githubOAuth: resolveGitHubOAuthConfig(env),
+    githubOAuth,
     host: resolveHost(env.HOST),
     iamInvitationTtlDays: resolvePositiveIntegerWithDefaultAndMax(
       env.IAM_INVITATION_TTL_DAYS,
@@ -124,6 +130,10 @@ export function resolveRuntimeConfig(
       "OAUTH_ACCESS_TOKEN_TTL_SECONDS",
       DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
       MAX_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+    ),
+    oauthDevicePollTokenSecret: resolveOAuthDevicePollTokenSecret(
+      env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
+      githubOAuth !== undefined,
     ),
     oauthRefreshTokenTtlDays: resolvePositiveIntegerWithDefaultAndMax(
       env.OAUTH_REFRESH_TOKEN_TTL_DAYS,
@@ -279,21 +289,6 @@ function resolveGitHubOAuthConfig(
     return undefined;
   }
 
-  const pollTokenSecret = resolveOptionalString(
-    env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
-  );
-  if (!pollTokenSecret) {
-    throw new Error(
-      "OAUTH_DEVICE_POLL_TOKEN_SECRET is required when GITHUB_OAUTH_CLIENT_ID is set",
-    );
-  }
-
-  if (pollTokenSecret.length < MIN_OAUTH_DEVICE_POLL_TOKEN_SECRET_LENGTH) {
-    throw new Error(
-      `OAUTH_DEVICE_POLL_TOKEN_SECRET must be at least ${MIN_OAUTH_DEVICE_POLL_TOKEN_SECRET_LENGTH} characters`,
-    );
-  }
-
   return {
     allowedRedirectUris: resolveAllowedRedirectUris(
       env.GITHUB_OAUTH_ALLOWED_REDIRECT_URIS,
@@ -308,11 +303,34 @@ function resolveGitHubOAuthConfig(
       resolveOptionalString(env.GITHUB_OAUTH_BASE_URL) ??
         DEFAULT_GITHUB_OAUTH_BASE_URL,
     ),
-    pollTokenSecret,
     scopes:
       resolveOptionalString(env.GITHUB_OAUTH_SCOPES) ??
       DEFAULT_GITHUB_OAUTH_SCOPES,
   };
+}
+
+function resolveOAuthDevicePollTokenSecret(
+  value: string | undefined,
+  githubOAuthConfigured: boolean,
+): string | undefined {
+  const pollTokenSecret = resolveOptionalString(value);
+
+  if (!pollTokenSecret) {
+    if (githubOAuthConfigured) {
+      throw new Error(
+        "OAUTH_DEVICE_POLL_TOKEN_SECRET is required when GITHUB_OAUTH_CLIENT_ID is set",
+      );
+    }
+    return undefined;
+  }
+
+  if (pollTokenSecret.length < MIN_OAUTH_DEVICE_POLL_TOKEN_SECRET_LENGTH) {
+    throw new Error(
+      `OAUTH_DEVICE_POLL_TOKEN_SECRET must be at least ${MIN_OAUTH_DEVICE_POLL_TOKEN_SECRET_LENGTH} characters`,
+    );
+  }
+
+  return pollTokenSecret;
 }
 
 /**

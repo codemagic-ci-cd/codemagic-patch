@@ -39,6 +39,17 @@ import type {
 const DEFAULT_AUTHORIZE_BASE_URL = "https://github.com";
 
 /**
+ * Web-config `mode` value reported by the local evaluation stack. The login
+ * page relabels, the app shell shows the persistent banner, and the local
+ * consent route only renders when this matches (inert everywhere else).
+ */
+export const LOCAL_DEV_MODE = "local-dev";
+
+export function isLocalDevMode(config: OAuthWebConfig): boolean {
+  return config.mode === LOCAL_DEV_MODE;
+}
+
+/**
  * `GET /v1/auth/oauth/web-config` (public, no bearer). Errors propagate as
  * HttpProblemError for the login page to classify (`classifyWebConfigError`);
  * caching the config for the session is the caller's concern.
@@ -66,13 +77,21 @@ export interface AuthorizeUrlParams {
   codeChallenge: string;
 }
 
-/** GitHub authorize URL (S256 challenge; client_id/scope from web-config). */
+/**
+ * Authorize URL (S256 challenge; client_id/scope from web-config). Base
+ * resolution: web-config `authorize_base_url` → build-time
+ * `VITE_OAUTH_AUTHORIZE_BASE_URL` → github.com. `""` is a PRESENT value
+ * meaning same-origin (the SPA's own consent route) — the chain uses `??`,
+ * never truthiness, so it must not fall through to github.com.
+ */
 export function buildAuthorizeUrl(
   config: OAuthWebConfig,
   { state, codeChallenge }: AuthorizeUrlParams,
 ): string {
   const base = (
-    import.meta.env.VITE_OAUTH_AUTHORIZE_BASE_URL ?? DEFAULT_AUTHORIZE_BASE_URL
+    config.authorizeBaseUrl ??
+    import.meta.env.VITE_OAUTH_AUTHORIZE_BASE_URL ??
+    DEFAULT_AUTHORIZE_BASE_URL
   ).replace(/\/+$/, "");
   const query = new URLSearchParams({
     client_id: config.clientId,
@@ -100,6 +119,10 @@ export async function startLogin(
   stashPkce({
     state,
     codeVerifier,
+    // The provider that built this authorize URL travels with the flow; the
+    // callback echoes it into the exchange body (web-config isn't cached
+    // across the full-page authorize redirect).
+    provider: config.provider,
     ...(returnTo !== undefined ? { returnTo } : {}),
   });
   return buildAuthorizeUrl(config, { state, codeChallenge });
@@ -147,7 +170,9 @@ export async function exchangeCallback({
     method: "POST",
     path: "/auth/oauth/callback",
     body: toOAuthCallbackWireBody({
-      provider: "github",
+      // Stashed by startLogin from the web-config that started this flow;
+      // pre-provider stashes (in-flight during an upgrade) default to github.
+      provider: pkce.provider ?? "github",
       code,
       redirectUri: callbackRedirectUri(),
       codeVerifier: pkce.codeVerifier,
@@ -186,7 +211,11 @@ export async function logoutSession(): Promise<void> {
   }
 }
 
-/** The callback redirect URI is always `<origin>/auth/callback`. */
-function callbackRedirectUri(): string {
+/**
+ * The callback redirect URI is always `<origin>/auth/callback`. Exported as
+ * the single source of the value: the local consent page validates the
+ * incoming `redirect_uri` against exactly what `buildAuthorizeUrl` sends.
+ */
+export function callbackRedirectUri(): string {
   return `${window.location.origin}/auth/callback`;
 }

@@ -218,6 +218,17 @@ export interface ServerRuntimeOptions {
   managementIdGenerator?: ManagementIdGenerator;
   managementRetryLimit?: number;
   oauthSessionIdGenerator?: OAuthSessionHandlerIdGenerator;
+  /**
+   * Replaces the post-sign-in grant hook (runs on web OAuth and device-flow
+   * sign-ins). Defaults to the initial-admin bootstrap-team ownership grant.
+   */
+  oauthSignInGrantService?: (pool: DatabasePool) => OAuthSignInGrantService;
+  /**
+   * Replaces the GitHub-config-derived web OAuth config served by
+   * GET /v1/auth/oauth/web-config, so embedders that inject an authNAdapter
+   * can point the dashboard login at their own authorize endpoint.
+   */
+  oauthWebConfig?: OAuthWebConfig;
 }
 
 export async function createServerRuntime(
@@ -286,16 +297,22 @@ export async function createServerRuntime(
     const userAuthHandlers = authRepository
       ? createUserAuthHandlers(authRepository)
       : {};
-    const githubDeviceAuthAdapter =
-      authRepository && config.githubOAuth
-        ? options.githubDeviceAuthAdapter ??
-          createGitHubDeviceAuthAdapter({
-            apiBaseUrl: config.githubOAuth.apiBaseUrl,
-            clientId: config.githubOAuth.clientId,
-            oauthBaseUrl: config.githubOAuth.oauthBaseUrl,
-            scopes: config.githubOAuth.scopes,
-          })
-        : undefined;
+    // Device flow: an injected adapter is honored without any GitHub config
+    // (local-dev entry, embedders); the GitHub-config-derived adapter remains
+    // the fallback. The handlers additionally require the poll-token secret
+    // (parsed independently of the GitHub config for the same reason), so an
+    // injected adapter without OAUTH_DEVICE_POLL_TOKEN_SECRET still serves 501.
+    const githubDeviceAuthAdapter = authRepository
+      ? options.githubDeviceAuthAdapter ??
+        (config.githubOAuth
+          ? createGitHubDeviceAuthAdapter({
+              apiBaseUrl: config.githubOAuth.apiBaseUrl,
+              clientId: config.githubOAuth.clientId,
+              oauthBaseUrl: config.githubOAuth.oauthBaseUrl,
+              scopes: config.githubOAuth.scopes,
+            })
+          : undefined)
+      : undefined;
     // Web OAuth (authorization-code exchange) is enabled exactly when the
     // client secret is configured; device-only config leaves the callback
     // handler undefined so the route answers 501. Injection always wins.
@@ -351,22 +368,25 @@ export async function createServerRuntime(
                   auditRepository,
                 )
               : undefined,
-            pollTokenSecret: config.githubOAuth?.pollTokenSecret,
+            pollTokenSecret: config.oauthDevicePollTokenSecret,
             refreshTokenTtlDays: config.oauthRefreshTokenTtlDays,
             registrationMode: config.registrationMode,
             repository: authRepository,
           })
         : {};
     // Web OAuth is enabled exactly when the client secret is configured; the
-    // public web-config route serves 404 (about:blank) otherwise.
+    // public web-config route serves 404 (about:blank) otherwise. An injected
+    // web config wins so embedders with an injected authNAdapter can drive
+    // the dashboard login without any GitHub config.
     const oauthWebConfig: OAuthWebConfig | undefined =
-      config.githubOAuth?.clientSecret
+      options.oauthWebConfig ??
+      (config.githubOAuth?.clientSecret
         ? {
             clientId: config.githubOAuth.clientId,
             provider: "github",
             scopes: config.githubOAuth.scopes,
           }
-        : undefined;
+        : undefined);
     const storage = config.mode === "api" ? null : createStorageAdapter(config);
     const delivery =
       config.mode === "api" ? null : createDeliveryAdapter(config);

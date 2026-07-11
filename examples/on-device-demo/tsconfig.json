@@ -1,0 +1,12 @@
+{
+  "extends": "@react-native/typescript-config",
+  "compilerOptions": {
+    "types": [],
+    // Resolve @codemagic/react-native-patch to its published dist/*.d.ts types
+    // instead of its shipped TS sources (which the base config's
+    // react-native customCondition would pick and typecheck with app libs).
+    "customConditions": []
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["**/node_modules", "**/Pods"]
+}

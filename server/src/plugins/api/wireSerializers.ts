@@ -209,7 +209,13 @@ export function toOAuthWebConfigWire(
   config: OAuthWebConfig,
 ): OAuthWebConfigWire {
   return {
+    // "" is a meaningful present value (same-origin authorize), so the
+    // optional fields are keyed on undefined — never truthiness.
+    ...(config.authorizeBaseUrl === undefined
+      ? {}
+      : { authorize_base_url: config.authorizeBaseUrl }),
     client_id: config.clientId,
+    ...(config.mode === undefined ? {} : { mode: config.mode }),
     provider: config.provider,
     scopes: config.scopes,
   };

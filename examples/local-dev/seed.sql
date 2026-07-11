@@ -83,3 +83,27 @@ VALUES (
   'dev_local_deployment_key'
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- Per-platform deployments for the on-device demo (examples/on-device-demo).
+-- Releases target (deployment, binary_version) with no platform dimension, so
+-- iOS and Android must not share one deployment: the second platform's release
+-- would trip the fingerprint-disagreement warning and win the shared manifest,
+-- serving one platform the other's bundle. The demo app's iOS config carries
+-- the ios key, its Android config the android key.
+INSERT INTO deployment (id, app_id, team_id, name, deployment_key)
+VALUES
+  (
+    'deployment_local_staging_ios',
+    'app_local_demo',
+    (SELECT id FROM team WHERE name = 'default-team'),
+    'staging-ios',
+    'dev_local_ios_deployment_key'
+  ),
+  (
+    'deployment_local_staging_android',
+    'app_local_demo',
+    (SELECT id FROM team WHERE name = 'default-team'),
+    'staging-android',
+    'dev_local_android_deployment_key'
+  )
+ON CONFLICT (id) DO NOTHING;

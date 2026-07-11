@@ -20,8 +20,10 @@ export interface TopBarProps {
 }
 
 export function TopBar({ onOpenNav, homeTo }: TopBarProps) {
+  // top offset clears the sticky evaluation banner when present
+  // (--eval-banner-h is 0px outside local evaluation mode — see AppShell).
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3.5 border-b border-border bg-[rgba(255,255,255,.82)] px-7 py-3 backdrop-blur-[14px] max-shell:px-4 max-shell:py-2.5">
+    <header className="sticky top-[var(--eval-banner-h,0px)] z-30 flex items-center gap-3.5 border-b border-border bg-[rgba(255,255,255,.82)] px-7 py-3 backdrop-blur-[14px] max-shell:px-4 max-shell:py-2.5">
       <button
         type="button"
         className="hidden size-9 flex-none place-items-center rounded-control border border-border-strong bg-surface text-fg-2 [transition:.15s] hover:border-blue hover:text-fg [&_svg]:size-[19px] max-shell:[display:grid]"

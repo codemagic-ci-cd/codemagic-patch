@@ -27,6 +27,7 @@ import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
 import { CallbackPage } from "./pages/CallbackPage";
 import { DeploymentDetailPage } from "./pages/DeploymentDetailPage";
+import { LocalConsentPage } from "./pages/LocalConsentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MembersPage } from "./pages/MembersPage";
 import { MetricsPage } from "./pages/MetricsPage";
@@ -87,6 +88,10 @@ function HomeRedirect() {
 export const router = createBrowserRouter([
   // Public routes (the only unauthenticated ones).
   { path: "/login", element: <LoginPage /> },
+  // Local evaluation consent page — the same-origin authorize target when
+  // web-config reports mode "local-dev"; a standalone 404 otherwise (the
+  // route ships inert in production bundles).
+  { path: "/login/oauth/authorize", element: <LocalConsentPage /> },
   { path: "/auth/callback", element: <CallbackPage /> },
 
   // Guarded: RequireAuth gate → AppShell chrome → routed screens.

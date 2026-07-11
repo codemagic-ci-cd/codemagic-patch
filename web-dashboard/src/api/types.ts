@@ -366,9 +366,18 @@ export interface ApiTokenCreateResponse {
  * (no suffix) so it is distinguishable from resource `not-found`.
  */
 export interface OAuthWebConfig {
-  provider: "github";
+  /** Echoed into the callback body; "github" on stock servers. */
+  provider: string;
   clientId: string;
   scopes: string;
+  /** Absent = normal GitHub mode; "local-dev" = local evaluation stack. */
+  mode?: string;
+  /**
+   * Authorize origin override. Absent = github.com (or the build-time
+   * VITE_OAUTH_AUTHORIZE_BASE_URL); "" = same-origin (the SPA's own consent
+   * route) — "" is a PRESENT value, resolution must not use truthiness.
+   */
+  authorizeBaseUrl?: string;
 }
 
 // ---------------------------------------------------------------------------

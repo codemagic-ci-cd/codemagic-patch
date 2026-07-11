@@ -10,15 +10,15 @@
 // intentionally dropped: the SPA is same-origin, so the server IS
 // window.location.origin (shown in the server chip).
 
-import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Navigate, useSearchParams } from "react-router";
 
+import { useWebConfig } from "../api/hooks/webConfig";
 import { HttpProblemError } from "../api/problem";
 import { useSession } from "../auth/AuthProvider";
 import {
   classifyWebConfigError,
-  fetchWebConfig,
+  isLocalDevMode,
   startLogin,
 } from "../auth/webConfig";
 import { PRODUCT_NAME } from "../branding";
@@ -38,12 +38,7 @@ export function LoginPage() {
   const [redirecting, setRedirecting] = useState(false);
   const [startError, setStartError] = useState(false);
 
-  const configQuery = useQuery({
-    queryKey: ["auth", "web-config"],
-    queryFn: fetchWebConfig,
-    // The SPA caches the provider config for the session.
-    staleTime: Infinity,
-  });
+  const configQuery = useWebConfig();
 
   const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
   // Authorize error bounced back via /auth/callback?error=….
@@ -110,6 +105,9 @@ export function LoginPage() {
       </>
     );
   } else {
+    // Local evaluation stack: same flow, but the authorize redirect lands on
+    // the same-origin consent page instead of GitHub — relabel accordingly.
+    const localDev = isLocalDevMode(configQuery.data);
     body = (
       <>
         {oauthError !== null || startError ? (
@@ -121,13 +119,17 @@ export function LoginPage() {
             <div>
               {startError
                 ? REDIRECT_FAILED_MESSAGE
-                : `GitHub sign-in didn't complete (${oauthError}). Try again.`}
+                : `${localDev ? "Local" : "GitHub"} sign-in didn't complete (${oauthError}). Try again.`}
             </div>
           </div>
         ) : null}
         <button
           type="button"
-          className={buttonVariants({ intent: "gh", size: "lg", block: true })}
+          className={buttonVariants({
+            intent: localDev ? "primary" : "gh",
+            size: "lg",
+            block: true,
+          })}
           style={{ marginTop: oauthError !== null || startError ? 18 : 28 }}
           onClick={() => {
             void handleContinue();
@@ -137,9 +139,10 @@ export function LoginPage() {
         >
           {redirecting ? (
             <>
-              <span className="spinner sm" aria-hidden="true" /> Redirecting to
-              GitHub…
+              <span className="spinner sm" aria-hidden="true" /> Redirecting…
             </>
+          ) : localDev ? (
+            <>Sign in (local evaluation)</>
           ) : (
             <>
               <GitHubIcon /> Continue with GitHub
@@ -147,8 +150,9 @@ export function LoginPage() {
           )}
         </button>
         <p className="mt-4 text-[12px]/[1.6] text-fg-3">
-          Uses the OAuth 2.0 authorization-code flow with PKCE — no client
-          secret is stored in the browser.
+          {localDev
+            ? "Local evaluation mode replaces GitHub sign-in — authentication is disabled on this stack. Do not expose it."
+            : "Uses the OAuth 2.0 authorization-code flow with PKCE — no client secret is stored in the browser."}
         </p>
       </>
     );

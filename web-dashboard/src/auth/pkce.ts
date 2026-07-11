@@ -12,6 +12,11 @@ export interface PkceStashEntry {
   codeVerifier: string;
   /** In-app path to resume after the callback completes. */
   returnTo?: string;
+  /**
+   * Web-config provider captured when the flow started; echoed into the
+   * callback body. Absent (pre-existing stashes) = "github".
+   */
+  provider?: string;
 }
 
 /**
@@ -80,7 +85,7 @@ export function stashPkce(entry: PkceStashEntry): void {
  */
 export function consumePkce(
   state: string,
-): { codeVerifier: string; returnTo?: string } | null {
+): { codeVerifier: string; returnTo?: string; provider?: string } | null {
   const storage = getSessionStorage();
   if (storage === null) {
     return null;
@@ -104,9 +109,15 @@ export function consumePkce(
   if (!isStashEntry(parsed) || parsed.state !== state) {
     return null;
   }
-  return typeof parsed.returnTo === "string"
-    ? { codeVerifier: parsed.codeVerifier, returnTo: parsed.returnTo }
-    : { codeVerifier: parsed.codeVerifier };
+  return {
+    codeVerifier: parsed.codeVerifier,
+    ...(typeof parsed.returnTo === "string"
+      ? { returnTo: parsed.returnTo }
+      : {}),
+    ...(typeof parsed.provider === "string"
+      ? { provider: parsed.provider }
+      : {}),
+  };
 }
 
 function randomBytes(length: number): Uint8Array {
@@ -129,7 +140,12 @@ function getSessionStorage(): Storage | null {
 
 function isStashEntry(
   value: unknown,
-): value is { state: string; codeVerifier: string; returnTo?: unknown } {
+): value is {
+  state: string;
+  codeVerifier: string;
+  returnTo?: unknown;
+  provider?: unknown;
+} {
   if (typeof value !== "object" || value === null) {
     return false;
   }

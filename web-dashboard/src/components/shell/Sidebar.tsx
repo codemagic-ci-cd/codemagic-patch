@@ -42,8 +42,10 @@ export interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
+  // top offset + height clear the sticky evaluation banner when present
+  // (--eval-banner-h is 0px outside local evaluation mode — see AppShell).
   return (
-    <aside className="sb-art sticky top-0 flex h-screen flex-col overflow-hidden border-r border-sb-border bg-sb-bg text-sb-text max-shell:hidden">
+    <aside className="sb-art sticky top-[var(--eval-banner-h,0px)] flex h-[calc(100vh-var(--eval-banner-h,0px))] flex-col overflow-hidden border-r border-sb-border bg-sb-bg text-sb-text max-shell:hidden">
       <SidebarBody {...props} />
     </aside>
   );

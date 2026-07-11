@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Patch Demo</string>
+    <!-- Pre-wired to the seeded local evaluation stack (examples/local-dev/seed.sql).
+         localhost works on the emulator because `yarn demo:android` runs
+         `adb reverse` for ports 3000 (API) and 9100 (artifacts). -->
+    <string name="CodemagicPatchDeploymentKey">dev_local_android_deployment_key</string>
+    <string name="CodemagicPatchDownloadBaseUrl">http://localhost:9100/codemagic-patch</string>
+    <string name="CodemagicPatchApiUrl">http://localhost:3000</string>
+</resources>

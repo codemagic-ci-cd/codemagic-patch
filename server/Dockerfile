@@ -1,7 +1,9 @@
-# syntax=docker/dockerfile:1.7
-
 # ---------------------------------------------------------------------------
 # Builder — installs all workspace deps and compiles the server to dist/.
+#
+# Uses only builder-agnostic Dockerfile syntax (no BuildKit-only features, no
+# `# syntax=` frontend pin) so it builds on both BuildKit and the legacy
+# builder without pulling a frontend image from Docker Hub.
 # ---------------------------------------------------------------------------
 FROM node:22.20.0-alpine AS builder
 
