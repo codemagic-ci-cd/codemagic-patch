@@ -14,24 +14,52 @@ This monorepo contains everything you need to run the service yourself and wire 
 
 ---
 
+## Quickstart — try it locally
+
+Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login.
+
+```bash
+git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
+cd codemagic-patch
+./scripts/local-eval/up.sh
+```
+
+The script brings up the stack, installs the `cmpatch` CLI globally, and prints a ready banner. You get:
+
+- **Dashboard** — <http://localhost:8080>
+- **API** — <http://localhost:3000>
+
+Watch it process and publish in the dashboard. To see an update **apply on a running app** (iOS simulator / Android emulator), continue with the [on-device demo](examples/on-device-demo/README.md).
+
+Tear everything down with:
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
+> ⚠️ **Evaluation only — not a deployment.**  To self-host for real, follow [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host).
+
+---
+
 ## Table of contents
 
-1. [How it works](#how-it-works)
-2. [Core concepts](#core-concepts)
-3. [Repository layout](#repository-layout)
-4. [Requirements](#requirements)
-5. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
-6. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
-7. [Part 3 — Create apps & deployments](#part-3--create-apps--deployments)
-8. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
-9. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
-10. [Managing releases](#managing-releases)
-11. [Code signing (optional)](#code-signing-optional)
-12. [How delivery works](#how-delivery-works)
-13. [Operations](#operations)
-14. [Configuration reference](#configuration-reference)
-15. [CLI command reference](#cli-command-reference)
-16. [Troubleshooting](#troubleshooting)
+1. [Quickstart — try it locally](#quickstart--try-it-locally)
+2. [How it works](#how-it-works)
+3. [Core concepts](#core-concepts)
+4. [Repository layout](#repository-layout)
+5. [Requirements](#requirements)
+6. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
+7. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
+8. [Part 3 — Create apps & deployments](#part-3--create-apps--deployments)
+9. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
+10. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
+11. [Managing releases](#managing-releases)
+12. [Code signing (optional)](#code-signing-optional)
+13. [How delivery works](#how-delivery-works)
+14. [Operations](#operations)
+15. [Configuration reference](#configuration-reference)
+16. [CLI command reference](#cli-command-reference)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -92,11 +120,14 @@ The default self-host stack runs four services on a single Docker host:
 | `shared/`          | `@codemagic/patch-shared` | Types and helpers shared across packages                            |
 | `deploy/selfhost/` | —                         | Caddyfile, MinIO bucket policy, dashboard image build               |
 | `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
-| `examples/`        | —                         | Local-dev seed data and bundle fixtures                             |
+| `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
+| `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
 
 ---
 
 ## Requirements
+
+> Just evaluating? The [Quickstart](#quickstart--try-it-locally) needs none of this — only Docker.
 
 **Server host**
 
