@@ -1,14 +1,14 @@
 # On-device demo — watch an OTA update apply
 
-A minimal React Native app, preconfigured against the [local evaluation stack](../../README.md#quickstart--try-it-locally), whose whole purpose is to make an OTA update visible: it fills the screen with a version banner (**v1**, blue). You change one line, publish a release, relaunch — and the banner flips to **v2**, green. That flip is Codemagic Patch replacing the app's JS bundle, using the exact same client SDK, CLI, and server code paths as production.
+A minimal React Native app, preconfigured against the [local evaluation stack](../../README.md#quickstart--try-it-locally), built for a single purpose: making an OTA update visible. It fills the screen with a version banner (**v1**, blue). You change one line, publish a release, relaunch — and the banner flips to **v2**, green. That flip is Codemagic Patch replacing the app's JS bundle, using the same client SDK, CLI, and server code paths as production.
 
 The app uses the SDK's manual flow (`checkForUpdate` → `downloadUpdate` → `installUpdate`) so you can see each phase on screen — checking, download progress, installed — instead of it all happening silently inside `sync()`.
 
 ## Prerequisites
 
-- The local evaluation stack is **up**: run `../../scripts/local-eval/up.sh` from the repo root. It also installs the `cmpatch` CLI globally.
-- You are signed in once: `cmpatch login --server-url http://localhost:3000` (approves instantly)
-- Node.js ≥ 22.11 and Yarn (via Corepack).
+- The local evaluation stack is **up**: from the repo root, run `./scripts/local-eval/up.sh`. It also installs the `cmpatch` CLI globally.
+- You are signed in once: `cmpatch login --server-url http://localhost:3000` (the local stack approves the sign-in automatically).
+- Node.js ≥ 22.20 and Yarn (via Corepack).
 - **iOS**: macOS with Xcode and an iOS Simulator
 - **Android**: an Android SDK with a running emulator, and `adb` on PATH.
 
@@ -72,11 +72,11 @@ The SDK is configured by three native values, already baked into the app:
 | `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` | `http://localhost:9100/codemagic-patch` |
 | `CodemagicPatchDeploymentKey` | `dev_local_ios_deployment_key` | `dev_local_android_deployment_key` |
 
-The matching `staging-ios` / `staging-android` deployments (and the `demo-app` app) are created by the stack's seed. 
+The matching `staging-ios` / `staging-android` deployments (and the `demo-app` app) are created by the evaluation stack's [seed data](../local-dev/seed.sql).
 
 ## Troubleshooting
 
-- **"Local stack unreachable — is it running?"** — the evaluation stack isn't up (or was torn down). Run `../../scripts/local-eval/up.sh` and check again.
-- **Android stops finding updates after an emulator restart** — `adb reverse` mappings don't survive the emulator or adb server restarting. Re-run `yarn demo:android`, or just the two `adb reverse` commands from [`package.json`](package.json).
-- **`release-react` fails with a duplicate-release error** — you published the exact same bundle twice. Change `APP_VERSION` (or any code) and publish again.
-- **Start over** — `docker compose -f docker-compose.dev.yml down -v` from the repo root, then `./scripts/local-eval/up.sh`; the seed recreates the app, deployments, and token.
+- **"Local stack unreachable — is it running?"** — the evaluation stack isn't up (or was torn down). From the repo root, run `./scripts/local-eval/up.sh` and check again.
+- **Android stops finding updates after an emulator restart** — `adb reverse` mappings don't survive the emulator or adb server restarting. Re-run `yarn demo:android`, or only the two `adb reverse` commands from [`package.json`](package.json).
+- **`release-react` fails with a duplicate-release error** — you published the exact same bundle twice. Change `APP_VERSION` (or any other code) and publish again.
+- **Reset the environment** — from the repo root, run `docker compose -f docker-compose.dev.yml down -v`, then `./scripts/local-eval/up.sh`; the seed recreates the app, deployments, and token.
