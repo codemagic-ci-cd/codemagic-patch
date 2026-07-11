@@ -88,6 +88,7 @@ export function CliCommandBuilder({
   const [targetBinaryVersion, setTargetBinaryVersion] = useState(
     suggestedTargetBinaryVersion,
   );
+  const [releaseNotes, setReleaseNotes] = useState("");
   const [rolloutPercentage, setRolloutPercentage] = useState("100");
   const [mandatory, setMandatory] = useState(false);
   const [disabled, setDisabled] = useState(false);
@@ -118,6 +119,7 @@ export function CliCommandBuilder({
         deploymentName,
         platform,
         targetBinaryVersion,
+        releaseNotes,
         rolloutPercentage: rollout,
         mandatory,
         disabled,
@@ -130,6 +132,7 @@ export function CliCommandBuilder({
       deploymentName,
       platform,
       targetBinaryVersion,
+      releaseNotes,
       rollout,
       mandatory,
       disabled,
@@ -230,6 +233,19 @@ export function CliCommandBuilder({
             </div>
           </label>
         ) : null}
+
+        <label className={`${BUILDER_FIELD} min-w-[12rem] flex-1 basis-full`}>
+          <span className={BUILDER_LABEL}>Release note</span>
+          <div className={BUILDER_CONTROL}>
+            <input
+              type="text"
+              className={`${BUILDER_INPUT} ${INPUT_STATE.normal} w-full`}
+              value={releaseNotes}
+              placeholder="What changed in this release? (optional)"
+              onChange={(event) => setReleaseNotes(event.target.value)}
+            />
+          </div>
+        </label>
       </div>
 
       <div className="flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-fg">
