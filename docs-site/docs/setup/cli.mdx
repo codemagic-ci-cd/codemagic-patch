@@ -6,7 +6,19 @@ llmsDescription: 'Install cmpatch, GitHub OAuth login, API tokens, project confi
 
 # Install the CLI and sign in
 
-You can do everything from the dashboard, but CI and scripting use the CLI. Install it globally from this repo:
+You can do everything from the dashboard, but CI and scripting use the CLI.
+
+:::tip Already ran the Quickstart?
+[`./scripts/local-eval/up.sh`](/docs/) installs `cmpatch` globally for you. Sign in against the local API:
+
+```bash
+cmpatch login --server-url http://localhost:3000
+```
+
+The evaluation stack approves the device flow instantly (no GitHub OAuth). Use the steps below for a production self-host, or if you passed `--skip-cli`.
+:::
+
+## Install from the repo
 
 ```bash
 corepack enable

@@ -7,8 +7,6 @@ import HomeTerminal from '@site/src/components/HomeTerminal';
 
 import styles from './index.module.css';
 
-const GITHUB_URL = 'https://github.com/codemagic-ci-cd/codemagic-patch';
-
 const OTA_REASONS = [
   {
     title: 'No review wait',
@@ -36,15 +34,9 @@ const MANIFEST_PATHS = `# SDK fetches manifests from storage/CDN — not the API
 https://storage.updates.example.com/codemagic-patch/Production/meta.json
 https://storage.updates.example.com/codemagic-patch/Production/1.0.0/manifest.json`;
 
-const INSTALL_COMMAND = `git clone https://github.com/codemagic-ci-cd/codemagic-patch
+const LOCAL_EVAL_COMMAND = `git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
 cd codemagic-patch
-
-scripts/selfhost/install.sh \\
-  --api-domain updates.example.com \\
-  --storage-domain storage.updates.example.com \\
-  --email admin@example.com \\
-  --github-oauth-client-id Iv1.xxxxx \\
-  --github-oauth-client-secret <secret>`;
+./scripts/local-eval/up.sh`;
 
 const SECTIONS = [
   {
@@ -96,20 +88,20 @@ const SECTIONS = [
       'Codemagic Patch web dashboard showing deployment metrics and release history',
   },
   {
-    title: 'Self-hostable with Compose',
+    title: 'Run it yourself',
     description:
-      'Run Patch on your own infrastructure, with adapters if needed.',
+      'Try the full stack on your laptop, then self-host when you leave localhost.',
     bullets: [
-      'One Docker Compose stack with API, worker, Postgres, object storage',
-      'Storage and CDN adapters when you outgrow the defaults',
-      'GitHub OAuth for CLI and dashboard sign-in',
+      'One-command local evaluation: server, dashboard, Postgres, MinIO',
+      'On-device demo to watch an OTA apply on simulator or emulator',
+      'Same Compose building blocks for production self-host with TLS and GitHub OAuth',
     ],
-    link: '/docs/setup/self-host',
-    linkLabel: 'Self-host guide',
+    link: '/docs/',
+    linkLabel: 'Quickstart',
     reverse: false,
     media: 'terminal' as const,
-    terminalLabel: 'install',
-    terminalContent: INSTALL_COMMAND,
+    terminalLabel: 'local-eval',
+    terminalContent: LOCAL_EVAL_COMMAND,
   },
 ] as const;
 
@@ -160,15 +152,11 @@ export default function Home(): ReactNode {
             </p>
             <div className={styles.actions}>
               <Link className={styles.primaryButton} to="/docs/">
-                Read the docs
+                Try locally
               </Link>
-              <a
-                className={styles.secondaryButton}
-                href={GITHUB_URL}
-                target="_blank"
-                rel="noopener noreferrer">
-                Visit the repo
-              </a>
+              <Link className={styles.secondaryButton} to="/docs/setup/self-host">
+                Self-host guide
+              </Link>
             </div>
           </div>
         </header>

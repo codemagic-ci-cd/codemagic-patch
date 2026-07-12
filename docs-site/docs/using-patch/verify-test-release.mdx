@@ -6,9 +6,13 @@ llmsDescription: 'Device OTA verification loop — native build, publish, confir
 
 # Verify a test release
 
-Publishing with `cmpatch release-react` only confirms the server accepted the bundle. This page closes the loop: **install a native build → publish a JS change → confirm the app on device picks it up.**
+Publishing with `cmpatch release-react` only confirms the server accepted the bundle. This page closes the loop for **your** app: install a native build, publish a JS change, confirm the device picks it up.
 
-Use **Staging** (or your local dev deployment) until you are confident, not Production.
+:::tip Fastest proof the stack works
+If you only want to see an OTA apply on a simulator or emulator, use the [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) from the [Quickstart](/docs/) instead. Come back here when verifying your own Staging build.
+:::
+
+Use **Staging** (or your local evaluation deployment) until you are confident, not Production.
 
 ## Before you start
 
@@ -30,7 +34,7 @@ Where the app runs determines which server URLs work.
 
 | How you install | Typical use | Server URLs |
 | --- | --- | --- |
-| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Run locally](/docs/setup/local-development#point-your-app-at-localhost) or [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) |
+| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Run locally](/docs/setup/local-development#point-your-app-at-localhost) |
 | **Physical device (USB / local debug build)** | Dev phone on your desk | Your machine's LAN IP (not `localhost`), or a [self-host](/docs/setup/self-host) domain |
 | **TestFlight, Play internal testing, or other test track** | QA validates Staging like real users | Public HTTPS API + storage domains from self-host |
 
@@ -117,6 +121,6 @@ Production devices must use a native binary built with the **Production** deploy
 
 - [First release](/docs/setup/first-release): initial publish
 - [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
-- [Quickstart](/docs/): bring up the local evaluation stack
+- [Quickstart](/docs/): local evaluation stack and on-device demo
 - [Run locally](/docs/setup/local-development): endpoints and localhost app config
 - [Native setup](/docs/setup/native-setup): SDK and config keys
