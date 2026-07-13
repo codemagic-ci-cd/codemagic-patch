@@ -4,6 +4,7 @@ import {
   type DatabasePool,
   type DatabasePoolOptions,
   type MigrationResult,
+  type SqlMigration,
 } from "../db";
 import { resolveMigrationConfig } from "./migrationConfig";
 
@@ -18,7 +19,12 @@ export interface MigrationMainDependencies {
   createDatabasePool?: (options: DatabasePoolOptions) => DatabasePool;
   env?: MigrationEnvironment;
   logger?: MigrationLogger;
-  migrateDatabase?: (pool: DatabasePool) => Promise<MigrationResult>;
+  migrateDatabase?: (
+    pool: DatabasePool,
+    migrations?: readonly SqlMigration[],
+  ) => Promise<MigrationResult>;
+  migrations?: readonly SqlMigration[];
+  successMessage?: string;
 }
 
 const defaultLogger: MigrationLogger = {
@@ -52,9 +58,12 @@ export async function runMigrationMain(
   });
 
   try {
-    const result = await (dependencies.migrateDatabase ?? migrateDatabase)(pool);
+    const runMigrations = dependencies.migrateDatabase ?? migrateDatabase;
+    const result = dependencies.migrations
+      ? await runMigrations(pool, dependencies.migrations)
+      : await runMigrations(pool);
 
-    logger.log("database migrations complete", {
+    logger.log(dependencies.successMessage ?? "database migrations complete", {
       applied: result.applied,
       skipped: result.skipped,
     });
