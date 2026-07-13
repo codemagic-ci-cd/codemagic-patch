@@ -29,7 +29,7 @@ import { apiServerUrl } from "../lib/cliSnippet";
 import { formatDate } from "../model/format";
 import type { App } from "../model/app";
 import type { Deployment } from "../model/deployment";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { APP_ICO, CELL_APP, CELL_MAIN } from "../components/ui/cell";
@@ -505,6 +505,9 @@ function chipToneFor(deploymentName: string): ChipTone {
   return "blue";
 }
 
+const CONNECT_APP_DOCS_URL =
+  "https://github.com/codemagic-ci-cd/codemagic-patch#part-4--connect-your-react-native-app";
+
 function AppCreatedSuccess({
   appName,
   deployments,
@@ -564,49 +567,50 @@ function AppCreatedSuccess({
         <p className="m-0 text-[12.5px] leading-snug text-fg-3">
           Deployment keys are SDK config values, not secrets.
         </p>
-        <div className="mt-1 flex flex-col gap-3 rounded-md border border-border bg-surface-2 p-3">
-          <AppCreatedConfigRow label="CodemagicPatchApiUrl">
-            <Copyable
-              value={apiUrl}
-              display="full"
-              ariaLabel="Copy CodemagicPatchApiUrl"
-            />
-          </AppCreatedConfigRow>
-          <AppCreatedConfigRow label="CodemagicPatchDownloadBaseUrl">
-            {sdkConfigQuery.isPending ? (
-              <Skeleton width={240} variant="text" />
-            ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
-              <span className="text-[12.5px] font-medium text-fg-3">
-                Unavailable
-              </span>
-            ) : (
-              <Copyable
-                value={downloadBaseUrl}
-                display="full"
-                ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
-              />
-            )}
-          </AppCreatedConfigRow>
+        <div className="flex items-center justify-between gap-[14px]">
+          <span className="shrink-0 font-mono text-[12.5px] font-semibold text-fg-2">
+            CodemagicPatchApiUrl
+          </span>
+          <Copyable
+            value={apiUrl}
+            display="masked"
+            maskHead={14}
+            maskTail={8}
+            ariaLabel="Copy CodemagicPatchApiUrl"
+          />
         </div>
+        <div className="flex items-center justify-between gap-[14px]">
+          <span className="shrink-0 font-mono text-[12.5px] font-semibold text-fg-2">
+            CodemagicPatchDownloadBaseUrl
+          </span>
+          {sdkConfigQuery.isPending ? (
+            <Skeleton width={160} variant="text" />
+          ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
+            <span className="text-[12.5px] font-medium text-fg-3">
+              Unavailable
+            </span>
+          ) : (
+            <Copyable
+              value={downloadBaseUrl}
+              display="masked"
+              maskHead={14}
+              maskTail={8}
+              ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+            />
+          )}
+        </div>
+        <p className="m-0 text-[12.5px] leading-snug text-fg-3">
+          <a
+            className="font-semibold text-blue hover:underline"
+            href={CONNECT_APP_DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Connect your React Native app
+          </a>
+        </p>
       </div>
     </Modal>
-  );
-}
-
-function AppCreatedConfigRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[.06em] text-fg-3">
-        {label}
-      </div>
-      <div className="min-w-0 overflow-x-auto">{children}</div>
-    </div>
   );
 }
 

@@ -21,7 +21,8 @@
 // PromoteModal / RollbackModal. Empty history → New release CTA (CLI or bundle
 // upload via NewReleaseModal).
 
-import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router";
 import type {
   CSSProperties,
@@ -85,11 +86,6 @@ import {
   TBL_TR,
   TBL_WRAP,
 } from "../components/ui/table";
-import {
-  STATUS_LED,
-  STATUS_PILL,
-  STATUS_TONE,
-} from "../components/ui/statusPill";
 import {
   KEBAB,
   KEBAB_BTN,
@@ -341,30 +337,15 @@ function DeploymentDetail({
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Header pill: the deployment name in the published-green
-                pill (pure styling — deployments themselves carry no status). */}
-            <h1 className="m-0 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
-              <span
-                className={`${STATUS_PILL} ${STATUS_TONE.green}`}
-                // fontSize/padding OVERRIDE STATUS_PILL's text-[12px]/py-1/pl-2/
-                // pr-2.5 (this header pill is larger); conflicting utilities
-                // cannot co-apply, so the overrides stay inline.
-                style={{ fontSize: 13, padding: "6px 12px 6px 10px" }}
-              >
-                <span className={STATUS_LED} aria-hidden="true" />
-                {deployment.name}
-              </span>
-            </h1>
-            <DeploymentSdkDetails
-              deploymentKey={deployment.deploymentKey}
-              deploymentName={deployment.name}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <h1 className="m-0 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
+          {deployment.name}
+        </h1>
+        <DeploymentSdkDetails
+          deploymentKey={deployment.deploymentKey}
+          deploymentName={deployment.name}
+        />
+        <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {newReleaseButton}
           <span className="tip" data-tip={deployTip}>
             <button
@@ -407,6 +388,9 @@ function DeploymentDetail({
 // SDK details disclosure (deployment key + public client origins)
 // ---------------------------------------------------------------------------
 
+const DETAILS_PANEL_GAP = 8;
+const DETAILS_VIEWPORT_INSET = 8;
+
 function DeploymentSdkDetails({
   deploymentKey,
   deploymentName,
@@ -416,19 +400,64 @@ function DeploymentSdkDetails({
 }) {
   const sdkConfigQuery = useSdkConfig();
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const update = () => {
+      const anchor = buttonRef.current;
+      if (anchor === null) {
+        return;
+      }
+      const rect = anchor.getBoundingClientRect();
+      const panelWidth = panelRef.current?.offsetWidth ?? 420;
+      const panelHeight = panelRef.current?.offsetHeight ?? 0;
+      let left = rect.left;
+      // Keep the panel inside the viewport on the right edge.
+      left = Math.min(
+        left,
+        window.innerWidth - DETAILS_VIEWPORT_INSET - panelWidth,
+      );
+      left = Math.max(DETAILS_VIEWPORT_INSET, left);
+      let top = rect.bottom + DETAILS_PANEL_GAP;
+      const roomBelow = window.innerHeight - rect.bottom - DETAILS_PANEL_GAP;
+      const roomAbove = rect.top - DETAILS_PANEL_GAP;
+      if (panelHeight > roomBelow && roomAbove > roomBelow) {
+        top = Math.max(
+          DETAILS_VIEWPORT_INSET,
+          rect.top - DETAILS_PANEL_GAP - panelHeight,
+        );
+      }
+      setPos({ top, left });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) {
+        return;
+      }
+      // Panel is portaled to <body>, so treat both the trigger and the panel
+      // as "inside" — otherwise a copy click closes before it fires.
       if (
-        rootRef.current !== null &&
-        event.target instanceof Node &&
-        !rootRef.current.contains(event.target)
+        buttonRef.current?.contains(event.target) !== true &&
+        panelRef.current?.contains(event.target) !== true
       ) {
         setOpen(false);
       }
@@ -455,11 +484,71 @@ function DeploymentSdkDetails({
   const apiUrl = apiServerUrl();
   const downloadBaseUrl = sdkConfigQuery.data?.downloadBaseUrl;
 
+  const panel =
+    open &&
+    createPortal(
+      <div
+        className="z-[80] w-[min(420px,calc(100vw-2rem))] animate-pop rounded-[14px] border border-border bg-surface p-3 shadow-lg"
+        id={panelId}
+        role="dialog"
+        aria-label={`SDK configuration for ${deploymentName}`}
+        ref={panelRef}
+        style={{
+          position: "fixed",
+          top: pos?.top ?? 0,
+          left: pos?.left ?? DETAILS_VIEWPORT_INSET,
+          visibility: pos === null ? "hidden" : "visible",
+        }}
+      >
+        <SdkConfigRow
+          label="Deployment key"
+          note="SDK config value · not a secret"
+        >
+          <Copyable
+            value={deploymentKey}
+            display="masked"
+            maskHead={4}
+            maskTail={4}
+            ariaLabel={`Copy deployment key for ${deploymentName}`}
+          />
+        </SdkConfigRow>
+        <div className={MENU_SEP} />
+        <SdkConfigRow label="CodemagicPatchApiUrl">
+          <Copyable
+            value={apiUrl}
+            display="masked"
+            maskHead={14}
+            maskTail={8}
+            ariaLabel="Copy CodemagicPatchApiUrl"
+          />
+        </SdkConfigRow>
+        <div className={MENU_SEP} />
+        <SdkConfigRow label="CodemagicPatchDownloadBaseUrl">
+          {sdkConfigQuery.isPending ? (
+            <Skeleton width={160} variant="text" />
+          ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
+            <span className="text-[12.5px] font-medium text-fg-3">
+              Unavailable
+            </span>
+          ) : (
+            <Copyable
+              value={downloadBaseUrl}
+              display="masked"
+              maskHead={14}
+              maskTail={8}
+              ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+            />
+          )}
+        </SdkConfigRow>
+      </div>,
+      document.body,
+    );
+
   return (
-    <div className="relative" ref={rootRef}>
+    <>
       <button
         type="button"
-        className={buttonVariants({ intent: "ghost", size: "sm" })}
+        className={buttonVariants({ intent: "ghost" })}
         ref={buttonRef}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
@@ -469,52 +558,8 @@ function DeploymentSdkDetails({
         Details
         <DetailsChevron open={open} />
       </button>
-      {open ? (
-        <div
-          className="absolute left-0 z-[60] mt-2 w-[min(420px,calc(100vw-2rem))] animate-pop rounded-[14px] border border-border bg-surface p-3 shadow-lg"
-          id={panelId}
-          role="dialog"
-          aria-label={`SDK configuration for ${deploymentName}`}
-        >
-          <SdkConfigRow
-            label="Deployment key"
-            note="SDK config value · not a secret"
-          >
-            <Copyable
-              value={deploymentKey}
-              display="masked"
-              maskHead={4}
-              maskTail={4}
-              ariaLabel={`Copy deployment key for ${deploymentName}`}
-            />
-          </SdkConfigRow>
-          <div className={MENU_SEP} />
-          <SdkConfigRow label="CodemagicPatchApiUrl">
-            <Copyable
-              value={apiUrl}
-              display="full"
-              ariaLabel="Copy CodemagicPatchApiUrl"
-            />
-          </SdkConfigRow>
-          <div className={MENU_SEP} />
-          <SdkConfigRow label="CodemagicPatchDownloadBaseUrl">
-            {sdkConfigQuery.isPending ? (
-              <Skeleton width={260} variant="text" />
-            ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
-              <span className="text-[12.5px] font-medium text-fg-3">
-                Unavailable
-              </span>
-            ) : (
-              <Copyable
-                value={downloadBaseUrl}
-                display="full"
-                ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
-              />
-            )}
-          </SdkConfigRow>
-        </div>
-      ) : null}
-    </div>
+      {panel}
+    </>
   );
 }
 
@@ -529,7 +574,7 @@ function SdkConfigRow({
 }) {
   return (
     <div className="px-1 py-1.5">
-      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[.06em] text-fg-3">
+      <div className="mb-1.5 font-mono text-[12.5px] font-semibold text-fg-2">
         {label}
       </div>
       <div className="min-w-0 overflow-x-auto">{children}</div>
