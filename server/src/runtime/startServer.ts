@@ -88,6 +88,9 @@ export async function startServer(
     releasePromoteHandler: runtime.releasePromoteHandler,
     releaseReadHandler: runtime.releaseReadHandler,
     releaseUploadStorage: runtime.releaseUploadStorage,
+    sdkConfig: {
+      downloadBaseUrl: config.publicBaseUrl,
+    },
     teamAppsListHandler: runtime.teamAppsListHandler,
     teamCreateHandler: runtime.teamCreateHandler,
     teamListHandler: runtime.teamListHandler,

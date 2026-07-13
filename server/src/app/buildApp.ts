@@ -63,6 +63,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     releaseUploadStorage = releaseCreationHandler
       ? new InMemoryStorageAdapter()
       : undefined,
+    sdkConfig,
     teamAppsListHandler,
     teamCreateHandler,
     teamListHandler,
@@ -172,6 +173,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       releasePromoteHandler,
       releaseReadHandler,
       releaseUploadStorage,
+      sdkConfig,
       teamAppsListHandler,
       teamCreateHandler,
       teamListHandler,

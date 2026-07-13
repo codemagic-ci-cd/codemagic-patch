@@ -1,5 +1,5 @@
 // Builds the canonical `cmpatch release-react` snippet shown across the dashboard
-// (the deployment CLI hint, the "App created" modal). The dashboard talks to the
+// (deployment CLI hints). The dashboard talks to the
 // API at the same origin (VITE_API_BASE_URL defaults to ""), so it can fill in
 // --server-url itself; only --platform stays a placeholder because the dashboard
 // cannot know whether the app targets ios or android. Centralising this keeps

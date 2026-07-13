@@ -238,3 +238,8 @@ export interface ReleaseMetricsRowWire {
   target_binary_version: string;
   target_package_hash: string | null;
 }
+
+/** Public client download origin (`CodemagicPatchDownloadBaseUrl`). */
+export interface SdkConfigWire {
+  download_base_url: string;
+}

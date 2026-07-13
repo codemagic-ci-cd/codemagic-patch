@@ -30,7 +30,6 @@ import { useIsMultiTeam, useTeams } from "../api/hooks/teams";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ConfirmDialog } from "../components/overlay/ConfirmDialog";
 import { useToast } from "../components/overlay/ToastProvider";
-import { Copyable } from "../components/ui/Copyable";
 import { ErrorState } from "../components/ui/ErrorState";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useTeamRole } from "../rbac/useTeamRole";
@@ -298,21 +297,14 @@ export function AppDetailPage() {
               </span>
             </div>
           ) : null}
-          <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-            {app.requireCodeSigning ? (
+          {app.requireCodeSigning ? (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
               <span className={`${PIN} ${PIN_TONE.sign}`}>
                 <ShieldIcon />
                 Code signing on
               </span>
-            ) : null}
-            <Copyable
-              label="app_id"
-              value={app.id}
-              display="masked"
-              maskHead={6}
-              maskTail={4}
-            />
-          </div>
+            </div>
+          ) : null}
         </div>
       </div>
 

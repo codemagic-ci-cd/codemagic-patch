@@ -33,6 +33,7 @@ import { useApp } from "../api/hooks/apps";
 import { useDeployments } from "../api/hooks/deployments";
 import { useDeploymentMetrics } from "../api/hooks/metrics";
 import { useReleases } from "../api/hooks/releases";
+import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { useUserLabel } from "../api/hooks/userLabels";
 import { HttpProblemError } from "../api/problem";
 import { apiServerUrl } from "../lib/cliSnippet";
@@ -342,32 +343,25 @@ function DeploymentDetail({
     <>
       <div className="mb-6 flex flex-wrap items-start gap-[18px]">
         <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-3 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Header pill: the deployment name in the published-green
                 pill (pure styling — deployments themselves carry no status). */}
-            <span
-              className={`${STATUS_PILL} ${STATUS_TONE.green}`}
-              // fontSize/padding OVERRIDE STATUS_PILL's text-[12px]/py-1/pl-2/
-              // pr-2.5 (this header pill is larger); conflicting utilities
-              // cannot co-apply, so the overrides stay inline.
-              style={{ fontSize: 13, padding: "6px 12px 6px 10px" }}
-            >
-              <span className={STATUS_LED} aria-hidden="true" />
-              {deployment.name}
-            </span>
-          </h1>
-          <div className="mt-3 flex flex-wrap items-center gap-2.5 text-[13px]">
-            <Copyable
-              value={deployment.deploymentKey}
-              display="masked"
-              maskHead={4}
-              maskTail={4}
-              label="Deployment key"
-              ariaLabel={`Copy deployment key for ${deployment.name}`}
+            <h1 className="m-0 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
+              <span
+                className={`${STATUS_PILL} ${STATUS_TONE.green}`}
+                // fontSize/padding OVERRIDE STATUS_PILL's text-[12px]/py-1/pl-2/
+                // pr-2.5 (this header pill is larger); conflicting utilities
+                // cannot co-apply, so the overrides stay inline.
+                style={{ fontSize: 13, padding: "6px 12px 6px 10px" }}
+              >
+                <span className={STATUS_LED} aria-hidden="true" />
+                {deployment.name}
+              </span>
+            </h1>
+            <DeploymentSdkDetails
+              deploymentKey={deployment.deploymentKey}
+              deploymentName={deployment.name}
             />
-            <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
-              SDK config value · not a secret
-            </span>
           </div>
         </div>
         <div className="flex items-center gap-2.5">
@@ -406,6 +400,160 @@ function DeploymentDetail({
         onClose={() => setNewReleaseOpen(false)}
       />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SDK details disclosure (deployment key + public client origins)
+// ---------------------------------------------------------------------------
+
+function DeploymentSdkDetails({
+  deploymentKey,
+  deploymentName,
+}: {
+  deploymentKey: string;
+  deploymentName: string;
+}) {
+  const sdkConfigQuery = useSdkConfig();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        rootRef.current !== null &&
+        event.target instanceof Node &&
+        !rootRef.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  const apiUrl = apiServerUrl();
+  const downloadBaseUrl = sdkConfigQuery.data?.downloadBaseUrl;
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <button
+        type="button"
+        className={buttonVariants({ intent: "ghost", size: "sm" })}
+        ref={buttonRef}
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((value) => !value)}
+      >
+        Details
+        <DetailsChevron open={open} />
+      </button>
+      {open ? (
+        <div
+          className="absolute left-0 z-[60] mt-2 w-[min(420px,calc(100vw-2rem))] animate-pop rounded-[14px] border border-border bg-surface p-3 shadow-lg"
+          id={panelId}
+          role="dialog"
+          aria-label={`SDK configuration for ${deploymentName}`}
+        >
+          <SdkConfigRow
+            label="Deployment key"
+            note="SDK config value · not a secret"
+          >
+            <Copyable
+              value={deploymentKey}
+              display="masked"
+              maskHead={4}
+              maskTail={4}
+              ariaLabel={`Copy deployment key for ${deploymentName}`}
+            />
+          </SdkConfigRow>
+          <div className={MENU_SEP} />
+          <SdkConfigRow label="CodemagicPatchApiUrl">
+            <Copyable
+              value={apiUrl}
+              display="full"
+              ariaLabel="Copy CodemagicPatchApiUrl"
+            />
+          </SdkConfigRow>
+          <div className={MENU_SEP} />
+          <SdkConfigRow label="CodemagicPatchDownloadBaseUrl">
+            {sdkConfigQuery.isPending ? (
+              <Skeleton width={260} variant="text" />
+            ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
+              <span className="text-[12.5px] font-medium text-fg-3">
+                Unavailable
+              </span>
+            ) : (
+              <Copyable
+                value={downloadBaseUrl}
+                display="full"
+                ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+              />
+            )}
+          </SdkConfigRow>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SdkConfigRow({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="px-1 py-1.5">
+      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[.06em] text-fg-3">
+        {label}
+      </div>
+      <div className="min-w-0 overflow-x-auto">{children}</div>
+      {note !== undefined ? (
+        <div className="mt-1.5 text-[11.5px] leading-snug text-fg-3">{note}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function DetailsChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
   );
 }
 
@@ -924,9 +1072,6 @@ function DeploymentDetailSkeleton() {
       <div className="mb-6 flex flex-wrap items-start gap-[18px]">
         <div className="min-w-0 flex-1">
           <Skeleton width={180} height={34} />
-          <div className="mt-3">
-            <Skeleton width={300} variant="text" />
-          </div>
         </div>
       </div>
       <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">

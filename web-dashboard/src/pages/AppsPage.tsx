@@ -9,27 +9,27 @@
 // The create modal posts via useCreateApp (the Idempotency-Key is minted in
 // the hook), maps `409 app-conflict` to an inline name error (error catalog:
 // "already exists."), and on success toasts + switches to a success step that
-// surfaces the two auto-created deployments (Staging/Production) with
-// Copyable keys before navigating to the new app.
+// surfaces the auto-created deployment keys plus the public SDK URLs so the
+// developer can wire the client before the CLI is useful.
 
 import { useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { useApps, useCreateApp } from "../api/hooks/apps";
+import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { Modal } from "../components/overlay/Modal";
 import { useToast } from "../components/overlay/ToastProvider";
-import { CliHintCard } from "../components/ui/CliHintCard";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useTeamRole } from "../rbac/useTeamRole";
-import { buildReleaseReactSnippet } from "../lib/cliSnippet";
+import { apiServerUrl } from "../lib/cliSnippet";
 import { formatDate } from "../model/format";
 import type { App } from "../model/app";
 import type { Deployment } from "../model/deployment";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { APP_ICO, CELL_APP, CELL_MAIN } from "../components/ui/cell";
@@ -382,65 +382,19 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
   };
 
   if (created !== null) {
-    // Success step: surface the auto-created deployments + keys before
-    // leaving — the toast already announced the creation.
-    const firstDeployment = created.deployments[0];
+    // Success step: surface deployment keys + SDK URLs before leaving —
+    // the toast already announced the creation. CLI publish comes later,
+    // once the client is wired and reinstalled.
     return (
-      <Modal
-        open
+      <AppCreatedSuccess
+        appName={created.app.name}
+        deployments={created.deployments}
         onClose={onClose}
-        title="App created"
-        description={`${created.app.name} is ready — point the CLI and SDK at these deployments.`}
-        icon={<PackageIcon />}
-        tone="green"
-        footer={
-          <>
-            <button type="button" className={buttonVariants({ intent: "subtle" })} onClick={onClose}>
-              Close
-            </button>
-            <button
-              type="button"
-              className={buttonVariants({ intent: "primary" })}
-              onClick={() => {
-                onClose();
-                void navigate(`/teams/${teamId}/apps/${created.app.id}`);
-              }}
-            >
-              Go to app
-            </button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          {created.deployments.map((deployment) => (
-            <div
-              key={deployment.id}
-              className="flex items-center justify-between gap-[14px]"
-            >
-              <span className={`${CHIP} ${CHIP_TONE[chipToneFor(deployment.name)]}`}>
-                {deployment.name}
-              </span>
-              <Copyable
-                value={deployment.deploymentKey}
-                display="masked"
-                maskHead={6}
-                maskTail={4}
-                ariaLabel={`Copy ${deployment.name} deployment key`}
-              />
-            </div>
-          ))}
-          {firstDeployment !== undefined && (
-            <CliHintCard
-              title="Publish from the CLI"
-              caption="Point the CLI at your server — fill in the platform; the rest is pre-filled."
-              command={buildReleaseReactSnippet({
-                app: created.app.name,
-                deployment: firstDeployment.name,
-              })}
-            />
-          )}
-        </div>
-      </Modal>
+        onGoToApp={() => {
+          onClose();
+          void navigate(`/teams/${teamId}/apps/${created.app.id}`);
+        }}
+      />
     );
   }
 
@@ -549,6 +503,111 @@ function chipToneFor(deploymentName: string): ChipTone {
     return "yellow";
   }
   return "blue";
+}
+
+function AppCreatedSuccess({
+  appName,
+  deployments,
+  onClose,
+  onGoToApp,
+}: {
+  appName: string;
+  deployments: Deployment[];
+  onClose: () => void;
+  onGoToApp: () => void;
+}) {
+  const sdkConfigQuery = useSdkConfig();
+  const apiUrl = apiServerUrl();
+  const downloadBaseUrl = sdkConfigQuery.data?.downloadBaseUrl;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="App created"
+      description={`${appName} is ready. Wire these into the SDK, rebuild, then reinstall the app.`}
+      icon={<PackageIcon />}
+      tone="green"
+      footer={
+        <>
+          <button type="button" className={buttonVariants({ intent: "subtle" })} onClick={onClose}>
+            Close
+          </button>
+          <button
+            type="button"
+            className={buttonVariants({ intent: "primary" })}
+            onClick={onGoToApp}
+          >
+            Go to app
+          </button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        {deployments.map((deployment) => (
+          <div
+            key={deployment.id}
+            className="flex items-center justify-between gap-[14px]"
+          >
+            <span className={`${CHIP} ${CHIP_TONE[chipToneFor(deployment.name)]}`}>
+              {deployment.name}
+            </span>
+            <Copyable
+              value={deployment.deploymentKey}
+              display="masked"
+              maskHead={6}
+              maskTail={4}
+              ariaLabel={`Copy ${deployment.name} deployment key`}
+            />
+          </div>
+        ))}
+        <p className="m-0 text-[12.5px] leading-snug text-fg-3">
+          Deployment keys are SDK config values, not secrets.
+        </p>
+        <div className="mt-1 flex flex-col gap-3 rounded-md border border-border bg-surface-2 p-3">
+          <AppCreatedConfigRow label="CodemagicPatchApiUrl">
+            <Copyable
+              value={apiUrl}
+              display="full"
+              ariaLabel="Copy CodemagicPatchApiUrl"
+            />
+          </AppCreatedConfigRow>
+          <AppCreatedConfigRow label="CodemagicPatchDownloadBaseUrl">
+            {sdkConfigQuery.isPending ? (
+              <Skeleton width={240} variant="text" />
+            ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
+              <span className="text-[12.5px] font-medium text-fg-3">
+                Unavailable
+              </span>
+            ) : (
+              <Copyable
+                value={downloadBaseUrl}
+                display="full"
+                ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+              />
+            )}
+          </AppCreatedConfigRow>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AppCreatedConfigRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[.06em] text-fg-3">
+        {label}
+      </div>
+      <div className="min-w-0 overflow-x-auto">{children}</div>
+    </div>
+  );
 }
 
 // Identicon gradients — decorative only; the initials are aria-hidden.
