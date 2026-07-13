@@ -161,7 +161,18 @@ Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. 
 
 > The first admin's email (`--email` below) **must exactly match the verified primary email** on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
 
-### 1.2 Install
+### 1.2 (Optional but recommended) Prepare Cloudflare in front of storage
+
+By default clients download directly from the storage domain (`DELIVERY_ADAPTER=base-url`). For production deployments we recommend fronting the **storage domain** (only — the API domain stays direct) with Cloudflare: artifacts and manifests are then served from the edge, and after every release, promotion, rollback, and deployment clear the server purges the affected `meta.json`/`manifest.json` URLs so clients don't see stale manifests. Deleting a deployment also purges its public artifact URLs.
+
+To prepare, collect two values:
+
+- The storage domain must live in a Cloudflare zone. Copy the **Zone ID** from the *API* section of the zone's **Overview** page.
+- Create an **API Token** at **My Profile → API Tokens** (user-owned) or **\<account\> → Manage Account → API Tokens** (account-owned, `cfat_…`). Use *Create Custom Token* with the single permission **Zone → Cache Purge → Purge**, and restrict *Zone Resources* to the zone containing the storage domain.
+
+You pass both values to the installer in the next step, then finish the Cloudflare-side setup (DNS proxying and Cache Rules) in [§1.5](#15-finish-the-cloudflare-setup) once the stack is up.
+
+### 1.3 Install
 
 Clone the repo onto the server and run the installer:
 
@@ -175,6 +186,14 @@ scripts/selfhost/install.sh \
   --email admin@example.com \
   --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
   --github-oauth-client-secret <github_client_secret>
+```
+
+If you prepared Cloudflare in §1.2, add these flags to the same command:
+
+```bash
+  --cloudflare \
+  --cloudflare-api-token <cf_cache_purge_token> \
+  --cloudflare-zone-id <cf_zone_id>
 ```
 
 The installer:
@@ -195,7 +214,7 @@ Download base:  https://storage.updates.example.com/codemagic-patch   (app confi
 
 > 🔐 **`.env.selfhost` holds production secrets.** Back it up and never commit or expose it.
 
-### 1.3 Verify
+### 1.4 Verify
 
 ```bash
 curl -fsS https://updates.example.com/health
@@ -208,23 +227,53 @@ scripts/selfhost/smoke.sh
 CODEMAGIC_PATCH_TOKEN=cm_pat_xxx scripts/selfhost/smoke.sh
 ```
 
-### 1.4 (Optional) Put Cloudflare in front of storage
+### 1.5 Finish the Cloudflare setup
 
-By default clients download directly from the storage domain (`DELIVERY_ADAPTER=base-url`). To front storage with Cloudflare and have the server purge the edge cache after each release, add these flags at install time:
+If you installed with the Cloudflare flags (§1.2–1.3), the server side is already active — releases request edge purges.
+
+#### 1. Switch the DNS record to proxied
+
+1. Keep the storage domain **DNS-only** (grey cloud) until the installer reports storage HTTPS as ready — Caddy needs to obtain its Let's Encrypt certificate first.
+2. Switch the storage record to **Proxied** (orange cloud).
+3. Set the zone's **SSL/TLS mode to Full (strict)**. The origin serves a valid Let's Encrypt certificate, so strict validation works; *Flexible* would connect to the origin over HTTP, which Caddy redirects back to HTTPS and can cause a redirect loop.
+
+If a later certificate renewal fails while proxied, temporarily switch the record back to DNS-only, let Caddy renew, then re-enable the proxy.
+
+#### 2. Add Cache Rules
+
+Create two rules under **\<zone\> → Caching → Cache Rules** to make the storage-domain policy explicit and cache the manifests, in this order (when several rules match, the later one wins):
+
+| # | Rule expression | Cache eligibility | Edge TTL |
+| - | --------------- | ----------------- | -------- |
+| 1 | `http.host eq "storage.updates.example.com"` | Eligible for cache | *Use cache-control header if present, bypass cache if not* |
+| 2 | `http.host eq "storage.updates.example.com" and ends_with(http.request.uri.path, ".json")` | Eligible for cache | *Ignore cache-control header and use this TTL*: **2 hours** |
+
+Rule 1 lets Cloudflare honor the artifacts' origin headers — bundles and patches are content-addressed and served with `Cache-Control: public, max-age=31536000, immutable`, so they remain fresh for up to one year without revalidation (although Cloudflare may evict an inactive object earlier). Rule 2 overrides the manifests' `no-cache` so `meta.json`/`manifest.json` are cached at the edge; the server automatically requests a purge for those URLs after releases, and the 2-hour TTL bounds staleness in the rare case a purge attempt fails. Two hours is the minimum Edge TTL on Cloudflare Free; Pro and higher plans may use 1 hour instead. Leave `MANIFEST_CACHE_CONTROL` at its default — it governs client revalidation, while the Cache Rule governs the edge.
+
+#### 3. Verify
 
 ```bash
-scripts/selfhost/install.sh \
-  --api-domain updates.example.com \
-  --storage-domain storage.updates.example.com \
-  --email admin@example.com \
-  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
-  --github-oauth-client-secret <github_client_secret> \
-  --cloudflare \
-  --cloudflare-api-token <cf_cache_purge_token> \
-  --cloudflare-zone-id <cf_zone_id>
+# Second request should return "cf-cache-status: HIT"
+DEPLOYMENT_KEY=your-deployment-key
+URL="https://storage.updates.example.com/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
+
+curl -sI "$URL" | grep -i cf-cache-status
+curl -sI "$URL" | grep -i cf-cache-status
 ```
 
-The token needs **Zone → Cache Purge** permission. Keep the storage domain **DNS-only** until Caddy issues the certificate, then switch it to **proxied**.
+After publishing a release, a successful purge makes the same URL briefly report `MISS` again. Purging is **best-effort**: a failed purge never fails the release — it is logged as a `delivery cache purge completed with failures` warning in the server logs, so watch for that warning if clients report stale updates.
+
+#### Enabling Cloudflare on an existing install
+
+Rerunning the installer with `--cloudflare` flags does **not** change an existing install — delivery configuration is only written on initial install, and the rerun prints a warning instead. To enable it later, edit `.env.selfhost`:
+
+```bash
+DELIVERY_ADAPTER=cloudflare
+CLOUDFLARE_API_TOKEN=<cf_cache_purge_token>
+CLOUDFLARE_ZONE_ID=<cf_zone_id>
+```
+
+Then rerun `scripts/selfhost/install.sh` — it re-reads the file, verifies the credentials, and restarts the stack. Finish with steps 1–3 above.
 
 ---
 
@@ -813,7 +862,10 @@ The SDK reads these objects under your **Download base** URL:
 | `MODE`                    | `all`                            | `all` · `api` · `worker`                          |
 | `REGISTRATION_MODE`       | `invite_only`                    | `invite_only` or `open`                           |
 | `STORAGE_ADAPTER`         | `s3` (self-host)                 | `s3` · `gcs` · `memory`                           |
-| `DELIVERY_ADAPTER`        | `base-url`                       | `base-url` or `cloudflare` (+ `CLOUDFLARE_*`)     |
+| `DELIVERY_ADAPTER`        | `base-url`                       | `base-url` or `cloudflare` (see §1.2 and §1.5)    |
+| `CLOUDFLARE_API_TOKEN`    | —                                | Token scoped to Zone → Cache Purge (required with `cloudflare`) |
+| `CLOUDFLARE_ZONE_ID`      | —                                | Zone containing the storage domain (required with `cloudflare`) |
+| `CLOUDFLARE_API_BASE_URL` | `https://api.cloudflare.com/client/v4` | Cloudflare API endpoint override           |
 | `MANIFEST_CACHE_CONTROL`  | `no-cache, must-revalidate`      | Cache-Control header for manifests                |
 | `MAX_UPLOAD_SIZE`         | `200mb`                          | Max artifact upload size                          |
 | `RUN_MIGRATIONS`          | `true`                           | Run DB migrations on boot                         |
