@@ -33,8 +33,7 @@ import type { FormEvent } from "react";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { APP_ICO, CELL_APP, CELL_MAIN } from "../components/ui/cell";
-import { CHIP, CHIP_TONE } from "../components/ui/chip";
-import type { ChipTone } from "../components/ui/chip";
+import { CHIP } from "../components/ui/chip";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import {
   FIELD,
@@ -494,17 +493,6 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
 
 // --- Presentation helpers ----------------------------------------------------
 
-/** Auto-created deployment chips, colored per deployment name. */
-function chipToneFor(deploymentName: string): ChipTone {
-  if (deploymentName === "Production") {
-    return "green";
-  }
-  if (deploymentName === "Staging") {
-    return "yellow";
-  }
-  return "blue";
-}
-
 const CONNECT_APP_DOCS_URL =
   "https://github.com/codemagic-ci-cd/codemagic-patch#part-4--connect-your-react-native-app";
 
@@ -529,8 +517,6 @@ function AppCreatedSuccess({
       onClose={onClose}
       title="App created"
       description={`${appName} is ready. Wire these into the SDK, rebuild, then reinstall the app.`}
-      icon={<PackageIcon />}
-      tone="green"
       footer={
         <>
           <button type="button" className={buttonVariants({ intent: "subtle" })} onClick={onClose}>
@@ -552,7 +538,7 @@ function AppCreatedSuccess({
             key={deployment.id}
             className="flex items-center justify-between gap-[14px]"
           >
-            <span className={`${CHIP} ${CHIP_TONE[chipToneFor(deployment.name)]}`}>
+            <span className="shrink-0 text-[13.5px] font-semibold text-fg-2">
               {deployment.name}
             </span>
             <Copyable
@@ -564,7 +550,7 @@ function AppCreatedSuccess({
             />
           </div>
         ))}
-        <p className="m-0 text-[12.5px] leading-snug text-fg-3">
+        <p className="m-0 mb-2 text-[12.5px] leading-snug text-fg-3">
           Deployment keys are SDK config values, not secrets.
         </p>
         <div className="flex items-center justify-between gap-[14px]">

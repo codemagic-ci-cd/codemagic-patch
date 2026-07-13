@@ -338,13 +338,15 @@ function DeploymentDetail({
   return (
     <>
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
-          {deployment.name}
-        </h1>
-        <DeploymentSdkDetails
-          deploymentKey={deployment.deploymentKey}
-          deploymentName={deployment.name}
-        />
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="m-0 text-[18px] font-semibold leading-none tracking-[-.015em] text-fg-2">
+            {deployment.name}
+          </h1>
+          <DeploymentSdkDetails
+            deploymentKey={deployment.deploymentKey}
+            deploymentName={deployment.name}
+          />
+        </div>
         <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {newReleaseButton}
           <span className="tip" data-tip={deployTip}>
@@ -548,7 +550,7 @@ function DeploymentSdkDetails({
     <>
       <button
         type="button"
-        className={buttonVariants({ intent: "ghost" })}
+        className={buttonVariants({ intent: "ghost", size: "sm" })}
         ref={buttonRef}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
