@@ -32,7 +32,9 @@
 		try_files {path} /index.html
 		file_server
 		header {
-			Content-Security-Policy "default-src 'self'; connect-src 'self'"
+			# Kept in lockstep with deploy/selfhost/Caddyfile — see the
+			# rationale there for style-src/img-src.
+			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
 			-Server
 		}
 	}

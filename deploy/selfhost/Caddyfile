@@ -25,7 +25,10 @@
 		try_files {path} /index.html
 		file_server
 		header {
-			Content-Security-Policy "default-src 'self'; connect-src 'self'"
+			# style-src 'unsafe-inline': the SPA uses React inline style=
+			# attributes; img-src data:: app.css embeds data:image/svg+xml
+			# backgrounds (modal icons, select chevrons).
+			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
 			Strict-Transport-Security "max-age=31536000; includeSubDomains"
 			-Server
 		}
