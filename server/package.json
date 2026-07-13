@@ -42,7 +42,7 @@
     "db:test:logs": "docker compose -f docker-compose.test.yml logs -f postgres",
     "db:test:up": "docker compose -f docker-compose.test.yml up -d postgres",
     "dev": "yarn exec tsx src/main.ts",
-    "fixtures:patches": "yarn exec node --import tsx scripts/generatePatchFixtures.ts",
+    "fixtures:patches": "yarn exec node --import tsx test/scripts/generatePatchFixtures.ts",
     "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "s3:test:up": "docker compose -f ../docker-compose.dev.yml up -d minio && docker compose -f ../docker-compose.dev.yml up --force-recreate minio-init",
     "start": "node dist/main.js",
