@@ -283,6 +283,12 @@ export default function Home(): ReactNode {
                     <td>Team web dashboard</td>
                   </tr>
                   <tr>
+                    <th scope="row">Team RBAC</th>
+                    <td>Yes</td>
+                    <td>No</td>
+                    <td>Yes</td>
+                  </tr>
+                  <tr>
                     <th scope="row">License</th>
                     <td>EAS usage pricing</td>
                     <td>MIT</td>
