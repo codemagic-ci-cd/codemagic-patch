@@ -77,6 +77,6 @@ scripts/selfhost/smoke.sh
 CODEMAGIC_PATCH_TOKEN=cm_pat_xxx scripts/selfhost/smoke.sh
 ```
 
-## Cloudflare (optional)
+## Cloudflare (optional but recommended)
 
-To front the storage domain with Cloudflare CDN and automatic cache purge after releases, complete [Cloudflare setup](/docs/setup/cloudflare) before install (DNS-only storage record during cert issuance, API token, install flags).
+For production, front the **storage** domain with Cloudflare CDN so artifacts and manifests are served from the edge and Patch can purge stale manifests after releases. Prepare the zone ID and cache-purge token, install with `--cloudflare` flags, then finish DNS proxying and Cache Rules after the stack is up. Full walkthrough: [Cloudflare setup](/docs/setup/cloudflare).

@@ -84,7 +84,7 @@ Controls how storage keys become client-facing download URLs and whether the ser
 
 With `base-url`, clients hit your storage domain directly (Caddy → MinIO in the default stack).
 
-With `cloudflare`, manifest URLs still use `PUBLIC_BASE_URL`, which should be the Cloudflare-fronted domain, and Patch purges cached objects so new releases propagate. Setup: [Cloudflare setup](/docs/setup/cloudflare).
+With `cloudflare`, manifest URLs still use `PUBLIC_BASE_URL`, which should be the Cloudflare-fronted storage domain, and Patch purges cached manifest URLs after releases, promotions, rollbacks, and related deployment changes. Setup: [Cloudflare setup](/docs/setup/cloudflare).
 
 Purge is best-effort: a failed purge does not roll back a release, but you may see stale bundles at the edge until the cache expires.
 
