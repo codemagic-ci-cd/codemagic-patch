@@ -1116,9 +1116,10 @@ function focusMenuItemEdge(menu: HTMLElement | null, edge: "first" | "last"): vo
 function DeploymentDetailSkeleton() {
   return (
     <div role="status" aria-label="Loading deployment">
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <Skeleton width={180} height={34} />
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Skeleton width={120} height={18} />
+          <Skeleton width={72} height={28} />
         </div>
       </div>
       <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
