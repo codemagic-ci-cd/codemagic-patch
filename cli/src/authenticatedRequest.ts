@@ -63,11 +63,10 @@ export async function authenticatedRequest(
   const authSource = await resolveAuthSource(deps, options);
 
   try {
-    return await request(
-      deps.fetch,
-      options.url,
-      withAuthorizationHeader(options.init, accessTokenForSource(authSource)),
-      deps.sleep ? { sleep: deps.sleep } : undefined,
+    return await performAuthenticatedRequest(
+      deps,
+      options,
+      accessTokenForSource(authSource),
     );
   } catch (error) {
     if (authSource.kind !== "stored" || !isAuthenticationRequired(error)) {
@@ -101,12 +100,31 @@ export async function authenticatedRequest(
       );
     }
 
-    return request(
+    return performAuthenticatedRequest(deps, options, refreshed.accessToken);
+  }
+}
+
+async function performAuthenticatedRequest(
+  deps: AuthenticatedRequestDeps,
+  options: AuthenticatedRequestOptions,
+  accessToken: string | undefined,
+): Promise<unknown> {
+  try {
+    return await request(
       deps.fetch,
       options.url,
-      withAuthorizationHeader(options.init, refreshed.accessToken),
+      withAuthorizationHeader(options.init, accessToken),
       deps.sleep ? { sleep: deps.sleep } : undefined,
     );
+  } catch (error) {
+    if (error instanceof HttpProblemError) {
+      throw new HttpProblemError(
+        error.problem,
+        error.responseStatus,
+        options.serverUrl,
+      );
+    }
+    throw error;
   }
 }
 

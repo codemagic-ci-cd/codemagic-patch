@@ -8,8 +8,13 @@ export type ProblemDetails = {
 export class HttpProblemError extends Error {
   readonly problem: ProblemDetails;
   readonly responseStatus: number;
+  readonly serverUrl?: string;
 
-  constructor(problem: ProblemDetails, responseStatus: number) {
+  constructor(
+    problem: ProblemDetails,
+    responseStatus: number,
+    serverUrl?: string,
+  ) {
     super(
       typeof problem.title === "string"
         ? problem.title
@@ -18,6 +23,9 @@ export class HttpProblemError extends Error {
     this.name = "HttpProblemError";
     this.problem = problem;
     this.responseStatus = responseStatus;
+    if (serverUrl !== undefined) {
+      this.serverUrl = serverUrl;
+    }
   }
 }
 

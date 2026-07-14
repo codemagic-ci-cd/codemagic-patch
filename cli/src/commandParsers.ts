@@ -71,6 +71,12 @@ const globalFlagSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
 };
 
+const contextSchema: Record<string, FlagSchema> = {
+  projectRoot: STRING_FLAG,
+  remote: BOOLEAN_FLAG,
+  token: STRING_FLAG,
+};
+
 const releaseCreateSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
   bundlePath: STRING_FLAG,
@@ -4092,7 +4098,7 @@ export function parseDeploymentHistory(
 
 export function parseRawArgvCommand(
   args: string[],
-  kind: "config" | "context" | "init",
+  kind: "config" | "init",
 ): ParseCliResult {
   const stripped = stripGlobalFormatArgs(args);
 
@@ -4105,6 +4111,55 @@ export function parseRawArgvCommand(
   }
 
   return { command: { argv: stripped.args, kind }, ok: true };
+}
+
+export function parseContext(args: string[]): ParseCliResult {
+  const parsedFlags = parseFlags(args, contextSchema);
+
+  if (!parsedFlags.ok) {
+    return {
+      error: parsedFlags.error,
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  const projectRoot = readStringFlag(parsedFlags.flags, "projectRoot");
+  if (projectRoot !== undefined && projectRoot.trim().length === 0) {
+    return {
+      error: "--project-root must not be empty",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  const remote = parsedFlags.flags.remote === true;
+  const token = readStringFlag(parsedFlags.flags, "token");
+  if (token !== undefined && token.trim().length === 0) {
+    return {
+      error: "--token must not be empty",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  if (token !== undefined && !remote) {
+    return {
+      error: "--token requires --remote",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  return {
+    command: {
+      kind: "context",
+      remote,
+      ...(projectRoot === undefined ? {} : { projectRoot }),
+      ...(token === undefined ? {} : { token }),
+    },
+    ok: true,
+  };
 }
 
 function stripGlobalFormatArgs(

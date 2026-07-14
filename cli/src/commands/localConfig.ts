@@ -11,7 +11,6 @@ import {
   type ProjectPlatformConfigMap,
 } from "../configStore";
 import {
-  isProjectRootOnlyCommand,
   resolveEffectiveContext,
   resolveProjectRoot,
 } from "../localContext";
@@ -111,16 +110,60 @@ export async function executeContextCommand(
   command: ContextCommand,
   deps: CommandDeps,
 ): Promise<unknown> {
-  const projectRoot = resolveProjectRoot(command.argv);
-
-  if (!isProjectRootOnlyCommand(command.argv)) {
-    throw new UsageError("Usage: cmpatch context [--project-root <path>]");
-  }
+  const projectRoot = command.projectRoot ?? process.cwd();
 
   const userConfig = await loadCliConfig({ env: deps.env });
   const projectConfig = await loadProjectConfig(projectRoot);
+  const context = resolveEffectiveContext(
+    deps.env,
+    userConfig,
+    projectConfig,
+    projectRoot,
+  );
 
-  return resolveEffectiveContext(deps.env, userConfig, projectConfig, projectRoot);
+  if (!command.remote) {
+    if (deps.stderr?.isTTY === true) {
+      writeLine(
+        deps.stderr,
+        "Tip: run `cmpatch context --remote` to include server-provided SDK configuration.",
+      );
+    }
+    return context;
+  }
+
+  const serverUrl = context.serverUrl?.value;
+  if (serverUrl === undefined) {
+    throw new UsageError(
+      "Remote SDK configuration requires a server URL. Pass CODEMAGIC_PATCH_SERVER_URL, configure the project, or run `cmpatch config set server-url <url>`.",
+    );
+  }
+
+  const response = await authenticatedRequest(deps, {
+    init: { method: "GET" },
+    serverUrl,
+    token: command.token,
+    url: buildApiUrl(serverUrl, "/v1/sdk-config"),
+  });
+
+  return {
+    ...context,
+    sdkConfig: {
+      apiUrl: assertHttpUrl(serverUrl).replace(/\/+$/, ""),
+      downloadBaseUrl: readSdkDownloadBaseUrl(response),
+    },
+  };
+}
+
+function readSdkDownloadBaseUrl(response: unknown): string {
+  if (
+    !isRecord(response) ||
+    typeof response.download_base_url !== "string" ||
+    response.download_base_url.trim().length === 0
+  ) {
+    throw new Error("SDK config lookup returned an invalid response");
+  }
+
+  return response.download_base_url.trim();
 }
 
 function isConfigKey(key: string): key is keyof CliConfig {

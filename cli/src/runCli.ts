@@ -340,7 +340,7 @@ export async function runCli(
         return exitCodeForProblemDetails(error.problem, error.responseStatus);
       }
       deps.stderr.write(renderProblemDetails(error.problem));
-      const authHint = renderAuthenticationHint(commandForExecution, error.problem);
+      const authHint = renderAuthenticationHint(commandForExecution, error);
       if (authHint !== null) {
         writeLine(deps.stderr, authHint);
       }
@@ -603,19 +603,23 @@ function withJsonNonInteractiveMode(
 
 function renderAuthenticationHint(
   command: CliCommand,
-  problem: { type?: unknown },
+  error: HttpProblemError,
 ): string | null {
+  const serverUrl =
+    "serverUrl" in command && typeof command.serverUrl === "string"
+      ? command.serverUrl
+      : error.serverUrl;
+
   if (
-    getProblemTypeSuffix(problem.type) !== "authentication-required" ||
-    !("serverUrl" in command) ||
-    typeof command.serverUrl !== "string"
+    getProblemTypeSuffix(error.problem.type) !== "authentication-required" ||
+    serverUrl === undefined
   ) {
     return null;
   }
 
   return [
-    `Authentication required for ${command.serverUrl}.`,
-    `Run \`cmpatch login --server-url ${command.serverUrl}\` or pass --token/CODEMAGIC_PATCH_TOKEN.`,
+    `Authentication required for ${serverUrl}.`,
+    `Run \`cmpatch login --server-url ${serverUrl}\` or pass --token/CODEMAGIC_PATCH_TOKEN.`,
   ].join("\n");
 }
 

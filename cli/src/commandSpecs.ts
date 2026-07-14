@@ -38,6 +38,7 @@ import {
   parseReleasePatch,
   parseReleasePromote,
   parseBundle,
+  parseContext,
   parseReleaseReact,
   parseReleaseRollback,
   parseReleaseShow,
@@ -278,6 +279,7 @@ const helpGroups: readonly CommandHelpGroup[] = [
       "cmpatch init",
       "cmpatch init --server-url https://updates.example.com --ios-app MyApp-iOS --android-app MyApp-Android --deployment Staging --yes",
       "cmpatch context",
+      "cmpatch context --remote",
     ],
     name: "config",
     summary: "Store defaults and inspect the effective local context.",
@@ -333,12 +335,14 @@ const commandSpecs: RunnableCommandSpec[] = [
     kind: "context",
     help: [
       {
-        description: "Show effective local context.",
+        description:
+          "Show effective local context; --remote adds server-provided SDK configuration.",
         group: "config",
-        usage: "cmpatch context [--project-root <path>]",
+        usage:
+          "cmpatch context [--project-root <path>] [--remote] [--token <token>]",
       }
     ],
-    parse: (args) => parseRawArgvCommand(args, "context"),
+    parse: (args) => parseContext(args),
     routes: [{ path: ["context"] }],
   }),
   commandSpec({
