@@ -49,6 +49,7 @@ import {
   toActiveJobWire,
   toAppWire,
   toDeploymentWire,
+  toSdkConfigWire,
   toTeamWire,
 } from "./wireSerializers";
 
@@ -56,6 +57,22 @@ export function registerManagementRoutes(
   controlPlane: FastifyInstance,
   options: ApiRoutesOptions,
 ): void {
+  // Authenticated, no further RBAC: any signed-in dashboard user can read the
+  // public client download origin (PUBLIC_BASE_URL; not a secret).
+  controlPlane.get("/sdk-config", async (_request, reply) => {
+    if (options.sdkConfig === undefined) {
+      return sendProblem(
+        reply,
+        createProblem({
+          detail: "sdk config is not available",
+          status: 501,
+        }),
+      );
+    }
+
+    return toSdkConfigWire(options.sdkConfig);
+  });
+
   controlPlane.post<{ Body: TeamCreateBody }>(
     "/teams",
     async (request, reply) => {

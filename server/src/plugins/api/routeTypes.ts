@@ -251,6 +251,13 @@ export interface ApiRoutesOptions {
   releasePromoteHandler?: ReleasePromoteRouteHandler;
   releaseReadHandler?: ReleaseReadRouteHandler;
   releaseUploadStorage?: StorageAdapter;
+  /**
+   * Client download origin (`CodemagicPatchDownloadBaseUrl`). Served by
+   * `GET /v1/sdk-config`.
+   */
+  sdkConfig?: {
+    downloadBaseUrl: string;
+  };
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
   teamListHandler?: TeamListRouteHandler;

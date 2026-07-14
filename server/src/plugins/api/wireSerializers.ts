@@ -33,6 +33,7 @@ import type {
   RoleBindingWire,
   RoleRefWire,
   RoleWire,
+  SdkConfigWire,
   TeamWire,
   UserWire,
 } from "./wireTypes";
@@ -342,5 +343,13 @@ export function toReleaseMetricsRowWire(row: {
     release_label: row.releaseLabel,
     target_binary_version: row.targetBinaryVersion,
     target_package_hash: row.targetPackageHash,
+  };
+}
+
+export function toSdkConfigWire(config: {
+  downloadBaseUrl: string;
+}): SdkConfigWire {
+  return {
+    download_base_url: config.downloadBaseUrl,
   };
 }

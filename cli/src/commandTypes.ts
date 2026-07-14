@@ -471,8 +471,10 @@ export type InitCommand = {
 };
 
 export type ContextCommand = {
-  argv: string[];
   kind: "context";
+  projectRoot?: string;
+  remote: boolean;
+  token?: string;
 };
 
 export type FingerprintCommand = {

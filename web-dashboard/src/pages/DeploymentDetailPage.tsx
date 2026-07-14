@@ -21,7 +21,8 @@
 // PromoteModal / RollbackModal. Empty history → New release CTA (CLI or bundle
 // upload via NewReleaseModal).
 
-import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router";
 import type {
   CSSProperties,
@@ -33,6 +34,7 @@ import { useApp } from "../api/hooks/apps";
 import { useDeployments } from "../api/hooks/deployments";
 import { useDeploymentMetrics } from "../api/hooks/metrics";
 import { useReleases } from "../api/hooks/releases";
+import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { useUserLabel } from "../api/hooks/userLabels";
 import { HttpProblemError } from "../api/problem";
 import { apiServerUrl } from "../lib/cliSnippet";
@@ -84,11 +86,6 @@ import {
   TBL_TR,
   TBL_WRAP,
 } from "../components/ui/table";
-import {
-  STATUS_LED,
-  STATUS_PILL,
-  STATUS_TONE,
-} from "../components/ui/statusPill";
 import {
   KEBAB,
   KEBAB_BTN,
@@ -340,37 +337,17 @@ function DeploymentDetail({
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-3 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
-            {/* Header pill: the deployment name in the published-green
-                pill (pure styling — deployments themselves carry no status). */}
-            <span
-              className={`${STATUS_PILL} ${STATUS_TONE.green}`}
-              // fontSize/padding OVERRIDE STATUS_PILL's text-[12px]/py-1/pl-2/
-              // pr-2.5 (this header pill is larger); conflicting utilities
-              // cannot co-apply, so the overrides stay inline.
-              style={{ fontSize: 13, padding: "6px 12px 6px 10px" }}
-            >
-              <span className={STATUS_LED} aria-hidden="true" />
-              {deployment.name}
-            </span>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="m-0 text-[18px] font-semibold leading-none tracking-[-.015em] text-fg-2">
+            {deployment.name}
           </h1>
-          <div className="mt-3 flex flex-wrap items-center gap-2.5 text-[13px]">
-            <Copyable
-              value={deployment.deploymentKey}
-              display="masked"
-              maskHead={4}
-              maskTail={4}
-              label="Deployment key"
-              ariaLabel={`Copy deployment key for ${deployment.name}`}
-            />
-            <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
-              SDK config value · not a secret
-            </span>
-          </div>
+          <DeploymentSdkDetails
+            deploymentKey={deployment.deploymentKey}
+            deploymentName={deployment.name}
+          />
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {newReleaseButton}
           <span className="tip" data-tip={deployTip}>
             <button
@@ -406,6 +383,223 @@ function DeploymentDetail({
         onClose={() => setNewReleaseOpen(false)}
       />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SDK details disclosure (deployment key + public client origins)
+// ---------------------------------------------------------------------------
+
+const DETAILS_PANEL_GAP = 8;
+const DETAILS_VIEWPORT_INSET = 8;
+
+function DeploymentSdkDetails({
+  deploymentKey,
+  deploymentName,
+}: {
+  deploymentKey: string;
+  deploymentName: string;
+}) {
+  const sdkConfigQuery = useSdkConfig();
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    const update = () => {
+      const anchor = buttonRef.current;
+      if (anchor === null) {
+        return;
+      }
+      const rect = anchor.getBoundingClientRect();
+      const panelWidth = panelRef.current?.offsetWidth ?? 420;
+      const panelHeight = panelRef.current?.offsetHeight ?? 0;
+      let left = rect.left;
+      // Keep the panel inside the viewport on the right edge.
+      left = Math.min(
+        left,
+        window.innerWidth - DETAILS_VIEWPORT_INSET - panelWidth,
+      );
+      left = Math.max(DETAILS_VIEWPORT_INSET, left);
+      let top = rect.bottom + DETAILS_PANEL_GAP;
+      const roomBelow = window.innerHeight - rect.bottom - DETAILS_PANEL_GAP;
+      const roomAbove = rect.top - DETAILS_PANEL_GAP;
+      if (panelHeight > roomBelow && roomAbove > roomBelow) {
+        top = Math.max(
+          DETAILS_VIEWPORT_INSET,
+          rect.top - DETAILS_PANEL_GAP - panelHeight,
+        );
+      }
+      setPos({ top, left });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) {
+        return;
+      }
+      // Panel is portaled to <body>, so treat both the trigger and the panel
+      // as "inside" — otherwise a copy click closes before it fires.
+      if (
+        buttonRef.current?.contains(event.target) !== true &&
+        panelRef.current?.contains(event.target) !== true
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  const apiUrl = apiServerUrl();
+  const downloadBaseUrl = sdkConfigQuery.data?.downloadBaseUrl;
+
+  const panel =
+    open &&
+    createPortal(
+      <div
+        className="z-[80] w-[min(420px,calc(100vw-2rem))] animate-pop rounded-[14px] border border-border bg-surface p-3 shadow-lg"
+        id={panelId}
+        role="dialog"
+        aria-label={`SDK configuration for ${deploymentName}`}
+        ref={panelRef}
+        style={{
+          position: "fixed",
+          top: pos?.top ?? 0,
+          left: pos?.left ?? DETAILS_VIEWPORT_INSET,
+          visibility: pos === null ? "hidden" : "visible",
+        }}
+      >
+        <SdkConfigRow
+          label="Deployment key"
+          note="SDK config value · not a secret"
+        >
+          <Copyable
+            value={deploymentKey}
+            display="masked"
+            maskHead={4}
+            maskTail={4}
+            ariaLabel={`Copy deployment key for ${deploymentName}`}
+          />
+        </SdkConfigRow>
+        <div className={MENU_SEP} />
+        <SdkConfigRow label="CodemagicPatchApiUrl">
+          <Copyable
+            value={apiUrl}
+            display="masked"
+            maskHead={14}
+            maskTail={8}
+            ariaLabel="Copy CodemagicPatchApiUrl"
+          />
+        </SdkConfigRow>
+        <div className={MENU_SEP} />
+        <SdkConfigRow label="CodemagicPatchDownloadBaseUrl">
+          {sdkConfigQuery.isPending ? (
+            <Skeleton width={160} variant="text" />
+          ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
+            <span className="text-[12.5px] font-medium text-fg-3">
+              Unavailable
+            </span>
+          ) : (
+            <Copyable
+              value={downloadBaseUrl}
+              display="masked"
+              maskHead={14}
+              maskTail={8}
+              ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+            />
+          )}
+        </SdkConfigRow>
+      </div>,
+      document.body,
+    );
+
+  return (
+    <>
+      <button
+        type="button"
+        className={buttonVariants({ intent: "ghost", size: "sm" })}
+        ref={buttonRef}
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((value) => !value)}
+      >
+        Details
+        <DetailsChevron open={open} />
+      </button>
+      {panel}
+    </>
+  );
+}
+
+function SdkConfigRow({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="px-1 py-1.5">
+      <div className="mb-1.5 font-mono text-[12.5px] font-semibold text-fg-2">
+        {label}
+      </div>
+      <div className="min-w-0 overflow-x-auto">{children}</div>
+      {note !== undefined ? (
+        <div className="mt-1.5 text-[11.5px] leading-snug text-fg-3">{note}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function DetailsChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
   );
 }
 
@@ -921,12 +1115,10 @@ function focusMenuItemEdge(menu: HTMLElement | null, edge: "first" | "last"): vo
 function DeploymentDetailSkeleton() {
   return (
     <div role="status" aria-label="Loading deployment">
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <Skeleton width={180} height={34} />
-          <div className="mt-3">
-            <Skeleton width={300} variant="text" />
-          </div>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Skeleton width={120} height={18} />
+          <Skeleton width={72} height={28} />
         </div>
       </div>
       <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">

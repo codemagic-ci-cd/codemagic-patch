@@ -596,7 +596,7 @@ function resolvePublicBaseUrl(
 ): string {
   const resolved = resolveOptionalString(publicBaseUrl);
   if (resolved) {
-    return resolved;
+    return trimTrailingSlash(resolved);
   }
 
   if (storageAdapter === "s3") {
@@ -611,6 +611,13 @@ function resolvePublicBaseUrl(
     );
   }
 
+  return loopbackOrigin(host, port);
+}
+
+function loopbackOrigin(
+  host: string | undefined,
+  port: string | undefined,
+): string {
   const fallbackHost =
     resolveHost(host) === "0.0.0.0" ? "127.0.0.1" : resolveHost(host);
   const fallbackPort = resolvePort(port);
