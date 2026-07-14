@@ -409,7 +409,6 @@ function DeploymentSdkDetails({
 
   useLayoutEffect(() => {
     if (!open) {
-      setPos(null);
       return;
     }
     const update = () => {
