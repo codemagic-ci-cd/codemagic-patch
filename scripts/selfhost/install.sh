@@ -20,6 +20,7 @@ esac
 SKIP_CLOUDFLARE_CHECK=0
 ASSUME_YES=0
 SKIP_PUBLIC_CHECK=0
+WITH_DEMO_DATA=0
 
 usage() {
   cat <<'USAGE'
@@ -55,6 +56,9 @@ Options:
                                Cloudflare API base URL override (optional).
   --skip-cloudflare-check      Do not verify the Cloudflare token/zone via the API.
   --skip-public-check          Do not wait for public HTTPS DNS/TLS readiness.
+  --with-demo-data             Seed Example Data (Staging + Production releases
+                               and metrics) for browsing the dashboard. Safe to
+                               re-run later via scripts/selfhost/seed-demo-data.sh.
   -y, --yes                    Use defaults for non-destructive prompts.
   -h, --help                   Show this help.
 USAGE
@@ -74,6 +78,7 @@ while [ "$#" -gt 0 ]; do
     --cloudflare-api-base-url) CLOUDFLARE_API_BASE_URL="${2:-}"; shift 2 ;;
     --skip-cloudflare-check) SKIP_CLOUDFLARE_CHECK=1; shift ;;
     --skip-public-check) SKIP_PUBLIC_CHECK=1; shift ;;
+    --with-demo-data) WITH_DEMO_DATA=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail_selfhost "unknown option: $1" ;;
@@ -458,6 +463,10 @@ main() {
 
   log_selfhost "GitHub OAuth enforced; the admin account is created on first sign-in by ${ACME_EMAIL}"
 
+  if [ "$WITH_DEMO_DATA" -eq 1 ]; then
+    "${SELFHOST_SCRIPT_DIR}/seed-demo-data.sh"
+  fi
+
   printf '\nCodemagicPatch self-host is ready.\n\n'
   printf 'Server URL (app config: CodemagicPatchApiUrl):\n  %s\n\n' "$SERVER_URL"
   printf 'Dashboard URL:\n  https://%s/\n\n' "$CODEMAGIC_PATCH_API_DOMAIN"
@@ -481,7 +490,16 @@ main() {
   printf '  3. The "default-team" is the single fixed team; team creation is disabled.\n'
   printf '     Onboard others with: cmpatch member invite --email <email> --role <role>\n'
   printf '     For CI/machine access, mint a token: cmpatch token create.\n'
-  printf '  4. Run scripts/selfhost/backup.sh before upgrades or risky changes.\n'
+  if [ "$WITH_DEMO_DATA" -eq 1 ]; then
+    printf '  4. Demo catalog: "Example Data" (Staging + Production) is seeded for\n'
+    printf '     dashboard browsing. Re-run scripts/selfhost/seed-demo-data.sh to\n'
+    printf '     refresh relative metric timestamps. These releases are not downloadable.\n'
+    printf '  5. Run scripts/selfhost/backup.sh before upgrades or risky changes.\n'
+  else
+    printf '  4. Optional dashboard sample data: scripts/selfhost/seed-demo-data.sh\n'
+    printf '     (or install with --with-demo-data).\n'
+    printf '  5. Run scripts/selfhost/backup.sh before upgrades or risky changes.\n'
+  fi
 }
 
 main "$@"

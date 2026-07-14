@@ -24,11 +24,14 @@ cd codemagic-patch
 ./scripts/local-eval/up.sh
 ```
 
-The script brings up the stack, installs the `cmpatch` CLI globally, seeds a demo app, and prints a ready banner:
+The script brings up the stack, installs the `cmpatch` CLI globally, seeds demo data, and prints a ready banner:
 
 - **Dashboard** — <http://localhost:8080> (sign in with the prefilled one-click local login)
 - **API** — <http://localhost:3000>
-- A seeded **demo app** and API token
+- A seeded **demo-app** (CLI / smoke) plus **Example Data** (Staging + Production sample releases and metrics)
+- A seeded API token for scripting
+
+Open Example Data in the dashboard to browse sample releases and counters. Those rows are for UI browsing only (not downloadable client bundles).
 
 To see an update **apply on a running app** (iOS simulator / Android emulator), continue with the [on-device demo](examples/on-device-demo).
 
@@ -187,6 +190,8 @@ scripts/selfhost/install.sh \
   --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
   --github-oauth-client-secret <github_client_secret>
 ```
+
+To also seed **Example Data** (Staging + Production sample releases and metrics for browsing the dashboard), add `--with-demo-data`. You can apply or refresh that catalog later with `scripts/selfhost/seed-demo-data.sh` (relative metric timestamps stay recent on each run). The sample releases are not downloadable client bundles.
 
 If you prepared Cloudflare in §1.2, add these flags to the same command:
 
@@ -930,6 +935,6 @@ List/metrics commands accept `--format table|json`.
 | `web-dashboard/`   | `web-dashboard`           | React SPA dashboard (served by Caddy)                               |
 | `shared/`          | `@codemagic/patch-shared` | Types and helpers shared across packages                            |
 | `deploy/selfhost/` | —                         | Caddyfile, MinIO bucket policy, dashboard image build               |
-| `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
+| `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`, `seed-demo-data.sh` |
 | `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
-| `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
+| `examples/`        | —                         | Local/smoke seed data, shared dashboard fixtures, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
