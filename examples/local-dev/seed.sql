@@ -1,10 +1,8 @@
--- Local-eval-only fixtures: admin user, membership, owner role, API token,
--- demo-app, and CLI/on-device deployments on the bootstrap team so smoke
--- scripts can publish without first calling control-plane CRUD APIs.
---
--- Dashboard browse data (Example Data + Staging/Production releases + metrics)
--- lives in examples/fixtures/demo-example-app.sql and is applied after this
--- file by the docker-compose.dev.yml seed service (also opt-in on self-host).
+-- Attach dev fixtures (admin user, membership, owner role, API token, demo app,
+-- and a deployment) to the bootstrap team so the CLI can publish a release
+-- against the local dev stack without first calling control-plane CRUD APIs.
+-- Also seed a local-only API token owned by an admin user so smoke scripts can
+-- authenticate through the same DB-backed path used in production-like runs.
 --
 -- The team itself is NOT created here: the server provisions it on boot from
 -- INITIAL_TEAM_NAME (default-team) — see docker-compose.dev.yml. This seed
