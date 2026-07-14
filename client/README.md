@@ -20,6 +20,8 @@ From this SDK:
 - Expo config plugin for prebuild projects, plus bare React Native wiring
 - CodePush-style `sync()`, or step-by-step APIs when you need control
 
+  <img width="700" alt="the self-hosted Patch dashboard" src="https://github.com/user-attachments/assets/e48f2c99-78e9-48c0-ae75-5a5278581e7d" />
+
 ## Requirements
 
 - React Native `0.76+` — Old Architecture and New Architecture
