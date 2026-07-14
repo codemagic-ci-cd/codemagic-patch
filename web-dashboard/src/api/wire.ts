@@ -16,6 +16,7 @@ import type {
   DeploymentClearResponse,
   IamInvitationCreateBody,
   IamRoleBindingCreateBody,
+  IamRoleBindingUpdateBody,
   IamUserProvisionBody,
   IamUserProvisionResponse,
   InvitationCreateResponse,
@@ -713,6 +714,12 @@ export function toIamRoleBindingWireBody(body: IamRoleBindingCreateBody) {
     role_id: body.roleId,
     team_id: body.teamId,
     ...(body.userId !== undefined ? { user_id: body.userId } : {}),
+  };
+}
+
+export function toIamRoleBindingUpdateWireBody(body: IamRoleBindingUpdateBody) {
+  return {
+    role_id: body.roleId,
   };
 }
 

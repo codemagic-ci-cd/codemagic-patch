@@ -741,6 +741,42 @@ export interface IamRoleBindingDeleteRouteHandler {
   (bindingId: string): Promise<IamRoleBindingDeleteHandlerResult>;
 }
 
+export interface IamRoleBindingUpdateHandlerInput {
+  bindingId: string;
+  roleId: string;
+}
+
+export type IamRoleBindingUpdateHandlerResult =
+  | {
+      outcome: "updated";
+      previousRole: IamRoleBindingRouteModel["role"];
+      roleBinding: IamRoleBindingRouteModel;
+    }
+  | {
+      outcome: "unchanged";
+      roleBinding: IamRoleBindingRouteModel;
+    }
+  | {
+      outcome: "not_found";
+      reason: "role_binding_not_found" | "role_not_found";
+    }
+  | {
+      outcome: "role_binding_exists";
+      roleBinding: IamRoleBindingRouteModel;
+    }
+  | {
+      outcome: "last_owner";
+    }
+  | {
+      outcome: "role_not_supported";
+    };
+
+export interface IamRoleBindingUpdateRouteHandler {
+  (
+    input: IamRoleBindingUpdateHandlerInput,
+  ): Promise<IamRoleBindingUpdateHandlerResult>;
+}
+
 export interface IamInvitationCreateHandlerInput {
   createdBy: string;
   expiresInDays: number | null;
@@ -1346,6 +1382,7 @@ export interface BuildAppOptions {
   iamRoleBindingDeleteHandler?: IamRoleBindingDeleteRouteHandler;
   iamRoleBindingListHandler?: IamRoleBindingListRouteHandler;
   iamRoleBindingReadHandler?: IamRoleBindingReadRouteHandler;
+  iamRoleBindingUpdateHandler?: IamRoleBindingUpdateRouteHandler;
   iamRoleListHandler?: IamRoleListRouteHandler;
   iamUserProvisionHandler?: IamUserProvisionRouteHandler;
   appDeploymentsListHandler?: AppDeploymentsListRouteHandler;

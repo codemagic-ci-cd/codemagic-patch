@@ -8,11 +8,13 @@ import {
   parseIamInvitationListInput,
   parseIamRoleBindingCreateInput,
   parseIamRoleBindingListInput,
+  parseIamRoleBindingUpdateInput,
   parseIamUserProvisionInput,
   prepareIamInvitationCreateResponse,
   prepareIamInvitationRevokeResponse,
   prepareIamRoleBindingCreateResponse,
   prepareIamRoleBindingDeleteResponse,
+  prepareIamRoleBindingUpdateResponse,
   prepareIamUserProvisionResponse,
 } from "./iamSupport";
 import {
@@ -30,6 +32,7 @@ import type {
   IamRoleBindingBody,
   IamRoleBindingListQuery,
   IamRoleBindingParams,
+  IamRoleBindingUpdateBody,
   IamUserProvisionBody,
 } from "./routeTypes";
 import {
@@ -355,6 +358,79 @@ export function registerIamRoutes(
       );
     },
   );
+
+  controlPlane.patch<{
+    Body: IamRoleBindingUpdateBody;
+    Params: IamRoleBindingParams;
+  }>("/iam/role-bindings/:bindingId", async (request, reply) => {
+    if (
+      !options.iamRoleBindingReadHandler ||
+      !options.iamRoleBindingUpdateHandler
+    ) {
+      return sendProblem(
+        reply,
+        createProblem({
+          detail: "IAM role binding updates are not implemented",
+          status: 501,
+        }),
+      );
+    }
+
+    const input = parseIamRoleBindingUpdateInput(request.body);
+    if (input.kind === "error") {
+      return sendProblem(reply, input.problem);
+    }
+
+    const existing = await options.iamRoleBindingReadHandler(
+      request.params.bindingId,
+    );
+    if (existing.outcome === "not_found") {
+      return sendProblem(reply, createRoleBindingNotFoundProblem());
+    }
+
+    const authorization = await authorizeVisibleResourceAccess(
+      options.authorizationService,
+      request.controlPlanePrincipal,
+      "iam.manage",
+      () =>
+        options.authorizationService!.resolveTeamScope(
+          existing.roleBinding.scope.id,
+        ),
+      createRoleBindingNotFoundProblem(),
+      createRoleBindingNotFoundProblem(),
+    );
+    if (authorization.kind === "error") {
+      return sendProblem(reply, authorization.problem);
+    }
+
+    const result = await options.iamRoleBindingUpdateHandler({
+      bindingId: request.params.bindingId,
+      roleId: input.value.roleId,
+    });
+    if (result.outcome === "updated") {
+      await writeAuditEventIfConfigured(
+        options.auditEventWriteHandler,
+        request,
+        {
+          action: "iam.role_binding.updated",
+          afterState: result.roleBinding as unknown as Record<string, unknown>,
+          beforeState: {
+            ...result.roleBinding,
+            role: result.previousRole,
+          } as unknown as Record<string, unknown>,
+          resourceId: result.roleBinding.id,
+          resourceType: "role_binding",
+          result: "success",
+          teamId: result.roleBinding.scope.id,
+        },
+      );
+    }
+
+    return sendPreparedJsonResponse(
+      reply,
+      prepareIamRoleBindingUpdateResponse(result),
+    );
+  });
 
   controlPlane.delete<{ Params: IamRoleBindingParams }>(
     "/iam/role-bindings/:bindingId",

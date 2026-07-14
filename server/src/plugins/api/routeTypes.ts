@@ -26,6 +26,7 @@ import type {
   IamRoleBindingDeleteRouteHandler,
   IamRoleBindingListRouteHandler,
   IamRoleBindingReadRouteHandler,
+  IamRoleBindingUpdateRouteHandler,
   IamRoleListRouteHandler,
   IamUserProvisionRouteHandler,
   IdempotencyHandler,
@@ -173,6 +174,10 @@ export interface IamRoleBindingBody {
   user_id?: unknown;
 }
 
+export interface IamRoleBindingUpdateBody {
+  role_id?: unknown;
+}
+
 export interface IamRoleBindingParams {
   bindingId: string;
 }
@@ -230,6 +235,7 @@ export interface ApiRoutesOptions {
   iamRoleBindingDeleteHandler?: IamRoleBindingDeleteRouteHandler;
   iamRoleBindingListHandler?: IamRoleBindingListRouteHandler;
   iamRoleBindingReadHandler?: IamRoleBindingReadRouteHandler;
+  iamRoleBindingUpdateHandler?: IamRoleBindingUpdateRouteHandler;
   iamRoleListHandler?: IamRoleListRouteHandler;
   iamUserProvisionHandler?: IamUserProvisionRouteHandler;
   idempotencyHandler?: IdempotencyHandler;

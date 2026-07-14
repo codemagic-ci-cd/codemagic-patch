@@ -365,6 +365,16 @@ const memberRemoveSchema: Record<string, FlagSchema> = {
   userId: STRING_FLAG,
 };
 
+const memberUpdateSchema: Record<string, FlagSchema> = {
+  bindingId: STRING_FLAG,
+  email: STRING_FLAG,
+  fromRole: STRING_FLAG,
+  role: STRING_FLAG,
+  serverUrl: STRING_FLAG,
+  token: STRING_FLAG,
+  userId: STRING_FLAG,
+};
+
 const appListSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
   serverUrl: STRING_FLAG,
@@ -3610,6 +3620,106 @@ export function parseMemberRemove(
       serverUrl,
       team,
       user,
+      ...(typeof parsedFlags.flags.token === "string"
+        ? { token: parsedFlags.flags.token }
+        : {}),
+    },
+    ok: true,
+  };
+}
+
+export function parseMemberUpdate(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, memberUpdateSchema, defaults);
+
+  if (!parsedFlags.ok) {
+    return {
+      error: parsedFlags.error,
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const roleKey = ensureNonBlankString(parsedFlags.flags, "role", "role");
+  const bindingId =
+    typeof parsedFlags.flags.bindingId === "string"
+      ? ensureNonBlankString(parsedFlags.flags, "bindingId", "binding-id")
+      : undefined;
+
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+
+  if (isParseError(roleKey)) {
+    return roleKey;
+  }
+
+  if (isParseError(bindingId)) {
+    return bindingId;
+  }
+
+  const selectorFlagCount = [
+    parsedFlags.flags.teamId,
+    parsedFlags.flags.team,
+    parsedFlags.flags.userId,
+    parsedFlags.flags.email,
+    parsedFlags.flags.fromRole,
+  ].filter((value) => value !== undefined).length;
+
+  if (bindingId !== undefined) {
+    if (selectorFlagCount > 0) {
+      return {
+        error:
+          "--binding-id cannot be combined with --user-id, --email, or --from-role",
+        ok: false,
+        showHelp: true,
+      };
+    }
+
+    return {
+      command: {
+        bindingId,
+        kind: "member-update",
+        roleKey,
+        serverUrl,
+        ...(typeof parsedFlags.flags.token === "string"
+          ? { token: parsedFlags.flags.token }
+          : {}),
+      },
+      ok: true,
+    };
+  }
+
+  const team = parseTeamSelector(parsedFlags.flags);
+  const user = parseMemberUserSelector(parsedFlags.flags);
+  const fromRoleKey =
+    typeof parsedFlags.flags.fromRole === "string"
+      ? ensureNonBlankString(parsedFlags.flags, "fromRole", "from-role")
+      : undefined;
+
+  if (isParseError(team)) {
+    return team;
+  }
+
+  if (isParseError(user)) {
+    return user;
+  }
+
+  if (isParseError(fromRoleKey)) {
+    return fromRoleKey;
+  }
+
+  return {
+    command: {
+      kind: "member-update",
+      roleKey,
+      serverUrl,
+      team,
+      user,
+      ...(fromRoleKey !== undefined ? { fromRoleKey } : {}),
       ...(typeof parsedFlags.flags.token === "string"
         ? { token: parsedFlags.flags.token }
         : {}),

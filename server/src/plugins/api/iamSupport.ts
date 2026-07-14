@@ -8,6 +8,7 @@ import type {
   IamInvitationStatusFilter,
   IamRoleBindingCreateRouteHandler,
   IamRoleBindingDeleteRouteHandler,
+  IamRoleBindingUpdateRouteHandler,
   IamUserProvisionRouteHandler,
 } from "../../app/types";
 import { MAX_API_TOKEN_EXPIRATION_DAYS } from "./routeConstants";
@@ -61,6 +62,48 @@ export function parseIamRoleBindingListInput(query: IamRoleBindingListQuery):
     kind: "success",
     value: {
       teamId,
+    },
+  };
+}
+
+export function parseIamRoleBindingUpdateInput(body: unknown):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: {
+        roleId: string;
+      };
+    } {
+  if (!isJsonObject(body)) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        "role binding update body must be a JSON object",
+        "body",
+        "invalid_type",
+      ),
+    };
+  }
+
+  const roleId = parseRequiredTrimmedString(body.role_id);
+  if (roleId === null) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        "role_id must be a non-empty string",
+        "role_id",
+        requiredStringReason(body.role_id),
+      ),
+    };
+  }
+
+  return {
+    kind: "success",
+    value: {
+      roleId,
     },
   };
 }
@@ -624,6 +667,81 @@ export function prepareIamRoleBindingDeleteResponse(
       detail: "cannot remove the last owner role binding for the team",
       status: 409,
       typeSuffix: "last-owner",
+    });
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
+  const problem = createRoleBindingNotFoundProblem();
+  return {
+    body: problem,
+    status: problem.status,
+  };
+}
+
+export function prepareIamRoleBindingUpdateResponse(
+  result: Awaited<ReturnType<IamRoleBindingUpdateRouteHandler>>,
+): PreparedJsonResponse {
+  if (result.outcome === "updated" || result.outcome === "unchanged") {
+    return {
+      body: {
+        role_binding: toRoleBindingWire(result.roleBinding),
+      },
+      status: 200,
+    };
+  }
+
+  if (result.outcome === "last_owner") {
+    const problem = createProblem({
+      detail: "cannot change the role of the last owner role binding for the team",
+      status: 409,
+      typeSuffix: "last-owner",
+    });
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
+  if (result.outcome === "role_binding_exists") {
+    const problem = createProblem({
+      detail: "the member already holds the requested role in this team",
+      extensions: {
+        outcome: result.outcome,
+        role_binding: toRoleBindingWire(result.roleBinding),
+      },
+      status: 409,
+      typeSuffix: "role-binding-exists",
+    });
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
+  if (result.outcome === "role_not_supported") {
+    const problem = createProblem({
+      detail: "role is not supported for team role binding updates",
+      status: 400,
+      typeSuffix: "role-not-supported",
+    });
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
+  if (result.outcome === "not_found" && result.reason === "role_not_found") {
+    const problem = createProblem({
+      detail: "role was not found",
+      extensions: {
+        outcome: result.outcome,
+        reason: result.reason,
+      },
+      status: 404,
+      typeSuffix: "not-found",
     });
     return {
       body: problem,

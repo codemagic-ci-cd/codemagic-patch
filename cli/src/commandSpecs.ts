@@ -30,6 +30,7 @@ import {
   parseMemberList,
   parseMemberProvision,
   parseMemberRemove,
+  parseMemberUpdate,
   parseRawArgvCommand,
   parseReleaseCreate,
   parseReleaseInspect,
@@ -77,6 +78,7 @@ import {
   executeMemberList,
   executeMemberProvision,
   executeMemberRemove,
+  executeMemberUpdate,
 } from "./commands/member";
 import { executeReleaseCreate } from "./commands/releaseCreate";
 import { executeReleaseInspect, renderReleaseInspectTable } from "./commands/releaseInspect";
@@ -811,6 +813,21 @@ const commandSpecs: RunnableCommandSpec[] = [
     ],
     parse: parseMemberRemove,
     routes: [{ path: ["member", "remove"] }],
+  }),
+  commandSpec({
+    commandName: "member update",
+    defaults: { serverUrl: true, team: "member" },
+    execute: executeMemberUpdate,
+    kind: "member-update",
+    help: [
+      {
+        description: "Change a team member's role.",
+        group: "auth",
+        usage: "cmpatch member update --server-url <url> (--binding-id <id> | (--user-id <id> | --email <email>) [--from-role <viewer|developer|admin|owner>]) --role <viewer|developer|admin|owner> [--token <token>]",
+      }
+    ],
+    parse: parseMemberUpdate,
+    routes: [{ path: ["member", "update"] }],
   }),
   commandSpec({
     commandName: "release create",

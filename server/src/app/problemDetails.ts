@@ -33,6 +33,7 @@ export type ProblemTypeSuffix =
   | "invalid-status-transition"
   | "not-found"
   | "release-conflict"
+  | "role-binding-exists"
   | "role-not-supported"
   | "rollback-no-op"
   | "status-transition-conflict"
@@ -148,6 +149,10 @@ function problemTitleForType(
 
   if (typeSuffix === "release-conflict") {
     return "Active rollout blocks new release";
+  }
+
+  if (typeSuffix === "role-binding-exists") {
+    return "Role binding already exists";
   }
 
   if (typeSuffix === "role-not-supported") {

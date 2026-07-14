@@ -24,16 +24,18 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function pushFlag(parts: string[], flag: string, value?: string): void {
-  if (value === undefined) {
-    parts.push(`--${flag}`);
-    return;
-  }
+// Value flags are string flags in the CLI parser: a bare `--flag` with no value
+// is a parse error, so an absent or blank value must omit the flag entirely.
+function pushFlag(parts: string[], flag: string, value: string): void {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     return;
   }
   parts.push(`--${flag} ${shellQuote(trimmed)}`);
+}
+
+function pushBooleanFlag(parts: string[], flag: string): void {
+  parts.push(`--${flag}`);
 }
 
 export function buildReleaseReactCommand(
@@ -45,12 +47,13 @@ export function buildReleaseReactCommand(
   pushFlag(parts, "deployment", input.deploymentName);
   pushFlag(parts, "platform", input.platform);
 
-  const targetVersion = input.targetBinaryVersion?.trim();
-  if (targetVersion !== undefined && targetVersion.length > 0) {
-    pushFlag(parts, "target-binary-version", targetVersion);
+  if (input.targetBinaryVersion !== undefined) {
+    pushFlag(parts, "target-binary-version", input.targetBinaryVersion);
   }
 
-  pushFlag(parts, "release-notes", input.releaseNotes);
+  if (input.releaseNotes !== undefined) {
+    pushFlag(parts, "release-notes", input.releaseNotes);
+  }
 
   const rollout = input.rolloutPercentage ?? 100;
   if (rollout !== 100) {
@@ -58,24 +61,20 @@ export function buildReleaseReactCommand(
   }
 
   if (input.mandatory === true) {
-    pushFlag(parts, "mandatory");
+    pushBooleanFlag(parts, "mandatory");
   }
   if (input.disabled === true) {
-    pushFlag(parts, "disabled");
+    pushBooleanFlag(parts, "disabled");
   }
   if (input.dryRun === true) {
-    pushFlag(parts, "dry-run");
+    pushBooleanFlag(parts, "dry-run");
   }
 
-  const privateKeyPath = input.privateKeyPath?.trim();
-  if (privateKeyPath !== undefined && privateKeyPath.length > 0) {
-    pushFlag(parts, "private-key-path", privateKeyPath);
+  if (input.privateKeyPath !== undefined) {
+    pushFlag(parts, "private-key-path", input.privateKeyPath);
   }
 
-  // release-react mutates server state; the CLI requires --yes unless --dry-run.
-  if (input.dryRun !== true) {
-    pushFlag(parts, "yes");
-  }
-
+  // No --yes: release-react mutates server state, so the pasted command should
+  // still stop at the CLI's interactive confirmation.
   return ["cmpatch release-react", ...parts].join(" ");
 }

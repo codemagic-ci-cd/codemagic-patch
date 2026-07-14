@@ -77,6 +77,7 @@ import type {
   IamRoleBindingDeleteRouteHandler,
   IamRoleBindingListRouteHandler,
   IamRoleBindingReadRouteHandler,
+  IamRoleBindingUpdateRouteHandler,
   IamInvitationCreateRouteHandler,
   IamInvitationListRouteHandler,
   IamInvitationReadRouteHandler,
@@ -182,6 +183,7 @@ export interface ServerRuntime {
   iamRoleBindingDeleteHandler?: IamRoleBindingDeleteRouteHandler;
   iamRoleBindingListHandler?: IamRoleBindingListRouteHandler;
   iamRoleBindingReadHandler?: IamRoleBindingReadRouteHandler;
+  iamRoleBindingUpdateHandler?: IamRoleBindingUpdateRouteHandler;
   iamRoleListHandler?: IamRoleListRouteHandler;
   iamUserProvisionHandler?: IamUserProvisionRouteHandler;
   idempotencyHandler?: IdempotencyHandler;
@@ -1370,6 +1372,7 @@ function createIamHandlers(
   | "iamRoleBindingDeleteHandler"
   | "iamRoleBindingListHandler"
   | "iamRoleBindingReadHandler"
+  | "iamRoleBindingUpdateHandler"
   | "iamRoleListHandler"
 > {
   return {
@@ -1404,6 +1407,13 @@ function createIamHandlers(
 
     async iamRoleBindingReadHandler(bindingId) {
       return repository.getTeamRoleBinding(bindingId as RoleBindingId);
+    },
+
+    async iamRoleBindingUpdateHandler(input) {
+      return repository.updateTeamRoleBinding({
+        bindingId: input.bindingId as RoleBindingId,
+        roleId: input.roleId as RoleDefinitionId,
+      });
     },
 
     async iamRoleListHandler() {

@@ -6,6 +6,7 @@ import type {
   MemberListCommand,
   MemberProvisionCommand,
   MemberRemoveCommand,
+  MemberUpdateCommand,
   MemberUserSelector,
 } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
@@ -273,10 +274,50 @@ async function resolveRoleId(
   return matchingRole.id;
 }
 
+export async function executeMemberUpdate(
+  command: MemberUpdateCommand,
+  deps: CommandDeps,
+): Promise<unknown> {
+  const bindingId =
+    command.bindingId ??
+    (await resolveRoleBindingId(
+      command.team,
+      command.user,
+      command.fromRoleKey,
+      command.serverUrl,
+      command.token,
+      deps,
+    ));
+  const roleId = await resolveRoleId(
+    command.roleKey,
+    command.serverUrl,
+    command.token,
+    deps,
+  );
+
+  return authenticatedRequest(deps, {
+    init: {
+      body: JSON.stringify({ role_id: roleId }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "PATCH",
+    },
+    serverUrl: command.serverUrl,
+    token: command.token,
+    url: buildApiUrl(
+      command.serverUrl,
+      `/v1/iam/role-bindings/${encodeURIComponent(bindingId)}`,
+    ),
+  });
+}
+
+// `roleKey` narrows to a single binding when the member holds several roles.
+// It is optional for `member update`, where the caller may omit --from-role.
 async function resolveRoleBindingId(
   team: MemberListCommand["team"],
   user: MemberUserSelector,
-  roleKey: string,
+  roleKey: string | undefined,
   serverUrl: string,
   token: string | undefined,
   deps: CommandDeps,
@@ -295,7 +336,8 @@ async function resolveRoleBindingId(
   const roleBindings = parseRoleBindingListResponse(response);
   const matches = roleBindings.filter(
     (roleBinding) =>
-      roleBinding.role.key === roleKey && userSelectorMatches(roleBinding, user),
+      (roleKey === undefined || roleBinding.role.key === roleKey) &&
+      userSelectorMatches(roleBinding, user),
   );
 
   if (matches.length === 1) {
@@ -304,17 +346,25 @@ async function resolveRoleBindingId(
 
   const userDescription =
     user.userId !== undefined ? `user "${user.userId}"` : `email "${user.email}"`;
+  const roleDescription =
+    roleKey !== undefined ? ` with role "${roleKey}"` : "";
 
   if (matches.length === 0) {
     throw new UsageError(
-      `Role binding for ${userDescription} with role "${roleKey}" was not found in team "${teamId}".`,
+      `Role binding for ${userDescription}${roleDescription} was not found in team "${teamId}".`,
+    );
+  }
+
+  const matchingIds = matches.map((match) => match.id).join(", ");
+
+  if (roleKey === undefined) {
+    throw new UsageError(
+      `Member ${userDescription} holds multiple roles in team "${teamId}". Pass --from-role or --binding-id to choose one. Matching binding IDs: ${matchingIds}`,
     );
   }
 
   throw new UsageError(
-    `Role binding for ${userDescription} with role "${roleKey}" is ambiguous. Matching binding IDs: ${matches
-      .map((match) => match.id)
-      .join(", ")}`,
+    `Role binding for ${userDescription}${roleDescription} is ambiguous. Matching binding IDs: ${matchingIds}`,
   );
 }
 

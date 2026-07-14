@@ -108,6 +108,14 @@ export interface IamRoleBindingCreateBody {
   email?: string;
 }
 
+/** `PATCH /v1/iam/role-bindings/:bindingId` hook input — moves the binding to `roleId`. */
+export interface IamRoleBindingUpdateBody {
+  bindingId: string;
+  roleId: string;
+  /** Needed for list invalidation and optimistic updates. */
+  teamId: string;
+}
+
 /** `POST /v1/iam/invitations` hook input. */
 export interface IamInvitationCreateBody {
   teamId: string;

@@ -15,6 +15,7 @@ import { authenticatedRequest } from "../client";
 import type {
   IamInvitationCreateBody,
   IamRoleBindingCreateBody,
+  IamRoleBindingUpdateBody,
   IamUserProvisionBody,
 } from "../types";
 import {
@@ -24,6 +25,7 @@ import {
   fromRoleBindingWire,
   fromRoleWire,
   toIamInvitationWireBody,
+  toIamRoleBindingUpdateWireBody,
   toIamRoleBindingWireBody,
   toIamUserProvisionWireBody,
   type IamUserProvisionWireResponse,
@@ -99,6 +101,31 @@ export function useAddRoleBinding() {
         method: "POST",
         path: "/iam/role-bindings",
         body: toIamRoleBindingWireBody(body),
+      });
+      return fromRoleBindingWire(roleBinding);
+    },
+    onSuccess: async (_data, { teamId }) => {
+      await queryClient.invalidateQueries({
+        queryKey: iamKeys.roleBindingList(teamId),
+      });
+    },
+  });
+}
+
+/**
+ * `PATCH /v1/iam/role-bindings/:bindingId` (`iam.manage`) → 200 with the updated
+ * binding. 409 `last-owner` (demoting the sole owner) and 409 `role-binding-exists`
+ * (member already holds the target role) propagate to the caller.
+ */
+export function useUpdateRoleBinding() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: IamRoleBindingUpdateBody) => {
+      const { role_binding: roleBinding } =
+        await authenticatedRequest<RoleBindingCreateWireResponse>({
+        method: "PATCH",
+        path: `/iam/role-bindings/${encodeURIComponent(body.bindingId)}`,
+        body: toIamRoleBindingUpdateWireBody(body),
       });
       return fromRoleBindingWire(roleBinding);
     },

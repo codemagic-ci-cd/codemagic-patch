@@ -356,6 +356,30 @@ export type MemberRemoveCommand =
       user: MemberUserSelector;
     };
 
+// `roleKey` is the role the member is moved to. In the user form, `fromRoleKey`
+// disambiguates which existing binding to change when the member holds several.
+export type MemberUpdateCommand =
+  | {
+      bindingId: string;
+      fromRoleKey?: never;
+      kind: "member-update";
+      roleKey: string;
+      serverUrl: string;
+      team?: never;
+      token?: string;
+      user?: never;
+    }
+  | {
+      bindingId?: never;
+      fromRoleKey?: string;
+      kind: "member-update";
+      roleKey: string;
+      serverUrl: string;
+      team: TeamSelector;
+      token?: string;
+      user: MemberUserSelector;
+    };
+
 export type ReleaseShowCommand = {
   kind: "release-show";
   release: ReleaseSelector;
@@ -585,6 +609,7 @@ export type CliCommand =
   | MemberListCommand
   | MemberProvisionCommand
   | MemberRemoveCommand
+  | MemberUpdateCommand
   | ReleaseCreateCommand
   | ReleaseInspectCommand
   | ReleaseReactCommand

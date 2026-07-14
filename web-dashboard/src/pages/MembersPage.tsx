@@ -11,7 +11,10 @@
 // the optimistic pattern — the confirm closes immediately, the row is
 // dropped from the cached bindings list (in-flight fetches cancelled first)
 // and restored on error; `409 last-owner` renders the inline blocking callout
-// instead of a toast. The Add/Invite/Provision modal discriminates
+// instead of a toast. Role changes are NOT optimistic: the confirm dialog
+// stays open until the PATCH lands, so both 409s (last-owner, the member
+// already holds the role) surface in its inline error slot where the user can
+// pick a different role. The sole owner's kebab disables both actions. The Add/Invite/Provision modal discriminates
 // 201-created vs 200-already_exists by comparing the returned binding id
 // against the pre-mutation cache (the hook envelope carries no status), and
 // success swaps to the show-once PAT modal (`disableEscapeClose`, Copyable
@@ -39,6 +42,7 @@ import {
   useRevokeInvitation,
   useRoleBindings,
   useRoles,
+  useUpdateRoleBinding,
 } from "../api/hooks/iam";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ConfirmDialog } from "../components/overlay/ConfirmDialog";
@@ -92,6 +96,7 @@ import {
 } from "../components/ui/menu";
 import { DropdownPanel } from "../components/ui/DropdownPanel";
 import { PAGE_TITLE, PAGE_SUB } from "../components/ui/typography";
+import { SUMMARY_ARROW } from "../components/ui/summary";
 
 export function MembersPage() {
   const { teamId } = useParams();
@@ -122,6 +127,9 @@ function MembersScreen({ teamId }: { teamId: string }) {
     mode: "add",
   });
   const [pendingRemoval, setPendingRemoval] = useState<RoleBinding | null>(
+    null,
+  );
+  const [pendingRoleChange, setPendingRoleChange] = useState<RoleBinding | null>(
     null,
   );
   const [lastOwnerBlocked, setLastOwnerBlocked] = useState(false);
@@ -212,6 +220,10 @@ function MembersScreen({ teamId }: { teamId: string }) {
             setLastOwnerBlocked(false);
             setPendingRemoval(binding);
           }}
+          onChangeRole={(binding) => {
+            setLastOwnerBlocked(false);
+            setPendingRoleChange(binding);
+          }}
         />
       </>
     );
@@ -299,6 +311,13 @@ function MembersScreen({ teamId }: { teamId: string }) {
           }
         }}
       />
+      {pendingRoleChange !== null ? (
+        <ChangeRoleDialog
+          binding={pendingRoleChange}
+          teamId={teamId}
+          onClose={() => setPendingRoleChange(null)}
+        />
+      ) : null}
       {provisionResult !== null ? (
         <ProvisionedTokenModal
           result={provisionResult}
@@ -317,10 +336,12 @@ function ManagedMembersTable({
   teamId,
   bindingsQuery,
   onRemove,
+  onChangeRole,
 }: {
   teamId: string;
   bindingsQuery: ReturnType<typeof useRoleBindings>;
   onRemove: (binding: RoleBinding) => void;
+  onChangeRole: (binding: RoleBinding) => void;
 }) {
   // One query for every status: the server flips lapsed pending invitations
   // to expired on read, and the pending/expired split happens client-side.
@@ -409,6 +430,7 @@ function ManagedMembersTable({
         pendingInvitations={pendingInvitations}
         expiredInvitations={expiredInvitations}
         onRemove={onRemove}
+        onChangeRole={onChangeRole}
         onRevokeInvitation={(invitation) => {
           setRevokeError(null);
           setPendingRevoke(invitation);
@@ -468,12 +490,14 @@ function MemberTable({
   pendingInvitations,
   expiredInvitations,
   onRemove,
+  onChangeRole,
   onRevokeInvitation,
 }: {
   bindings: readonly RoleBinding[];
   pendingInvitations: readonly TeamInvitation[];
   expiredInvitations: readonly TeamInvitation[];
   onRemove: (binding: RoleBinding) => void;
+  onChangeRole: (binding: RoleBinding) => void;
   onRevokeInvitation: (invitation: TeamInvitation) => void;
 }) {
   const ownerCount = useMemo(
@@ -595,11 +619,14 @@ function MemberTable({
                       <RowKebab
                         binding={row.binding}
                         // Proactive last-owner guard; the 409
-                        // remains the server-authoritative fallback.
+                        // remains the server-authoritative fallback. It blocks
+                        // Change role too — every role change away from owner
+                        // demotes the sole owner.
                         lastOwner={
                           row.binding.role.key === "owner" && ownerCount === 1
                         }
                         onRemove={onRemove}
+                        onChangeRole={onChangeRole}
                       />
                     </td>
                   </tr>
@@ -684,15 +711,20 @@ function InvitationRow({
   );
 }
 
-/** Row kebab → Remove (AccountMenu's outside-close/Esc/first-item-focus pattern). */
+/**
+ * Row kebab → Change role / Remove (AccountMenu's outside-close/Esc/
+ * first-item-focus pattern).
+ */
 function RowKebab({
   binding,
   lastOwner,
   onRemove,
+  onChangeRole,
 }: {
   binding: RoleBinding;
   lastOwner: boolean;
   onRemove: (binding: RoleBinding) => void;
+  onChangeRole: (binding: RoleBinding) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -756,9 +788,19 @@ function RowKebab({
         label={`Actions for ${binding.user.email}`}
       >
         {lastOwner ? (
-            // aria-disabled (not `disabled`) keeps the item focusable so the
+            // aria-disabled (not `disabled`) keeps the items focusable so the
             // reason is discoverable by keyboard/screen-reader users.
             <>
+              <button
+                type="button"
+                className={`${MENU_ITEM} cursor-not-allowed opacity-50`}
+                role="menuitem"
+                aria-disabled="true"
+                title="Can't change the last owner's role"
+                onClick={(event) => event.preventDefault()}
+              >
+                <ShieldIcon /> Change role
+              </button>
               <button
                 type="button"
                 className={`${MENU_ITEM} ${MENU_ITEM_TONE.danger} cursor-not-allowed opacity-50`}
@@ -771,24 +813,144 @@ function RowKebab({
               </button>
               <div className={MENU_SEP} />
               <div className="text-fg-3 pt-1 px-[11px] pb-2 text-[12px]">
-                Can&apos;t remove the last owner.
+                Assign another owner first.
               </div>
             </>
           ) : (
-            <button
-              type="button"
-              className={`${MENU_ITEM} ${MENU_ITEM_TONE.danger}`}
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onRemove(binding);
-              }}
-            >
-              <TrashIcon /> Remove
-            </button>
+            <>
+              <button
+                type="button"
+                className={MENU_ITEM}
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onChangeRole(binding);
+                }}
+              >
+                <ShieldIcon /> Change role
+              </button>
+              <div className={MENU_SEP} />
+              <button
+                type="button"
+                className={`${MENU_ITEM} ${MENU_ITEM_TONE.danger}`}
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onRemove(binding);
+                }}
+              >
+                <TrashIcon /> Remove
+              </button>
+            </>
           )}
       </DropdownPanel>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Change role dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * Tier-1 confirm around `PATCH /iam/role-bindings/:id`: a role picker plus a
+ * `viewer → admin` summary of the pending move. Mounted only while a binding is
+ * pending, so the picker resets with the dialog.
+ *
+ * Errors stay inline rather than becoming toasts: both 409s (last-owner,
+ * role-binding-exists) are blocking conditions the user resolves right here.
+ */
+function ChangeRoleDialog({
+  binding,
+  teamId,
+  onClose,
+}: {
+  binding: RoleBinding;
+  teamId: string;
+  onClose: () => void;
+}) {
+  const rolesQuery = useRoles();
+  const updateBinding = useUpdateRoleBinding();
+  const toast = useToast();
+
+  const [roleId, setRoleId] = useState<string>(binding.role.id);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedRole = rolesQuery.data?.find((role) => role.id === roleId);
+  const unchanged = roleId === binding.role.id;
+
+  const confirm = () => {
+    if (updateBinding.isPending) {
+      return;
+    }
+    if (unchanged) {
+      // The server treats this as a no-op 200; say so instead of closing as if
+      // something changed.
+      setError("Pick a different role to change it.");
+      return;
+    }
+    setError(null);
+    updateBinding.mutate(
+      { bindingId: binding.id, roleId, teamId },
+      {
+        onSuccess: (updated) => {
+          onClose();
+          toast.success("Role updated", {
+            description: `${binding.user.email} is now ${updated.role.key}.`,
+          });
+        },
+        onError: (mutationError) => {
+          setError(problemDescription(mutationError));
+        },
+      },
+    );
+  };
+
+  return (
+    <ConfirmDialog
+      open
+      variant="summary"
+      icon={<ShieldIcon />}
+      title="Change role"
+      description="The new role takes effect immediately, on their next request."
+      summary={[
+        { label: "Member", value: binding.user.email },
+        {
+          label: "Role",
+          value: (
+            <>
+              <span className={`role role-${binding.role.key}`}>
+                {binding.role.key}
+              </span>
+              <span className={SUMMARY_ARROW}>→</span>
+              {selectedRole === undefined ? (
+                <span className="text-fg-3">…</span>
+              ) : (
+                <span className={`role role-${selectedRole.key}`}>
+                  {selectedRole.key}
+                </span>
+              )}
+            </>
+          ),
+        },
+      ]}
+      confirmLabel="Change role"
+      busy={updateBinding.isPending}
+      error={error}
+      onCancel={onClose}
+      onConfirm={confirm}
+    >
+      <RoleField
+        roles={rolesQuery.data}
+        isError={rolesQuery.isError}
+        value={roleId}
+        onChange={(next) => {
+          setError(null);
+          setRoleId(next);
+        }}
+        disabled={updateBinding.isPending}
+      />
+    </ConfirmDialog>
   );
 }
 
@@ -1656,6 +1818,15 @@ function TrashIcon() {
     <Glyph className={MENU_ICON}>
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </Glyph>
+  );
+}
+
+function ShieldIcon() {
+  // Menu-row sibling of TrashIcon; MODAL_ICON re-sizes it in the dialog tile.
+  return (
+    <Glyph className={MENU_ICON}>
+      <path d="M12 2 4 5v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V5l-8-3z" />
     </Glyph>
   );
 }

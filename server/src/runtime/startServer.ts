@@ -66,6 +66,7 @@ export async function startServer(
     iamRoleBindingDeleteHandler: runtime.iamRoleBindingDeleteHandler,
     iamRoleBindingListHandler: runtime.iamRoleBindingListHandler,
     iamRoleBindingReadHandler: runtime.iamRoleBindingReadHandler,
+    iamRoleBindingUpdateHandler: runtime.iamRoleBindingUpdateHandler,
     iamRoleListHandler: runtime.iamRoleListHandler,
     iamUserProvisionHandler: runtime.iamUserProvisionHandler,
     idempotencyHandler: runtime.idempotencyHandler,

@@ -92,6 +92,36 @@ export type DeleteTeamRoleBindingResult =
       outcome: "last_owner";
     };
 
+export interface UpdateTeamRoleBindingInput {
+  bindingId: RoleBindingId;
+  roleId: RoleDefinitionId;
+}
+
+export type UpdateTeamRoleBindingResult =
+  | {
+      outcome: "updated";
+      previousRole: IamRoleBinding["role"];
+      roleBinding: IamRoleBinding;
+    }
+  | {
+      outcome: "unchanged";
+      roleBinding: IamRoleBinding;
+    }
+  | {
+      outcome: "not_found";
+      reason: "role_binding_not_found" | "role_not_found";
+    }
+  | {
+      outcome: "role_binding_exists";
+      roleBinding: IamRoleBinding;
+    }
+  | {
+      outcome: "last_owner";
+    }
+  | {
+      outcome: "role_not_supported";
+    };
+
 export type GetTeamRoleBindingResult =
   | {
       outcome: "found";
@@ -122,6 +152,9 @@ export interface IamRepository {
   ): Promise<GrantTeamRoleBindingResult>;
   listSystemRoles(): Promise<IamRoleWithPermissions[]>;
   listTeamRoleBindings(teamId: TeamId): Promise<ListTeamRoleBindingsResult>;
+  updateTeamRoleBinding(
+    input: UpdateTeamRoleBindingInput,
+  ): Promise<UpdateTeamRoleBindingResult>;
 }
 
 interface Queryable {
@@ -370,6 +403,90 @@ export function createPostgresIamRepository(
         outcome: "found",
         roleBindings: result.rows.map(toIamRoleBinding),
       };
+    },
+
+    async updateTeamRoleBinding(input) {
+      return withTransaction(pool, async (client) => {
+        const existing = await getTeamRoleBindingForUpdate(
+          client,
+          input.bindingId,
+        );
+
+        if (!existing) {
+          return {
+            outcome: "not_found",
+            reason: "role_binding_not_found",
+          };
+        }
+
+        if (existing.role_definition_id === input.roleId) {
+          return {
+            outcome: "unchanged",
+            roleBinding: toIamRoleBinding(existing),
+          };
+        }
+
+        const role = await getRoleDefinition(client, input.roleId);
+
+        if (!role) {
+          return {
+            outcome: "not_found",
+            reason: "role_not_found",
+          };
+        }
+
+        if (!role.isSystem || role.teamId !== null) {
+          return {
+            outcome: "role_not_supported",
+          };
+        }
+
+        const teamId = existing.scope_id as TeamId;
+
+        if (
+          existing.role_definition_id === OWNER_ROLE_DEFINITION_ID &&
+          existing.user_status === "active"
+        ) {
+          const activeOwnerBindings = await lockActiveOwnerBindings(
+            client,
+            teamId,
+          );
+
+          if (activeOwnerBindings.length <= 1) {
+            return {
+              outcome: "last_owner",
+            };
+          }
+        }
+
+        const conflicting = await getTeamRoleBindingByUnique(client, {
+          roleId: input.roleId,
+          teamId,
+          userId: existing.principal_id as UserId,
+        });
+
+        if (conflicting) {
+          return {
+            outcome: "role_binding_exists",
+            roleBinding: toIamRoleBinding(conflicting),
+          };
+        }
+
+        await client.query(
+          "UPDATE role_binding SET role_definition_id = $1 WHERE id = $2",
+          [input.roleId, input.bindingId],
+        );
+
+        const updated = await getTeamRoleBindingById(client, input.bindingId);
+
+        return {
+          outcome: "updated",
+          previousRole: toIamRoleBinding(existing).role,
+          roleBinding: toIamRoleBinding(
+            requireValue(updated, "role_binding"),
+          ),
+        };
+      });
     },
   };
 }
