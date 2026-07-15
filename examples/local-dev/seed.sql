@@ -109,8 +109,9 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
--- Dedicated deployment for the CLI quickstart (the up.sh ready banner) and the
--- local-eval smoke scripts, which publish the repo's iOS Hermes fixture bundle.
+-- Dedicated deployment for the CLI release example (the up.sh ready banner)
+-- and the local-eval smoke scripts, which publish the repo's iOS Hermes
+-- fixture bundle.
 -- Kept separate from the on-device demo's staging deployment so the fixture's
 -- synthetic fingerprint never collides with update checks from the demo app.
 INSERT INTO deployment (id, app_id, team_id, name, deployment_key)
@@ -118,7 +119,7 @@ VALUES (
   'deployment_local_cli_quickstart',
   'app_local_demo_ios',
   (SELECT id FROM team WHERE name = 'default-team'),
-  'cli-quickstart',
+  'cli-smoke-test',
   'dev_local_deployment_key'
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;

@@ -29,7 +29,7 @@
 #   team        = default-team
 #   apps        = demo-app-ios / demo-app-android
 #   deployments = demo-app-ios/staging        → dev_local_ios_deployment_key
-#                 demo-app-ios/cli-quickstart → dev_local_deployment_key
+#                 demo-app-ios/cli-smoke-test → dev_local_deployment_key
 #                 demo-app-android/staging    → dev_local_android_deployment_key
 #   api token   = cm_pat_local-dev-token-change-me-00000001
 
