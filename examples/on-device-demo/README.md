@@ -48,13 +48,13 @@ On launch the app shows the blue **v1** banner and, after a moment, *"Up to date
    # iOS
    cmpatch release-react \
      --server-url http://localhost:3000 \
-     --app demo-app --deployment staging-ios \
+     --app demo-app-ios --deployment staging \
      --platform ios
 
    # Android
    cmpatch release-react \
      --server-url http://localhost:3000 \
-     --app demo-app --deployment staging-android \
+     --app demo-app-android --deployment staging \
      --platform android
    ```
 
@@ -72,11 +72,11 @@ The SDK is configured by three native values, already baked into the app:
 | `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` | `http://localhost:9100/codemagic-patch` |
 | `CodemagicPatchDeploymentKey` | `dev_local_ios_deployment_key` | `dev_local_android_deployment_key` |
 
-The matching `staging-ios` / `staging-android` deployments (and the `demo-app` app) are created by the evaluation stack's [seed data](../local-dev/seed.sql).
+The matching `demo-app-ios` / `demo-app-android` apps, each with a `staging` deployment, are created by the evaluation stack's [seed data](../local-dev/seed.sql). This mirrors the recommended production setup: one app per platform, so iOS and Android never share a deployment (see the [top-level README](../../README.md)). The React Native codebase itself stays a single cross-platform project — only the server-side apps are split.
 
 ## Troubleshooting
 
 - **"Local stack unreachable — is it running?"** — the evaluation stack isn't up (or was torn down). From the repo root, run `./scripts/local-eval/up.sh` and check again.
 - **Android stops finding updates after an emulator restart** — `adb reverse` mappings don't survive the emulator or adb server restarting. Re-run `yarn demo:android`, or only the two `adb reverse` commands from [`package.json`](package.json).
 - **`release-react` fails with a duplicate-release error** — you published the exact same bundle twice. Change `APP_VERSION` (or any other code) and publish again.
-- **Reset the environment** — from the repo root, run `docker compose -f docker-compose.dev.yml down -v`, then `./scripts/local-eval/up.sh`; the seed recreates the app, deployments, and token.
+- **Reset the environment** — from the repo root, run `docker compose -f docker-compose.dev.yml down -v`, then `./scripts/local-eval/up.sh`; the seed recreates the apps, deployments, and token.

@@ -183,7 +183,7 @@ if [ "${CLI_READY}" -eq 1 ]; then
      cmpatch login --server-url ${SERVER_URL}     # approves instantly
      cmpatch release create \\
        --server-url ${SERVER_URL} \\
-       --app demo-app --deployment staging \\
+       --app demo-app-ios --deployment cli-quickstart \\
        --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \\
        --target-binary-version 1.0.0 --fingerprint local-dev-fingerprint
      # uninstall later with: npm uninstall -g codemagic-patch

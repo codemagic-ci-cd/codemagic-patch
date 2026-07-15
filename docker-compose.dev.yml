@@ -12,9 +12,9 @@
 #
 # Brings up the full local stack in MODE=all, runs migrations on boot, and
 # creates the single team named by INITIAL_TEAM_NAME (default-team) during
-# server startup. seed.sql then attaches a demo app / deployment / API token
-# to that team so the CLI can issue a release without first calling
-# control-plane CRUD APIs. The dashboard is served at http://localhost:8080 —
+# server startup. seed.sql then attaches per-platform demo apps, their
+# deployments, and an API token to that team so the CLI can issue a release
+# without first calling control-plane CRUD APIs. The dashboard is served at http://localhost:8080 —
 # sign in as local-admin@example.com (prefilled) to land on the seeded owner
 # account; `cmpatch login --server-url http://localhost:3000` approves instantly.
 #
@@ -24,11 +24,13 @@
 # Tear down (drops volumes):
 #   docker compose -f docker-compose.dev.yml down -v
 #
-# Default values (team via INITIAL_TEAM_NAME, the rest via examples/local-dev/seed.sql):
+# Default values (team via INITIAL_TEAM_NAME, the rest via examples/local-dev/seed.sql).
+# Apps are split per platform, matching the recommended setup:
 #   team        = default-team
-#   app         = demo-app
-#   deployment  = staging
-#   deploymentKey = dev_local_deployment_key
+#   apps        = demo-app-ios / demo-app-android
+#   deployments = demo-app-ios/staging        → dev_local_ios_deployment_key
+#                 demo-app-ios/cli-quickstart → dev_local_deployment_key
+#                 demo-app-android/staging    → dev_local_android_deployment_key
 #   api token   = cm_pat_local-dev-token-change-me-00000001
 
 services:
