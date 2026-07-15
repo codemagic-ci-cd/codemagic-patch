@@ -200,6 +200,9 @@ cat <<EOF
    Seeded API token (scripting / CI):
      ${SEEDED_TOKEN}
 
+   Dashboard sample data:
+     Example Data → Staging / Production (releases + metrics; not downloadable)
+
    See it on a device (OTA update applying on an emulator):
      examples/on-device-demo/
 
