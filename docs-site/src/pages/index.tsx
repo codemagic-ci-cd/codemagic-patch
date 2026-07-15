@@ -9,19 +9,19 @@ import styles from './index.module.css';
 
 const OTA_REASONS = [
   {
-    title: 'No review wait',
+    title: 'Push instant fixes',
     description:
-      "Ship JS and asset updates directly to users' devices.",
+      "Control the full release path to get an urgent fix straight to users' devices.",
   },
   {
-    title: 'Controlled rollouts',
+    title: 'Ship on your schedule',
     description:
-      'Release to a slice of users first. Expand the rollout when metrics look good.',
+      'Update the product as often as you want, without being slowed down by store reviews.',
   },
   {
-    title: 'Instant rollbacks',
+    title: 'Rollouts and roll backs',
     description:
-      'Revert a bad release from the dashboard or CLI — no new store build required.',
+      "Revert a bad release or only fully roll out a release when you're ready.",
   },
 ] as const;
 
@@ -82,7 +82,7 @@ const SECTIONS = [
     ],
     link: '/docs/using-patch/dashboard',
     linkLabel: 'Web dashboard',
-    reverse: true,
+    reverse: false,
     media: 'image' as const,
     imageAlt:
       'Codemagic Patch web dashboard showing deployment metrics and release history',
@@ -98,7 +98,7 @@ const SECTIONS = [
     ],
     link: '/docs/',
     linkLabel: 'Quickstart',
-    reverse: false,
+    reverse: true,
     media: 'terminal' as const,
     terminalLabel: 'local-eval',
     terminalContent: LOCAL_EVAL_COMMAND,
@@ -142,13 +142,13 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title="Codemagic Patch"
-      description="Self-hosted over-the-air updates for React Native, with server, SDK, CLI, and dashboard.">
+      description="Self-hosted over-the-air updates for immediate fixes and fast release cycles">
       <main className={styles.page}>
         <header className={styles.hero}>
           <div className={styles.heroInner}>
-            <h1 className={styles.title}>Codemagic Patch</h1>
+            <h1 className={styles.title}>Ship instant updates with Codemagic Patch</h1>
             <p className={styles.lead}>
-              Self-hosted over-the-air updates for React Native with dashboard and fingerprinting, all in one Compose.
+              Self-hosted over-the-air updates for React Native. Push immediate fixes and speed up release cycles.
             </p>
             <div className={styles.actions}>
               <Link className={styles.primaryButton} to="/docs/">
@@ -163,7 +163,7 @@ export default function Home(): ReactNode {
 
         <section className={styles.whySection} aria-labelledby="home-why-ota">
           <div className={styles.whyInner}>
-            <h2 id="home-why-ota">Why use OTA updates</h2>
+            <h2 id="home-why-ota">Don't wait days for an approval</h2>
             <p className={styles.whyLead}>
               Push JavaScript and bundled assets to installed apps without
               waiting on a full store release every time.
