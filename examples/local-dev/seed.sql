@@ -1,6 +1,6 @@
--- Attach dev fixtures (admin user, membership, owner role, API token, demo app,
--- and a deployment) to the bootstrap team so the CLI can publish a release
--- against the local dev stack without first calling control-plane CRUD APIs.
+-- Attach dev fixtures (admin user, membership, owner role, API token, per-platform
+-- demo apps, and their deployments) to the bootstrap team so the CLI can publish a
+-- release against the local dev stack without first calling control-plane CRUD APIs.
 -- Also seed a local-only API token owned by an admin user so smoke scripts can
 -- authenticate through the same DB-backed path used in production-like runs.
 --
@@ -66,44 +66,60 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- One app per platform, matching the recommended setup (see the top-level
+-- README): releases target (deployment, binary_version) with no platform
+-- dimension, so iOS and Android must never share a deployment — the second
+-- platform's release would trip the fingerprint-disagreement warning and win
+-- the shared manifest, serving one platform the other's bundle. Splitting at
+-- the app level keeps the whole hierarchy per-platform. The React Native demo
+-- app itself stays a single cross-platform codebase; only the server-side app
+-- entities are split.
 INSERT INTO app (id, team_id, name)
-VALUES (
-  'app_local_demo',
-  (SELECT id FROM team WHERE name = 'default-team'),
-  'demo-app'
-)
+VALUES
+  (
+    'app_local_demo_ios',
+    (SELECT id FROM team WHERE name = 'default-team'),
+    'demo-app-ios'
+  ),
+  (
+    'app_local_demo_android',
+    (SELECT id FROM team WHERE name = 'default-team'),
+    'demo-app-android'
+  )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO deployment (id, app_id, team_id, name, deployment_key)
-VALUES (
-  'deployment_local_staging',
-  'app_local_demo',
-  (SELECT id FROM team WHERE name = 'default-team'),
-  'staging',
-  'dev_local_deployment_key'
-)
-ON CONFLICT (id) DO NOTHING;
-
--- Per-platform deployments for the on-device demo (examples/on-device-demo).
--- Releases target (deployment, binary_version) with no platform dimension, so
--- iOS and Android must not share one deployment: the second platform's release
--- would trip the fingerprint-disagreement warning and win the shared manifest,
--- serving one platform the other's bundle. The demo app's iOS config carries
--- the ios key, its Android config the android key.
+-- Staging deployments for the on-device demo (examples/on-device-demo). The
+-- demo app's iOS config carries the ios key, its Android config the android
+-- key.
 INSERT INTO deployment (id, app_id, team_id, name, deployment_key)
 VALUES
   (
     'deployment_local_staging_ios',
-    'app_local_demo',
+    'app_local_demo_ios',
     (SELECT id FROM team WHERE name = 'default-team'),
-    'staging-ios',
+    'staging',
     'dev_local_ios_deployment_key'
   ),
   (
     'deployment_local_staging_android',
-    'app_local_demo',
+    'app_local_demo_android',
     (SELECT id FROM team WHERE name = 'default-team'),
-    'staging-android',
+    'staging',
     'dev_local_android_deployment_key'
   )
 ON CONFLICT (id) DO NOTHING;
+
+-- Dedicated deployment for the CLI release example (the up.sh ready banner)
+-- and the local-eval smoke scripts, which publish the repo's iOS Hermes
+-- fixture bundle.
+-- Kept separate from the on-device demo's staging deployment so the fixture's
+-- synthetic fingerprint never collides with update checks from the demo app.
+INSERT INTO deployment (id, app_id, team_id, name, deployment_key)
+VALUES (
+  'deployment_local_cli_quickstart',
+  'app_local_demo_ios',
+  (SELECT id FROM team WHERE name = 'default-team'),
+  'cli-smoke-test',
+  'dev_local_deployment_key'
+)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
