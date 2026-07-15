@@ -2,20 +2,25 @@
 title: Changelog
 displayed_sidebar: changelogSidebar
 description: 'Notable releases of the Patch server, CLI, and SDK.'
-llmsDescription: 'Patch stack release history — server, CLI, SDK notable version changes.'
+llmsDescription: 'Patch stack release history: server, CLI, SDK notable version changes.'
 ---
 
 # Changelog
 
-## Docusaurus docs
+## Dashboard sample data
 
-*July 12, 2026*
+*July 14, 2026*
 
-Local evaluation docs aligned with the README quickstart: `./scripts/local-eval/up.sh`, dashboard on `:8080`, and the on-device demo path.
+Local evaluation stacks now seed **Example Data** with Staging and Production releases and metrics, so the dashboard looks populated before you publish your first update.
 
-*July 6, 2026*
+## Local evaluation stack
 
-New docs site with local quickstart, self-host and SDK guides, migration paths from CodePush and Expo Updates, and a product homepage with comparison table.
+*July 8, 2026*
+
+One-command local evaluation: `./scripts/local-eval/up.sh` brings up the API, dashboard, Postgres, and MinIO on localhost, with instant sign-in and a seeded demo app for the on-device walkthrough.
+
+- Dashboard at `http://localhost:8080`, API at `http://localhost:3000`
+- On-device demo under `examples/on-device-demo` to watch an OTA apply on simulator or emulator
 
 ## CLI command builder
 
