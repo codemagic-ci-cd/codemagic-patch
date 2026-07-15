@@ -1,4 +1,4 @@
--- Shared dashboard demo catalog for local-eval and optional self-host.
+-- Dashboard demo catalog for local evaluation only.
 --
 -- Inserts "Example Data" on the bootstrap team (default-team) with Staging and
 -- Production deployments, a handful of published/disabled releases, and
