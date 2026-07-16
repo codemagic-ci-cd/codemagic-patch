@@ -317,19 +317,19 @@
 .comparisonLead {
   margin: 0 auto 2rem;
   max-width: 36rem;
-  color: var(--ifm-font-color-secondary);
+  color: #37538d;
   font-size: 1.0625rem;
   line-height: 1.6;
 }
 
-.comparisonTableBg {
+.comparisonBg {
   position: relative;
   width: 100%;
-  max-width: 48rem;
+  max-width: var(--patch-home-wide);
   margin: 0 auto;
 }
 
-.comparisonTableBg::before {
+.comparisonBg::before {
   content: '';
   position: absolute;
   width: min(620px, 130%);
@@ -345,51 +345,83 @@
   z-index: 0;
 }
 
-.comparisonTableWrap {
+.comparisonCard {
   position: relative;
   z-index: 1;
-  width: 100%;
-  text-align: left;
-}
-
-.comparisonTableWrap table {
-  table-layout: fixed;
-  margin-top: 0;
-  margin-bottom: 0;
-  font-size: 1rem;
-  border: none;
+  padding: 1.75rem 2rem 2rem;
   border-radius: 1rem;
   background: var(--ifm-background-surface-color);
   box-shadow: var(--patch-home-card-shadow);
-  overflow: hidden;
 }
 
-.comparisonTableWrap table thead tr {
-  border-bottom: none;
+.comparisonGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0 1rem;
 }
 
-.comparisonTableWrap table th,
-.comparisonTableWrap table td {
-  border: none;
+.comparisonGridHead,
+.comparisonGridRow {
+  display: grid;
+  grid-template-columns: minmax(5.25rem, 0.62fr) repeat(3, minmax(0, 1fr));
+  column-gap: 1.25rem;
+  align-items: center;
 }
 
-.comparisonLabelCol {
-  width: 9.5rem;
+.comparisonGridHead {
+  padding-bottom: 1.15rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid #e9efff;
+  color: #06225d;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-align: center;
 }
 
-.comparisonTableWrap thead th {
-  font-size: 0.8125rem;
+.comparisonGridHead > * {
+  text-align: center;
 }
 
-.comparisonTableWrap tbody th {
-  text-transform: none;
-  font-size: 1rem;
-  color: var(--ifm-font-color-secondary);
-  white-space: normal;
+.comparisonGridCorner {
+  text-align: left;
 }
 
-.comparisonTableWrap thead th:not(:first-child) {
-  white-space: normal;
+.comparisonGridPatchHead {
+  font-weight: 600;
+}
+
+.comparisonPatchBrand {
+  background-image: linear-gradient(90deg, #ff9100 0%, #fe19ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.comparisonGridRow {
+  padding: 0.9rem 0;
+}
+
+.comparisonFeature {
+  color: #06225d;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.comparisonCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: #37538d;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.comparisonCellLabel {
+  display: none;
 }
 
 .comparisonFootnote {
@@ -550,16 +582,64 @@
   .comparisonLead {
     font-size: 1rem;
   }
+}
 
-  .comparisonTableBg::before {
+@media (max-width: 900px) {
+  .comparisonBg::before {
     width: min(420px, 120%);
     height: 360px;
     top: -90px;
     left: -100px;
   }
 
-  .comparisonTableWrap {
-    overflow-x: auto;
+  .comparisonCard {
+    padding: 1.15rem;
+  }
+
+  .comparisonGrid {
+    gap: 0.75rem;
+    padding: 0;
+  }
+
+  .comparisonGridHead {
+    display: none;
+  }
+
+  .comparisonGridRow {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+    padding: 1.15rem 1.25rem;
+    border: 1px solid #e9efff;
+    border-radius: 0.75rem;
+  }
+
+  .comparisonFeature {
+    margin-bottom: 0.15rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid #e9efff;
+    font-size: 1rem;
+  }
+
+  .comparisonCell {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 0.75rem;
+    text-align: left;
+    align-items: start;
+  }
+
+  .comparisonCellLabel {
+    display: block;
+    color: #06225d;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+
+  .comparisonGridRow .comparisonCell:last-child .comparisonCellLabel {
+    background-image: linear-gradient(90deg, #ff9100 0%, #fe19ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 }
 
@@ -567,11 +647,33 @@
   --patch-home-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
 }
 
-[data-theme='dark'] .comparisonTableBg::before {
+[data-theme='dark'] .comparisonBg::before {
   background-image: url('/img/comparison-corner-splash-dark.png');
   filter: none;
   top: -120px;
   left: -140px;
+}
+
+[data-theme='dark'] .comparisonLead {
+  color: #9da4af;
+}
+
+[data-theme='dark'] .comparisonGridHead {
+  border-bottom-color: #232a3f;
+  color: #ffffff;
+}
+
+[data-theme='dark'] .comparisonFeature {
+  color: #ffffff;
+  border-bottom-color: #232a3f;
+}
+
+[data-theme='dark'] .comparisonCell {
+  color: #9da4af;
+}
+
+[data-theme='dark'] .comparisonGridRow {
+  border-color: #232a3f;
 }
 
 [data-theme='dark'] .whyLead {

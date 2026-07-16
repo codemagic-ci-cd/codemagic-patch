@@ -1,5 +1,4 @@
 import React, {type ReactNode} from 'react';
-import clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Layout from '@theme/Layout';
@@ -102,6 +101,51 @@ const SECTIONS = [
     media: 'terminal' as const,
     terminalLabel: 'local-eval',
     terminalContent: LOCAL_EVAL_COMMAND,
+  },
+] as const;
+
+const COMPARISON_ROWS = [
+  {
+    feature: 'Hosting',
+    expo: 'EAS-hosted',
+    hotUpdater: 'Bring-your-own via plugins',
+    patch: 'Self-hosted Compose stack',
+  },
+  {
+    feature: 'Fingerprinting',
+    expo: 'Yes',
+    hotUpdater: 'Yes',
+    patch: 'Yes',
+  },
+  {
+    feature: 'Binary diffs',
+    expo: 'Yes',
+    hotUpdater: 'Yes',
+    patch: 'Yes',
+  },
+  {
+    feature: 'Update checks',
+    expo: "Expo's API",
+    hotUpdater: 'Your server',
+    patch: 'Storage or CDN',
+  },
+  {
+    feature: 'Release UI',
+    expo: 'EAS web UI',
+    hotUpdater: 'Local console',
+    patch: 'Team web dashboard',
+  },
+  {
+    feature: 'Team RBAC',
+    expo: 'Yes',
+    hotUpdater: 'No',
+    patch: 'Yes',
+  },
+  {
+    feature: 'License',
+    expo: 'EAS usage pricing',
+    hotUpdater: 'MIT',
+    patch: 'Fair Source License',
   },
 ] as const;
 
@@ -243,68 +287,57 @@ export default function Home(): ReactNode {
               apps. They differ in hosting, ops, and how much you assemble
               yourself.
             </p>
-            <div className={styles.comparisonTableBg}>
-              <div className={clsx(styles.comparisonTableWrap, 'markdown')}>
-                <table>
-                <colgroup>
-                  <col className={styles.comparisonLabelCol} />
-                  <col />
-                  <col />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col" />
-                    <th scope="col">Expo Updates</th>
-                    <th scope="col">Hot Updater</th>
-                    <th scope="col">Codemagic Patch</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <th scope="row">Hosting</th>
-                    <td>EAS-hosted</td>
-                    <td>Bring-your-own via plugins</td>
-                    <td>Self-hosted Compose stack</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Fingerprinting</th>
-                    <td>Yes</td>
-                    <td>Yes</td>
-                    <td>Yes</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Binary diffs</th>
-                    <td>Yes</td>
-                    <td>Yes</td>
-                    <td>Yes</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Update checks</th>
-                    <td>Expo&apos;s API</td>
-                    <td>Your server</td>
-                    <td>Storage or CDN</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Release UI</th>
-                    <td>EAS web UI</td>
-                    <td>Local console</td>
-                    <td>Team web dashboard</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Team RBAC</th>
-                    <td>Yes</td>
-                    <td>No</td>
-                    <td>Yes</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">License</th>
-                    <td>EAS usage pricing</td>
-                    <td>MIT</td>
-                    <td>Fair Source License</td>
-                  </tr>
-                </tbody>
-                </table>
+            <div className={styles.comparisonBg}>
+              <div className={styles.comparisonCard}>
+                <div
+                  className={styles.comparisonGrid}
+                  role="table"
+                  aria-label="Comparison of Expo Updates, Hot Updater, and Codemagic Patch">
+                  <div className={styles.comparisonGridHead} role="row">
+                    <div
+                      className={styles.comparisonGridCorner}
+                      role="columnheader"
+                      aria-hidden="true"
+                    />
+                    <div role="columnheader">Expo Updates</div>
+                    <div role="columnheader">Hot Updater</div>
+                    <div
+                      className={styles.comparisonGridPatchHead}
+                      role="columnheader">
+                      <span className={styles.comparisonPatchBrand}>
+                        Codemagic Patch
+                      </span>
+                    </div>
+                  </div>
+                  {COMPARISON_ROWS.map((row) => (
+                    <div
+                      className={styles.comparisonGridRow}
+                      role="row"
+                      key={row.feature}>
+                      <div className={styles.comparisonFeature} role="rowheader">
+                        {row.feature}
+                      </div>
+                      <div className={styles.comparisonCell} role="cell">
+                        <span className={styles.comparisonCellLabel}>
+                          Expo Updates
+                        </span>
+                        <span>{row.expo}</span>
+                      </div>
+                      <div className={styles.comparisonCell} role="cell">
+                        <span className={styles.comparisonCellLabel}>
+                          Hot Updater
+                        </span>
+                        <span>{row.hotUpdater}</span>
+                      </div>
+                      <div className={styles.comparisonCell} role="cell">
+                        <span className={styles.comparisonCellLabel}>
+                          Codemagic Patch
+                        </span>
+                        <span>{row.patch}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <p className={styles.comparisonFootnote}>

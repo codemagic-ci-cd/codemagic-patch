@@ -70,7 +70,7 @@ html {
   /* Top nav — matches codemagic.io header */
   --ifm-navbar-height: 4.75rem;
   --ifm-navbar-padding-vertical: 0.875rem;
-  --ifm-navbar-padding-horizontal: 1.5rem;
+  --ifm-navbar-padding-horizontal: 3.125rem;
   --ifm-navbar-link-color: #06225d;
   --ifm-navbar-link-hover-color: #0051ff;
   --ifm-navbar-shadow: none;
@@ -301,11 +301,14 @@ html[data-theme='dark'] {
 /* Chrome: navbar, breadcrumbs, TOC */
 .navbar {
   font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
-  font-weight: 600;
 }
 
 .navbar__inner {
   align-items: center;
+  width: 100%;
+  max-width: 80rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .navbar__brand {
@@ -328,7 +331,7 @@ html[data-theme='dark'] {
 
 .navbar__link {
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   height: 3rem;
   line-height: 3rem;
@@ -348,11 +351,10 @@ html[data-theme='dark'] {
 
 .navbar-sidebar {
   font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
-  font-weight: 600;
 }
 
 .navbar-sidebar .menu__link {
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   padding: 0.85rem 1.5rem;
 }
@@ -388,6 +390,12 @@ html[data-theme='dark'] .navbar__brand:hover .navbar__title {
 
   .navbar__link {
     padding: 0 0.625rem;
+  }
+}
+
+@media (max-width: 800px) {
+  :root {
+    --ifm-navbar-padding-horizontal: 1.875rem;
   }
 }
 
