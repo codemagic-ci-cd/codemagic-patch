@@ -101,6 +101,33 @@ function buildCrumbs(
         ]
       : [];
 
+    // Metrics drill-down (`metrics/apps/:appId[/deployments/:depId]`).
+    // Position-anchored on segments[2] — the section slug always sits right
+    // after `/teams/:teamId` — so a team named "metrics" can't hijack the
+    // trail. The bare `/metrics` index has no appId param and falls through
+    // to the static leaf-label handling below.
+    if (segments[2] === "metrics" && appId !== undefined) {
+      crumbs.push(
+        {
+          key: "metrics",
+          to: `/teams/${teamId}/metrics`,
+          node: "Metrics",
+        },
+        {
+          key: "app",
+          to: `/teams/${teamId}/metrics/apps/${appId}`,
+          node: <AppName appId={appId} />,
+        },
+      );
+      if (depId !== undefined) {
+        crumbs.push({
+          key: "deployment",
+          node: <DeploymentName appId={appId} deploymentId={depId} />,
+        });
+      }
+      return crumbs;
+    }
+
     if (appId !== undefined) {
       crumbs.push(
         { key: "apps", to: `/teams/${teamId}/apps`, node: "Apps" },
