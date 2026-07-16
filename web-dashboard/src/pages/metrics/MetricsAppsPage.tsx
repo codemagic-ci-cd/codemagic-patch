@@ -1,4 +1,4 @@
-// Metrics index — apps table with rolled-up counters per app.
+// Metrics index — app picker that leads into deployment-level metrics.
 
 import { Link, useNavigate, useParams } from "react-router";
 
@@ -12,23 +12,16 @@ import { ErrorState } from "../../components/ui/ErrorState";
 import { CARD, CARD_PAD } from "../../components/ui/card";
 import {
   TBL,
-  TBL_RIGHT,
   TBL_TD,
   TBL_TH,
   TBL_TR,
   TBL_WRAP,
 } from "../../components/ui/table";
-import { MetricsRollupCells } from "./MetricsRollupCells";
 import { MetricsPageFrame, MetricsTableSkeleton } from "./MetricsPageFrame";
 import { metricsAppPath } from "./metricsPaths";
-import { useAppMetricsRollup } from "./useMetricsRollup";
 
-const METRIC_COLUMNS = [
-  "Active",
-  "Downloads",
-  "Failed",
-  "Success rate",
-] as const;
+const PAGE_SUBTITLE =
+  "Select an app to compare metrics across its deployments.";
 
 export function MetricsAppsPage() {
   const teamId = useParams().teamId as string;
@@ -36,21 +29,15 @@ export function MetricsAppsPage() {
 
   if (appsQuery.isPending) {
     return (
-      <MetricsPageFrame
-        title="Metrics"
-        subtitle="Adoption and reliability across your apps. Open an app to compare deployments."
-      >
-        <MetricsTableSkeleton label="Loading apps" columns={METRIC_COLUMNS} />
+      <MetricsPageFrame title="Metrics" subtitle={PAGE_SUBTITLE}>
+        <MetricsTableSkeleton label="Loading apps" columns={[]} />
       </MetricsPageFrame>
     );
   }
 
   if (appsQuery.isError) {
     return (
-      <MetricsPageFrame
-        title="Metrics"
-        subtitle="Adoption and reliability across your apps. Open an app to compare deployments."
-      >
+      <MetricsPageFrame title="Metrics" subtitle={PAGE_SUBTITLE}>
         <div className={`${CARD} ${CARD_PAD}`}>
           <ErrorState
             error={appsQuery.error}
@@ -65,10 +52,7 @@ export function MetricsAppsPage() {
 
   if (appsQuery.data.length === 0) {
     return (
-      <MetricsPageFrame
-        title="Metrics"
-        subtitle="Adoption and reliability across your apps. Open an app to compare deployments."
-      >
+      <MetricsPageFrame title="Metrics" subtitle={PAGE_SUBTITLE}>
         <div className={`${CARD} ${CARD_PAD}`}>
           <EmptyState
             icon={<LayersIcon />}
@@ -89,26 +73,18 @@ export function MetricsAppsPage() {
   }
 
   return (
-    <MetricsPageFrame
-      title="Metrics"
-      subtitle="Adoption and reliability across your apps. Open an app to compare deployments."
-    >
+    <MetricsPageFrame title="Metrics" subtitle={PAGE_SUBTITLE}>
       <div className="rounded-lg border border-border bg-surface shadow-sm">
         <div className={TBL_WRAP}>
           <table className={TBL}>
             <thead>
               <tr>
                 <th className={TBL_TH}>App</th>
-                {METRIC_COLUMNS.map((column) => (
-                  <th key={column} className={`${TBL_TH} ${TBL_RIGHT}`}>
-                    {column}
-                  </th>
-                ))}
               </tr>
             </thead>
             <tbody>
               {appsQuery.data.map((app) => (
-                <AppMetricsRow key={app.id} teamId={teamId} app={app} />
+                <AppRow key={app.id} teamId={teamId} app={app} />
               ))}
             </tbody>
           </table>
@@ -118,9 +94,8 @@ export function MetricsAppsPage() {
   );
 }
 
-function AppMetricsRow({ teamId, app }: { teamId: string; app: App }) {
+function AppRow({ teamId, app }: { teamId: string; app: App }) {
   const navigate = useNavigate();
-  const { rollup, isPending, isError, refetch } = useAppMetricsRollup(app.id);
   const detailPath = metricsAppPath(teamId, app.id);
 
   return (
@@ -152,15 +127,6 @@ function AppMetricsRow({ teamId, app }: { teamId: string; app: App }) {
           </div>
         </div>
       </td>
-      <MetricsRollupCells
-        label={app.name}
-        isPending={isPending}
-        isError={isError}
-        rollup={rollup}
-        onRetry={() => {
-          void refetch();
-        }}
-      />
     </tr>
   );
 }
