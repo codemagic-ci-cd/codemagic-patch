@@ -12,7 +12,6 @@ import { ErrorState } from "../../components/ui/ErrorState";
 import { CARD, CARD_PAD } from "../../components/ui/card";
 import {
   TBL,
-  TBL_NUM,
   TBL_RIGHT,
   TBL_TD,
   TBL_TH,
