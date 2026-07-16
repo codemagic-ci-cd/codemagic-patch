@@ -25,13 +25,14 @@ After sign-in you land in your team's workspace:
 | Area | What you do there |
 | --- | --- |
 | Apps | Create and rename apps; toggle code-signing requirements |
-| Deployments | Staging and Production channels per app; copy deployment keys |
-| Deployment detail | Release history, New release, deployment-level rollback |
+| Deployments | Staging and Production channels per app; copy deployment keys and SDK URLs |
+| Deployment detail | Release history (including release notes), New release, deployment-level rollback |
 | Release detail | Per-release metrics, status, and lifecycle actions |
+| Metrics | Drill from apps → deployments → deployment metrics |
 | Members | Invite teammates and manage roles |
 | API tokens | Create and revoke `cm_pat_…` tokens for CI |
 
-Deployment keys shown in the UI are the values you embed in the app as `CodemagicPatchDeploymentKey`.
+On a deployment detail page, expand the SDK configuration panel to copy `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` together. Those match the values you embed in the app; see [Native setup](/docs/setup/native-setup).
 
 ## Publishing a release
 
@@ -82,7 +83,7 @@ These map to `cmpatch release patch`, `release promote`, `release enable`/`relea
 
 ## Metrics
 
-The dashboard surfaces release status (`uploaded`, `processing`, `published`, `failed`, `disabled`) and metrics collected from the SDK. For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
+Open **Metrics** in the sidebar to browse rollups by app, then by deployment. The deployment detail and release pages also surface status (`uploaded`, `processing`, `published`, `failed`, `disabled`) and SDK-reported counters. For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
 
 ## API tokens
 

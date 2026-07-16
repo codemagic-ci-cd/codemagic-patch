@@ -5,7 +5,7 @@ description: >-
   an app at localhost.
 llmsDescription: >-
   scripts/local-eval/up.sh evaluation stack — docker-compose.dev.yml, dashboard
-  :8080, MinIO, seeded demo-app.
+  :8080, MinIO, seeded demo-app-ios / demo-app-android.
 ---
 
 # Run locally
@@ -14,7 +14,7 @@ llmsDescription: >-
 Use this to evaluate Patch or develop against the project on your laptop. For the shortest path, start with the [Quickstart](/docs/). This is not a production deployment: authentication is disabled and all ports bind to localhost. For a real server, see [Self-host](/docs/setup/self-host).
 :::
 
-The evaluation stack is defined in `docker-compose.dev.yml`. `./scripts/local-eval/up.sh` brings it up, installs the `cmpatch` CLI, waits for readiness, and seeds a demo app so you can publish without GitHub OAuth or hand-created resources.
+The evaluation stack is defined in `docker-compose.dev.yml`. `./scripts/local-eval/up.sh` brings it up, installs the `cmpatch` CLI, waits for readiness, and seeds per-platform demo apps so you can publish without GitHub OAuth or hand-created resources.
 
 ## Prerequisites
 
@@ -65,17 +65,18 @@ curl -fsS http://localhost:8080/health/ready
 
 ## Seeded fixtures
 
-After `up`, `examples/local-dev/seed.sql` attaches these fixtures to the bootstrap team (`default-team`):
+After `up`, `examples/local-dev/seed.sql` attaches these fixtures to the bootstrap team (`default-team`). Apps are split by platform so iOS and Android never share a deployment (the recommended production layout):
 
 | Item | Value |
 | --- | --- |
 | Team | `default-team` |
-| App | `demo-app` |
-| Deployment | `staging` |
-| Deployment key | `dev_local_deployment_key` |
+| Apps | `demo-app-ios` / `demo-app-android` |
+| On-device demo deployments | `staging` on each app |
+| On-device demo keys | `dev_local_ios_deployment_key` / `dev_local_android_deployment_key` |
+| Fixture / CLI smoke deployment | `demo-app-ios` / `cli-smoke-test` → `dev_local_deployment_key` |
 | API token | `cm_pat_local-dev-token-change-me-00000001` |
 
-The on-device demo also gets per-platform deployments (`staging-ios` / `staging-android` with `dev_local_ios_deployment_key` and `dev_local_android_deployment_key`) so iOS and Android releases do not share a manifest.
+The seed also loads **Example Data**: a separate sample app with Staging and Production releases and metrics so the dashboard looks populated. Those sample releases are for browsing only; they are not downloadable OTAs.
 
 The token is for local scripting only. Prefer `cmpatch login --server-url http://localhost:3000` for interactive use; the local stack approves instantly.
 
@@ -86,8 +87,8 @@ cmpatch login --server-url http://localhost:3000
 
 cmpatch release create \
   --server-url http://localhost:3000 \
-  --app demo-app \
-  --deployment staging \
+  --app demo-app-ios \
+  --deployment cli-smoke-test \
   --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \
   --target-binary-version 1.0.0 \
   --fingerprint local-dev-fingerprint \
@@ -100,7 +101,8 @@ From a React Native project root (with the SDK integrated):
 ```bash
 cmpatch init \
   --server-url http://localhost:3000 \
-  --ios-app demo-app \
+  --ios-app demo-app-ios \
+  --android-app demo-app-android \
   --deployment staging \
   --yes
 
@@ -115,7 +117,7 @@ Use these values in native config or the Expo plugin:
 | --- | --- |
 | `CodemagicPatchApiUrl` | `http://localhost:3000` |
 | `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
-| `CodemagicPatchDeploymentKey` | `dev_local_deployment_key` |
+| `CodemagicPatchDeploymentKey` | `dev_local_ios_deployment_key` or `dev_local_android_deployment_key` |
 
 :::warning
 Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does. Use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs, and ensure `PUBLIC_BASE_URL` in the Compose file matches what the device can fetch. The default Compose file uses `http://localhost:9100/codemagic-patch`, which works for iOS Simulator on the same Mac. The [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) uses `adb reverse` for the Android emulator.

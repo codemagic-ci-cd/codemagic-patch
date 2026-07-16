@@ -37,13 +37,13 @@ cd codemagic-patch
 ./scripts/local-eval/up.sh
 ```
 
-The script builds and starts `docker-compose.dev.yml`, installs the `cmpatch` CLI globally, seeds a demo app, and prints a ready banner. The first run can take a few minutes while images build.
+The script builds and starts `docker-compose.dev.yml`, installs the `cmpatch` CLI globally, seeds demo apps, and prints a ready banner. The first run can take a few minutes while images build.
 
 When it finishes you get:
 
 - **Dashboard** — [http://localhost:8080](http://localhost:8080) (sign in as `local-admin@example.com`, prefilled, one click)
 - **API** — [http://localhost:3000](http://localhost:3000)
-- Seeded fixtures for `demo-app`, including the deployments the on-device demo uses
+- Seeded `demo-app-ios` / `demo-app-android` for the on-device demo, plus **Example Data** (Staging / Production releases and metrics) so the dashboard looks populated before you publish
 
 :::warning
 Evaluation only, not a deployment. Authentication is disabled and all ports bind to localhost. For production, follow [Self-host](/docs/setup/self-host).
@@ -87,13 +87,13 @@ Publish from the same directory:
 # iOS
 cmpatch release-react \
   --server-url http://localhost:3000 \
-  --app demo-app --deployment staging-ios \
+  --app demo-app-ios --deployment staging \
   --platform ios
 
 # Android
 cmpatch release-react \
   --server-url http://localhost:3000 \
-  --app demo-app --deployment staging-android \
+  --app demo-app-android --deployment staging \
   --platform android
 ```
 
@@ -103,15 +103,15 @@ Full detail and troubleshooting: [on-device demo README](https://github.com/code
 
 ## 4. Confirm in the dashboard (optional)
 
-Open [http://localhost:8080](http://localhost:8080), sign in as `local-admin@example.com`, then open **demo-app** and the `staging-ios` or `staging-android` deployment. You should see the release you just published.
+Open [http://localhost:8080](http://localhost:8080), sign in as `local-admin@example.com`, then open **demo-app-ios** or **demo-app-android** and its `staging` deployment. You should see the release you just published. **Example Data** is separate sample catalog data for browsing metrics; those releases are not downloadable.
 
-Without a simulator, you can still publish the bundled fixture from the repo root:
+Without a simulator, you can still publish the bundled fixture from the repo root (uses the seeded `cli-smoke-test` deployment so it does not collide with the on-device demo):
 
 ```bash
 cmpatch release create \
   --server-url http://localhost:3000 \
-  --app demo-app \
-  --deployment staging \
+  --app demo-app-ios \
+  --deployment cli-smoke-test \
   --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \
   --target-binary-version 1.0.0 \
   --fingerprint local-dev-fingerprint \
@@ -138,8 +138,9 @@ Re-print the ready banner without reinstalling the CLI:
 | Dashboard | `http://localhost:8080` |
 | API | `http://localhost:3000` |
 | Artifact downloads | `http://localhost:9100/codemagic-patch` |
-| Demo deployments | `staging-ios` / `staging-android` |
+| Demo apps | `demo-app-ios` / `demo-app-android` (each with `staging`) |
 | Demo deployment keys | `dev_local_ios_deployment_key` / `dev_local_android_deployment_key` |
+| Fixture publish | `demo-app-ios` / `cli-smoke-test` (`dev_local_deployment_key`) |
 
 :::warning
 The seeded API token (`cm_pat_local-dev-token-change-me-00000001`) is for local scripting only. Do not reuse it in production.
