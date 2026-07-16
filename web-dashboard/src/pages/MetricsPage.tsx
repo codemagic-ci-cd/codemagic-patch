@@ -1,15 +1,18 @@
 // Metrics dashboard.
 // Visible to ALL roles (`release.view` includes viewer) — no RBAC gating here.
 // Scope cascade: App selector (useApps) → Deployment selector (useDeployments)
-// → counters from `GET /v1/metrics/deployments/:id` via useDeploymentMetrics.
-// Every derived number comes from model/metrics.ts: aggregateMetrics
-// (summary cards), successRate (null → "—" when no Success/Failed events),
-// and activeVersionDistribution (hash-keyed grouping, share as 0..1) — this
-// page does NOT re-derive any math. Component layering exists because hooks
-// can't be conditional: <ScopedMetrics> mounts only with a non-empty app
-// list, <DeploymentCounters> only with a resolved deployment, so every hook
-// call always has a valid id. Time-series/adoption-over-time is out of MVP
-// — rendered as the muted "coming soon" note, never fetched.
+// → counters from `GET /v1/metrics/deployments/:id` via useDeploymentMetrics
+// and day-bucketed adoption from `.../timeseries` via useDeploymentTimeseries.
+// Every derived number comes from model/metrics.ts (aggregateMetrics,
+// successRate, activeVersionDistribution) and model/timeseries.ts
+// (latestCompleteDayActive for the Active devices card) — this page does NOT
+// re-derive any math. Component layering exists because hooks can't be
+// conditional: <ScopedMetrics> mounts only with a non-empty app list,
+// <DeploymentCounters> only with a resolved deployment, so every hook call
+// always has a valid id. NOTE: the counters `active` field is a lifetime
+// count of Active *events* (≈ device-days under the SDK's 24h dedupe), so it
+// is presented as "Active reports", never as a user count; the headline card
+// reads the timeseries totals instead.
 
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -17,20 +20,24 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { useApps } from "../api/hooks/apps";
 import { useDeployments } from "../api/hooks/deployments";
-import { useDeploymentMetrics } from "../api/hooks/metrics";
+import {
+  useDeploymentMetrics,
+  useDeploymentTimeseries,
+} from "../api/hooks/metrics";
 import { formatCount } from "../model/format";
 import {
   activeVersionDistribution,
   aggregateMetrics,
   successRate,
 } from "../model/metrics";
+import { latestCompleteDayActive } from "../model/timeseries";
+import { AdoptionChart } from "../components/ui/AdoptionChart";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
 import { Skeleton } from "../components/ui/Skeleton";
 import type { App } from "../model/app";
 import type { Deployment } from "../model/deployment";
 import { buttonVariants } from "../components/ui/Button";
-import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { CARD, CARD_PAD } from "../components/ui/card";
 import { CHIP, CHIP_TONE } from "../components/ui/chip";
 import { DL, DL_DT, DL_DD } from "../components/ui/dl";
@@ -208,6 +215,9 @@ function DeploymentCounters({
   // limit=100 is the server's page maximum — the widest single-call window
   // for the aggregate (counters are hash-keyed, duplicates collapse anyway).
   const metricsQuery = useDeploymentMetrics(deployment.id, { limit: 100 });
+  // Server-default trailing 30 days; feeds both the adoption chart and the
+  // Active devices card, so they always tell one story from one response.
+  const timeseriesQuery = useDeploymentTimeseries(deployment.id);
 
   if (metricsQuery.isPending) {
     return <BodySkeleton label="Loading deployment metrics" />;
@@ -240,7 +250,8 @@ function DeploymentCounters({
     );
   }
 
-  // All derivation via model/metrics.ts — no math re-derived here.
+  // All derivation via model/metrics.ts and model/timeseries.ts — no math
+  // re-derived here.
   const totals = aggregateMetrics(entries.map((entry) => entry.metrics));
   const rate = successRate(totals);
   const distribution = activeVersionDistribution(
@@ -251,10 +262,10 @@ function DeploymentCounters({
       metrics: entry.metrics,
     })),
   );
-  const activeVersionCount = distribution.filter(
-    (share) => share.active > 0,
-  ).length;
   const attempts = totals.success + totals.failed;
+  const activeDay = timeseriesQuery.data
+    ? latestCompleteDayActive(timeseriesQuery.data)
+    : null;
 
   return (
     <>
@@ -272,13 +283,16 @@ function DeploymentCounters({
             <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
               <Users2Icon />
             </span>{" "}
-            Active users
+            Active devices
           </div>
-          <div className={STAT_VAL}>{formatCount(totals.active)}</div>
-          <div className={STAT_META}>
-            on {activeVersionCount}{" "}
-            {activeVersionCount === 1 ? "active version" : "active versions"}
+          <div className={STAT_VAL}>
+            {/* Distinct devices on the last complete UTC day, from the
+                timeseries totals — the counters `active` is device-days and
+                must not be shown as a user count. "—" while loading or when
+                the range has no complete day yet. */}
+            {activeDay === null ? "—" : formatCount(activeDay.activeDevices)}
           </div>
+          <div className={STAT_META}>last full day (UTC)</div>
         </div>
         <div
           className={STAT}
@@ -390,39 +404,29 @@ function DeploymentCounters({
           </div>
 
           <div className="my-5 h-px bg-border" />
-          {/* Muted note: time-series is out of MVP — nothing is fetched. */}
-          <div className={`${CALLOUT} ${CALLOUT_TONE.info}`}>
-            <InfoIcon />
-            <div>
-              <b>Adoption over time</b> is coming soon. Time-series needs a
-              server aggregate endpoint and stays off until one exists.
+          <div className="mb-[18px] flex items-center justify-between gap-3.5">
+            <div className={SECTION_TITLE}>
+              <span className="size-[18px] text-blue" aria-hidden="true">
+                <ActivityIcon />
+              </span>{" "}
+              Adoption over time
             </div>
+            <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
+              daily active devices · last 30 days
+            </span>
           </div>
-          <div className="relative mt-3.5">
-            <svg
-              className="block h-auto w-full opacity-[.18]"
-              viewBox="0 0 720 150"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <polyline
-                fill="none"
-                stroke="var(--color-blue)"
-                strokeWidth={3}
-                points="0,120 90,90 180,100 270,60 360,70 450,40 540,55 630,30 720,35"
-              />
-              {/* Static grid lines (legacy `.chart .grid-line`); the polyline
-                  geometry above stays inline (dynamic chart scaffolding). */}
-              <line className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]" x1="0" y1="40" x2="720" y2="40" />
-              <line className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]" x1="0" y1="80" x2="720" y2="80" />
-              <line className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]" x1="0" y1="120" x2="720" y2="120" />
-            </svg>
-            <div className="absolute inset-0 place-items-center [display:grid]">
-              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
-                <ClockIcon /> Time-series coming soon
-              </span>
-            </div>
-          </div>
+          {timeseriesQuery.isPending ? (
+            <Skeleton height={220} />
+          ) : timeseriesQuery.isError ? (
+            <ErrorState
+              error={timeseriesQuery.error}
+              onRetry={() => {
+                void timeseriesQuery.refetch();
+              }}
+            />
+          ) : (
+            <AdoptionChart timeseries={timeseriesQuery.data} />
+          )}
         </div>
 
         <div className="flex flex-col gap-[22px]">
@@ -458,7 +462,9 @@ function DeploymentCounters({
             )}
             <div className="my-5 h-px bg-border" />
             <dl className={DL}>
-              <dt className={DL_DT}>Active</dt>
+              {/* Lifetime count of Active events (device-days), not devices —
+                  hence "reports". */}
+              <dt className={DL_DT}>Active reports</dt>
               <dd className={`${DL_DD} mono`}>{formatCount(totals.active)}</dd>
               <dt className={DL_DT}>Downloaded</dt>
               <dd className={`${DL_DD} mono`}>{formatCount(totals.downloaded)}</dd>
@@ -545,7 +551,7 @@ function BodySkeleton({ label }: { label: string }) {
 // ---------------------------------------------------------------------------
 
 // Icon paths use lucide-style glyphs (`users2`, `download`,
-// `checkCircle`, `alert`, `layers`, `info`, `clock`, `activity`).
+// `checkCircle`, `alert`, `layers`, `activity`).
 
 function IconSvg({ children }: { children: ReactNode }) {
   return (
@@ -608,25 +614,6 @@ function LayersIcon() {
       <path d="m12 2 9 5-9 5-9-5 9-5z" />
       <path d="m3 12 9 5 9-5" />
       <path d="m3 17 9 5 9-5" />
-    </IconSvg>
-  );
-}
-
-function InfoIcon() {
-  return (
-    <IconSvg>
-      <circle cx="12" cy="12" r="9" />
-      <line x1="12" y1="11" x2="12" y2="16" />
-      <line x1="12" y1="8" x2="12" y2="8" />
-    </IconSvg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <IconSvg>
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15 14" />
     </IconSvg>
   );
 }

@@ -57,6 +57,7 @@ export async function startServer(
     deploymentDeleteHandler: runtime.deploymentDeleteHandler,
     deploymentMetricsHandler: runtime.deploymentMetricsHandler,
     deploymentRollbackHandler: runtime.deploymentRollbackHandler,
+    deploymentTimeseriesHandler: runtime.deploymentTimeseriesHandler,
     deploymentUpdateHandler: runtime.deploymentUpdateHandler,
     iamInvitationCreateHandler: runtime.iamInvitationCreateHandler,
     iamInvitationListHandler: runtime.iamInvitationListHandler,

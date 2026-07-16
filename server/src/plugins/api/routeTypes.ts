@@ -17,6 +17,7 @@ import type {
   DeploymentDeleteRouteHandler,
   DeploymentMetricsRouteHandler,
   DeploymentRollbackRouteHandler,
+  DeploymentTimeseriesRouteHandler,
   DeploymentUpdateRouteHandler,
   IamInvitationCreateRouteHandler,
   IamInvitationListRouteHandler,
@@ -63,6 +64,12 @@ export interface PaginationQuery {
 
 export interface ReleaseListQuery extends PaginationQuery {
   include?: unknown;
+}
+
+export interface TimeseriesRangeQuery {
+  from?: unknown;
+  series_limit?: unknown;
+  to?: unknown;
 }
 
 export interface TeamParams {
@@ -226,6 +233,7 @@ export interface ApiRoutesOptions {
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
+  deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
   iamInvitationCreateHandler?: IamInvitationCreateRouteHandler;
   iamInvitationListHandler?: IamInvitationListRouteHandler;

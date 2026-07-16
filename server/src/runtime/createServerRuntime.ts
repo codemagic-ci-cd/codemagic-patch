@@ -72,6 +72,7 @@ import type {
   DeploymentDeleteRouteHandler,
   DeploymentMetricsRouteHandler,
   DeploymentRollbackRouteHandler,
+  DeploymentTimeseriesRouteHandler,
   DeploymentUpdateRouteHandler,
   IamRoleBindingCreateRouteHandler,
   IamRoleBindingDeleteRouteHandler,
@@ -108,6 +109,7 @@ import type {
   UserProfileRouteHandler,
 } from "../app/types";
 import type { AuthNAdapter } from "../app/authNAdapter";
+import { assembleDeploymentTimeseries } from "../app/metricsTimeseries";
 import { createGitHubAuthNAdapter } from "../app/githubAuthNAdapter";
 import {
   createGitHubDeviceAuthAdapter,
@@ -174,6 +176,7 @@ export interface ServerRuntime {
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
+  deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
   iamInvitationCreateHandler?: IamInvitationCreateRouteHandler;
   iamInvitationListHandler?: IamInvitationListRouteHandler;
@@ -695,6 +698,13 @@ export async function createServerRuntime(
       deploymentMetricsHandler:
         config.mode === "all" || config.mode === "api"
           ? createDeploymentMetricsHandler(releaseRepository, metricsRepository)
+          : undefined,
+      deploymentTimeseriesHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createDeploymentTimeseriesHandler(
+              releaseRepository,
+              metricsRepository,
+            )
           : undefined,
       idempotencyHandler: createIdempotencyHandler(idempotencyRepository),
       oauthWebConfig,
@@ -2115,6 +2125,43 @@ function createDeploymentMetricsHandler(
             ZERO_RELEASE_METRICS)
           : ZERO_RELEASE_METRICS,
       })),
+    };
+  };
+}
+
+function createDeploymentTimeseriesHandler(
+  repository: ReturnType<typeof createPostgresReleaseRepository>,
+  metricsRepository: ReturnType<typeof createPostgresMetricsRepository>,
+): DeploymentTimeseriesRouteHandler {
+  return async (input) => {
+    const identities = await repository.listReleaseIdentitiesForDeployment(
+      input.deploymentId as DeploymentId,
+    );
+
+    if (identities.outcome !== "found") {
+      return {
+        outcome: "not_found",
+        reason: "deployment_not_found",
+      };
+    }
+
+    const buckets = await metricsRepository.listDeploymentTimeseries(
+      input.deploymentId as DeploymentId,
+      {
+        from: input.from,
+        seriesLimit: input.seriesLimit,
+        to: input.to,
+      },
+    );
+
+    return {
+      outcome: "found",
+      ...assembleDeploymentTimeseries({
+        releases: identities.releases,
+        series: buckets.series,
+        seriesTruncated: buckets.seriesTruncated,
+        totals: buckets.totals,
+      }),
     };
   };
 }

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { createProblem, sendProblem } from "../../app/problemDetails";
 import {
   extractAcknowledgeableEventId,
+  parseDeploymentTimeseriesInput,
   parseMetricEventInput,
 } from "./metricsSupport";
 import { parseDeploymentMetricsInput } from "./releaseSupport";
@@ -24,8 +25,12 @@ import type {
   MetricEventBatchRequestBody,
   PaginationQuery,
   ReleaseReadParams,
+  TimeseriesRangeQuery,
 } from "./routeTypes";
-import { toReleaseMetricsRowWire } from "./wireSerializers";
+import {
+  toDeploymentTimeseriesWire,
+  toReleaseMetricsRowWire,
+} from "./wireSerializers";
 
 export function registerMetricsRoutes(
   app: FastifyInstance,
@@ -154,6 +159,51 @@ export function registerMetricsQueryRoutes(
         pagination: result.pagination,
         releases: result.releases.map(toReleaseMetricsRowWire),
       };
+    },
+  );
+
+  app.get<{ Params: DeploymentParams; Querystring: TimeseriesRangeQuery }>(
+    "/metrics/deployments/:deploymentId/timeseries",
+    async (request, reply) => {
+      const input = parseDeploymentTimeseriesInput(
+        request.params.deploymentId,
+        request.query,
+      );
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveDeploymentScope(
+            request.params.deploymentId,
+          ),
+        createDeploymentNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.deploymentTimeseriesHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "deployment timeseries is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.deploymentTimeseriesHandler(input.value);
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createDeploymentNotFoundProblem());
+      }
+
+      return toDeploymentTimeseriesWire(input.value, result);
     },
   );
 

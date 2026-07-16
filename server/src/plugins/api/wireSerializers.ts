@@ -8,12 +8,15 @@ import type {
   UserAccount,
 } from "../../domain";
 import type {
+  DeploymentTimeseriesHandlerInput,
   IamInvitationRouteModel,
   IamRoleBindingRouteModel,
   IamRoleRouteModel,
   OAuthWebConfig,
   OAuthSessionCreatedHandlerResult,
   ReleaseCreationWarning,
+  TimeseriesBucket,
+  TimeseriesSeries,
 } from "../../app/types";
 import type {
   ActiveJobWire,
@@ -26,10 +29,13 @@ import type {
   OAuthSessionWire,
   OAuthWebConfigWire,
   ReleaseCreationWarningWire,
+  DeploymentTimeseriesWire,
   ReleaseJobWire,
   ReleaseMetricsRowWire,
   ReleaseMetricsWire,
   ReleaseWire,
+  TimeseriesBucketWire,
+  TimeseriesSeriesWire,
   RoleBindingWire,
   RoleRefWire,
   RoleWire,
@@ -343,6 +349,44 @@ export function toReleaseMetricsRowWire(row: {
     release_label: row.releaseLabel,
     target_binary_version: row.targetBinaryVersion,
     target_package_hash: row.targetPackageHash,
+  };
+}
+
+export function toDeploymentTimeseriesWire(
+  input: DeploymentTimeseriesHandlerInput,
+  result: {
+    series: TimeseriesSeries[];
+    seriesTruncated: boolean;
+    totals: TimeseriesBucket[];
+  },
+): DeploymentTimeseriesWire {
+  return {
+    bucket: "day",
+    from: input.from.toISOString(),
+    series: result.series.map(toTimeseriesSeriesWire),
+    series_truncated: result.seriesTruncated,
+    to: input.to.toISOString(),
+    totals: result.totals.map(toTimeseriesBucketWire),
+  };
+}
+
+function toTimeseriesSeriesWire(series: TimeseriesSeries): TimeseriesSeriesWire {
+  return {
+    points: series.points.map(toTimeseriesBucketWire),
+    release_id: series.releaseId,
+    release_label: series.releaseLabel,
+    target_package_hash: series.targetPackageHash,
+  };
+}
+
+function toTimeseriesBucketWire(bucket: TimeseriesBucket): TimeseriesBucketWire {
+  return {
+    active_devices: bucket.activeDevices,
+    bucket_start: bucket.bucketStart.toISOString(),
+    downloaded: bucket.downloaded,
+    failed: bucket.failed,
+    installed: bucket.installed,
+    success: bucket.success,
   };
 }
 

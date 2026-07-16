@@ -46,6 +46,19 @@ export const INVALID_METRIC_EVENT_EMITTED_AT_ERROR =
   "emitted_at must be a valid ISO timestamp";
 export const INVALID_METRIC_DELIVERY_TYPE_ERROR =
   "attributes.delivery_type must be either patch or full_bundle";
+export const INVALID_METRICS_TIMESERIES_FROM_ERROR =
+  "from must be a valid ISO timestamp";
+export const INVALID_METRICS_TIMESERIES_TO_ERROR =
+  "to must be a valid ISO timestamp";
+export const DEFAULT_METRICS_TIMESERIES_SERIES_LIMIT = 50;
+export const MAX_METRICS_TIMESERIES_SERIES_LIMIT = 50;
+export const INVALID_METRICS_TIMESERIES_SERIES_LIMIT_ERROR =
+  `series_limit must be an integer between 1 and ${MAX_METRICS_TIMESERIES_SERIES_LIMIT}`;
+export const METRICS_TIMESERIES_RANGE_ORDER_ERROR =
+  "from must be earlier than to";
+export const METRICS_TIMESERIES_RANGE_DAYS_LIMIT = 366;
+export const METRICS_TIMESERIES_RANGE_TOO_LARGE_ERROR =
+  `from and to must span at most ${METRICS_TIMESERIES_RANGE_DAYS_LIMIT} days after from is truncated to its UTC day`;
 export const DUPLICATE_RELEASE_DETAIL =
   "release content is identical to the latest published release";
 export const MANAGEMENT_NOT_ENABLED_ERROR = "management api is not enabled";

@@ -239,6 +239,31 @@ export interface ReleaseMetricsRowWire {
   target_package_hash: string | null;
 }
 
+export interface TimeseriesBucketWire {
+  active_devices: number;
+  bucket_start: string;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
+export interface TimeseriesSeriesWire {
+  points: TimeseriesBucketWire[];
+  release_id: string | null;
+  release_label: string | null;
+  target_package_hash: string | null;
+}
+
+export interface DeploymentTimeseriesWire {
+  bucket: "day";
+  from: string;
+  series: TimeseriesSeriesWire[];
+  series_truncated: boolean;
+  to: string;
+  totals: TimeseriesBucketWire[];
+}
+
 /** Public client download origin (`CodemagicPatchDownloadBaseUrl`). */
 export interface SdkConfigWire {
   download_base_url: string;

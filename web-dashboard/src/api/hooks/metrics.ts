@@ -13,8 +13,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { authenticatedRequest } from "../client";
 import {
+  fromDeploymentTimeseriesWire,
   fromReleaseMetricsRowWire,
   type DeploymentMetricsWireResponse,
+  type DeploymentTimeseriesWireResponse,
   type ReleaseMetricsWireResponse,
 } from "../wire";
 
@@ -29,6 +31,8 @@ export const metricsKeys = {
   deployment: (deploymentId: string, params: DeploymentMetricsParams) =>
     [...metricsKeys.all, "deployment", deploymentId, params] as const,
   release: (releaseId: string) => [...metricsKeys.all, "release", releaseId] as const,
+  timeseries: (deploymentId: string) =>
+    [...metricsKeys.all, "timeseries", deploymentId] as const,
 };
 
 /**
@@ -53,6 +57,24 @@ export function useDeploymentMetrics(
         pagination: response.pagination,
         releases: response.releases.map(fromReleaseMetricsRowWire),
       })),
+  });
+}
+
+/**
+ * `GET /v1/metrics/deployments/:deploymentId/timeseries` (`release.view`) —
+ * day-bucketed adoption series over the server-default trailing 30 days.
+ * Derivation (zero-fill, partial-bucket detection, card value) lives in
+ * model/timeseries.ts.
+ */
+export function useDeploymentTimeseries(deploymentId: string) {
+  return useQuery({
+    queryKey: metricsKeys.timeseries(deploymentId),
+    queryFn: ({ signal }) =>
+      authenticatedRequest<DeploymentTimeseriesWireResponse>({
+        method: "GET",
+        path: `/metrics/deployments/${encodeURIComponent(deploymentId)}/timeseries`,
+        signal,
+      }).then(fromDeploymentTimeseriesWire),
   });
 }
 
