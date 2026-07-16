@@ -29,13 +29,16 @@ const SYNC_COMMAND = `void sync({
   minimumBackgroundDuration: 60_000,
 });`;
 
-const MANIFEST_PATHS = `# SDK fetches manifests from storage/CDN — not the API
-https://storage.updates.example.com/codemagic-patch/Production/meta.json
-https://storage.updates.example.com/codemagic-patch/Production/1.0.0/manifest.json`;
+const MANIFEST_PATHS = `# Update path
+check:     CDN  /…/meta.json
+download:  CDN  /…/bundles
+metrics:   API  /report   # separate`;
 
-const LOCAL_EVAL_COMMAND = `git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
-cd codemagic-patch
-./scripts/local-eval/up.sh`;
+const LOCAL_EVAL_COMMAND = `./scripts/local-eval/up.sh
+
+# → API        :3001
+# → dashboard  :3000
+# → MinIO + Postgres`;
 
 const SECTIONS = [
   {
@@ -51,8 +54,9 @@ const SECTIONS = [
     linkLabel: 'Install modes',
     reverse: false,
     media: 'terminal' as const,
-    terminalLabel: 'sync',
+    terminalLabel: 'sync()',
     terminalContent: SYNC_COMMAND,
+    terminalLanguage: 'typescript',
   },
   {
     title: 'Reliable delivery',
@@ -67,8 +71,9 @@ const SECTIONS = [
     linkLabel: 'How delivery works',
     reverse: true,
     media: 'terminal' as const,
-    terminalLabel: 'manifest',
+    terminalLabel: 'delivery',
     terminalContent: MANIFEST_PATHS,
+    terminalLanguage: 'yaml',
   },
   {
     title: 'Publish and monitor releases',
@@ -101,6 +106,7 @@ const SECTIONS = [
     media: 'terminal' as const,
     terminalLabel: 'local-eval',
     terminalContent: LOCAL_EVAL_COMMAND,
+    terminalLanguage: 'bash',
   },
 ] as const;
 
@@ -259,7 +265,9 @@ export default function Home(): ReactNode {
                   />
                   <div className={styles.featureMedia}>
                     {section.media === 'terminal' ? (
-                      <HomeTerminal label={section.terminalLabel}>
+                      <HomeTerminal
+                        label={section.terminalLabel}
+                        language={section.terminalLanguage}>
                         {section.terminalContent}
                       </HomeTerminal>
                     ) : (

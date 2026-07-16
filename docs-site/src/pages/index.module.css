@@ -420,6 +420,10 @@
   text-align: center;
 }
 
+.comparisonGridRow .comparisonCell:last-child {
+  font-weight: 600;
+}
+
 .comparisonCellLabel {
   display: none;
 }
