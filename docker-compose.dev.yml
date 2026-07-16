@@ -12,11 +12,12 @@
 #
 # Brings up the full local stack in MODE=all, runs migrations on boot, and
 # creates the single team named by INITIAL_TEAM_NAME (default-team) during
-# server startup. seed.sql then attaches a demo app / deployment / API token
-# to that team so the CLI can issue a release without first calling
-# control-plane CRUD APIs. The dashboard is served at http://localhost:8080 —
-# sign in as local-admin@example.com (prefilled) to land on the seeded owner
-# account; `cmpatch login --server-url http://localhost:3000` approves instantly.
+# server startup. The seed service then loads local-dev/seed.sql (per-platform
+# demo apps, deployments, and an API token) and fixtures/demo-example-app.sql
+# (Example Data with Staging / Production releases and dashboard metrics). The
+# dashboard is served at http://localhost:8080 — sign in as
+# local-admin@example.com (prefilled) to land on the seeded owner account;
+# `cmpatch login --server-url http://localhost:3000` approves instantly.
 #
 # Usage:
 #   docker compose -f docker-compose.dev.yml up --build
@@ -24,11 +25,16 @@
 # Tear down (drops volumes):
 #   docker compose -f docker-compose.dev.yml down -v
 #
-# Default values (team via INITIAL_TEAM_NAME, the rest via examples/local-dev/seed.sql):
+# Default values (team via INITIAL_TEAM_NAME; demo apps/token via
+# examples/local-dev/seed.sql; dashboard catalog via
+# examples/fixtures/demo-example-app.sql).
+# Apps are split per platform, matching the recommended setup:
 #   team        = default-team
-#   app         = demo-app
-#   deployment  = staging
-#   deploymentKey = dev_local_deployment_key
+#   apps        = demo-app-ios / demo-app-android
+#   deployments = demo-app-ios/staging        → dev_local_ios_deployment_key
+#                 demo-app-ios/cli-smoke-test → dev_local_deployment_key
+#                 demo-app-android/staging    → dev_local_android_deployment_key
+#   dashboard   = Example Data / Staging + Production (releases + metrics)
 #   api token   = cm_pat_local-dev-token-change-me-00000001
 
 services:
@@ -201,10 +207,11 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      psql 'postgresql://codemagic_patch:codemagic_patch@postgres:5432/codemagic_patch_dev' -v ON_ERROR_STOP=1 -f /seed/seed.sql
+      psql 'postgresql://codemagic_patch:codemagic_patch@postgres:5432/codemagic_patch_dev' -v ON_ERROR_STOP=1 -f /seed/local-dev/seed.sql &&
+      psql 'postgresql://codemagic_patch:codemagic_patch@postgres:5432/codemagic_patch_dev' -v ON_ERROR_STOP=1 -f /seed/fixtures/demo-example-app.sql
       "
     volumes:
-      - ./examples/local-dev:/seed:ro
+      - ./examples:/seed:ro
     restart: "no"
 
 volumes:

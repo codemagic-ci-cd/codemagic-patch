@@ -1115,6 +1115,57 @@ export interface DeploymentMetricsRouteHandler {
   ): Promise<DeploymentMetricsHandlerResult>;
 }
 
+export interface DeploymentTimeseriesHandlerInput {
+  deploymentId: string;
+  /** Inclusive, already truncated down to the UTC day boundary. */
+  from: Date;
+  seriesLimit: number;
+  /** Exclusive. */
+  to: Date;
+}
+
+/** One UTC-day bucket of counters; buckets with no events are omitted. */
+export interface TimeseriesBucket {
+  /** COUNT(DISTINCT device_id) over Active events in the bucket. */
+  activeDevices: number;
+  bucketStart: Date;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
+export interface TimeseriesSeries {
+  points: TimeseriesBucket[];
+  /** Null when the hash matches no release (deleted release, embedded binary). */
+  releaseId: string | null;
+  releaseLabel: string | null;
+  targetPackageHash: string | null;
+}
+
+export type DeploymentTimeseriesHandlerResult =
+  | {
+      outcome: "found";
+      series: TimeseriesSeries[];
+      seriesTruncated: boolean;
+      /**
+       * Deployment-wide per-bucket aggregates across ALL hashes, including
+       * series dropped by the series cap. `activeDevices` here counts each
+       * device once per bucket, so summing `series` does not reproduce it.
+       */
+      totals: TimeseriesBucket[];
+    }
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found";
+    };
+
+export interface DeploymentTimeseriesRouteHandler {
+  (
+    input: DeploymentTimeseriesHandlerInput,
+  ): Promise<DeploymentTimeseriesHandlerResult>;
+}
+
 export type ReleaseMetricsReadHandlerResult =
   | {
       outcome: "found";
@@ -1373,6 +1424,7 @@ export interface BuildAppOptions {
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
+  deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
   iamInvitationCreateHandler?: IamInvitationCreateRouteHandler;
   iamInvitationListHandler?: IamInvitationListRouteHandler;

@@ -10,6 +10,10 @@ import type {
 import type { ReleaseMetrics } from "../model/metrics";
 import type { Release, ReleaseJob } from "../model/release";
 import type { Team } from "../model/team";
+import type {
+  DeploymentTimeseries,
+  TimeseriesPoint,
+} from "../model/timeseries";
 import type { User } from "../model/user";
 import type {
   AppWithDeploymentsResponse,
@@ -298,6 +302,31 @@ export interface ReleaseMetricsWireResponse {
   release: ReleaseMetricsRowWire;
 }
 
+export interface TimeseriesPointWire {
+  active_devices: number;
+  bucket_start: string;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
+export interface TimeseriesSeriesWire {
+  points: TimeseriesPointWire[];
+  release_id: string | null;
+  release_label: string | null;
+  target_package_hash: string | null;
+}
+
+export interface DeploymentTimeseriesWireResponse {
+  bucket: "day";
+  from: string;
+  series: TimeseriesSeriesWire[];
+  series_truncated: boolean;
+  to: string;
+  totals: TimeseriesPointWire[];
+}
+
 export interface RolesListWireResponse {
   roles: RoleWire[];
 }
@@ -562,6 +591,35 @@ export function fromReleaseMetricsRowWire(
     releaseLabel: row.release_label,
     targetBinaryVersion: row.target_binary_version,
     targetPackageHash: row.target_package_hash,
+  };
+}
+
+export function fromDeploymentTimeseriesWire(
+  response: DeploymentTimeseriesWireResponse,
+): DeploymentTimeseries {
+  return {
+    bucket: response.bucket,
+    from: response.from,
+    series: response.series.map((series) => ({
+      points: series.points.map(fromTimeseriesPointWire),
+      releaseId: series.release_id,
+      releaseLabel: series.release_label,
+      targetPackageHash: series.target_package_hash,
+    })),
+    seriesTruncated: response.series_truncated,
+    to: response.to,
+    totals: response.totals.map(fromTimeseriesPointWire),
+  };
+}
+
+function fromTimeseriesPointWire(point: TimeseriesPointWire): TimeseriesPoint {
+  return {
+    activeDevices: point.active_devices,
+    bucketStart: point.bucket_start,
+    downloaded: point.downloaded,
+    failed: point.failed,
+    installed: point.installed,
+    success: point.success,
   };
 }
 

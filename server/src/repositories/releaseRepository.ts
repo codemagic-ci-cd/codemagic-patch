@@ -248,11 +248,35 @@ export type ReleaseLifecycleCreateResult =
         | "rollback_target_not_found";
     };
 
+export interface ReleaseIdentity {
+  createdAt: Date;
+  id: string;
+  releaseLabel: string;
+  targetPackageHash: string | null;
+}
+
+export type ListReleaseIdentitiesResult =
+  | {
+      outcome: "found";
+      releases: ReleaseIdentity[];
+    }
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found";
+    };
+
 export interface ReleaseRepository {
   createRelease(input: CreateReleaseInput): Promise<CreateReleaseResult>;
   /** Lighter variant of getReleaseById — skips the release_job lookup. */
   findReleaseById(releaseId: ReleaseId): Promise<Release | null>;
   getReleaseById(releaseId: ReleaseId): Promise<GetReleaseResult>;
+  /**
+   * Unpaginated identity rows (id / label / hash) for mapping metric hashes
+   * back to releases — much lighter than listReleasesForDeployment.
+   */
+  listReleaseIdentitiesForDeployment(
+    deploymentId: DeploymentId,
+  ): Promise<ListReleaseIdentitiesResult>;
   listReleasesForDeployment(
     input: ListReleasesForDeploymentInput,
   ): Promise<ListReleasesForDeploymentResult>;
@@ -554,6 +578,49 @@ export function createPostgresReleaseRepository(
         job: jobResult.rows[0] ? mapReleaseJobRow(jobResult.rows[0]) : null,
         outcome: "found",
         release: mapReleaseRow(releaseRow),
+      };
+    },
+
+    async listReleaseIdentitiesForDeployment(deploymentId) {
+      const result = await pool.query<{
+        created_at: Date | null;
+        deployment_exists: boolean;
+        id: string | null;
+        release_label: string | null;
+        target_package_hash: string | null;
+      }>(
+        `
+          SELECT
+            true AS deployment_exists,
+            r.id,
+            r.release_label,
+            r.target_package_hash,
+            r.created_at
+          FROM deployment d
+          LEFT JOIN release r ON r.deployment_id = d.id
+          WHERE d.id = $1
+          ORDER BY r.created_at DESC, r.id DESC
+        `,
+        [deploymentId],
+      );
+
+      if (result.rows.length === 0) {
+        return {
+          outcome: "not_found",
+          reason: "deployment_not_found",
+        };
+      }
+
+      return {
+        outcome: "found",
+        releases: result.rows
+          .filter((row) => row.id !== null)
+          .map((row) => ({
+            createdAt: row.created_at!,
+            id: row.id!,
+            releaseLabel: row.release_label!,
+            targetPackageHash: row.target_package_hash,
+          })),
       };
     },
 

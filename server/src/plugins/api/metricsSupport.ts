@@ -5,16 +5,29 @@ import type {
   ProblemDetails,
   ProblemFieldError,
 } from "../../app/problemDetails";
-import type { MetricEventIngestHandlerInput } from "../../app/types";
+import type {
+  DeploymentTimeseriesHandlerInput,
+  MetricEventIngestHandlerInput,
+} from "../../app/types";
 import {
+  DEFAULT_METRICS_TIMESERIES_SERIES_LIMIT,
   INVALID_BINARY_VERSION_ERROR,
   INVALID_METRIC_DELIVERY_TYPE_ERROR,
   INVALID_METRIC_EVENT_BODY_ERROR,
   INVALID_METRIC_EVENT_EMITTED_AT_ERROR,
   INVALID_METRIC_EVENT_NAME_ERROR,
+  INVALID_METRICS_TIMESERIES_FROM_ERROR,
+  INVALID_METRICS_TIMESERIES_SERIES_LIMIT_ERROR,
+  INVALID_METRICS_TIMESERIES_TO_ERROR,
+  MAX_METRICS_TIMESERIES_SERIES_LIMIT,
+  METRICS_TIMESERIES_RANGE_DAYS_LIMIT,
+  METRICS_TIMESERIES_RANGE_ORDER_ERROR,
+  METRICS_TIMESERIES_RANGE_TOO_LARGE_ERROR,
 } from "./routeSupport";
+import type { TimeseriesRangeQuery } from "./routeTypes";
 import {
   isJsonObject,
+  parseBoundedIntegerQueryParam,
   requiredStringFieldError,
   singleFieldValidationProblem,
   validationProblem,
@@ -182,6 +195,144 @@ export function parseMetricEventInput(body: unknown):
       sdkVersion: sdkVersion.value,
       targetPackageHash: targetPackageHash.value,
     },
+  };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_TIMESERIES_RANGE_DAYS = 30;
+
+/**
+ * Parses the `from` / `to` range of the timeseries endpoint. `from` is
+ * truncated down to its UTC day boundary so the first bucket is never
+ * partial, and the 366-day range cap is measured on that effective range.
+ */
+export function parseDeploymentTimeseriesInput(
+  deploymentId: string,
+  query: TimeseriesRangeQuery,
+  now: Date = new Date(),
+):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: DeploymentTimeseriesHandlerInput;
+    } {
+  const seriesLimit = parseBoundedIntegerQueryParam(query.series_limit, {
+    defaultValue: DEFAULT_METRICS_TIMESERIES_SERIES_LIMIT,
+    field: "series_limit",
+    max: MAX_METRICS_TIMESERIES_SERIES_LIMIT,
+    min: 1,
+    problemDetail: INVALID_METRICS_TIMESERIES_SERIES_LIMIT_ERROR,
+  });
+  if (seriesLimit.kind === "error") {
+    return seriesLimit;
+  }
+
+  const to = parseDatetimeQueryParam(
+    query.to,
+    "to",
+    INVALID_METRICS_TIMESERIES_TO_ERROR,
+    now,
+  );
+  if (to.kind === "error") {
+    return to;
+  }
+
+  const from = parseDatetimeQueryParam(
+    query.from,
+    "from",
+    INVALID_METRICS_TIMESERIES_FROM_ERROR,
+    new Date(to.value.getTime() - DEFAULT_TIMESERIES_RANGE_DAYS * DAY_MS),
+  );
+  if (from.kind === "error") {
+    return from;
+  }
+
+  const truncatedFrom = new Date(
+    Date.UTC(
+      from.value.getUTCFullYear(),
+      from.value.getUTCMonth(),
+      from.value.getUTCDate(),
+    ),
+  );
+
+  if (from.value.getTime() >= to.value.getTime()) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        METRICS_TIMESERIES_RANGE_ORDER_ERROR,
+        "from",
+        "out_of_range",
+      ),
+    };
+  }
+
+  if (
+    to.value.getTime() - truncatedFrom.getTime() >
+    METRICS_TIMESERIES_RANGE_DAYS_LIMIT * DAY_MS
+  ) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        METRICS_TIMESERIES_RANGE_TOO_LARGE_ERROR,
+        "from",
+        "out_of_range",
+      ),
+    };
+  }
+
+  return {
+    kind: "success",
+    value: {
+      deploymentId,
+      from: truncatedFrom,
+      seriesLimit: seriesLimit.value,
+      to: to.value,
+    },
+  };
+}
+
+function parseDatetimeQueryParam(
+  value: unknown,
+  field: string,
+  errorDetail: string,
+  defaultValue: Date,
+):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: Date;
+    } {
+  if (value === undefined) {
+    return {
+      kind: "success",
+      value: defaultValue,
+    };
+  }
+
+  if (typeof value !== "string") {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(errorDetail, field, "invalid_type"),
+    };
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(errorDetail, field, "invalid_value"),
+    };
+  }
+
+  return {
+    kind: "success",
+    value: parsed,
   };
 }
 

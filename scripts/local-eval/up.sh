@@ -183,7 +183,7 @@ if [ "${CLI_READY}" -eq 1 ]; then
      cmpatch login --server-url ${SERVER_URL}     # approves instantly
      cmpatch release create \\
        --server-url ${SERVER_URL} \\
-       --app demo-app --deployment staging \\
+       --app demo-app-ios --deployment cli-smoke-test \\
        --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \\
        --target-binary-version 1.0.0 --fingerprint local-dev-fingerprint
      # uninstall later with: npm uninstall -g codemagic-patch
@@ -199,6 +199,9 @@ cat <<EOF
 
    Seeded API token (scripting / CI):
      ${SEEDED_TOKEN}
+
+   Dashboard sample data:
+     Example Data → Staging / Production (releases + metrics; not downloadable)
 
    See it on a device (OTA update applying on an emulator):
      examples/on-device-demo/

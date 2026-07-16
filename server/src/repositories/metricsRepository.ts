@@ -42,7 +42,31 @@ export type PersistMetricEventResult =
       reason: "deployment_not_found";
     };
 
+export interface TimeseriesBucketRow {
+  activeDevices: number;
+  bucketStart: Date;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
+export interface DeploymentTimeseriesRows {
+  /** One series per selected target_package_hash, ranked by in-range volume. */
+  series: Array<{
+    points: TimeseriesBucketRow[];
+    targetPackageHash: string | null;
+  }>;
+  seriesTruncated: boolean;
+  /** Deployment-wide rollup: each device counted once per bucket. */
+  totals: TimeseriesBucketRow[];
+}
+
 export interface MetricsRepository {
+  listDeploymentTimeseries(
+    deploymentId: DeploymentId,
+    range: { from: Date; seriesLimit: number; to: Date },
+  ): Promise<DeploymentTimeseriesRows>;
   listReleaseMetricsForDeployment(
     deploymentId: DeploymentId,
     targetPackageHashes: Array<string | null>,
@@ -139,6 +163,109 @@ export function createPostgresMetricsRepository(
         event: mapMetricEventRow(requireRow(existing.rows[0], "metric_event")),
         outcome: "duplicate",
       };
+    },
+
+    async listDeploymentTimeseries(deploymentId, range) {
+      // One GROUPING SETS pass yields both the per-hash series rows and the
+      // deployment-wide rollup. Ranking happens over those bucketed rows so
+      // only the requested number of series leaves PostgreSQL, while totals
+      // still cover every hash in the range.
+      const result = await pool.query<{
+        active_devices: number;
+        bucket_start: Date;
+        downloaded: number;
+        failed: number;
+        installed: number;
+        is_total: boolean;
+        series_truncated: boolean;
+        success: number;
+        target_package_hash: string | null;
+      }>(
+        `
+          WITH bucketed AS MATERIALIZED (
+            SELECT
+              date_trunc('day', emitted_at) AS bucket_start,
+              target_package_hash,
+              (GROUPING(target_package_hash) = 1) AS is_total,
+              COUNT(DISTINCT device_id) FILTER (WHERE event_name = 'Active')::integer AS active_devices,
+              COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
+              COUNT(*) FILTER (WHERE event_name = 'Installed')::integer AS installed,
+              COUNT(*) FILTER (WHERE event_name = 'Success')::integer AS success,
+              COUNT(*) FILTER (WHERE event_name = 'Failed')::integer AS failed
+            FROM metric_event
+            WHERE deployment_id = $1
+              AND emitted_at >= $2
+              AND emitted_at < $3
+              AND event_name = ANY('{Downloaded,Installed,Success,Failed,Active}')
+            GROUP BY GROUPING SETS (
+              (date_trunc('day', emitted_at), target_package_hash),
+              (date_trunc('day', emitted_at))
+            )
+          ),
+          ranked_hashes AS (
+            SELECT
+              target_package_hash,
+              ROW_NUMBER() OVER (
+                ORDER BY
+                  SUM(active_devices + downloaded + installed + success + failed) DESC,
+                  target_package_hash ASC NULLS LAST
+              ) AS series_rank
+            FROM bucketed
+            WHERE NOT is_total
+            GROUP BY target_package_hash
+          )
+          SELECT
+            bucketed.active_devices,
+            bucketed.bucket_start,
+            bucketed.downloaded,
+            bucketed.failed,
+            bucketed.installed,
+            bucketed.is_total,
+            (SELECT COUNT(*) > $4 FROM ranked_hashes) AS series_truncated,
+            bucketed.success,
+            bucketed.target_package_hash
+          FROM bucketed
+          LEFT JOIN ranked_hashes
+            ON NOT bucketed.is_total
+            AND bucketed.target_package_hash IS NOT DISTINCT FROM ranked_hashes.target_package_hash
+          WHERE bucketed.is_total OR ranked_hashes.series_rank <= $4
+          ORDER BY ranked_hashes.series_rank NULLS LAST, bucketed.bucket_start
+        `,
+        [deploymentId, range.from, range.to, range.seriesLimit],
+      );
+
+      const totals: TimeseriesBucketRow[] = [];
+      const pointsByHash = new Map<string | null, TimeseriesBucketRow[]>();
+      const seriesTruncated = result.rows[0]?.series_truncated ?? false;
+
+      for (const row of result.rows) {
+        const bucket: TimeseriesBucketRow = {
+          activeDevices: row.active_devices,
+          bucketStart: row.bucket_start,
+          downloaded: row.downloaded,
+          failed: row.failed,
+          installed: row.installed,
+          success: row.success,
+        };
+
+        if (row.is_total) {
+          totals.push(bucket);
+          continue;
+        }
+
+        const points = pointsByHash.get(row.target_package_hash);
+        if (points) {
+          points.push(bucket);
+        } else {
+          pointsByHash.set(row.target_package_hash, [bucket]);
+        }
+      }
+
+      const series = [...pointsByHash.entries()].map(
+        ([targetPackageHash, points]) => ({ points, targetPackageHash }),
+      );
+
+      return { series, seriesTruncated, totals };
     },
 
     async listReleaseMetricsForDeployment(deploymentId, targetPackageHashes) {

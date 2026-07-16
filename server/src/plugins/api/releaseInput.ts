@@ -29,6 +29,7 @@ import {
 import {
   fieldError,
   isJsonObject,
+  parseBoundedIntegerQueryParam,
   parseRequiredTrimmedString,
   requiredStringFieldError,
   requiredStringReason,
@@ -688,76 +689,6 @@ function parsePaginationQuery(query: PaginationQuery):
       limit: limit.value,
       offset: offset.value,
     },
-  };
-}
-
-function parseBoundedIntegerQueryParam(
-  value: unknown,
-  options: {
-    defaultValue: number;
-    field: string;
-    max?: number;
-    min: number;
-    problemDetail: string;
-  },
-):
-  | {
-      kind: "error";
-      problem: ProblemDetails;
-    }
-  | {
-      kind: "success";
-      value: number;
-    } {
-  if (value === undefined) {
-    return {
-      kind: "success",
-      value: options.defaultValue,
-    };
-  }
-
-  if (Array.isArray(value) || typeof value !== "string") {
-    return {
-      kind: "error",
-      problem: singleFieldValidationProblem(
-        options.problemDetail,
-        options.field,
-        "invalid_type",
-      ),
-    };
-  }
-
-  const trimmedValue = value.trim();
-  if (trimmedValue.length === 0 || !/^[0-9]+$/.test(trimmedValue)) {
-    return {
-      kind: "error",
-      problem: singleFieldValidationProblem(
-        options.problemDetail,
-        options.field,
-        trimmedValue.length === 0 ? "required" : "invalid_type",
-      ),
-    };
-  }
-
-  const parsedValue = Number(trimmedValue);
-  if (
-    !Number.isSafeInteger(parsedValue) ||
-    parsedValue < options.min ||
-    (options.max !== undefined && parsedValue > options.max)
-  ) {
-    return {
-      kind: "error",
-      problem: singleFieldValidationProblem(
-        options.problemDetail,
-        options.field,
-        "out_of_range",
-      ),
-    };
-  }
-
-  return {
-    kind: "success",
-    value: parsedValue,
   };
 }
 
