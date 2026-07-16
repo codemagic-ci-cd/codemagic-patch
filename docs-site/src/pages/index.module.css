@@ -1,6 +1,12 @@
 .page {
   --patch-home-wide: 72rem;
   --patch-home-card-shadow: 0 4px 30px rgba(44, 83, 166, 0.14);
+  /* Infima headings use --ifm-heading-font-family, not inherited font-family */
+  --ifm-font-family-base: 'Metropolis', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Helvetica, Arial, sans-serif;
+  --ifm-heading-font-family: 'Metropolis', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Helvetica, Arial, sans-serif;
+  font-family: var(--ifm-font-family-base);
   overflow-x: clip;
 }
 
@@ -20,7 +26,7 @@
   color: #06225d;
   font-size: clamp(2.75rem, 6vw, 4.75rem);
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.4px;
   line-height: 1.03;
 }
 
