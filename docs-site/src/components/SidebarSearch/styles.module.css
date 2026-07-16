@@ -12,10 +12,10 @@
   width: 100%;
   height: 2rem;
   padding: 0 0.6rem;
-  border: 1px solid var(--ifm-color-emphasis-300);
+  border: 1px solid var(--cm-blue-xl-border, #e8ecf8);
   border-radius: 0.45rem;
-  background: var(--ifm-color-emphasis-100);
-  color: var(--ifm-font-color-secondary);
+  background: #ffffff;
+  color: var(--cm-grey-text-light, #999999);
   font-size: 0.8125rem;
   line-height: 1;
   cursor: pointer;
@@ -25,8 +25,19 @@
 }
 
 .trigger:hover {
-  border-color: var(--ifm-color-emphasis-400);
-  background: var(--ifm-background-color);
+  border-color: var(--cm-blue, #0957ff);
+  background: #ffffff;
+}
+
+:global(html[data-theme='dark']) .trigger {
+  background: var(--cm-grey-bg-light, #1a1f28);
+  border-color: var(--cm-blue-xl-border, #232a3f);
+  color: var(--cm-grey-text-light, #7e95b9);
+}
+
+:global(html[data-theme='dark']) .trigger:hover {
+  border-color: var(--cm-blue, #3b79ff);
+  background: var(--cm-grey-bg-light, #1a1f28);
 }
 
 .triggerLabel {

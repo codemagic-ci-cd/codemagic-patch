@@ -1,19 +1,19 @@
 .wrapper {
   flex-shrink: 0;
-  padding: 0.55rem 0.65rem 0.6rem;
-  border-top: 1px solid var(--ifm-color-emphasis-200);
-  background: var(--ifm-background-color);
+  padding: 0.85rem 1.75rem 1rem;
+  border-top: 1px solid var(--cm-blue-xl-border, #e8ecf8);
+  background: transparent;
 }
 
 .maintainedBy {
   display: block;
   font-size: 0.68rem;
-  color: var(--ifm-font-color-secondary);
+  color: var(--cm-grey-text, #666666);
   line-height: 1.3;
   text-decoration: none;
 }
 
 .maintainedBy:hover {
-  color: var(--ifm-font-color-base);
+  color: var(--cm-blue, #0957ff);
   text-decoration: underline;
 }

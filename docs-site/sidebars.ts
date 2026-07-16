@@ -6,6 +6,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Introduction',
+      collapsible: false,
       collapsed: false,
       items: [
         'introduction/how-it-works',
@@ -16,6 +17,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Setup',
+      collapsible: false,
       collapsed: false,
       items: [
         {
@@ -49,6 +51,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Using Patch',
+      collapsible: false,
       collapsed: false,
       items: [
         {
@@ -79,6 +82,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Migration',
+      collapsible: false,
       collapsed: false,
       items: [
         'migration/migrating-from-codepush',
@@ -88,6 +92,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Reference',
+      collapsible: false,
       collapsed: false,
       items: [
         'reference/sdk-reference',
