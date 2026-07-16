@@ -2,18 +2,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: 50%;
   color: var(--ifm-navbar-link-color);
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .link:hover {
   color: var(--ifm-navbar-link-hover-color);
-  background: var(--ifm-color-emphasis-200);
+  background: transparent;
   text-decoration: none;
 }
 

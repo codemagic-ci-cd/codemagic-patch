@@ -146,7 +146,10 @@ export default function Home(): ReactNode {
       <main className={styles.page}>
         <header className={styles.hero}>
           <div className={styles.heroInner}>
-            <h1 className={styles.title}>Ship instant updates with Codemagic Patch</h1>
+            <h1 className={styles.title}>
+              Ship <span className={styles.gradientTextAnimated}>instant updates</span> with
+              Codemagic Patch
+            </h1>
             <p className={styles.lead}>
               Self-hosted over-the-air updates for React Native. Push immediate fixes and speed up release cycles.
             </p>
@@ -180,50 +183,55 @@ export default function Home(): ReactNode {
         </section>
 
         <div className={styles.sectionHeading}>
-          <h2 id="home-why-patch">Why use Patch for your OTA updates</h2>
+          <h2 id="home-why-patch">
+            <span className={styles.gradientTextStatic}>Why use Patch</span> for your OTA updates
+          </h2>
           <p className={styles.sectionHeadingLead}>
             Invisible installs, reliable deliveries and release dashboard all in a complete Docker Compose.
           </p>
         </div>
 
-        {SECTIONS.map((section, index) => (
-          <section
-            key={section.title}
-            className={styles.featureSection}
-            aria-labelledby={`home-${index}`}>
-            <div className={styles.featureInner}>
-              <div
-                className={
-                  section.reverse
-                    ? `${styles.featureRow} ${styles.featureRowReverse}`
-                    : styles.featureRow
-                }>
-                <FeatureCopy
-                  id={`home-${index}`}
-                  title={section.title}
-                  description={section.description}
-                  bullets={section.bullets}
-                  link={section.link}
-                  linkLabel={section.linkLabel}
-                />
-                <div className={styles.featureMedia}>
-                  {section.media === 'terminal' ? (
-                    <HomeTerminal label={section.terminalLabel}>
-                      {section.terminalContent}
-                    </HomeTerminal>
-                  ) : (
-                    <img
-                      className={styles.featureImage}
-                      src={dashboardSrc}
-                      alt={section.imageAlt}
-                      loading="lazy"
-                    />
-                  )}
+        <div className={styles.featureTimeline}>
+          {SECTIONS.map((section, index) => (
+            <section
+              key={section.title}
+              className={styles.featureSection}
+              aria-labelledby={`home-${index}`}>
+              <div className={styles.featureInner}>
+                <div
+                  className={
+                    section.reverse
+                      ? `${styles.featureRow} ${styles.featureRowReverse}`
+                      : styles.featureRow
+                  }>
+                  <div className={styles.featureMarker} aria-hidden="true" />
+                  <FeatureCopy
+                    id={`home-${index}`}
+                    title={section.title}
+                    description={section.description}
+                    bullets={section.bullets}
+                    link={section.link}
+                    linkLabel={section.linkLabel}
+                  />
+                  <div className={styles.featureMedia}>
+                    {section.media === 'terminal' ? (
+                      <HomeTerminal label={section.terminalLabel}>
+                        {section.terminalContent}
+                      </HomeTerminal>
+                    ) : (
+                      <img
+                        className={styles.featureImage}
+                        src={dashboardSrc}
+                        alt={section.imageAlt}
+                        loading="lazy"
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
-        ))}
+            </section>
+          ))}
+        </div>
 
         <section
           className={styles.comparisonSection}
@@ -235,8 +243,9 @@ export default function Home(): ReactNode {
               apps. They differ in hosting, ops, and how much you assemble
               yourself.
             </p>
-            <div className={clsx(styles.comparisonTableWrap, 'markdown')}>
-              <table>
+            <div className={styles.comparisonTableBg}>
+              <div className={clsx(styles.comparisonTableWrap, 'markdown')}>
+                <table>
                 <colgroup>
                   <col className={styles.comparisonLabelCol} />
                   <col />
@@ -295,7 +304,8 @@ export default function Home(): ReactNode {
                     <td>Fair Source License</td>
                   </tr>
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
             <p className={styles.comparisonFootnote}>
               This is a high-level comparison, products are subject to change.

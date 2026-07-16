@@ -4,6 +4,22 @@
  * work well for content-centric websites.
  */
 
+@font-face {
+  font-family: 'Metropolis';
+  src: url('/fonts/Metropolis-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Metropolis';
+  src: url('/fonts/Metropolis-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* You can override the default Infima variables here. */
 /* Override Infima/Docusaurus defaults — html beats :root specificity */
 html {
@@ -50,6 +66,14 @@ html {
 
   /* Search term highlights on doc pages */
   --patch-search-mark-bg: rgba(37, 99, 235, 0.14);
+
+  /* Top nav — matches codemagic.io header */
+  --ifm-navbar-height: 4.75rem;
+  --ifm-navbar-padding-vertical: 0.875rem;
+  --ifm-navbar-padding-horizontal: 1.5rem;
+  --ifm-navbar-link-color: #06225d;
+  --ifm-navbar-link-hover-color: #0051ff;
+  --ifm-navbar-shadow: none;
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -66,6 +90,8 @@ html[data-theme='dark'] {
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
   --patch-table-header-bg: rgba(37, 99, 235, 0.14);
   --patch-search-mark-bg: rgba(96, 165, 250, 0.22);
+  --ifm-navbar-link-color: #fff;
+  --ifm-navbar-link-hover-color: #ff9100;
 }
 
 /* Doc tables — card-style instead of heavy Infima grid borders */
@@ -273,14 +299,96 @@ html[data-theme='dark'] {
 }
 
 /* Chrome: navbar, breadcrumbs, TOC */
+.navbar {
+  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-weight: 600;
+}
+
+.navbar__inner {
+  align-items: center;
+}
+
+.navbar__brand {
+  margin-right: 3.125rem;
+}
+
+.navbar__logo {
+  height: 1.5625rem;
+  margin-right: 0.65rem;
+}
+
+.navbar__items {
+  gap: 0;
+}
+
+.navbar__item {
+  display: flex;
+  align-items: center;
+}
+
+.navbar__link {
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  height: 3rem;
+  line-height: 3rem;
+  padding: 0 1.5rem;
+  border-radius: 0;
+}
+
+.navbar__link:hover,
+.navbar__link:focus-visible {
+  color: var(--ifm-navbar-link-hover-color);
+  background: transparent;
+}
+
+.navbar__toggle {
+  margin-right: 0.35rem;
+}
+
+.navbar-sidebar {
+  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-weight: 600;
+}
+
+.navbar-sidebar .menu__link {
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.85rem 1.5rem;
+}
+
+.navbar-sidebar .menu__link--active,
+.navbar-sidebar .menu__link--active:hover {
+  color: var(--ifm-menu-color);
+  background: transparent;
+}
+
 .navbar__brand .navbar__title {
-  font-size: 1.5rem;
-  font-weight: 400;
-  color: var(--ifm-navbar-link-color);
+  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+  color: #0051ff;
 }
 
 .navbar__brand:hover .navbar__title {
-  color: var(--ifm-navbar-link-hover-color);
+  color: #0051ff;
+}
+
+html[data-theme='dark'] .navbar__brand .navbar__title,
+html[data-theme='dark'] .navbar__brand:hover .navbar__title {
+  color: #fff;
+}
+
+@media (max-width: 1100px) {
+  .navbar__brand {
+    margin-right: 1.5625rem;
+  }
+
+  .navbar__link {
+    padding: 0 0.625rem;
+  }
 }
 
 .breadcrumbs__item,
