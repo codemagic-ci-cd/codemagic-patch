@@ -1,10 +1,11 @@
 .page {
   --patch-home-wide: 72rem;
   --patch-home-card-shadow: 0 4px 30px rgba(44, 83, 166, 0.14);
+  overflow-x: clip;
 }
 
 .hero {
-  padding: 7rem 0 4.5rem;
+  padding: 7rem 0 3.5rem;
 }
 
 .heroInner {
@@ -111,8 +112,72 @@
   text-decoration: none;
 }
 
+.productShot {
+  position: relative;
+  padding: 3.5rem 0 6.5rem;
+  /* Let the glow bleed into the section below (CodePush pattern).
+     Horizontal spill is clipped on .page instead. */
+  overflow: visible;
+}
+
+.productShotInner {
+  position: relative;
+  max-width: var(--patch-home-wide);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.productShotInner::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Shift glow downward so it continues under "Don't wait days" */
+  margin-top: 100px;
+  transform: translate(-50%, -50%);
+  width: 1713px;
+  height: 1102px;
+  background-image: url('/img/product-shot-glow.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: blur(20px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.productShotFrame {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 10px;
+  border-radius: 22px;
+  background: linear-gradient(
+    137deg,
+    rgba(255, 255, 255, 0.24) 23.28%,
+    rgba(255, 255, 255, 0.15) 71.87%
+  );
+  backdrop-filter: blur(86px);
+  -webkit-backdrop-filter: blur(86px);
+  box-shadow:
+    0 4px 4px 0 rgba(0, 0, 0, 0.25),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.58);
+}
+
+.productShotImage {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+  background: #f5f7fb;
+}
+
 .whySection {
-  padding: 4rem 0 5rem;
+  position: relative;
+  padding: 4.5rem 0 5rem;
 }
 
 .whyInner {
@@ -554,7 +619,26 @@
 
 @media (max-width: 576px) {
   .hero {
-    padding: 3.5rem 0 3.25rem;
+    padding: 3.5rem 0 2.5rem;
+  }
+
+  .productShot {
+    padding: 2rem 0 4rem;
+  }
+
+  .productShotInner::before {
+    width: 130vw;
+    height: 85vw;
+    margin-top: 48px;
+  }
+
+  .productShotFrame {
+    border-radius: 16px;
+    padding: 8px;
+  }
+
+  .productShotImage {
+    border-radius: 12px;
   }
 
   .lead,
@@ -686,4 +770,16 @@
 
 [data-theme='dark'] .featureImage {
   box-shadow: var(--patch-home-card-shadow);
+}
+
+[data-theme='dark'] .productShotFrame {
+  background: linear-gradient(
+    137deg,
+    rgba(255, 255, 255, 0.12) 23.28%,
+    rgba(255, 255, 255, 0.06) 71.87%
+  );
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 4px 4px 0 rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
 }

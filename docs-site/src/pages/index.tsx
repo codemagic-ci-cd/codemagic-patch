@@ -89,7 +89,7 @@ const SECTIONS = [
     reverse: false,
     media: 'image' as const,
     imageAlt:
-      'Codemagic Patch web dashboard showing deployment metrics and release history',
+      'Codemagic Patch metrics: active version distribution and adoption over time',
   },
   {
     title: 'Run it yourself',
@@ -188,6 +188,7 @@ function FeatureCopy({
 
 export default function Home(): ReactNode {
   const dashboardSrc = useBaseUrl('/img/dashboard.png');
+  const dashboardOverviewSrc = useBaseUrl('/img/dashboard-overview.png');
 
   return (
     <Layout
@@ -213,6 +214,20 @@ export default function Home(): ReactNode {
             </div>
           </div>
         </header>
+
+        <div className={styles.productShot}>
+          <div className={styles.productShotInner}>
+            <div className={styles.productShotFrame}>
+              <img
+                className={styles.productShotImage}
+                src={dashboardOverviewSrc}
+                alt="Codemagic Patch dashboard showing Production release history, rollouts, and deployment metrics"
+                width={3024}
+                height={1490}
+              />
+            </div>
+          </div>
+        </div>
 
         <section className={styles.whySection} aria-labelledby="home-why-ota">
           <div className={styles.whyInner}>
