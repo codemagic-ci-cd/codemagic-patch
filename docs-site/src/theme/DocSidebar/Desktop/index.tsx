@@ -4,7 +4,6 @@ import {useThemeConfig} from '@docusaurus/theme-common';
 import Logo from '@theme/Logo';
 import CollapseButton from '@theme/DocSidebar/Desktop/CollapseButton';
 import Content from '@theme/DocSidebar/Desktop/Content';
-import SidebarSearch from '@site/src/components/SidebarSearch';
 import SidebarMaintainedBy from '@site/src/components/SidebarMaintainedBy';
 import type {Props} from '@theme/DocSidebar/Desktop';
 
@@ -26,7 +25,6 @@ function DocSidebarDesktop({path, sidebar, onCollapse, isHidden}: Props) {
         isHidden && styles.sidebarHidden,
       )}>
       {hideOnScroll && <Logo tabIndex={-1} className={styles.sidebarLogo} />}
-      <SidebarSearch className={styles.search} />
       <Content path={path} sidebar={sidebar} className={styles.menu} />
       <SidebarMaintainedBy className={styles.maintainedBy} />
       {hideable && <CollapseButton onClick={onCollapse} />}

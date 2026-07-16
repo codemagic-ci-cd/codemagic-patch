@@ -63,7 +63,6 @@ const config: Config = {
         docsRouteBasePath: '/docs',
         indexBlog: false,
         highlightSearchTermsOnTargetPage: true,
-        searchBarPosition: 'left',
       },
     ],
   ],

@@ -668,6 +668,36 @@ blockquote {
   color: var(--ifm-navbar-link-color);
 }
 
+.navbar__search-input {
+  font-family: inherit;
+  font-size: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid #dfe5f2;
+  background-color: #ffffff;
+  color: var(--ifm-navbar-link-color);
+}
+
+.navbar__search-input::placeholder {
+  color: #8b95a8;
+}
+
+.navbar__search-input:focus {
+  outline: none;
+  border-color: #0957ff;
+  background-color: #ffffff;
+}
+
+html[data-theme='dark'] .navbar__search-input {
+  border-color: #232a3f;
+  background-color: #121826;
+  color: #ffffff;
+}
+
+html[data-theme='dark'] .navbar__search-input:focus {
+  border-color: #3b79ff;
+  background-color: #0d121f;
+}
+
 .navbar__toggle {
   margin-right: 0.35rem;
 }

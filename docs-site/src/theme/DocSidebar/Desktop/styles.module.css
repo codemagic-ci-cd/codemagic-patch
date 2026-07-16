@@ -31,16 +31,11 @@
     height: 2rem;
   }
 
-  .search {
-    flex-shrink: 0;
-    padding: 1.25rem 1.75rem 1.15rem;
-    border-bottom: 1px solid var(--cm-blue-xl-border, #e8ecf8);
-  }
-
   .menu {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    padding-top: 1rem;
     padding-bottom: 2rem;
   }
 

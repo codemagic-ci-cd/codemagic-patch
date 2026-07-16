@@ -2,7 +2,6 @@ import React, {type ComponentProps, type ReactNode} from 'react';
 import {useThemeConfig} from '@docusaurus/theme-common';
 import {useNavbarSecondaryMenu} from '@docusaurus/theme-common/internal';
 import Translate from '@docusaurus/Translate';
-import SidebarSearch from '@site/src/components/SidebarSearch';
 import SidebarMaintainedBy from '@site/src/components/SidebarMaintainedBy';
 
 import styles from './styles.module.css';
@@ -28,7 +27,6 @@ export default function NavbarMobileSidebarSecondaryMenu(): ReactNode {
       {!isPrimaryMenuEmpty && (
         <SecondaryMenuBackButton onClick={() => secondaryMenu.hide()} />
       )}
-      <SidebarSearch className={styles.search} />
       <div className={styles.menu}>{secondaryMenu.content}</div>
       <SidebarMaintainedBy className={styles.maintainedBy} />
     </div>

@@ -2,7 +2,11 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  margin-left: 0.5rem;
+  margin-left: 0.25rem;
+}
+
+.navbarSearch {
+  margin-right: 0.25rem;
 }
 
 .colorModeToggle {
