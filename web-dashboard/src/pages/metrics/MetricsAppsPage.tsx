@@ -63,7 +63,7 @@ export function MetricsAppsPage() {
                 className={buttonVariants({ intent: "primary" })}
                 to={`/teams/${teamId}/apps`}
               >
-                Go to Releases
+                Go to apps
               </Link>
             }
           />

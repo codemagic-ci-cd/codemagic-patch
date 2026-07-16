@@ -117,7 +117,7 @@ function TeamOverview({ teamId }: { teamId: string }) {
             icon={<AppsIcon />}
             iconBackground="var(--color-blue-tint)"
             iconColor="var(--color-blue)"
-            title="Releases"
+            title="Apps"
             subtitle="Manage apps & deployments"
           />
           {!membersHidden ? (
@@ -157,13 +157,13 @@ function AppsTile({ teamId }: { teamId: string }) {
     <CountTile
       accent="var(--color-blue)"
       icon={<AppsIcon />}
-      label="Releases"
+      label="Apps"
       count={appsQuery.data?.length}
       isPending={appsQuery.isPending}
       isError={appsQuery.isError}
       onRetry={() => void appsQuery.refetch()}
       to={`/teams/${teamId}/apps`}
-      linkText="View releases"
+      linkText="View apps"
     />
   );
 }

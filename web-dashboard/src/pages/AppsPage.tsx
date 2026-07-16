@@ -76,7 +76,7 @@ export function AppsPage() {
       <div className="mb-6 flex flex-wrap items-start gap-[18px]">
         <div className="min-w-0 flex-1">
           <h1 className={PAGE_TITLE}>
-            Releases
+            Apps
           </h1>
           <p className={PAGE_SUB}>
             React Native OTA targets in this team. Each app auto-creates a

@@ -75,7 +75,7 @@ export function Breadcrumbs() {
 
 /** Static labels for team-scoped leaf segments (multi-team trails only). */
 const TEAM_LEAF_LABELS = new Map<string, string>([
-  ["apps", "Releases"],
+  ["apps", "Apps"],
   ["members", "Members"],
   ["metrics", "Metrics"],
 ]);
@@ -130,7 +130,7 @@ function buildCrumbs(
 
     if (appId !== undefined) {
       crumbs.push(
-        { key: "apps", to: `/teams/${teamId}/apps`, node: "Releases" },
+        { key: "apps", to: `/teams/${teamId}/apps`, node: "Apps" },
         {
           key: "app",
           to: `/teams/${teamId}/apps/${appId}`,
