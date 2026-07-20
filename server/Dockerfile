@@ -32,6 +32,14 @@ COPY server ./server
 
 RUN yarn workspace @codemagic/patch-server build
 
+# The dashboard SPA ships inside the server image and is served by the app
+# (DASHBOARD_STATIC_DIR), so one image is the whole release. Defaults to the
+# same-origin API base, which is exactly the served topology. Must build
+# before `workspaces focus` strips the dashboard's dev tooling.
+COPY shared ./shared
+COPY web-dashboard ./web-dashboard
+RUN yarn workspace web-dashboard build
+
 # Trim devDependencies for the runtime image. `workspaces focus --production`
 # rewrites node_modules with production-only deps for the focused workspace.
 RUN yarn workspaces focus --production @codemagic/patch-server
@@ -54,6 +62,10 @@ COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/node_modu
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/server/dist ./dist
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/server/vendor ./vendor
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/server/package.json ./package.json
+COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/web-dashboard/dist ./dashboard
+
+# Serve the bundled dashboard by default; unset to run API-only.
+ENV DASHBOARD_STATIC_DIR=/app/dashboard
 
 USER codemagic-patch
 

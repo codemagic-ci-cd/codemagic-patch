@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { ServerMode } from "../app/types";
 import { DEFAULT_MAX_UPLOAD_SIZE_BYTES } from "../app/upload-size";
 import { DEFAULT_MANIFEST_CACHE_CONTROL } from "../worker/cachePolicy";
@@ -58,6 +60,13 @@ export type RegistrationMode = "invite_only" | "open";
 
 export interface RuntimeConfig {
   cloudflare?: CloudflareDeliveryConfig;
+  /**
+   * Absolute path of a built dashboard SPA to serve from the app: static
+   * assets, `/` and unknown non-API paths fall back to `index.html`, and
+   * dashboard security headers are added to responses. Unset serves no
+   * dashboard (API-only, the historical behavior).
+   */
+  dashboardStaticDir?: string;
   databaseMaxConnections?: number;
   databaseSearchPath: string[];
   databaseUrl?: string;
@@ -65,6 +74,13 @@ export interface RuntimeConfig {
   gcs?: GcsStorageConfig;
   githubOAuth?: GitHubOAuthConfig;
   host: string;
+  /**
+   * Serve HTTP/2 cleartext (h2c) instead of HTTP/1.1. An h2c server speaks
+   * only HTTP/2, so this requires a fronting layer that converts client
+   * traffic (e.g. Cloud Run with use-http2). Leave off for direct HTTP/1.1
+   * clients: reverse proxies, browsers, curl without prior knowledge.
+   */
+  http2Cleartext: boolean;
   iamInvitationTtlDays: number;
   initialAdminEmails: string[];
   logger: boolean;
@@ -107,11 +123,13 @@ export function resolveRuntimeConfig(
       env.DATABASE_MAX_CONNECTIONS,
       "DATABASE_MAX_CONNECTIONS",
     ),
+    dashboardStaticDir: resolveDashboardStaticDir(env.DASHBOARD_STATIC_DIR),
     databaseSearchPath: resolveDatabaseSearchPath(env.DATABASE_SEARCH_PATH),
     databaseUrl: resolveDatabaseUrl(env.DATABASE_URL, mode),
     deliveryAdapter,
     githubOAuth,
     host: resolveHost(env.HOST),
+    http2Cleartext: resolveBoolean(env.HTTP2_CLEARTEXT, false),
     iamInvitationTtlDays: resolvePositiveIntegerWithDefaultAndMax(
       env.IAM_INVITATION_TTL_DAYS,
       "IAM_INVITATION_TTL_DAYS",
@@ -244,6 +262,20 @@ function resolvePort(port: string | undefined): number {
   }
 
   return parsedPort;
+}
+
+function resolveDashboardStaticDir(
+  value: string | undefined,
+): string | undefined {
+  const dir = resolveOptionalString(value);
+
+  if (dir === undefined) {
+    return undefined;
+  }
+
+  // Resolve relative to the working directory so the value is stable no
+  // matter where the serving code later joins paths from.
+  return path.resolve(dir);
 }
 
 function resolveOptionalString(value: string | undefined): string | undefined {

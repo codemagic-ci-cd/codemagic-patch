@@ -7,6 +7,7 @@ import {
   MAX_UPLOAD_SIZE_EXCEEDED_DETAIL,
 } from "./upload-size";
 import { createValidationProblem, sendProblem } from "./problemDetails";
+import { registerDashboardStatic } from "./dashboardStatic";
 import { apiRoutes } from "../plugins/api/routes";
 import { workerRoutes } from "../plugins/worker/routes";
 import type { BuildAppOptions } from "./types";
@@ -25,6 +26,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     auditEventWriteHandler,
     authorizationService,
     controlPlaneAuthHandler,
+    dashboardStaticDir,
     deploymentClearHandler,
     deploymentCreateHandler,
     deploymentDeleteHandler,
@@ -42,6 +44,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     iamRoleBindingReadHandler,
     iamRoleBindingUpdateHandler,
     iamRoleListHandler,
+    http2Cleartext = false,
     iamUserProvisionHandler,
     idempotencyHandler,
     loggerInstance,
@@ -87,11 +90,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     );
   }
 
-  const app = Fastify({
-    bodyLimit: maxUploadSizeBytes,
-    // Fastify rejects passing both `logger` and `loggerInstance`.
-    ...(loggerInstance ? { loggerInstance } : { logger: false }),
-  });
+  // The h2c instance is cast back to the default FastifyInstance shape: the
+  // generics only pin the underlying Node server type, and every route and
+  // plugin here works against Fastify's request/reply abstraction.
+  const app = http2Cleartext
+    ? (Fastify({
+        bodyLimit: maxUploadSizeBytes,
+        http2: true,
+        // Fastify rejects passing both `logger` and `loggerInstance`.
+        ...(loggerInstance ? { loggerInstance } : { logger: false }),
+      }) as unknown as FastifyInstance)
+    : Fastify({
+        bodyLimit: maxUploadSizeBytes,
+        // Fastify rejects passing both `logger` and `loggerInstance`.
+        ...(loggerInstance ? { loggerInstance } : { logger: false }),
+      });
 
   app.register(multipart, {
     limits: {
@@ -192,6 +205,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       workerReconcileHandler,
       workerSharedSecret,
     });
+  }
+
+  if (dashboardStaticDir && (mode === "all" || mode === "api")) {
+    registerDashboardStatic(app, dashboardStaticDir);
   }
 
   return app;

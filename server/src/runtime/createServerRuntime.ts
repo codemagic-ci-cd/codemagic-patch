@@ -243,6 +243,13 @@ export interface ServerRuntimeOptions {
   extraMigrations?: readonly SqlMigration[];
   githubDeviceAuthAdapter?: OAuthDeviceAuthAdapter;
   githubUserLookupService?: GitHubUserLookupService;
+  /**
+   * Interval for the recurring job sweep that requeues expired-lease work
+   * lost to a crashed instance. The boot sweep alone recovers such jobs only
+   * on the first start after their lease expires; the interval closes the
+   * gap for long-lived instances. 0 disables the recurring sweep.
+   */
+  jobSweepIntervalMs?: number;
   logger?: RuntimeLogger;
   managementIdGenerator?: ManagementIdGenerator;
   managementRetryLimit?: number;
@@ -638,7 +645,9 @@ export async function createServerRuntime(
       executor?.executeInBackground(jobId);
     };
 
-    const runStartupSweepWithLogs = async (): Promise<void> => {
+    const runSweepWithLogs = async (
+      trigger: "interval" | "startup",
+    ): Promise<void> => {
       const sweep = await startupSweep(pool, { enqueue: enqueueRecoveredJob });
       const recoveredJobCount =
         sweep.createdQueuedJobCount +
@@ -646,17 +655,43 @@ export async function createServerRuntime(
         sweep.requeuedStuckProcessingCount;
       const context = {
         createdQueuedJobCount: sweep.createdQueuedJobCount,
-        event: "startup_sweep.completed",
+        event: "job_sweep.completed",
         recoveredJobCount,
         requeuedExpiredRunningCount: sweep.requeuedExpiredRunningCount,
         requeuedStuckProcessingCount: sweep.requeuedStuckProcessingCount,
+        trigger,
       };
 
       if (recoveredJobCount > 0) {
-        logger.warn(context, "startup sweep recovered jobs from a prior run");
-      } else {
-        logger.info(context, "startup sweep completed");
+        logger.warn(context, "job sweep recovered jobs from a prior run");
+      } else if (trigger === "startup") {
+        logger.info(context, "startup job sweep completed");
       }
+      // Quiet interval sweeps: an empty result every interval is not signal.
+    };
+    const runStartupSweepWithLogs = () => runSweepWithLogs("startup");
+
+    // The recurring sweep is what recovers a job orphaned by an instance
+    // crash without waiting for the next boot: the boot sweep only ever sees
+    // leases that expired before this instance started. Errors are logged
+    // and the next tick retries; the sweep's lease gate keeps concurrent or
+    // repeated runs safe.
+    const jobSweepIntervalMs = options.jobSweepIntervalMs ?? 60_000;
+    let jobSweepTimer: ReturnType<typeof setInterval> | undefined;
+    const startPeriodicSweep = (): void => {
+      if (jobSweepIntervalMs <= 0 || jobSweepTimer) {
+        return;
+      }
+
+      jobSweepTimer = setInterval(() => {
+        runSweepWithLogs("interval").catch((error: unknown) => {
+          logger.error(
+            { err: error, event: "job_sweep.failed", trigger: "interval" },
+            "recurring job sweep failed",
+          );
+        });
+      }, jobSweepIntervalMs);
+      jobSweepTimer.unref();
     };
 
     if (config.mode === "all" && executor) {
@@ -748,6 +783,10 @@ export async function createServerRuntime(
         config.mode === "all" && storage ? storage : undefined,
 
       async close() {
+        if (jobSweepTimer) {
+          clearInterval(jobSweepTimer);
+          jobSweepTimer = undefined;
+        }
         await queue?.stop();
         await executor?.waitForIdle();
         if (storage instanceof S3StorageAdapter) {
@@ -759,11 +798,13 @@ export async function createServerRuntime(
       async start() {
         if (queue) {
           await queue.start();
+          startPeriodicSweep();
           return;
         }
 
         if (executor) {
           await runStartupSweepWithLogs();
+          startPeriodicSweep();
         }
       },
 

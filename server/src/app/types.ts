@@ -1442,6 +1442,18 @@ export interface BuildAppOptions {
   auditEventWriteHandler?: AuditEventWriteRouteHandler;
   authorizationService?: AuthorizationService;
   controlPlaneAuthHandler?: ControlPlaneAuthHandler;
+  /**
+   * Absolute path of a built dashboard SPA. When set (and mode serves the
+   * API), static assets are served from it, `/` and unknown non-API paths
+   * fall back to `index.html`, and dashboard security headers are added.
+   */
+  dashboardStaticDir?: string;
+  /**
+   * Serve HTTP/2 cleartext (h2c) instead of HTTP/1.1. The server then speaks
+   * only HTTP/2; a fronting layer (e.g. Cloud Run with use-http2) must
+   * convert client traffic.
+   */
+  http2Cleartext?: boolean;
   idempotencyHandler?: IdempotencyHandler;
   loggerInstance?: FastifyBaseLogger;
   maxUploadSizeBytes?: number;
