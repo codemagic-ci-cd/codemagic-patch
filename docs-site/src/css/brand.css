@@ -1,0 +1,71 @@
+/**
+ * Codemagic marketing brand tokens
+ * Mirrors landing_pages/src/assets/scss/base/_variables.colors.scss
+ * (and related button / gradient primitives). Docs chrome still uses
+ * --cm-blue (#0957ff) from codemagic-docs; marketing neverblue is separate.
+ */
+
+html {
+  /* Brand hues */
+  --cm-neverblue: #0051ff;
+  --cm-no-bug-blue: #0031ea;
+  --cm-dash-aqua: #00ceff;
+  --cm-pink-magic: #fe19ff;
+  --cm-sww-yellow: #ff9100;
+  --cm-navy: #06225d;
+
+  /* Text */
+  --cm-text-1: #06225d;
+  --cm-text-2: #37538d;
+  --cm-text-3: #7e95b9;
+  --cm-text-white: #ffffff;
+
+  /* Surfaces */
+  --cm-bg-white: #ffffff;
+  --cm-bg-soft: #f5f7fb;
+  --cm-bg-level-5: #e9efff;
+  --cm-bg-dark: #01091a;
+
+  /* Gradients */
+  --cm-brand-sunrise: linear-gradient(90deg, #ff9100 0%, #fe19ff 100%);
+  --cm-brand-space: linear-gradient(90deg, #0031ea 0%, #008bf7 100%);
+  --cm-brand-aqua: linear-gradient(90deg, #008bf7 0%, #00ceff 100%);
+  --cm-brand-cool-berry: linear-gradient(90deg, #00ceff 0%, #fe19ff 100%);
+  --cm-sunrise-glow-y: linear-gradient(
+    180deg,
+    rgba(255, 145, 0, 0) 0%,
+    rgba(255, 145, 0, 0.9) 20%,
+    #fe19ff 50%,
+    rgba(255, 145, 0, 0.9) 80%,
+    rgba(255, 145, 0, 0) 100%
+  );
+
+  /* Shadows / chrome */
+  --cm-card-shadow: 0 4px 30px rgba(44, 83, 166, 0.15);
+  --cm-btn-sunrise-shadow: 0 10px 20px rgba(254, 25, 255, 0.4);
+  --cm-btn-radius: 10px;
+  --cm-btn-height: 3rem;
+  --cm-btn-pad-x: 2.5rem;
+  --cm-font-marketing: 'Metropolis', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Helvetica, Arial, sans-serif;
+
+  /* Content width (landing .inner ≈ 1280px) */
+  --cm-content-wide: 80rem;
+  --cm-content-gutter: 3.125rem;
+}
+
+html[data-theme='dark'] {
+  --cm-text-1: #ffffff;
+  --cm-text-2: #9da4af;
+  --cm-text-3: #535b66;
+  --cm-bg-soft: #1a1f28;
+  --cm-bg-level-5: #374358;
+  --cm-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  --cm-btn-sunrise-shadow: 0 10px 20px rgba(254, 25, 255, 0.25);
+}
+
+@media (max-width: 800px) {
+  html {
+    --cm-content-gutter: 1.875rem;
+  }
+}

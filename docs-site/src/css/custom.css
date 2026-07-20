@@ -4,7 +4,10 @@
  * work well for content-centric websites.
  *
  * Docs chrome styling follows codemagic-docs (docs.codemagic.io).
+ * Marketing tokens (homepage / navbar accents) follow landing_pages.
  */
+
+@import './brand.css';
 
 @font-face {
   font-family: 'Metropolis';
@@ -49,10 +52,10 @@
 /* Override Infima/Docusaurus defaults — html beats :root specificity */
 html {
   /* Codemagic docs brand */
+  /* Docs chrome (codemagic-docs) — distinct from marketing neverblue */
   --cm-blue: #0957ff;
   --cm-blue-hover: #0944c1;
   --cm-black: #151515;
-  --cm-navy: #06225d;
   --cm-blue-xl: #f5f8ff;
   --cm-blue-xl-border: #e8ecf8;
   --cm-grey-bg-light: #f6f6f6;
@@ -74,7 +77,7 @@ html {
   --ifm-link-hover-color: #0944c1;
   --ifm-font-color-base: #151515;
   --ifm-font-color-secondary: #666666;
-  --ifm-heading-color: #06225d;
+  --ifm-heading-color: var(--cm-text-1);
   --ifm-background-color: #ffffff;
   --ifm-code-font-size: 80%;
   --docusaurus-highlighted-code-line-bg: rgba(9, 87, 255, 0.08);
@@ -112,9 +115,9 @@ html {
   /* Top nav — matches codemagic.io header */
   --ifm-navbar-height: 4.75rem;
   --ifm-navbar-padding-vertical: 0.875rem;
-  --ifm-navbar-padding-horizontal: 3.125rem;
-  --ifm-navbar-link-color: #06225d;
-  --ifm-navbar-link-hover-color: #0051ff;
+  --ifm-navbar-padding-horizontal: var(--cm-content-gutter);
+  --ifm-navbar-link-color: var(--cm-text-1);
+  --ifm-navbar-link-hover-color: var(--cm-neverblue);
   --ifm-navbar-shadow: none;
   --ifm-navbar-background-color: #ffffff;
 }
@@ -152,7 +155,7 @@ html[data-theme='dark'] {
   --ifm-menu-color: #e8eaed;
   --ifm-menu-color-active: #6b9aff;
   --ifm-navbar-link-color: #fff;
-  --ifm-navbar-link-hover-color: #ff9100;
+  --ifm-navbar-link-hover-color: var(--cm-sww-yellow);
 }
 
 /* ——— Docs navbar (codemagic-docs .page--article #header) ——— */
@@ -759,11 +762,11 @@ html[data-theme='dark'] .navbar__search-input:focus {
   font-weight: 600;
   letter-spacing: -0.02em;
   text-transform: lowercase;
-  color: #0051ff;
+  color: var(--cm-neverblue);
 }
 
 .navbar__brand:hover .navbar__title {
-  color: #0051ff;
+  color: var(--cm-neverblue);
 }
 
 html[data-theme='dark'] .navbar__brand .navbar__title,
@@ -783,7 +786,7 @@ html[data-theme='dark'] .navbar__brand:hover .navbar__title {
 
 @media (max-width: 800px) {
   :root {
-    --ifm-navbar-padding-horizontal: 1.875rem;
+    --ifm-navbar-padding-horizontal: var(--cm-content-gutter);
   }
 
   body:has(.theme-doc-sidebar-container) {
