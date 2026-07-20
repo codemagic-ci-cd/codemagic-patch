@@ -157,6 +157,17 @@ html[data-theme='dark'] {
 
 /* ——— Docs navbar (codemagic-docs .page--article #header) ——— */
 
+body:has(.theme-doc-sidebar-container) {
+  /* Less than homepage (3.125rem), aligned with sidebar menu padding */
+  --ifm-navbar-padding-horizontal: 1.75rem;
+}
+
+body:has(.theme-doc-sidebar-container) .navbar__inner {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
 html.docs-doc-page .navbar,
 body:has(.theme-doc-sidebar-container) .navbar {
   background-color: var(--cm-blue-xl);
@@ -773,6 +784,10 @@ html[data-theme='dark'] .navbar__brand:hover .navbar__title {
 @media (max-width: 800px) {
   :root {
     --ifm-navbar-padding-horizontal: 1.875rem;
+  }
+
+  body:has(.theme-doc-sidebar-container) {
+    --ifm-navbar-padding-horizontal: 1.25rem;
   }
 }
 
