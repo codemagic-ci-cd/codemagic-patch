@@ -20,5 +20,20 @@ to anything without one. This file is only a human-readable summary.
   substantially similar functionality.
 - **Converts to Apache-2.0** two years after each version is published.
 
-For a commercial license above the Monthly Active Users threshold, contact
-Codemagic (Nevercode Ltd) — <https://codemagic.io>.
+## Commercial license pricing
+
+Above 1,000,000 Monthly Active Users, a commercial license is priced per
+million users per year, based on your MAU bracket:
+
+| Monthly Active Users | Price (per million users per year) |
+| -------------------- | ---------------------------------- |
+| 1–50 million         | $990                               |
+| 50–100 million       | $750                               |
+| Over 100 million     | $500                               |
+
+For example, 10 million MAU in the 1–50 million bracket is $9,900/year
+(10 × $990).
+
+Each commercial license includes support from Codemagic engineers, including setup calls. Codemagic can also host the service for your company on request for an additional cost.
+
+To purchase a commercial license or discuss hosting, contact [sales@codemagic.io](mailto:sales@codemagic.io).
