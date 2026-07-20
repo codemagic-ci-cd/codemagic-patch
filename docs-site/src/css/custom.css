@@ -3,11 +3,14 @@
  * bundles Infima by default. Infima is a CSS framework designed to
  * work well for content-centric websites.
  *
- * Docs chrome styling follows codemagic-docs (docs.codemagic.io).
- * Marketing tokens (homepage / navbar accents) follow landing_pages.
+ * Token layers:
+ * - brand.css → marketing / homepage (landing_pages)
+ * - docs-brand.css → docs chrome (codemagic-docs)
+ * This file maps those tokens onto Infima and Docusaurus selectors.
  */
 
 @import './brand.css';
+@import './docs-brand.css';
 
 @font-face {
   font-family: 'Metropolis';
@@ -51,40 +54,29 @@
 
 /* Override Infima/Docusaurus defaults — html beats :root specificity */
 html {
-  /* Codemagic docs brand */
-  /* Docs chrome (codemagic-docs) — distinct from marketing neverblue */
-  --cm-blue: #0957ff;
-  --cm-blue-hover: #0944c1;
-  --cm-black: #151515;
-  --cm-blue-xl: #f5f8ff;
-  --cm-blue-xl-border: #e8ecf8;
-  --cm-grey-bg-light: #f6f6f6;
-  --cm-grey-bg: #eaeaea;
-  --cm-grey-l: #eeeeee;
-  --cm-grey-xl: #f8f8f8;
-  --cm-grey-text: #666666;
-  --cm-grey-text-light: #999999;
-  --cm-breadcrumb: #97a5c5;
-
-  --ifm-color-primary: #0957ff;
-  --ifm-color-primary-dark: #0944c1;
+  --ifm-color-primary: var(--cm-blue);
+  --ifm-color-primary-dark: var(--cm-blue-hover);
   --ifm-color-primary-darker: #0839a3;
   --ifm-color-primary-darkest: #062c7d;
   --ifm-color-primary-light: #3b79ff;
   --ifm-color-primary-lighter: #6b9aff;
   --ifm-color-primary-lightest: #9dbcff;
-  --ifm-link-color: #0957ff;
-  --ifm-link-hover-color: #0944c1;
-  --ifm-font-color-base: #151515;
-  --ifm-font-color-secondary: #666666;
-  --ifm-heading-color: var(--cm-text-1);
+  --ifm-link-color: var(--cm-blue);
+  --ifm-link-hover-color: var(--cm-blue-hover);
+  --ifm-font-color-base: var(--cm-black);
+  --ifm-font-color-secondary: var(--cm-grey-text);
+  --ifm-heading-color: var(--cm-navy);
   --ifm-background-color: #ffffff;
+  --ifm-font-family-base: var(--cm-font-docs);
+  --ifm-heading-font-family: var(--cm-font-docs);
+  --ifm-font-family-monospace: SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
   --ifm-code-font-size: 80%;
   --docusaurus-highlighted-code-line-bg: rgba(9, 87, 255, 0.08);
-  --patch-table-header-bg: #f8f8f8;
+  --patch-table-header-bg: var(--cm-grey-xl);
 
-  --patch-font-size-ui: 0.75rem;
-  --patch-font-size-sidebar: 0.875rem;
+  --patch-font-size-ui: 12px;
+  --patch-font-size-sidebar: 14px;
   --patch-font-weight-ui: 400;
   --patch-font-weight-ui-strong: 600;
 
@@ -95,25 +87,24 @@ html {
   --ifm-heading-font-weight: 600;
   --ifm-heading-line-height: 1.25;
 
-  --ifm-h1-font-size: 2.25rem;
-  --ifm-h2-font-size: 1.875rem;
-  --ifm-h3-font-size: 1.625rem;
-  --ifm-h4-font-size: 1.375rem;
-  --ifm-h5-font-size: 1.25rem;
-  --ifm-h6-font-size: 1.125rem;
+  --ifm-h1-font-size: var(--cm-docs-h1);
+  --ifm-h2-font-size: var(--cm-docs-h2);
+  --ifm-h3-font-size: var(--cm-docs-h3);
+  --ifm-h4-font-size: var(--cm-docs-h4);
+  --ifm-h5-font-size: var(--cm-docs-h5);
+  --ifm-h6-font-size: var(--cm-docs-h6);
 
-  --ifm-menu-color: #151515;
-  --ifm-menu-color-active: #0944c1;
+  --ifm-menu-color: var(--cm-black);
+  --ifm-menu-color-active: var(--cm-blue-hover);
   --ifm-menu-color-background-active: transparent;
   --ifm-menu-color-background-hover: transparent;
 
-  --doc-sidebar-width: 300px;
-  --ifm-toc-border-color: #eaeaea;
+  --ifm-toc-border-color: var(--cm-grey-bg);
 
   --patch-search-mark-bg: rgba(9, 87, 255, 0.12);
 
-  /* Top nav — matches codemagic.io header */
-  --ifm-navbar-height: 4.75rem;
+  /* Top nav height matches docs header (76px); accents use marketing neverblue */
+  --ifm-navbar-height: var(--cm-docs-header-height);
   --ifm-navbar-padding-vertical: 0.875rem;
   --ifm-navbar-padding-horizontal: var(--cm-content-gutter);
   --ifm-navbar-link-color: var(--cm-text-1);
@@ -123,37 +114,23 @@ html {
 }
 
 html[data-theme='dark'] {
-  --cm-blue: #3b79ff;
-  --cm-blue-hover: #6b9aff;
-  --cm-black: #e8eaed;
-  --cm-navy: #ffffff;
-  --cm-blue-xl: #13161d;
-  --cm-blue-xl-border: #232a3f;
-  --cm-grey-bg-light: #1a1f28;
-  --cm-grey-bg: #2a313f;
-  --cm-grey-l: #2a313f;
-  --cm-grey-xl: #1a1f28;
-  --cm-grey-text: #9da4af;
-  --cm-grey-text-light: #7e95b9;
-  --cm-breadcrumb: #7e95b9;
-
-  --ifm-color-primary: #3b79ff;
+  --ifm-color-primary: var(--cm-blue);
   --ifm-color-primary-dark: #0957ff;
   --ifm-color-primary-darker: #0944c1;
   --ifm-color-primary-darkest: #0839a3;
   --ifm-color-primary-light: #6b9aff;
   --ifm-color-primary-lighter: #9dbcff;
   --ifm-color-primary-lightest: #c5d8ff;
-  --ifm-link-color: #6b9aff;
-  --ifm-link-hover-color: #9dbcff;
-  --ifm-font-color-base: #e8eaed;
-  --ifm-font-color-secondary: #9da4af;
-  --ifm-heading-color: #ffffff;
+  --ifm-link-color: var(--cm-blue);
+  --ifm-link-hover-color: var(--cm-blue-hover);
+  --ifm-font-color-base: var(--cm-black);
+  --ifm-font-color-secondary: var(--cm-grey-text);
+  --ifm-heading-color: var(--cm-navy);
   --docusaurus-highlighted-code-line-bg: rgba(59, 121, 255, 0.18);
-  --patch-table-header-bg: #1a1f28;
+  --patch-table-header-bg: var(--cm-grey-xl);
   --patch-search-mark-bg: rgba(59, 121, 255, 0.22);
-  --ifm-menu-color: #e8eaed;
-  --ifm-menu-color-active: #6b9aff;
+  --ifm-menu-color: var(--cm-black);
+  --ifm-menu-color-active: var(--cm-blue);
   --ifm-navbar-link-color: #fff;
   --ifm-navbar-link-hover-color: var(--cm-sww-yellow);
 }
@@ -210,7 +187,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 }
 
 .theme-doc-sidebar-menu .menu__link {
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 400;
   color: var(--cm-black);
   border-radius: 0;
@@ -270,7 +247,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 .theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link.menu__link--active,
 .theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link:hover,
 .theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link.menu__link--active:hover {
-  font-size: 1rem;
+  font-size: 16px;
   font-weight: 600;
   color: var(--cm-navy);
   padding: 1.15rem 1.25rem 0.85rem 0;
@@ -298,7 +275,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 }
 
 .theme-doc-sidebar-menu > .theme-doc-sidebar-item-link > .menu__link {
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 400;
   color: var(--cm-black);
   padding: 0.3rem 0.625rem;
@@ -315,7 +292,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 .theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link.menu__link--active,
 .theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link:hover,
 .theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link.menu__link--active:hover {
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cm-black);
   background: transparent;
@@ -363,6 +340,11 @@ body:has(.theme-doc-sidebar-container) .navbar {
 
 /* ——— Article content ——— */
 
+/* Match codemagic-docs main { padding: 50px 0 ... } above the H1 */
+.docs-doc-page main[class*='docMainContainer'] .container.padding-top--md {
+  padding-top: 50px !important;
+}
+
 @media (min-width: 997px) {
   main[class*='docMainContainer'] {
     --ifm-spacing-horizontal: 2.5rem;
@@ -370,33 +352,36 @@ body:has(.theme-doc-sidebar-container) .navbar {
 }
 
 .markdown {
-  --ifm-leading: 1.625rem;
+  --ifm-leading: 26px;
   font-size: 14px;
   line-height: 26px;
 }
 
+/* Beat Infima `.markdown h1:first-child { --ifm-h1-font-size: 3rem }` (same specificity, later wins) */
+.markdown h1:first-child,
 .theme-doc-markdown header h1,
-.markdown > h1:first-child {
-  --ifm-h1-font-size: 2.25rem;
+.markdown > h1:first-child,
+.markdown header h1 {
+  --ifm-h1-font-size: var(--cm-docs-h1);
   color: var(--cm-navy);
   font-weight: 600;
   letter-spacing: -0.01em;
-  margin: 0 0 0.625rem;
-  padding-bottom: 0.625rem;
+  margin: 0 0 10px;
+  padding-bottom: 10px;
 }
 
 .markdown > h2 {
-  --ifm-h2-font-size: 1.875rem;
+  --ifm-h2-font-size: var(--cm-docs-h2);
   color: var(--cm-navy);
   font-weight: 600;
-  margin: 2.5rem 0;
+  margin: 40px 0;
 }
 
 .markdown > h3 {
-  --ifm-h3-font-size: 1.625rem;
+  --ifm-h3-font-size: var(--cm-docs-h3);
   color: var(--cm-navy);
   font-weight: 600;
-  margin: 2.5rem 0;
+  margin: 40px 0;
 }
 
 .markdown h4,
@@ -404,19 +389,19 @@ body:has(.theme-doc-sidebar-container) .navbar {
 .markdown h6 {
   color: var(--cm-navy);
   font-weight: 600;
-  margin: 2.5rem 0;
+  margin: 40px 0;
 }
 
 .markdown h4 {
-  --ifm-h4-font-size: 1.375rem;
+  --ifm-h4-font-size: var(--cm-docs-h4);
 }
 
 .markdown h5 {
-  --ifm-h5-font-size: 1.25rem;
+  --ifm-h5-font-size: var(--cm-docs-h5);
 }
 
 .markdown h6 {
-  --ifm-h6-font-size: 1.125rem;
+  --ifm-h6-font-size: var(--cm-docs-h6);
 }
 
 .markdown p,
@@ -425,12 +410,12 @@ body:has(.theme-doc-sidebar-container) .navbar {
 .markdown pre,
 .markdown hr,
 .markdown figure {
-  margin: 1.25rem 0;
+  margin: 20px 0;
 }
 
 .markdown li {
-  margin: 0.625rem 0;
-  line-height: 25px;
+  margin: 10px 0;
+  line-height: 26px;
 }
 
 .theme-doc-markdown a {
@@ -449,7 +434,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 .markdown code {
   border: 1px solid var(--cm-grey-l);
   background: var(--cm-grey-bg-light);
-  border-radius: 2px;
+  border-radius: var(--cm-docs-code-radius);
   font-size: 0.8em;
   padding: 2px 4px;
   word-break: break-word;
@@ -457,7 +442,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 
 .markdown pre {
   border: 1px solid var(--cm-grey-l);
-  border-radius: 10px;
+  border-radius: var(--cm-docs-radius);
   padding: 1.25rem;
   font-size: 12px;
   line-height: 20px;
@@ -538,7 +523,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 .theme-admonition {
   background: var(--cm-grey-xl);
   border: 1px solid var(--cm-grey-l);
-  border-radius: 10px;
+  border-radius: var(--cm-docs-radius);
   box-shadow: none;
 }
 
@@ -556,37 +541,46 @@ blockquote {
   padding: 1.25rem;
   border: 1px solid var(--cm-grey-l);
   border-left: 7px solid var(--cm-grey-l);
-  border-radius: 10px;
+  border-radius: var(--cm-docs-radius);
   background: var(--ifm-background-color);
 }
 
+/* Mobile type scale — codemagic-docs @media (max-width: 1000px) */
 @media (max-width: 996px) {
+  .markdown h1:first-child,
   .theme-doc-markdown header h1,
-  .markdown > h1:first-child {
-    --ifm-h1-font-size: 1.625rem;
+  .markdown > h1:first-child,
+  .markdown header h1 {
+    --ifm-h1-font-size: 26px;
     padding-bottom: 0;
   }
 
   .markdown > h2 {
-    --ifm-h2-font-size: 1.5rem;
-    margin: 1.875rem 0;
+    --ifm-h2-font-size: 24px;
+    margin: 30px 0;
   }
 
   .markdown > h3 {
-    --ifm-h3-font-size: 1.375rem;
-    margin: 1.875rem 0;
+    --ifm-h3-font-size: 22px;
+    margin: 30px 0;
+  }
+
+  .markdown h4,
+  .markdown h5,
+  .markdown h6 {
+    margin: 30px 0;
   }
 
   .markdown h4 {
-    --ifm-h4-font-size: 1.25rem;
+    --ifm-h4-font-size: 20px;
   }
 
   .markdown h5 {
-    --ifm-h5-font-size: 1.125rem;
+    --ifm-h5-font-size: 18px;
   }
 
   .markdown h6 {
-    --ifm-h6-font-size: 1rem;
+    --ifm-h6-font-size: 16px;
   }
 }
 
@@ -595,13 +589,13 @@ blockquote {
 .breadcrumbs {
   background-color: var(--cm-blue-xl);
   border-radius: 4px;
-  padding: 0.75rem 0.9375rem;
-  margin: 0.625rem 0 1.25rem;
+  padding: 15px;
+  margin: 10px 0 20px;
 }
 
 .breadcrumbs__item,
 .breadcrumbs__link {
-  font-size: 0.8125rem;
+  font-size: 14px;
   font-weight: 400;
   color: var(--cm-breadcrumb);
 }
@@ -618,8 +612,8 @@ blockquote {
 /* ——— TOC ——— */
 
 .table-of-contents {
-  font-size: 0.75rem;
-  padding-left: 0.625rem;
+  font-size: 12px;
+  padding-left: 10px;
 }
 
 .table-of-contents__left-border {
@@ -627,11 +621,11 @@ blockquote {
 }
 
 .table-of-contents__link {
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 400;
   line-height: 1.4;
   color: var(--cm-grey-text-light);
-  padding: 0.3125rem;
+  padding: 5px;
 }
 
 .table-of-contents__link:hover {
@@ -647,7 +641,7 @@ blockquote {
 .table-of-contents__link--active::before {
   content: '';
   position: absolute;
-  left: -0.625rem;
+  left: -10px;
   top: 0;
   bottom: 0;
   border-left: 2px solid var(--cm-blue);
@@ -687,7 +681,7 @@ blockquote {
 
 .navbar__link {
   font-family: inherit;
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 600;
   height: 3rem;
   line-height: 3rem;
@@ -708,32 +702,40 @@ blockquote {
 
 .navbar__search-input {
   font-family: inherit;
-  font-size: 0.875rem;
-  border-radius: 8px;
-  border: 1px solid #dfe5f2;
+  font-size: 14px;
+  height: 3rem;
+  border-radius: var(--cm-docs-radius);
+  border: 2px solid var(--cm-grey-l);
   background-color: #ffffff;
   color: var(--ifm-navbar-link-color);
+  transition: all 200ms ease-in-out;
 }
 
 .navbar__search-input::placeholder {
-  color: #8b95a8;
+  color: var(--cm-grey-text-light);
 }
 
 .navbar__search-input:focus {
   outline: none;
-  border-color: #0957ff;
+  border-color: transparent;
   background-color: #ffffff;
+  box-shadow:
+    0 0 0 1px var(--cm-blue),
+    0 0 0 5px rgba(9, 87, 255, 0.1);
 }
 
 html[data-theme='dark'] .navbar__search-input {
-  border-color: #232a3f;
+  border-color: var(--cm-blue-xl-border);
   background-color: #121826;
   color: #ffffff;
 }
 
 html[data-theme='dark'] .navbar__search-input:focus {
-  border-color: #3b79ff;
+  border-color: transparent;
   background-color: #0d121f;
+  box-shadow:
+    0 0 0 1px var(--cm-blue),
+    0 0 0 5px rgba(59, 121, 255, 0.2);
 }
 
 .navbar__toggle {
@@ -745,7 +747,7 @@ html[data-theme='dark'] .navbar__search-input:focus {
 }
 
 .navbar-sidebar .menu__link {
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 600;
   padding: 0.85rem 1.5rem;
 }

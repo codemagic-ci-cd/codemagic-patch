@@ -28,6 +28,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
+          breadcrumbs: false,
         },
         blog: false,
         theme: {

@@ -1,8 +1,9 @@
 /**
  * Codemagic marketing brand tokens
  * Mirrors landing_pages/src/assets/scss/base/_variables.colors.scss
- * (and related button / gradient primitives). Docs chrome still uses
- * --cm-blue (#0957ff) from codemagic-docs; marketing neverblue is separate.
+ *
+ * Docs chrome uses docs-brand.css (--cm-blue #0957ff, etc.).
+ * Do not mix neverblue / sunrise into article styling.
  */
 
 html {
@@ -12,7 +13,6 @@ html {
   --cm-dash-aqua: #00ceff;
   --cm-pink-magic: #fe19ff;
   --cm-sww-yellow: #ff9100;
-  --cm-navy: #06225d;
 
   /* Text */
   --cm-text-1: #06225d;

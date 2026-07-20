@@ -8,10 +8,8 @@ import DocVersionBadge from '@theme/DocVersionBadge';
 import DocItemFooter from '@theme/DocItem/Footer';
 import DocItemTOCMobile from '@theme/DocItem/TOC/Mobile';
 import DocItemTOCDesktop from '@theme/DocItem/TOC/Desktop';
-import DocItemContent from '@theme/DocItem/Content';
-import DocBreadcrumbs from '@theme/DocBreadcrumbs';
+import DocItemContent from '../Content';
 import ContentVisibility from '@theme/ContentVisibility';
-import SendToAI from '@site/src/components/SendToAI';
 import type {Props} from '@theme/DocItem/Layout';
 
 import styles from './styles.module.css';
@@ -37,16 +35,9 @@ function useDocTOC() {
   };
 }
 
-const MINIMAL_DOC_PAGE_IDS = new Set(['changelog', 'roadmap']);
-
 export default function DocItemLayout({children}: Props): ReactNode {
   const docTOC = useDocTOC();
-  const {metadata, frontMatter} = useDoc();
-  const isMinimalDocPage = MINIMAL_DOC_PAGE_IDS.has(metadata.id);
-  const hideSendToAI =
-    isMinimalDocPage ||
-    (frontMatter as {hide_send_to_ai?: boolean}).hide_send_to_ai === true;
-  const showDocTopBar = !isMinimalDocPage || !hideSendToAI;
+  const {metadata} = useDoc();
   return (
     <div className="row">
       <div className={clsx('col', !docTOC.hidden && styles.docItemCol)}>
@@ -54,12 +45,6 @@ export default function DocItemLayout({children}: Props): ReactNode {
         <DocVersionBanner />
         <div className={styles.docItemContainer}>
           <article className={metadata.id === 'changelog' ? 'patch-changelog' : undefined}>
-            {showDocTopBar && (
-              <div className={styles.docTopBar}>
-                {!isMinimalDocPage && <DocBreadcrumbs />}
-                {!hideSendToAI && <SendToAI />}
-              </div>
-            )}
             <DocVersionBadge />
             {docTOC.mobile}
             <DocItemContent>{children}</DocItemContent>
