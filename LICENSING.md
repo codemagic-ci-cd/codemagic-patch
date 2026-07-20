@@ -23,7 +23,8 @@ to anything without one. This file is only a human-readable summary.
 ## Commercial license pricing
 
 Above 1,000,000 Monthly Active Users, a commercial license is priced per
-million users per year, based on your MAU bracket:
+million users per year. Tiers apply progressively: each band of MAU is billed
+at that band's rate.
 
 | Monthly Active Users | Price (per million users per year) |
 | -------------------- | ---------------------------------- |
@@ -31,9 +32,11 @@ million users per year, based on your MAU bracket:
 | 50–100 million       | $750                               |
 | Over 100 million     | $500                               |
 
-For example, 10 million MAU in the 1–50 million bracket is $9,900/year
-(10 × $990).
+For example, 120 million MAU is $97,000/year (50 × $990 + 50 × $750 + 20 ×
+$500).
 
-Each commercial license includes support from Codemagic engineers, including setup calls. Codemagic can also host the service for your company on request for an additional cost.
+Codemagic can also host the service for your company on request for an
+additional cost.
 
-To purchase a commercial license or discuss hosting, contact [sales@codemagic.io](mailto:sales@codemagic.io).
+To purchase a commercial license or discuss hosting, contact
+[sales@codemagic.io](mailto:sales@codemagic.io).
