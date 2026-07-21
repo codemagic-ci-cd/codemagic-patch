@@ -12,7 +12,7 @@
  *
  * This algorithm is deliberately vendored instead of using platform crypto
  * (Android MessageDigest / iOS CryptoKit) so Android and iOS share one
- * byte-identical implementation -- see specs/sdk-native/Spec.md Platform Security.
+ * byte-identical implementation.
  */
 #include "sha256.h"
 

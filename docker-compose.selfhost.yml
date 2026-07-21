@@ -70,10 +70,18 @@ services:
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
       CLOUDFLARE_API_BASE_URL: ${CLOUDFLARE_API_BASE_URL:-}
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
-      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       GITHUB_OAUTH_ALLOWED_REDIRECT_URIS: ${GITHUB_OAUTH_ALLOWED_REDIRECT_URIS:-}
+      OAUTH_CLI_AUTH_SECRET: ${OAUTH_CLI_AUTH_SECRET:-}
+      # Legacy name; the server reads it as a permanent fallback for
+      # OAUTH_CLI_AUTH_SECRET, so env files from older installs keep working.
       OAUTH_DEVICE_POLL_TOKEN_SECRET: ${OAUTH_DEVICE_POLL_TOKEN_SECRET:-}
       GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-read:user user:email}
+      # Bitbucket Cloud sign-in (web flow only) — a second provider next to
+      # GitHub, or the sole provider when GitHub is not configured.
+      BITBUCKET_OAUTH_CLIENT_ID: ${BITBUCKET_OAUTH_CLIENT_ID:-}
+      BITBUCKET_OAUTH_CLIENT_SECRET: ${BITBUCKET_OAUTH_CLIENT_SECRET:-}
+      BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS: ${BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS:-}
       INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:-}
       # The fixed `default-team` is created on boot (idempotent); the initial
       # admin becomes its owner on first sign-in. Team CRUD is disabled in the

@@ -368,24 +368,43 @@ export interface ApiTokenCreateResponse {
   token: string;
 }
 
+/** `POST /v1/auth/cli/authorizations` request (authenticated; the /cli/authorize approve page). */
+export interface CliAuthorizationBody {
+  codeChallenge: string;
+  port: number;
+}
+
+/** `POST /v1/auth/cli/authorizations` (201) — short-lived code redirected to the CLI's loopback listener. */
+export interface CliAuthorizationResponse {
+  code: string;
+  expiresInSeconds: number;
+}
+
+/** One sign-in provider entry from the web-config provider list. */
+export interface OAuthWebConfigProvider {
+  /** Echoed into the callback body; "github" / "bitbucket" on stock servers. */
+  provider: string;
+  clientId: string;
+  /** "" = the provider carries no authorize-URL scopes (e.g. Bitbucket). */
+  scopes: string;
+  /**
+   * Complete authorize endpoint — absolute URL (scheme + host + path, no
+   * query), or a same-origin absolute path (the SPA's own consent route in
+   * local-dev mode). The SPA appends the per-flow query params.
+   */
+  authorizeEndpoint: string;
+}
+
 /**
  * `GET /v1/auth/oauth/web-config` (public). When web OAuth is
  * unconfigured the server returns a 404 problem with `type: "about:blank"`
  * (no suffix) so it is distinguishable from resource `not-found`.
  */
 export interface OAuthWebConfig {
-  /** Echoed into the callback body; "github" on stock servers. */
-  provider: string;
-  clientId: string;
-  scopes: string;
-  /** Absent = normal GitHub mode; "local-dev" = local evaluation stack. */
+  /** One login button per entry, in order. */
+  providers: OAuthWebConfigProvider[];
+  /** Absent = normal mode; "local-dev" = local evaluation stack. */
   mode?: string;
-  /**
-   * Authorize origin override. Absent = github.com (or the build-time
-   * VITE_OAUTH_AUTHORIZE_BASE_URL); "" = same-origin (the SPA's own consent
-   * route) — "" is a PRESENT value, resolution must not use truthiness.
-   */
-  authorizeBaseUrl?: string;
 }
 
 // ---------------------------------------------------------------------------

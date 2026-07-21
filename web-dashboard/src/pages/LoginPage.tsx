@@ -1,10 +1,11 @@
 // Login / OAuth start (centered .auth-card on the starfield .auth backdrop).
-// States: loading (web-config fetch), default ("Continue
-// with GitHub" → startLogin → authorize redirect, post-click spinner until
-// the navigation lands), configuration-error (web-config 404 about:blank per
-// the web-config contract → classifyWebConfigError) with Retry, network failure →
-// retryable, and the `?error=` banner for authorize redirects that came back
-// without a code (GitHub denial — CallbackPage funnels those here).
+// States: loading (web-config fetch), default (one "Continue with <provider>"
+// button per configured provider → startLogin → authorize redirect,
+// post-click spinner until the navigation lands), configuration-error
+// (web-config 404 about:blank per the web-config contract →
+// classifyWebConfigError) with Retry, network failure → retryable, and the
+// `?error=` banner for authorize redirects that came back without a code
+// (provider denial — CallbackPage funnels those here).
 // Already-authenticated visitors are bounced to returnTo ?? "/" once the
 // AuthProvider boot restore settles. The "Change server" link is
 // intentionally dropped: the SPA is same-origin, so the server IS
@@ -24,18 +25,22 @@ import {
 import { PRODUCT_NAME } from "../branding";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
+import type { OAuthWebConfigProvider } from "../api/types";
 
 const CONFIGURATION_ERROR_MESSAGE =
   "Browser sign-in is unavailable: this server is not configured for web OAuth.";
 const CONFIG_FETCH_FAILED_MESSAGE =
   "Couldn't load the sign-in configuration — check your connection and try again.";
 const REDIRECT_FAILED_MESSAGE =
-  "Couldn't start the GitHub sign-in redirect — try again.";
+  "Couldn't start the sign-in redirect — try again.";
 
 export function LoginPage() {
   const { bootStatus, isAuthenticated } = useSession();
   const [searchParams] = useSearchParams();
-  const [redirecting, setRedirecting] = useState(false);
+  // Provider id of the in-flight redirect; every button disables while set.
+  const [redirectingProvider, setRedirectingProvider] = useState<string | null>(
+    null,
+  );
   const [startError, setStartError] = useState(false);
 
   const configQuery = useWebConfig();
@@ -48,19 +53,20 @@ export function LoginPage() {
     return <Navigate to={returnTo ?? "/"} replace />;
   }
 
-  const handleContinue = async () => {
-    if (configQuery.data === undefined || redirecting) {
+  const handleContinue = async (provider: OAuthWebConfigProvider) => {
+    if (redirectingProvider !== null) {
       return;
     }
     setStartError(false);
-    setRedirecting(true);
+    setRedirectingProvider(provider.provider);
     try {
-      const authorizeUrl = await startLogin(configQuery.data, returnTo);
-      // Full-page navigation to GitHub; the spinner stays until it lands.
-      window.location.href = authorizeUrl;
+      const authorizeUrl = await startLogin(provider, returnTo);
+      // Full-page navigation to the provider; the spinner stays until it
+      // lands.
+      window.location.assign(authorizeUrl);
     } catch {
       // WebCrypto unavailable (non-secure context) — surface and re-enable.
-      setRedirecting(false);
+      setRedirectingProvider(null);
       setStartError(true);
     }
   };
@@ -106,11 +112,12 @@ export function LoginPage() {
     );
   } else {
     // Local evaluation stack: same flow, but the authorize redirect lands on
-    // the same-origin consent page instead of GitHub — relabel accordingly.
+    // the same-origin consent page instead of a provider — relabel accordingly.
     const localDev = isLocalDevMode(configQuery.data);
+    const hasBanner = oauthError !== null || startError;
     body = (
       <>
-        {oauthError !== null || startError ? (
+        {hasBanner ? (
           <div
             className={`${CALLOUT} ${CALLOUT_TONE.danger} text-left mt-6`}
             role="alert"
@@ -119,39 +126,30 @@ export function LoginPage() {
             <div>
               {startError
                 ? REDIRECT_FAILED_MESSAGE
-                : `${localDev ? "Local" : "GitHub"} sign-in didn't complete (${oauthError}). Try again.`}
+                : `Sign-in didn't complete (${oauthError}). Try again.`}
             </div>
           </div>
         ) : null}
-        <button
-          type="button"
-          className={buttonVariants({
-            intent: localDev ? "primary" : "gh",
-            size: "lg",
-            block: true,
-          })}
-          style={{ marginTop: oauthError !== null || startError ? 18 : 28 }}
-          onClick={() => {
-            void handleContinue();
-          }}
-          disabled={redirecting}
-          aria-busy={redirecting}
+        <div
+          className="flex flex-col gap-3"
+          style={{ marginTop: hasBanner ? 18 : 28 }}
         >
-          {redirecting ? (
-            <>
-              <span className="spinner sm" aria-hidden="true" /> Redirecting…
-            </>
-          ) : localDev ? (
-            <>Sign in (local evaluation)</>
-          ) : (
-            <>
-              <GitHubIcon /> Continue with GitHub
-            </>
-          )}
-        </button>
+          {configQuery.data.providers.map((provider) => (
+            <ProviderButton
+              key={provider.provider}
+              provider={provider}
+              localDev={localDev}
+              redirecting={redirectingProvider === provider.provider}
+              disabled={redirectingProvider !== null}
+              onClick={() => {
+                void handleContinue(provider);
+              }}
+            />
+          ))}
+        </div>
         <p className="mt-4 text-[12px]/[1.6] text-fg-3">
           {localDev
-            ? "Local evaluation mode replaces GitHub sign-in — authentication is disabled on this stack. Do not expose it."
+            ? "Local evaluation mode replaces provider sign-in — authentication is disabled on this stack. Do not expose it."
             : "Uses the OAuth 2.0 authorization-code flow with PKCE — no client secret is stored in the browser."}
         </p>
       </>
@@ -198,6 +196,67 @@ function sanitizeReturnTo(value: string | null): string | undefined {
   return value;
 }
 
+function ProviderButton({
+  provider,
+  localDev,
+  redirecting,
+  disabled,
+  onClick,
+}: {
+  provider: OAuthWebConfigProvider;
+  localDev: boolean;
+  redirecting: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const intent =
+    localDev || provider.provider === "bitbucket" ? "primary" : "gh";
+  return (
+    <button
+      type="button"
+      className={buttonVariants({ intent, size: "lg", block: true })}
+      onClick={onClick}
+      disabled={disabled}
+      aria-busy={redirecting}
+    >
+      {redirecting ? (
+        <>
+          <span className="spinner sm" aria-hidden="true" /> Redirecting…
+        </>
+      ) : localDev ? (
+        <>Sign in (local evaluation)</>
+      ) : (
+        <>
+          <ProviderIcon provider={provider.provider} /> Continue with{" "}
+          {providerLabel(provider.provider)}
+        </>
+      )}
+    </button>
+  );
+}
+
+/** Login-button label; unknown providers get a capitalized fallback. */
+function providerLabel(provider: string): string {
+  switch (provider) {
+    case "github":
+      return "GitHub";
+    case "bitbucket":
+      return "Bitbucket";
+    default:
+      return provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
+}
+
+function ProviderIcon({ provider }: { provider: string }) {
+  if (provider === "github") {
+    return <GitHubIcon />;
+  }
+  if (provider === "bitbucket") {
+    return <BitbucketIcon />;
+  }
+  return null;
+}
+
 // Logo markup (fill-based, unlike shell icons).
 function LogoIcon() {
   return (
@@ -225,6 +284,15 @@ function GitHubIcon() {
       aria-hidden="true"
     >
       <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+    </svg>
+  );
+}
+
+// Bitbucket mark (fill-based, like the logo): the official 24x24 bucket path.
+function BitbucketIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.899zM14.52 15.53H9.522L8.17 8.466h7.561z" />
     </svg>
   );
 }

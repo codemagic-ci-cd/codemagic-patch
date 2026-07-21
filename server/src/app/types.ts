@@ -430,17 +430,33 @@ export interface PublicAuthAuditContext {
   userAgent: string | null;
 }
 
+export interface OAuthWebConfigProvider {
+  /**
+   * Complete authorize endpoint — scheme + host + path, no query (e.g.
+   * "https://github.com/login/oauth/authorize"), or a same-origin absolute
+   * path ("/login/oauth/authorize", the local-dev consent route). The SPA
+   * appends the per-flow query params (client_id, state, PKCE challenge,
+   * redirect_uri, and scope only when `scopes` is non-empty).
+   */
+  authorizeEndpoint: string;
+  clientId: string;
+  provider: string;
+  /** "" = no authorize-URL scope param (e.g. Bitbucket: consumer-side scopes). */
+  scopes: string;
+}
+
 export interface OAuthWebConfig {
   /**
-   * Base URL the dashboard prepends to the authorize path. Absent = GitHub
-   * mode (github.com); "" = same-origin (the SPA's own consent route).
+   * Origin serving the dashboard SPA when it is NOT the API origin (e.g. the
+   * local-dev stack's separate dashboard container). Absent = same origin as
+   * the server, the production shape. The CLI builds its /cli/authorize URL
+   * from this.
    */
-  authorizeBaseUrl?: string;
-  clientId: string;
-  /** Absent = normal GitHub mode; "local-dev" switches the dashboard login. */
+  dashboardOrigin?: string;
+  /** Absent = normal mode; "local-dev" switches the dashboard login. */
   mode?: string;
-  provider: string;
-  scopes: string;
+  /** One login button per entry, in order. */
+  providers: OAuthWebConfigProvider[];
 }
 
 export interface OAuthCallbackHandlerInput {
@@ -485,82 +501,59 @@ export type OAuthCallbackHandlerResult =
         | "invalid_grant"
         | "provider_error"
         | "unknown_provider"
-        | "unverified_email";
+        | "unverified_email"
+        | "verified_email_required";
     };
 
 export interface OAuthCallbackRouteHandler {
   (input: OAuthCallbackHandlerInput): Promise<OAuthCallbackHandlerResult>;
 }
 
-export interface OAuthDeviceStartHandlerInput {
-  provider: string;
+export interface OAuthCliAuthorizationIssueHandlerInput {
+  codeChallenge: string;
+  port: number;
+  userId: string;
 }
 
-export type OAuthDeviceStartHandlerResult =
-  | {
-      expiresInSeconds: number;
-      intervalSeconds: number;
-      outcome: "started";
-      pollToken: string;
-      provider: string;
-      userCode: string;
-      verificationUri: string;
-    }
-  | {
-      outcome: "auth_failed";
-      reason: "provider_error" | "unknown_provider";
-    };
+export interface OAuthCliAuthorizationIssueHandlerResult {
+  code: string;
+  expiresInSeconds: number;
+  outcome: "issued";
+}
 
-export interface OAuthDeviceStartRouteHandler {
+/**
+ * Issues a short-TTL CLI authorization code for the signed-in dashboard user
+ * (control-plane authenticated; the dashboard's /cli/authorize approve page is
+ * the caller). The code binds the CLI's PKCE challenge and loopback port.
+ */
+export interface OAuthCliAuthorizationIssueRouteHandler {
   (
-    input: OAuthDeviceStartHandlerInput,
-  ): Promise<OAuthDeviceStartHandlerResult>;
+    input: OAuthCliAuthorizationIssueHandlerInput,
+  ): Promise<OAuthCliAuthorizationIssueHandlerResult>;
 }
 
-export interface OAuthDevicePollHandlerInput {
+export interface OAuthCliExchangeHandlerInput {
   auditContext?: PublicAuthAuditContext;
-  pollToken: string;
-  provider: string;
+  code: string;
+  codeVerifier: string;
 }
 
-export type OAuthDevicePollHandlerResult =
+export type OAuthCliExchangeHandlerResult =
   | OAuthSessionCreatedHandlerResult
-  | {
-      intervalSeconds: number;
-      outcome: "authorization_pending";
-    }
-  | {
-      intervalSeconds: number;
-      outcome: "slow_down";
-    }
-  | {
-      outcome: "conflict";
-      reason: "oauth_identity_conflict";
-    }
   | {
       outcome: "account_disabled";
       reason: "user_disabled";
     }
   | {
-      outcome: "registration_closed";
-      reason: "registration_invite_only";
-    }
-  | {
       outcome: "auth_failed";
-      reason:
-        | "access_denied"
-        | "email_scope_required"
-        | "expired_token"
-        | "invalid_poll_token"
-        | "provider_error"
-        | "unknown_provider"
-        | "verified_email_required";
+      // One collapsed reason for bad signature, expiry, unknown user, and
+      // PKCE mismatch — no oracle for guessing which check failed.
+      reason: "invalid_cli_authorization_code";
     };
 
-export interface OAuthDevicePollRouteHandler {
-  (
-    input: OAuthDevicePollHandlerInput,
-  ): Promise<OAuthDevicePollHandlerResult>;
+/** Public JSON exchange: CLI authorization code + PKCE verifier → session. */
+export interface OAuthCliExchangeRouteHandler {
+  (input: OAuthCliExchangeHandlerInput): Promise<OAuthCliExchangeHandlerResult>;
 }
 
 export interface OAuthRefreshHandlerInput {
@@ -1460,8 +1453,8 @@ export interface BuildAppOptions {
   metricEventIngestHandler?: MetricEventIngestRouteHandler;
   mode?: ServerMode;
   oauthCallbackHandler?: OAuthCallbackRouteHandler;
-  oauthDevicePollHandler?: OAuthDevicePollRouteHandler;
-  oauthDeviceStartHandler?: OAuthDeviceStartRouteHandler;
+  oauthCliAuthorizationIssueHandler?: OAuthCliAuthorizationIssueRouteHandler;
+  oauthCliExchangeHandler?: OAuthCliExchangeRouteHandler;
   oauthLogoutHandler?: OAuthLogoutRouteHandler;
   oauthRefreshHandler?: OAuthRefreshRouteHandler;
   oauthWebConfig?: OAuthWebConfig;

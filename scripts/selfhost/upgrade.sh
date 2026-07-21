@@ -64,17 +64,10 @@ if [ "$SKIP_SMOKE" -eq 0 ] && [ -z "${CODEMAGIC_PATCH_TOKEN:-}" ]; then
   warn_selfhost "for the full smoke, sign in with 'cmpatch login', run 'cmpatch token create', and set CODEMAGIC_PATCH_TOKEN=cm_pat_..."
 fi
 
-# Older installs may predate GitHub OAuth and the bundled web dashboard; check
-# env completeness (fail fast or backfill) before touching the stack.
-if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ]; then
-  fail_selfhost "GITHUB_OAUTH_CLIENT_ID is missing from ${SELFHOST_ENV_FILE}. GitHub OAuth is now required. Create a GitHub OAuth App (device flow), then add GITHUB_OAUTH_CLIENT_ID, OAUTH_DEVICE_POLL_TOKEN_SECRET (32+ chars), and INITIAL_ADMIN_EMAILS to the env file before rerunning. Existing API tokens keep working."
-fi
-
-if [ -z "${GITHUB_OAUTH_CLIENT_SECRET:-}" ]; then
-  fail_selfhost "GITHUB_OAUTH_CLIENT_SECRET is missing from ${SELFHOST_ENV_FILE}. The web dashboard requires it: add an Authorization callback URL https://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback to your GitHub OAuth App, generate a client secret, add GITHUB_OAUTH_CLIENT_SECRET to the env file, then rerun."
-fi
-
-if [ -z "${GITHUB_OAUTH_ALLOWED_REDIRECT_URIS:-}" ]; then
+# ensure_selfhost_oauth_env above already validated the OAuth env (at least
+# one provider, and each configured provider's id/secret pair). Older GitHub
+# installs may still predate the redirect allowlist; backfill it here.
+if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_ALLOWED_REDIRECT_URIS:-}" ]; then
   set_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "https://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
   warn_selfhost "GITHUB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to https://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
 fi

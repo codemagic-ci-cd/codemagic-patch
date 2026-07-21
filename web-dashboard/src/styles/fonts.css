@@ -1,13 +1,11 @@
 /* ============================================================================
    Codemagic Patch — Web Dashboard
-   Self-hosted webfonts (CSP `default-src 'self'` — no CDN imports allowed).
-   Replaces the mockup's cdnfonts/Google `@import`s (mockup/assets/styles.css:9-10).
+   Self-hosted webfonts keep the dashboard compatible with CSP
+   `default-src 'self'` without CDN imports.
 
    Metropolis — Unlicense. Vendored from the dw5/Metropolis mirror of
      chrismsimpson/Metropolis (original repo no longer available on GitHub).
    Fira Code  — SIL OFL 1.1. Vendored from the tonsky/FiraCode v6.2 release.
-   Licenses + sources: ./fonts/README.md
-
    Weight-range notes (file set is Regular/Medium/SemiBold/Bold + mono R/M):
    - Metropolis Bold declares `font-weight:700 900` so the design system's
      800/900 usages (.page-title, .sb__word b, …) resolve to Bold without

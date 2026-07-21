@@ -1,10 +1,9 @@
 /**
  * Core domain types for the CodemagicPatch control-plane server.
  *
- * These types model the persistent entities defined in db-schema-ddl.md
- * and server-tech-spec.md. They are used across API, worker, and adapter
- * boundaries. Transport / ORM representations should map to and from
- * these types at the edge.
+ * These types model persistent control-plane entities and cross API, worker,
+ * and adapter boundaries. Transport / ORM representations should map to and
+ * from these types at the edge.
  */
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,7 @@
 /**
  * Worker pipeline types for the release reconciler.
  *
- * These types model the four-phase reconciliation algorithm defined in
- * release-worker-tech-spec.md:
+ * These types model the four-phase reconciliation algorithm:
  *   Phase 1 — Compute Desired State (pure computation)
  *   Phase 2 — Inspect Actual State  (storage reads)
  *   Phase 3 — Diff                  (pure computation)
@@ -20,7 +19,7 @@ import type {
 } from "../domain/types";
 
 // ---------------------------------------------------------------------------
-// Manifest content — maps to manifest.json (PROTOCOL.md)
+// Manifest content — maps to manifest.json
 // ---------------------------------------------------------------------------
 
 /**
@@ -98,7 +97,7 @@ export interface PreviousPackageInfoDraft {
 }
 
 // ---------------------------------------------------------------------------
-// Deployment metadata — maps to meta.json (PROTOCOL.md)
+// Deployment metadata — maps to meta.json
 // ---------------------------------------------------------------------------
 
 export interface DeploymentMeta {
@@ -110,7 +109,7 @@ export interface DeploymentMeta {
 // ---------------------------------------------------------------------------
 
 /**
- * Wire-format JSON for manifest.json (snake_case, per PROTOCOL.md).
+ * Client-facing wire-format JSON for manifest.json (snake_case).
  *
  * Internal types (ManifestContent, PreviousPackageInfo) use camelCase
  * per TypeScript convention. This type represents the over-the-wire

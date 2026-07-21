@@ -1,6 +1,6 @@
 /* ============================================================================
    Codemagic Patch — Web Dashboard
-   Reset / base — ported verbatim from mockup/assets/styles.css (RESET / BASE).
+   Reset / base styles.
    ============================================================================ */
 /* `border:0 solid` is the one preflight rule Tailwind v4 utilities depend on
    (border-* sets a width; the style must already be solid). All existing rules

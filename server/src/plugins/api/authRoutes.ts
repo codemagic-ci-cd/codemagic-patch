@@ -4,12 +4,12 @@ import { createProblem, sendProblem } from "../../app/problemDetails";
 import {
   createAuthenticationRequiredProblem,
   createOAuthAuthFailedProblem,
-  createOAuthDeviceAuthFailedProblem,
+  createOAuthCliExchangeFailedProblem,
   createRegistrationClosedProblem,
   parseApiTokenCreateInput,
   parseOAuthCallbackInput,
-  parseOAuthDevicePollInput,
-  parseOAuthDeviceStartInput,
+  parseOAuthCliAuthorizationIssueInput,
+  parseOAuthCliExchangeInput,
   parseOAuthRefreshTokenInput,
   publicAuthAuditContextFromRequest,
 } from "./authSupport";
@@ -22,19 +22,18 @@ import type {
   ApiTokenCreateBody,
   ApiTokenParams,
   OAuthCallbackBody,
-  OAuthDevicePollBody,
-  OAuthDeviceStartBody,
+  OAuthCliAuthorizationIssueBody,
+  OAuthCliExchangeBody,
   OAuthRefreshBody,
 } from "./routeTypes";
 import {
   toApiTokenWire,
-  toOAuthDeviceStartWire,
+  toOAuthCliAuthorizationWire,
   toOAuthRefreshWire,
   toOAuthSessionWire,
   toOAuthWebConfigWire,
   toUserWire,
 } from "./wireSerializers";
-import type { OAuthDevicePollPendingWire } from "./wireTypes";
 
 export function registerPublicAuthRoutes(
   app: FastifyInstance,
@@ -111,107 +110,62 @@ export function registerPublicAuthRoutes(
     },
   );
 
-  app.post<{ Body: OAuthDeviceStartBody }>(
-    "/v1/auth/oauth/device/start",
+  app.post<{ Body: OAuthCliExchangeBody }>(
+    "/v1/auth/oauth/cli/exchange",
     async (request, reply) => {
-      if (!options.oauthDeviceStartHandler) {
+      if (!options.oauthCliExchangeHandler) {
         return sendProblem(
           reply,
           createProblem({
-            detail: "OAuth device start is not implemented",
+            detail: "CLI browser login is not configured",
             status: 501,
           }),
         );
       }
 
-      const input = parseOAuthDeviceStartInput(request.body);
+      const input = parseOAuthCliExchangeInput(request.body);
       if (input.kind === "error") {
         return sendProblem(reply, input.problem);
       }
 
-      const result = await options.oauthDeviceStartHandler(input.value);
-      if (result.outcome === "started") {
-        return toOAuthDeviceStartWire(result);
-      }
-
-      if (result.outcome === "auth_failed") {
-        return sendProblem(
-          reply,
-          createOAuthDeviceAuthFailedProblem(result.reason),
-        );
-      }
-
-      return result satisfies never;
-    },
-  );
-
-  app.post<{ Body: OAuthDevicePollBody }>(
-    "/v1/auth/oauth/device/poll",
-    async (request, reply) => {
-      if (!options.oauthDevicePollHandler) {
-        return sendProblem(
-          reply,
-          createProblem({
-            detail: "OAuth device poll is not implemented",
-            status: 501,
-          }),
-        );
-      }
-
-      const input = parseOAuthDevicePollInput(request.body);
-      if (input.kind === "error") {
-        return sendProblem(reply, input.problem);
-      }
-
-      const result = await options.oauthDevicePollHandler({
+      const result = await options.oauthCliExchangeHandler({
         ...input.value,
         auditContext: publicAuthAuditContextFromRequest(request),
       });
-      if (result.outcome === "authorization_pending" || result.outcome === "slow_down") {
-        reply.status(202);
-        const pending: OAuthDevicePollPendingWire = {
-          interval_seconds: result.intervalSeconds,
-          outcome: result.outcome,
-        };
-        return pending;
-      }
-
       if (result.outcome === "created") {
         return toOAuthSessionWire(result);
-      }
-
-      if (result.outcome === "conflict") {
-        return sendProblem(
-          reply,
-          createProblem({
-            detail: "OAuth identity is already linked to another user",
-            extensions: {
-              outcome: result.outcome,
-              reason: result.reason,
-            },
-            status: 409,
-          }),
-        );
       }
 
       if (result.outcome === "account_disabled") {
         return sendProblem(reply, createAccountDisabledProblem(result.reason));
       }
 
-      if (result.outcome === "registration_closed") {
-        return sendProblem(reply, createRegistrationClosedProblem());
-      }
-
       if (result.outcome === "auth_failed") {
-        return sendProblem(
-          reply,
-          createOAuthDeviceAuthFailedProblem(result.reason),
-        );
+        return sendProblem(reply, createOAuthCliExchangeFailedProblem());
       }
 
       return result satisfies never;
     },
   );
+
+  // The OAuth device flow no longer exists; only the 501 stubs remain because
+  // pre-loopback CLIs recognize exactly this status as "device login
+  // unsupported" and fall back to token login on their own.
+  for (const deviceRoute of [
+    "/v1/auth/oauth/device/start",
+    "/v1/auth/oauth/device/poll",
+  ]) {
+    app.post(deviceRoute, async (_request, reply) => {
+      return sendProblem(
+        reply,
+        createProblem({
+          detail:
+            "The OAuth device flow has been removed — upgrade the codemagic-patch CLI (its `cmpatch login` signs in through the browser) or use `cmpatch login --token`",
+          status: 501,
+        }),
+      );
+    });
+  }
 
   app.post<{ Body: OAuthRefreshBody }>(
     "/v1/auth/refresh",
@@ -306,6 +260,36 @@ export function registerControlPlaneAuthRoutes(
       }),
     );
   });
+
+  controlPlane.post<{ Body: OAuthCliAuthorizationIssueBody }>(
+    "/auth/cli/authorizations",
+    async (request, reply) => {
+      const principal = requireControlPlanePrincipal(request);
+
+      if (!options.oauthCliAuthorizationIssueHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "CLI browser login is not configured",
+            status: 501,
+          }),
+        );
+      }
+
+      const input = parseOAuthCliAuthorizationIssueInput(request.body);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const result = await options.oauthCliAuthorizationIssueHandler({
+        ...input.value,
+        userId: principal.userId,
+      });
+
+      reply.status(201);
+      return toOAuthCliAuthorizationWire(result);
+    },
+  );
 
   controlPlane.post<{ Body: ApiTokenCreateBody }>(
     "/auth/tokens",

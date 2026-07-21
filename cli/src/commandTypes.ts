@@ -249,6 +249,8 @@ export type TokenRevokeCommand = {
 
 export type LoginCommand = {
   kind: "login";
+  /** Skip the browser-open attempt; print the authorize URL instead. */
+  noBrowser?: true;
   nonInteractive?: true;
   serverUrl: string;
   timeoutSeconds?: number;

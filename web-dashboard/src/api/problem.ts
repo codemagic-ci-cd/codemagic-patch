@@ -258,7 +258,7 @@ function behaviorForTypeSuffix(typeSuffix: ProblemTypeSuffix): ProblemBehavior {
     case "idempotency-mismatch":
       return "idempotency-mismatch";
     case "user-exists":
-      // Device-flow registration suffix; not in the error catalog.
+      // IAM user-provisioning suffix; not in the error catalog.
       return "generic";
   }
 }

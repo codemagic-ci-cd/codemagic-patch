@@ -62,10 +62,9 @@ export function LocalConsentPage() {
     );
   }
 
-  // Reached without authorize params. The one realistic way here is the
-  // device-flow verification URL `cmpatch login` prints (bare, no state) —
-  // and in local evaluation mode device sign-ins are approved automatically,
-  // so there is nothing to do on this page. Say that instead of an error.
+  // Reached without authorize params — a bare navigation to the consent
+  // route (a bookmark, a hand-typed URL). There is nothing to approve
+  // without a pending authorize request; say that instead of an error.
   if (state === null || redirectUri === null) {
     return (
       <AuthBackdrop>
@@ -74,10 +73,9 @@ export function LocalConsentPage() {
             Nothing to approve here
           </h1>
           <p className="mt-2 text-[14px] text-fg-2">
-            In local evaluation mode, CLI device sign-ins are approved
-            automatically — if you followed a link printed by{" "}
-            <code>cmpatch login</code>, you are already signed in; return to
-            your terminal. Browser sign-in starts from the login screen.
+            This page only has work to do in the middle of a sign-in.
+            Browser sign-in starts from the login screen;{" "}
+            <code>cmpatch login</code> opens it for you.
           </p>
           <a
             className={`${buttonVariants({ intent: "primary", block: true })} mt-6`}

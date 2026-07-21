@@ -24,7 +24,7 @@ import type {
   AppWire,
   DeploymentWire,
   InvitationWire,
-  OAuthDeviceStartWire,
+  OAuthCliAuthorizationWire,
   OAuthRefreshWire,
   OAuthSessionWire,
   OAuthWebConfigWire,
@@ -216,35 +216,26 @@ export function toOAuthWebConfigWire(
   config: OAuthWebConfig,
 ): OAuthWebConfigWire {
   return {
-    // "" is a meaningful present value (same-origin authorize), so the
-    // optional fields are keyed on undefined — never truthiness.
-    ...(config.authorizeBaseUrl === undefined
+    ...(config.dashboardOrigin === undefined
       ? {}
-      : { authorize_base_url: config.authorizeBaseUrl }),
-    client_id: config.clientId,
+      : { dashboard_origin: config.dashboardOrigin }),
     ...(config.mode === undefined ? {} : { mode: config.mode }),
-    provider: config.provider,
-    scopes: config.scopes,
+    providers: config.providers.map((provider) => ({
+      authorize_endpoint: provider.authorizeEndpoint,
+      client_id: provider.clientId,
+      provider: provider.provider,
+      scopes: provider.scopes,
+    })),
   };
 }
 
-export function toOAuthDeviceStartWire(
-  result: {
-    expiresInSeconds: number;
-    intervalSeconds: number;
-    pollToken: string;
-    provider: string;
-    userCode: string;
-    verificationUri: string;
-  },
-): OAuthDeviceStartWire {
+export function toOAuthCliAuthorizationWire(result: {
+  code: string;
+  expiresInSeconds: number;
+}): OAuthCliAuthorizationWire {
   return {
+    code: result.code,
     expires_in_seconds: result.expiresInSeconds,
-    interval_seconds: result.intervalSeconds,
-    poll_token: result.pollToken,
-    provider: result.provider,
-    user_code: result.userCode,
-    verification_uri: result.verificationUri,
   };
 }
 

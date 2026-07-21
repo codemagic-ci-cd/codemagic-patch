@@ -1,4 +1,4 @@
-// Web OAuth flow glue: runtime provider config, the GitHub
+// Web OAuth flow glue: runtime provider config, the provider
 // authorize redirect (PKCE + state via auth/pkce), the /auth/callback code
 // exchange, and best-effort logout. Framework-free — AuthProvider and the
 // login/callback pages consume these helpers and never touch fetch.
@@ -10,7 +10,7 @@
 // so the 404 maps to `configuration-error`, not resource `not-found`.
 
 import { request } from "../api/client";
-import { classifyProblem } from "../api/problem";
+import { classifyProblem, HttpProblemError } from "../api/problem";
 import {
   fromOAuthWebConfigWire,
   fromSessionWire,
@@ -27,16 +27,14 @@ import {
   generateState,
   stashPkce,
 } from "./pkce";
-import type { HttpProblemError, ProblemBehavior } from "../api/problem";
+import type { ProblemBehavior } from "../api/problem";
 import type {
   OAuthCallbackBody,
   OAuthRefreshBody,
   OAuthWebConfig,
+  OAuthWebConfigProvider,
   SessionUser,
 } from "../api/types";
-
-/** Production authorize origin; `VITE_OAUTH_AUTHORIZE_BASE_URL` overrides it for dev/E2E mocks only. */
-const DEFAULT_AUTHORIZE_BASE_URL = "https://github.com";
 
 /**
  * Web-config `mode` value reported by the local evaluation stack. The login
@@ -78,30 +76,29 @@ export interface AuthorizeUrlParams {
 }
 
 /**
- * Authorize URL (S256 challenge; client_id/scope from web-config). Base
- * resolution: web-config `authorize_base_url` → build-time
- * `VITE_OAUTH_AUTHORIZE_BASE_URL` → github.com. `""` is a PRESENT value
- * meaning same-origin (the SPA's own consent route) — the chain uses `??`,
- * never truthiness, so it must not fall through to github.com.
+ * Authorize URL for one provider entry (S256 challenge; client_id/scope from
+ * the entry). The entry's `authorizeEndpoint` is used verbatim — an absolute
+ * URL for external providers, a same-origin absolute path in local-dev mode —
+ * and the per-flow query is appended. The `scope` param is omitted when the
+ * entry's `scopes` is empty (Bitbucket: scopes live on the OAuth consumer).
  */
 export function buildAuthorizeUrl(
-  config: OAuthWebConfig,
+  provider: OAuthWebConfigProvider,
   { state, codeChallenge }: AuthorizeUrlParams,
 ): string {
-  const base = (
-    config.authorizeBaseUrl ??
-    import.meta.env.VITE_OAUTH_AUTHORIZE_BASE_URL ??
-    DEFAULT_AUTHORIZE_BASE_URL
-  ).replace(/\/+$/, "");
+  const endpoint = provider.authorizeEndpoint.replace(/\/+$/, "");
   const query = new URLSearchParams({
-    client_id: config.clientId,
-    scope: config.scopes,
+    client_id: provider.clientId,
+    // REQUIRED by the OAuth 2.0 spec (and enforced by Bitbucket); GitHub
+    // merely tolerates its absence.
+    response_type: "code",
+    ...(provider.scopes === "" ? {} : { scope: provider.scopes }),
     redirect_uri: callbackRedirectUri(),
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
     state,
   });
-  return `${base}/login/oauth/authorize?${query.toString()}`;
+  return `${endpoint}?${query.toString()}`;
 }
 
 /**
@@ -110,7 +107,7 @@ export function buildAuthorizeUrl(
  * caller assigns it to `window.location.href`.
  */
 export async function startLogin(
-  config: OAuthWebConfig,
+  provider: OAuthWebConfigProvider,
   returnTo?: string,
 ): Promise<string> {
   const codeVerifier = generateCodeVerifier();
@@ -122,10 +119,10 @@ export async function startLogin(
     // The provider that built this authorize URL travels with the flow; the
     // callback echoes it into the exchange body (web-config isn't cached
     // across the full-page authorize redirect).
-    provider: config.provider,
+    provider: provider.provider,
     ...(returnTo !== undefined ? { returnTo } : {}),
   });
-  return buildAuthorizeUrl(config, { state, codeChallenge });
+  return buildAuthorizeUrl(provider, { state, codeChallenge });
 }
 
 /**
@@ -136,6 +133,37 @@ export class InvalidSignInStateError extends Error {
   constructor() {
     super("Invalid sign-in state, try again");
     this.name = "InvalidSignInStateError";
+  }
+}
+
+/**
+ * A callback-exchange problem enriched with the flow's provider (from the
+ * PKCE stash) so the callback page can render provider-aware copy — the
+ * HttpProblemError itself has no way to know which button started the flow.
+ */
+export class CallbackProblemError extends Error {
+  readonly problem: HttpProblemError;
+  readonly provider: string;
+
+  constructor(problem: HttpProblemError, provider: string) {
+    super(problem.message);
+    this.name = "CallbackProblemError";
+    this.problem = problem;
+    this.provider = provider;
+  }
+}
+
+/** "github" → "GitHub"; unknown providers get a capitalized fallback. */
+export function providerDisplayName(provider: string): string {
+  switch (provider) {
+    case "github":
+      return "GitHub";
+    case "bitbucket":
+      return "Bitbucket";
+    case LOCAL_DEV_MODE:
+      return "Local";
+    default:
+      return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
 }
 
@@ -155,7 +183,8 @@ export interface CallbackExchangeResult {
  * single-use PKCE stash (consumed even on failure — a verifier is never
  * replayable), exchanges the code, installs the session, and returns the
  * signed-in user plus the stashed `returnTo`. Exchange problems
- * (401/403/409/501/503) propagate as HttpProblemError.
+ * (401/403/409/501/503) propagate as CallbackProblemError (the underlying
+ * HttpProblemError plus the flow's provider for provider-aware copy).
  */
 export async function exchangeCallback({
   code,
@@ -166,18 +195,27 @@ export async function exchangeCallback({
     throw new InvalidSignInStateError();
   }
 
-  const payload = await request<SessionWireResponse>({
-    method: "POST",
-    path: "/auth/oauth/callback",
-    body: toOAuthCallbackWireBody({
-      // Stashed by startLogin from the web-config that started this flow;
-      // pre-provider stashes (in-flight during an upgrade) default to github.
-      provider: pkce.provider ?? "github",
-      code,
-      redirectUri: callbackRedirectUri(),
-      codeVerifier: pkce.codeVerifier,
-    } satisfies OAuthCallbackBody),
-  }).then(fromSessionWire);
+  // Stashed by startLogin from the provider entry that started this flow;
+  // pre-provider stashes (in-flight during an upgrade) default to github.
+  const provider = pkce.provider ?? "github";
+  let payload;
+  try {
+    payload = await request<SessionWireResponse>({
+      method: "POST",
+      path: "/auth/oauth/callback",
+      body: toOAuthCallbackWireBody({
+        provider,
+        code,
+        redirectUri: callbackRedirectUri(),
+        codeVerifier: pkce.codeVerifier,
+      } satisfies OAuthCallbackBody),
+    }).then(fromSessionWire);
+  } catch (error) {
+    if (error instanceof HttpProblemError) {
+      throw new CallbackProblemError(error, provider);
+    }
+    throw error;
+  }
 
   setSession(payload);
 

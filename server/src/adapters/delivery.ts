@@ -5,7 +5,7 @@
  * DeliveryAdapter maps storage keys to publicly downloadable URLs and
  * triggers cache invalidation after manifest updates.
  *
- * Design rationale (from server-tech-spec.md and infra-tech-spec.md):
+ * Design rationale:
  *   - OSS deployments may serve directly from object storage.
  *   - Production deployments may put a CDN in front; provider-specific
  *     delivery adapters, such as CloudflareDeliveryAdapter, implement purge

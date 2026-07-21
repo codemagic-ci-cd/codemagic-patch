@@ -5,7 +5,7 @@
  * key-value interface. Both the API server (upload staging) and the
  * release worker (artifact publish) use this adapter.
  *
- * Design rationale (from infra-tech-spec.md and server-tech-spec.md):
+ * Design rationale:
  *   - All storage tiers (staging, internal, public) share one logical key
  *     space. Backends may keep that key space in one physical bucket or route
  *     private `_internal/` keys to a separate storage tier.

@@ -26,6 +26,7 @@ import { resolveHomeTeamId } from "./components/shell/teamResolution";
 import { AppDetailPage } from "./pages/AppDetailPage";
 import { AppsPage } from "./pages/AppsPage";
 import { CallbackPage } from "./pages/CallbackPage";
+import { CliAuthorizePage } from "./pages/CliAuthorizePage";
 import { DeploymentDetailPage } from "./pages/DeploymentDetailPage";
 import { LocalConsentPage } from "./pages/LocalConsentPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -100,6 +101,11 @@ export const router = createBrowserRouter([
   {
     element: <RequireAuth />,
     children: [
+      // CLI loopback approve page: session-gated but chrome-less — the
+      // visitor is mid-`cmpatch login`, not navigating the dashboard.
+      // RequireAuth's returnTo encoding preserves the port/code_challenge/
+      // state query across the sign-in round-trip.
+      { path: "cli/authorize", element: <CliAuthorizePage /> },
       {
         element: <AppShell />,
         children: [

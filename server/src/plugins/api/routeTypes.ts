@@ -33,8 +33,8 @@ import type {
   IdempotencyHandler,
   MetricEventIngestRouteHandler,
   OAuthCallbackRouteHandler,
-  OAuthDevicePollRouteHandler,
-  OAuthDeviceStartRouteHandler,
+  OAuthCliAuthorizationIssueRouteHandler,
+  OAuthCliExchangeRouteHandler,
   OAuthLogoutRouteHandler,
   OAuthRefreshRouteHandler,
   OAuthWebConfig,
@@ -149,17 +149,18 @@ export interface OAuthCallbackBody {
   redirect_uri?: unknown;
 }
 
+export interface OAuthCliAuthorizationIssueBody {
+  code_challenge?: unknown;
+  port?: unknown;
+}
+
+export interface OAuthCliExchangeBody {
+  code?: unknown;
+  code_verifier?: unknown;
+}
+
 export interface OAuthRefreshBody {
   refresh_token?: unknown;
-}
-
-export interface OAuthDeviceStartBody {
-  provider?: unknown;
-}
-
-export interface OAuthDevicePollBody {
-  poll_token?: unknown;
-  provider?: unknown;
 }
 
 export interface MetricEventBatchRequestBody {
@@ -251,8 +252,8 @@ export interface ApiRoutesOptions {
   metricEventIngestHandler?: MetricEventIngestRouteHandler;
   mode: "all" | "api";
   oauthCallbackHandler?: OAuthCallbackRouteHandler;
-  oauthDevicePollHandler?: OAuthDevicePollRouteHandler;
-  oauthDeviceStartHandler?: OAuthDeviceStartRouteHandler;
+  oauthCliAuthorizationIssueHandler?: OAuthCliAuthorizationIssueRouteHandler;
+  oauthCliExchangeHandler?: OAuthCliExchangeRouteHandler;
   oauthLogoutHandler?: OAuthLogoutRouteHandler;
   oauthRefreshHandler?: OAuthRefreshRouteHandler;
   oauthWebConfig?: OAuthWebConfig;

@@ -4,7 +4,6 @@ import type {
   AuthNAdapter,
   OAuthProviderIdentity,
 } from "./authNAdapter";
-import type { OAuthDeviceAuthAdapter } from "./githubDeviceAuthAdapter";
 import type {
   OAuthAccessTokenId,
   OAuthSessionId,
@@ -14,17 +13,18 @@ import type {
 import type { AuthRepository } from "../repositories";
 import type {
   OAuthCallbackRouteHandler,
-  OAuthDevicePollRouteHandler,
-  OAuthDeviceStartRouteHandler,
+  OAuthCliAuthorizationIssueRouteHandler,
+  OAuthCliExchangeRouteHandler,
   OAuthLogoutRouteHandler,
   OAuthRefreshRouteHandler,
   OAuthSessionCreatedHandlerResult,
   PublicAuthAuditContext,
 } from "./types";
 import {
-  createOAuthDevicePollToken,
-  verifyOAuthDevicePollToken,
-} from "./oauthDevicePollToken";
+  createOAuthCliAuthorizationCode,
+  pkceChallengeMatches,
+  verifyOAuthCliAuthorizationCode,
+} from "./oauthCliAuthorizationCode";
 import {
   generateOAuthAccessToken,
   generateOAuthRefreshToken,
@@ -73,16 +73,21 @@ export interface OAuthInitialAdminTeamMembershipService {
 }
 
 /**
- * Hook invoked after every successful OAuth sign-in — web callback and device
- * flow alike — to grant memberships or roles. Embedders can supply their own
- * implementation; the default is the initial-admin bootstrap-team grant.
+ * Hook invoked after every successful OAuth web sign-in to grant memberships
+ * or roles. Embedders can supply their own implementation; the default is the
+ * initial-admin bootstrap-team grant. (The CLI code exchange deliberately
+ * skips it — the grants already ran during the web sign-in that approved it.)
  */
 export type OAuthSignInGrantService = OAuthInitialAdminTeamMembershipService;
+
+export const DEFAULT_CLI_AUTHORIZATION_CODE_TTL_SECONDS = 60;
 
 export interface CreateOAuthSessionRouteHandlersOptions {
   accessTokenTtlSeconds: number;
   authNAdapter?: AuthNAdapter;
-  deviceAuthAdapter?: OAuthDeviceAuthAdapter;
+  /** Enables the CLI loopback issue/exchange handlers when set. */
+  cliAuthSecret?: string;
+  cliAuthorizationCodeTtlSeconds?: number;
   idGenerator?: OAuthSessionHandlerIdGenerator;
   initialAdminEmails?: string[];
   initialAdminTeamMembershipService?: OAuthInitialAdminTeamMembershipService;
@@ -91,7 +96,6 @@ export interface CreateOAuthSessionRouteHandlersOptions {
     warn(message: string, error?: unknown): void;
   };
   now?: () => Date;
-  pollTokenSecret?: string;
   refreshTokenTtlDays: number;
   registrationMode: "invite_only" | "open";
   repository: AuthRepository;
@@ -99,15 +103,13 @@ export interface CreateOAuthSessionRouteHandlersOptions {
 
 export interface OAuthSessionRouteHandlers {
   oauthCallbackHandler?: OAuthCallbackRouteHandler;
-  oauthDevicePollHandler?: OAuthDevicePollRouteHandler;
-  oauthDeviceStartHandler?: OAuthDeviceStartRouteHandler;
+  oauthCliAuthorizationIssueHandler?: OAuthCliAuthorizationIssueRouteHandler;
+  oauthCliExchangeHandler?: OAuthCliExchangeRouteHandler;
   oauthLogoutHandler: OAuthLogoutRouteHandler;
   oauthRefreshHandler: OAuthRefreshRouteHandler;
 }
 
-type OAuthSessionIdentityResult<
-  TUnverifiedEmailReason extends "unverified_email" | "verified_email_required",
-> =
+type OAuthSessionIdentityResult =
   | OAuthSessionCreatedHandlerResult
   | {
       outcome: "conflict";
@@ -123,7 +125,7 @@ type OAuthSessionIdentityResult<
     }
   | {
       outcome: "auth_failed";
-      reason: TUnverifiedEmailReason;
+      reason: "unverified_email";
     };
 
 export function createOAuthSessionRouteHandlers(
@@ -132,15 +134,61 @@ export function createOAuthSessionRouteHandlers(
   const idGenerator =
     options.idGenerator ?? createDefaultOAuthSessionHandlerIdGenerator();
   const getNow = options.now ?? (() => new Date());
-  const createSessionFromIdentity = async <
-    TUnverifiedEmailReason extends
-      | "unverified_email"
-      | "verified_email_required",
-  >(
+  const issueSessionForUser = async (
+    user: {
+      createdAt: Date;
+      displayName: string | null;
+      email: string;
+      id: UserId;
+    },
+    provider: string,
+    subject: string,
+    now: Date,
+  ): Promise<OAuthSessionCreatedHandlerResult> => {
+    const accessToken = generateOAuthAccessToken();
+    const refreshToken = generateOAuthRefreshToken();
+    const accessTokenExpiresAt = addSeconds(
+      now,
+      options.accessTokenTtlSeconds,
+    );
+    const refreshTokenExpiresAt = addDays(now, options.refreshTokenTtlDays);
+
+    await options.repository.createOAuthSession({
+      accessToken: {
+        expiresAt: accessTokenExpiresAt,
+        id: idGenerator.createOAuthAccessTokenId(),
+        tokenHash: accessToken.tokenHash,
+      },
+      createdAt: now,
+      provider,
+      refreshToken: {
+        expiresAt: refreshTokenExpiresAt,
+        id: idGenerator.createRefreshTokenId(),
+        tokenHash: refreshToken.tokenHash,
+      },
+      sessionId: idGenerator.createOAuthSessionId(),
+      subject,
+      userId: user.id,
+    });
+
+    return {
+      accessToken: accessToken.token,
+      accessTokenExpiresAt,
+      outcome: "created",
+      refreshToken: refreshToken.token,
+      refreshTokenExpiresAt,
+      user: {
+        createdAt: user.createdAt,
+        displayName: user.displayName,
+        email: user.email,
+        id: user.id,
+      },
+    };
+  };
+  const createSessionFromIdentity = async (
     identity: OAuthProviderIdentity,
-    unverifiedEmailReason: TUnverifiedEmailReason,
     auditContext?: PublicAuthAuditContext,
-  ): Promise<OAuthSessionIdentityResult<TUnverifiedEmailReason>> => {
+  ): Promise<OAuthSessionIdentityResult> => {
     const now = getNow();
     const resolved = await options.repository.resolveOAuthIdentity({
       createdAt: now,
@@ -167,7 +215,7 @@ export function createOAuthSessionRouteHandlers(
     if (resolved.outcome === "unverified_email") {
       return {
         outcome: "auth_failed",
-        reason: unverifiedEmailReason,
+        reason: "unverified_email",
       };
     }
 
@@ -178,31 +226,12 @@ export function createOAuthSessionRouteHandlers(
       };
     }
 
-    const accessToken = generateOAuthAccessToken();
-    const refreshToken = generateOAuthRefreshToken();
-    const accessTokenExpiresAt = addSeconds(
+    const created = await issueSessionForUser(
+      resolved.user,
+      identity.provider,
+      identity.subject,
       now,
-      options.accessTokenTtlSeconds,
     );
-    const refreshTokenExpiresAt = addDays(now, options.refreshTokenTtlDays);
-
-    await options.repository.createOAuthSession({
-      accessToken: {
-        expiresAt: accessTokenExpiresAt,
-        id: idGenerator.createOAuthAccessTokenId(),
-        tokenHash: accessToken.tokenHash,
-      },
-      createdAt: now,
-      provider: identity.provider,
-      refreshToken: {
-        expiresAt: refreshTokenExpiresAt,
-        id: idGenerator.createRefreshTokenId(),
-        tokenHash: refreshToken.tokenHash,
-      },
-      sessionId: idGenerator.createOAuthSessionId(),
-      subject: identity.subject,
-      userId: resolved.user.id,
-    });
 
     try {
       await options.initialAdminTeamMembershipService?.ensureOwnershipForUser({
@@ -236,19 +265,7 @@ export function createOAuthSessionRouteHandlers(
       );
     }
 
-    return {
-      accessToken: accessToken.token,
-      accessTokenExpiresAt,
-      outcome: "created",
-      refreshToken: refreshToken.token,
-      refreshTokenExpiresAt,
-      user: {
-        createdAt: resolved.user.createdAt,
-        displayName: resolved.user.displayName,
-        email: resolved.user.email,
-        id: resolved.user.id,
-      },
-    };
+    return created;
   };
 
   const handlers: OAuthSessionRouteHandlers = {
@@ -322,105 +339,74 @@ export function createOAuthSessionRouteHandlers(
         };
       }
 
-      return createSessionFromIdentity(
-        exchanged.identity,
-        "unverified_email",
-        input.auditContext,
-      );
+      return createSessionFromIdentity(exchanged.identity, input.auditContext);
     };
   }
 
-  if (options.deviceAuthAdapter && options.pollTokenSecret) {
-    const deviceAuthAdapter = options.deviceAuthAdapter;
-    const pollTokenSecret = options.pollTokenSecret;
+  if (options.cliAuthSecret) {
+    const cliAuthSecret = options.cliAuthSecret;
+    const codeTtlSeconds =
+      options.cliAuthorizationCodeTtlSeconds ??
+      DEFAULT_CLI_AUTHORIZATION_CODE_TTL_SECONDS;
 
-    handlers.oauthDeviceStartHandler = async (input) => {
-      const started = await deviceAuthAdapter.startDeviceAuthorization(input);
-      if (started.outcome === "unknown_provider") {
-        return {
-          outcome: "auth_failed",
-          reason: "unknown_provider",
-        };
-      }
-
-      if (started.outcome === "provider_error") {
-        return {
-          outcome: "auth_failed",
-          reason: "provider_error",
-        };
-      }
-
-      const pollToken = createOAuthDevicePollToken({
-        deviceCode: started.deviceCode,
-        expiresAt: addSeconds(getNow(), started.expiresInSeconds),
-        intervalSeconds: started.intervalSeconds,
-        provider: started.provider,
-        secret: pollTokenSecret,
-      });
-
+    handlers.oauthCliAuthorizationIssueHandler = async (input) => {
       return {
-        expiresInSeconds: started.expiresInSeconds,
-        intervalSeconds: started.intervalSeconds,
-        outcome: "started",
-        pollToken,
-        provider: started.provider,
-        userCode: started.userCode,
-        verificationUri: started.verificationUri,
+        code: createOAuthCliAuthorizationCode({
+          codeChallenge: input.codeChallenge,
+          expiresAt: addSeconds(getNow(), codeTtlSeconds),
+          port: input.port,
+          secret: cliAuthSecret,
+          userId: input.userId,
+        }),
+        expiresInSeconds: codeTtlSeconds,
+        outcome: "issued",
       };
     };
 
-    handlers.oauthDevicePollHandler = async (input) => {
-      const verifiedPollToken = verifyOAuthDevicePollToken(input.pollToken, {
-        expectedProvider: input.provider,
-        now: getNow(),
-        secret: pollTokenSecret,
-      });
-      if (verifiedPollToken.outcome !== "valid") {
-        return {
-          outcome: "auth_failed",
-          reason: "invalid_poll_token",
-        };
-      }
-
-      const polled = await deviceAuthAdapter.pollDeviceAuthorization({
-        deviceCode: verifiedPollToken.deviceCode,
-        intervalSeconds: verifiedPollToken.intervalSeconds,
-        provider: input.provider,
-      });
-
-      if (polled.outcome === "authorization_pending") {
-        return {
-          intervalSeconds: polled.intervalSeconds,
-          outcome: "authorization_pending",
-        };
-      }
-
-      if (polled.outcome === "slow_down") {
-        return {
-          intervalSeconds: polled.intervalSeconds,
-          outcome: "slow_down",
-        };
-      }
-
-      if (polled.outcome === "success") {
-        return createSessionFromIdentity(
-          polled.identity,
-          "verified_email_required",
-          input.auditContext,
-        );
-      }
-
-      if (polled.outcome === "provider_error") {
-        return {
-          outcome: "auth_failed",
-          reason: "provider_error",
-        };
-      }
-
-      return {
+    handlers.oauthCliExchangeHandler = async (input) => {
+      const invalid = {
         outcome: "auth_failed",
-        reason: polled.outcome,
-      };
+        reason: "invalid_cli_authorization_code",
+      } as const;
+      const now = getNow();
+      const verified = verifyOAuthCliAuthorizationCode(input.code, {
+        now,
+        secret: cliAuthSecret,
+      });
+      if (verified.outcome !== "valid") {
+        return invalid;
+      }
+
+      if (!pkceChallengeMatches(input.codeVerifier, verified.codeChallenge)) {
+        return invalid;
+      }
+
+      const user = await options.repository.getUserById(
+        verified.userId as UserId,
+      );
+      if (!user) {
+        return invalid;
+      }
+
+      if (user.status === "disabled") {
+        return {
+          outcome: "account_disabled",
+          reason: "user_disabled",
+        };
+      }
+
+      // No sign-in grants here: the user approved from an already signed-in
+      // dashboard session, so invitation fulfillment and the initial-admin
+      // grant ran at that web sign-in. Session bookkeeping mirrors the
+      // linked OAuth identity; the "cli" fallback covers the theoretical
+      // caller without one (e.g. a PAT-provisioned account driving the
+      // issuance endpoint directly).
+      return issueSessionForUser(
+        user,
+        user.oauthProvider ?? "cli",
+        user.oauthSubject ?? user.id,
+        now,
+      );
     };
   }
 

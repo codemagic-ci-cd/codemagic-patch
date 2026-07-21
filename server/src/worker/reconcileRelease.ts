@@ -391,8 +391,7 @@ function buildInferredFingerprintWrite(context: ReconcileContext):
  * already stored for the same binary version. The first OTA release targeting a
  * binary version is authoritative for that version's fingerprint; later releases
  * with a different fingerprint do not overwrite the stored value, but the
- * disagreement is surfaced for operator review (release-worker-tech-spec.md
- * resolve_targets / server-tech-spec.md Inferred Fingerprint).
+ * disagreement is surfaced for operator review.
  *
  * Returns undefined when there is nothing to flag — including a release
  * re-reconciled after it wrote its own fingerprint, whose stored value then

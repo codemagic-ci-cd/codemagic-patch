@@ -16,8 +16,6 @@ import { startServer } from "../runtime/startServer";
 import { assertLocalDevEntryAllowed } from "./guards";
 import {
   createLocalAuthNAdapter,
-  createLocalDeviceAuthAdapter,
-  LOCAL_DEV_ADMIN_EMAIL,
   LOCAL_DEV_PROVIDER,
 } from "./localDevAuthAdapters";
 
@@ -37,8 +35,8 @@ async function main(): Promise<void> {
   assertLocalDevEntryAllowed(process.env);
 
   const config = resolveRuntimeConfig();
-  // The consent-page link printed by `cmpatch login` must be host-reachable;
-  // the container cannot derive the host port mapping, so the compose file
+  // The dashboard URL opened by `cmpatch login` must be host-reachable; the
+  // container cannot derive the host port mapping, so the compose file
   // injects it.
   const dashboardUrl = trimTrailingSlash(
     process.env.CODEMAGIC_PATCH_LOCAL_DASHBOARD_URL ?? DEFAULT_DASHBOARD_URL,
@@ -48,18 +46,21 @@ async function main(): Promise<void> {
 
   const app = await startServer(config, {
     authNAdapter: createLocalAuthNAdapter(),
-    githubDeviceAuthAdapter: createLocalDeviceAuthAdapter({
-      email: LOCAL_DEV_ADMIN_EMAIL,
-      verificationUri: `${dashboardUrl}/login/oauth/authorize`,
-    }),
     oauthWebConfig: {
-      // "" = same-origin: the dashboard redirects to its own consent route
-      // instead of github.com.
-      authorizeBaseUrl: "",
-      clientId: LOCAL_DEV_PROVIDER,
+      // The dashboard is a separate container in this stack; the CLI's
+      // loopback login opens `<dashboardOrigin>/cli/authorize`.
+      dashboardOrigin: dashboardUrl,
       mode: LOCAL_DEV_PROVIDER,
-      provider: LOCAL_DEV_PROVIDER,
-      scopes: "",
+      providers: [
+        {
+          // Same-origin path: the dashboard redirects to its own consent
+          // route instead of an external provider.
+          authorizeEndpoint: "/login/oauth/authorize",
+          clientId: LOCAL_DEV_PROVIDER,
+          provider: LOCAL_DEV_PROVIDER,
+          scopes: "",
+        },
+      ],
     },
   });
 

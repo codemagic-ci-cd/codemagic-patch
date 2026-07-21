@@ -5,7 +5,7 @@
  * function code is identical across all adapters; only the dispatch
  * mechanism changes.
  *
- * Implementations (from server-tech-spec.md):
+ * Implementations:
  *   - InProcessJobQueue (MODE=all): calls reconcileRelease() via
  *     setImmediate() in the same process.
  *   - Push-based adapter (MODE=api+worker): enqueues a message to

@@ -19,8 +19,8 @@ export type DeliveryJsonResponse = {
  * server, and crucially `+` (legal in a binary version) must survive verbatim:
  * `encodeURIComponent` would turn it into `%2B` and 404 against the real object.
  * `new URL` still percent-encodes any genuinely-unsafe character during
- * serialization. Mirrors PROTOCOL.md §Static Delivery Resource Contract
- * (e.g. `[deploymentKey, binaryVersion, "manifest.json"]`).
+ * serialization. The static-delivery key layout joins segments such as
+ * `[deploymentKey, binaryVersion, "manifest.json"]` verbatim.
  */
 export function buildDownloadUrl(
   downloadBaseUrl: string,

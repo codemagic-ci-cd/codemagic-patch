@@ -7,8 +7,8 @@ set -euo pipefail
 SERVER_URL_ARG=""
 PUBLIC_BASE_URL_ARG=""
 TOKEN_ARG=""
-# S9: default to the mirrored examples fixture, not server/test/** (which is
-# excluded from the public mirror), so the smoke runs out-of-box on an OSS checkout.
+# S9: default to the mirrored examples fixture so the smoke runs out-of-box on
+# an OSS checkout.
 BUNDLE_PATH="${BUNDLE_PATH:-${SELFHOST_REPO_ROOT}/examples/local-dev/bundles/ios-hermes-v1.zip}"
 SMOKE_TIMEOUT_SECONDS="${SELFHOST_SMOKE_TIMEOUT_SECONDS:-300}"
 TARGET_BINARY_VERSION="${TARGET_BINARY_VERSION:-1.0.0}"

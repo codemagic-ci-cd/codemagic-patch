@@ -150,28 +150,26 @@ export interface OAuthRefreshWire {
   refresh_token_expires_at: Date;
 }
 
-export interface OAuthWebConfigWire {
-  /** Optional; absent = github.com, "" = same-origin. */
-  authorize_base_url?: string;
+export interface OAuthWebConfigProviderWire {
+  /** Absolute URL, or a same-origin absolute path (local-dev consent route). */
+  authorize_endpoint: string;
   client_id: string;
-  /** Optional; absent = normal GitHub mode. */
-  mode?: string;
   provider: string;
+  /** "" = the SPA omits the scope param on the authorize URL. */
   scopes: string;
 }
 
-export interface OAuthDeviceStartWire {
-  expires_in_seconds: number;
-  interval_seconds: number;
-  poll_token: string;
-  provider: string;
-  user_code: string;
-  verification_uri: string;
+export interface OAuthWebConfigWire {
+  /** Optional; absent = the dashboard is served from the API origin. */
+  dashboard_origin?: string;
+  /** Optional; absent = normal mode. */
+  mode?: string;
+  providers: OAuthWebConfigProviderWire[];
 }
 
-export interface OAuthDevicePollPendingWire {
-  interval_seconds: number;
-  outcome: "authorization_pending" | "slow_down";
+export interface OAuthCliAuthorizationWire {
+  code: string;
+  expires_in_seconds: number;
 }
 
 export interface RoleWire {

@@ -1,11 +1,14 @@
 import type { LoginCommand, LogoutCommand } from "../commandTypes";
 import { PRODUCT_NAME } from "../branding";
+import { openBrowser } from "../browserOpen";
 import {
   loadStoredCredential,
   removeStoredCredential,
   saveStoredCredential,
   type StoredCredential,
 } from "../credentialStore";
+import { generateLoginPkceMaterial } from "../loginPkce";
+import { startLoopbackLoginServer } from "../loopbackLoginServer";
 import { request } from "../http";
 import { isRecord } from "../output";
 import { HttpProblemError } from "../problem-details";
@@ -13,32 +16,21 @@ import type { PromptFn } from "../prompt";
 import {
   assertHttpUrl,
   buildApiUrl,
+  buildApiUrlWithQuery,
   canPromptInteractively,
   normalizeBearerToken,
   ValidationError,
   type CommandDeps,
 } from "./shared";
 
-const GITHUB_PROVIDER = "github";
-
-type DeviceStartResponse = {
-  expiresInSeconds: number;
-  intervalSeconds: number;
-  pollToken: string;
-  provider: typeof GITHUB_PROVIDER;
-  userCode: string;
-  verificationUri: string;
-};
-
-type DevicePollResponse =
-  | {
-      intervalSeconds: number;
-      outcome: "authorization_pending" | "slow_down";
-    }
-  | StoredCredential;
+/**
+ * Wait budget for the whole browser round-trip (open → sign in → approve →
+ * loopback redirect); `--timeout-seconds` overrides it.
+ */
+const DEFAULT_BROWSER_LOGIN_TIMEOUT_SECONDS = 300;
 
 export interface LoginOutput {
-  writeDeviceAuthorizationInstructions?: (message: string) => void;
+  writeAuthorizationInstructions?: (message: string) => void;
 }
 
 export async function executeLogin(
@@ -66,13 +58,13 @@ export async function executeLogin(
   }
 
   try {
-    return await executeDeviceLogin(command, deps, output);
+    return await executeBrowserLogin(command, deps, output);
   } catch (error) {
-    if (!isDeviceLoginUnsupported(error)) {
+    if (!isBrowserLoginUnsupported(error)) {
       throw error;
     }
 
-    const guidance = "This server does not support GitHub device login.";
+    const guidance = "This server does not support browser sign-in.";
 
     if (interactivePrompt) {
       return executeTokenLogin(
@@ -91,49 +83,76 @@ export async function executeLogin(
   }
 }
 
-async function executeDeviceLogin(
+/**
+ * Loopback browser login (RFC 8252): probe that the server offers browser
+ * sign-in at all, start the 127.0.0.1 listener, open the dashboard's
+ * /cli/authorize approve page, then exchange the redirected short-lived code
+ * (PKCE-bound) for the same session shape the web callback returns.
+ */
+async function executeBrowserLogin(
   command: LoginCommand,
   deps: CommandDeps,
   output: LoginOutput,
 ): Promise<string> {
-  const started = parseDeviceStartResponse(
-    await request(
-      deps.fetch,
-      buildApiUrl(command.serverUrl, "/v1/auth/oauth/device/start"),
+  // Fail fast (and let the token fallback kick in) before opening a browser
+  // when web OAuth is not configured: the web-config contract answers 404
+  // there, and the sign-in page the approve flow needs would be dead anyway.
+  const { dashboardOrigin } = await probeBrowserLoginSupport(command, deps);
+
+  const pkce = generateLoginPkceMaterial();
+  const server = await (deps.startLoopbackLoginServer ??
+    startLoopbackLoginServer)({
+    expectedState: pkce.state,
+  });
+
+  try {
+    const authorizeUrl = buildApiUrlWithQuery(
+      dashboardOrigin ?? command.serverUrl,
+      "/cli/authorize",
       {
-        body: JSON.stringify({ provider: GITHUB_PROVIDER }),
-        headers: {
-          "content-type": "application/json",
-        },
-        method: "POST",
+        code_challenge: pkce.codeChallenge,
+        port: server.port,
+        state: pkce.state,
       },
-    ),
-  );
-  output.writeDeviceAuthorizationInstructions?.(
-    renderDeviceAuthorizationInstructions(started),
-  );
-  const timeoutSeconds = command.timeoutSeconds ?? started.expiresInSeconds;
-  const deadlineMs = deps.now() + timeoutSeconds * 1000;
-  let intervalSeconds = started.intervalSeconds;
+    );
+    // The callback wait (and its deadline) starts BEFORE the browser opener:
+    // openers are not guaranteed to exit promptly (xdg-open can block until
+    // the browser closes), so a hung opener must neither stall a completed
+    // sign-in nor escape the --timeout-seconds budget.
+    const timeoutSeconds =
+      command.timeoutSeconds ?? DEFAULT_BROWSER_LOGIN_TIMEOUT_SECONDS;
+    const callbackPromise = server.waitForCallback(timeoutSeconds * 1000);
+    const opened =
+      command.noBrowser === true
+        ? false
+        : await Promise.race([
+            (deps.openBrowser ?? openBrowser)(authorizeUrl),
+            callbackPromise.then(() => true),
+          ]);
+    output.writeAuthorizationInstructions?.(
+      renderAuthorizationInstructions(opened, authorizeUrl),
+    );
 
-  while (true) {
-    const remainingMs = deadlineMs - deps.now();
-    const intervalMs = intervalSeconds * 1000;
+    const callback = await callbackPromise;
 
-    if (remainingMs < intervalMs) {
-      throw new ValidationError("Timed out waiting for GitHub device authorization");
+    if (callback.kind === "timeout") {
+      throw new ValidationError(
+        `Timed out after ${timeoutSeconds}s waiting for the browser sign-in. Re-run \`cmpatch login\` (--timeout-seconds to wait longer), or use \`cmpatch login --token\`.`,
+      );
     }
 
-    await deps.sleep(intervalMs);
+    if (callback.kind === "denied") {
+      throw new ValidationError("Browser sign-in was denied.");
+    }
 
-    const poll = parseDevicePollResponse(
+    const session = parseSessionResponse(
       await request(
         deps.fetch,
-        buildApiUrl(command.serverUrl, "/v1/auth/oauth/device/poll"),
+        buildApiUrl(command.serverUrl, "/v1/auth/oauth/cli/exchange"),
         {
           body: JSON.stringify({
-            poll_token: started.pollToken,
-            provider: GITHUB_PROVIDER,
+            code: callback.code,
+            code_verifier: pkce.codeVerifier,
           }),
           headers: {
             "content-type": "application/json",
@@ -142,18 +161,37 @@ async function executeDeviceLogin(
         },
       ),
     );
-
-    if ("accessToken" in poll) {
-      await saveStoredCredential(command.serverUrl, poll, { env: deps.env });
-      return renderLoginSuccess(poll);
-    }
-
-    intervalSeconds = poll.intervalSeconds;
-
-    if (deps.now() >= deadlineMs) {
-      throw new ValidationError("Timed out waiting for GitHub device authorization");
-    }
+    await saveStoredCredential(command.serverUrl, session, { env: deps.env });
+    return renderLoginSuccess(session);
+  } finally {
+    await server.close();
   }
+}
+
+async function probeBrowserLoginSupport(
+  command: LoginCommand,
+  deps: CommandDeps,
+): Promise<{ dashboardOrigin?: string }> {
+  // The 404 an unconfigured server answers here is an HttpProblemError, which
+  // the caller's isBrowserLoginUnsupported check turns into the token
+  // fallback; other failures (network, 5xx) surface as themselves.
+  const config = await request(
+    deps.fetch,
+    buildApiUrl(command.serverUrl, "/v1/auth/oauth/web-config"),
+    { method: "GET" },
+  );
+
+  // The dashboard usually shares the server origin; stacks that serve it
+  // elsewhere (local-dev's separate dashboard container) advertise the origin
+  // to open /cli/authorize on.
+  const dashboardOrigin =
+    isRecord(config) && typeof config.dashboard_origin === "string"
+      ? config.dashboard_origin.trim()
+      : "";
+
+  return dashboardOrigin.length > 0
+    ? { dashboardOrigin: assertHttpUrl(dashboardOrigin, "Dashboard URL") }
+    : {};
 }
 
 function resolveInteractivePrompt(
@@ -167,17 +205,17 @@ function resolveInteractivePrompt(
   return deps.prompt;
 }
 
-async function promptAuthMethod(prompt: PromptFn): Promise<"device" | "token"> {
+async function promptAuthMethod(prompt: PromptFn): Promise<"browser" | "token"> {
   const value = await prompt({
     choices: [
-      { title: "GitHub device login", value: "device" },
+      { title: "Sign in with your browser", value: "browser" },
       { title: "Paste a personal access token", value: "token" },
     ],
     message: "How would you like to sign in?",
     type: "select",
   });
 
-  return value === "token" ? "token" : "device";
+  return value === "token" ? "token" : "browser";
 }
 
 async function promptToken(
@@ -188,8 +226,16 @@ async function promptToken(
   return Array.isArray(value) ? value[0] : value;
 }
 
-function isDeviceLoginUnsupported(error: unknown): boolean {
-  return error instanceof HttpProblemError && error.responseStatus === 501;
+/**
+ * "No browser sign-in here": web OAuth unconfigured (web-config 404 per its
+ * contract, or a pre-loopback server answering 404/501 on the exchange
+ * route). Triggers the personal-access-token fallback.
+ */
+function isBrowserLoginUnsupported(error: unknown): boolean {
+  return (
+    error instanceof HttpProblemError &&
+    (error.responseStatus === 501 || error.responseStatus === 404)
+  );
 }
 
 async function executeTokenLogin(
@@ -265,52 +311,9 @@ export async function executeLogout(
   return `Logged out ${stored.user.email} (${stored.user.id})`;
 }
 
-function parseDeviceStartResponse(value: unknown): DeviceStartResponse {
+function parseSessionResponse(value: unknown): StoredCredential {
   if (!isRecord(value)) {
-    throw new Error("OAuth device start returned an invalid response");
-  }
-
-  const expiresInSeconds = value.expires_in_seconds;
-  const intervalSeconds = value.interval_seconds;
-  const pollToken = value.poll_token;
-  const provider = value.provider;
-  const userCode = value.user_code;
-  const verificationUri = value.verification_uri;
-
-  if (
-    provider !== GITHUB_PROVIDER ||
-    !isPositiveNumber(expiresInSeconds) ||
-    !isPositiveNumber(intervalSeconds) ||
-    !isNonEmptyString(pollToken) ||
-    !isNonEmptyString(userCode) ||
-    !isNonEmptyString(verificationUri)
-  ) {
-    throw new Error("OAuth device start returned an invalid response");
-  }
-
-  return {
-    expiresInSeconds,
-    intervalSeconds,
-    pollToken,
-    provider,
-    userCode,
-    verificationUri,
-  };
-}
-
-function parseDevicePollResponse(value: unknown): DevicePollResponse {
-  if (!isRecord(value)) {
-    throw new Error("OAuth device poll returned an invalid response");
-  }
-
-  if (
-    (value.outcome === "authorization_pending" || value.outcome === "slow_down") &&
-    isPositiveNumber(value.interval_seconds)
-  ) {
-    return {
-      intervalSeconds: value.interval_seconds,
-      outcome: value.outcome,
-    };
+    throw new Error("CLI login exchange returned an invalid response");
   }
 
   const user = value.user;
@@ -338,7 +341,7 @@ function parseDevicePollResponse(value: unknown): DevicePollResponse {
     };
   }
 
-  throw new Error("OAuth device poll returned an invalid response");
+  throw new Error("CLI login exchange returned an invalid response");
 }
 
 function parseUserProfileResponse(value: unknown): StoredCredential["user"] {
@@ -367,20 +370,24 @@ function renderLoginSuccess(credential: StoredCredential): string {
   return `Logged in as ${credential.user.email} (${credential.user.id})`;
 }
 
-function renderDeviceAuthorizationInstructions(
-  started: DeviceStartResponse,
+function renderAuthorizationInstructions(
+  browserOpened: boolean,
+  authorizeUrl: string,
 ): string {
+  if (browserOpened) {
+    return [
+      "Complete the sign-in in your browser.",
+      `If it did not open, visit: ${authorizeUrl}`,
+    ].join("\n");
+  }
+
   return [
-    "Complete GitHub device authorization:",
-    `Open: ${started.verificationUri}`,
-    `Code: ${started.userCode}`,
+    "Open this URL in a browser on this machine to sign in:",
+    authorizeUrl,
+    "No browser here (SSH/CI)? Use `cmpatch login --token` with a personal access token instead.",
   ].join("\n");
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
-}
-
-function isPositiveNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

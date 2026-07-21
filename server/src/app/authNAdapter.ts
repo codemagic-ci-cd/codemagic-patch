@@ -25,6 +25,10 @@ export type AuthNExchangeResult =
       outcome: "invalid_grant";
     }
   | {
+      /** The provider account has no confirmed/verified primary email. */
+      outcome: "verified_email_required";
+    }
+  | {
       outcome: "provider_error";
       message: string;
     };

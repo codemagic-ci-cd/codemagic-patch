@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { StartLoopbackLoginServer } from "../loopbackLoginServer";
 import type { WritableStream } from "../output";
 import type { ConfirmFn, PromptFn } from "../prompt";
 
@@ -64,6 +65,14 @@ export type CommandDeps = {
   env: Record<string, string | undefined>;
   fetch: typeof globalThis.fetch;
   now: () => number;
+  /**
+   * Best-effort default-browser launch for the loopback login; resolves false
+   * (never throws) when nothing could be opened. Injected so
+   * auth-command tests stay spawn-free.
+   */
+  openBrowser?: (url: string) => Promise<boolean>;
+  /** Loopback redirect listener for the browser login; injected for tests. */
+  startLoopbackLoginServer?: StartLoopbackLoginServer;
   /** See the note on `confirm`: override together with `stdin` in tests. */
   prompt?: PromptFn;
   readFile: (path: string) => Promise<Buffer>;

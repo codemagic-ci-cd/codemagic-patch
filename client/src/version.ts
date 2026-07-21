@@ -1,15 +1,15 @@
 // Binary-version precedence comparison for the store-update hint.
 //
-// `binary_version` tokens are path-safe strings, not required to be semver
-// (see PROTOCOL.md). To surface a store-update hint *only when a strictly
-// higher binary version exists*, we compare any consistent numeric-dotted
+// `binary_version` tokens are path-safe strings, not required to be semver.
+// To surface a store-update hint *only when a strictly higher binary version
+// exists*, we compare any consistent numeric-dotted
 // scheme (semver, `MAJOR.MINOR`, calver such as `2024.06`) by parsing each
 // dot-separated segment as a number. Genuinely opaque tokens (`latest`,
 // hashes, malformed forms) are incomparable and never trigger a hint.
 //
-// This algorithm is the canonical contract in PROTOCOL.md and is mirrored on
-// the server in `server/src/worker/binaryVersionPrecedence.ts`. Keep the two
-// implementations in sync.
+// This algorithm is mirrored on the server in
+// `server/src/worker/binaryVersionPrecedence.ts`. Keep the two implementations
+// in sync.
 
 // A token is comparable iff it is a numeric-dotted release with optional
 // semver-style prerelease and build identifiers. Leading zeros are allowed in

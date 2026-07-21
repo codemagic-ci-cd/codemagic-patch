@@ -14,6 +14,7 @@
 export interface LocalDevEntryEnv {
   CODEMAGIC_PATCH_LOCAL_AUTH?: string;
   NODE_ENV?: string;
+  OAUTH_CLI_AUTH_SECRET?: string;
   OAUTH_DEVICE_POLL_TOKEN_SECRET?: string;
 }
 
@@ -42,15 +43,20 @@ export function assertLocalAuthOptIn(env: LocalDevEntryEnv): void {
 export function assertLocalDevEntryAllowed(env: LocalDevEntryEnv): void {
   assertLocalAuthOptIn(env);
 
-  // Fail fast instead of leaving the device routes answering 501: `cmpatch
-  // login` working out of the box is part of the evaluation promise. Only
-  // presence is checked here — the config parser enforces the minimum length
-  // (and reports it accurately) on the very next step of the entrypoint.
-  if (!env.OAUTH_DEVICE_POLL_TOKEN_SECRET?.trim()) {
+  // Fail fast instead of leaving the CLI issue/exchange routes answering 501:
+  // `cmpatch login` working out of the box is part of the evaluation promise.
+  // Only presence is checked here — the config parser enforces the minimum
+  // length (and reports it accurately) on the very next step of the
+  // entrypoint.
+  if (
+    !env.OAUTH_CLI_AUTH_SECRET?.trim() &&
+    !env.OAUTH_DEVICE_POLL_TOKEN_SECRET?.trim()
+  ) {
     throw new Error(
-      "OAUTH_DEVICE_POLL_TOKEN_SECRET is required by the local evaluation " +
-        "entrypoint: the device-flow poll-token machinery is real even though " +
-        "the identity provider is faked.",
+      "OAUTH_CLI_AUTH_SECRET (or its fallback OAUTH_DEVICE_POLL_TOKEN_SECRET) " +
+        "is required by the local evaluation entrypoint: CLI browser login " +
+        "signs its authorization codes with it even though the identity " +
+        "provider is faked.",
     );
   }
 }

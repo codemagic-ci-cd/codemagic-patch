@@ -300,6 +300,7 @@ const tokenRevokeSchema: Record<string, FlagSchema> = {
 };
 
 const loginSchema: Record<string, FlagSchema> = {
+  noBrowser: BOOLEAN_FLAG,
   nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
   timeoutSeconds: INTEGER_FLAG,
@@ -3071,6 +3072,7 @@ export function parseLogin(
     command: {
       kind: "login",
       serverUrl,
+      ...(parsedFlags.flags.noBrowser === true ? { noBrowser: true } : {}),
       ...(parsedFlags.flags.nonInteractive === true
         ? { nonInteractive: true }
         : {}),

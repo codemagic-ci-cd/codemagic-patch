@@ -127,12 +127,11 @@ services:
       # deliberate — a copy-pasted `command:` override alone still refuses).
       CODEMAGIC_PATCH_LOCAL_AUTH: "1"
       NODE_ENV: development
-      # The device poll-token machinery is real even with the faked identity
-      # provider — `cmpatch login` mints and verifies genuine poll tokens.
-      OAUTH_DEVICE_POLL_TOKEN_SECRET: dev-oauth-device-poll-token-secret-000001
-      # Printed by `cmpatch login` as the verification link; must be the
-      # host-reachable dashboard URL (the container cannot derive the host
-      # port mapping). Cosmetic — device approval is instant.
+      # The CLI authorization-code machinery is real even with the faked
+      # identity provider — `cmpatch login` mints and verifies genuine codes.
+      OAUTH_CLI_AUTH_SECRET: dev-oauth-cli-auth-secret-0000000001
+      # Opened by `cmpatch login` in the browser; must be the host-reachable
+      # dashboard URL (the container cannot derive the host port mapping).
       CODEMAGIC_PATCH_LOCAL_DASHBOARD_URL: http://localhost:8080
       # Open registration on purpose: signing in as alice@/bob@example.com is
       # how an evaluator exercises teams, invitations, and RBAC without
@@ -154,9 +153,9 @@ services:
       # URLs returned to clients are fetchable from outside the compose network.
       # The minio-init service applies the matching prefix-split policy so
       # `_internal/*` remains private while public OTA keys are readable.
-      # Do not reuse this dev URL shape in production without equivalent
-      # bucket/delivery policy. See server/README.md "Serving artifacts from object
-      # storage".
+      # Do not reuse this dev URL shape in production without an equivalent
+      # bucket/delivery policy that keeps `_internal/*` private while exposing
+      # public OTA keys.
       PUBLIC_BASE_URL: http://localhost:9100/codemagic-patch
     ports:
       - "127.0.0.1:3000:3000"

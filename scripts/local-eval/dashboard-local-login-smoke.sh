@@ -7,7 +7,7 @@
 # Hermetic smoke check for the local evaluation sign-in path — no browser
 # needed. Exercises the exact API sequence the dashboard performs:
 #
-#   1. GET  /v1/auth/oauth/web-config   → expect mode=local-dev, provider echo
+#   1. GET  /v1/auth/oauth/web-config   → expect mode=local-dev, provider entry
 #   2. POST /v1/auth/oauth/callback     with code=local:<email> → real session
 #   3. GET  /v1/users/me                with the access token → identity check
 #   4. POST /v1/auth/logout             with the refresh token → 204
@@ -15,8 +15,8 @@
 #
 # Runs against the dashboard origin (same-origin proxy) by default so the
 # Caddy /v1/* route is covered too; point DASHBOARD_URL elsewhere (or at the
-# server directly) to isolate. The real-GitHub path has its own smoke
-# (github-device-login-smoke.sh) — this one never leaves localhost.
+# server directly) to isolate. Real-provider OAuth is intentionally outside
+# this localhost-only smoke.
 #
 # Exits non-zero on any failure so it can be reused from CI later.
 
@@ -37,20 +37,24 @@ WEB_CONFIG="$(curl -fsS "${DASHBOARD_URL}/v1/auth/oauth/web-config")" \
   || fail "web-config is unreachable; bring the dev stack up first"
 
 MODE="$(printf '%s' "${WEB_CONFIG}" | jq -r '.mode // empty')"
-PROVIDER="$(printf '%s' "${WEB_CONFIG}" | jq -r '.provider')"
-AUTHORIZE_BASE_URL="$(printf '%s' "${WEB_CONFIG}" | jq -r '.authorize_base_url // "ABSENT"')"
+PROVIDER_COUNT="$(printf '%s' "${WEB_CONFIG}" | jq -r '.providers | length')"
+PROVIDER="$(printf '%s' "${WEB_CONFIG}" | jq -r '.providers[0].provider')"
+AUTHORIZE_ENDPOINT="$(printf '%s' "${WEB_CONFIG}" | jq -r '.providers[0].authorize_endpoint // "ABSENT"')"
 if [ "${MODE}" != "local-dev" ]; then
   fail "web-config mode is '${MODE:-ABSENT}', expected 'local-dev' — is the server running dist/localDev/entry.js?"
+fi
+if [ "${PROVIDER_COUNT}" != "1" ]; then
+  fail "web-config has ${PROVIDER_COUNT} provider entries, expected exactly 1 in local-dev mode"
 fi
 if [ "${PROVIDER}" != "local-dev" ]; then
   fail "web-config provider is '${PROVIDER}', expected 'local-dev'"
 fi
-# "" (same-origin) is the meaningful value here; ABSENT means the field was
-# dropped somewhere between the runtime option and the wire serializer.
-if [ "${AUTHORIZE_BASE_URL}" != "" ]; then
-  fail "web-config authorize_base_url is '${AUTHORIZE_BASE_URL}', expected the same-origin empty string"
+# The same-origin consent-route path is the meaningful value here; ABSENT
+# means the field was dropped between the runtime option and the serializer.
+if [ "${AUTHORIZE_ENDPOINT}" != "/login/oauth/authorize" ]; then
+  fail "web-config authorize_endpoint is '${AUTHORIZE_ENDPOINT}', expected the same-origin /login/oauth/authorize"
 fi
-log "web config OK (mode=local-dev, same-origin authorize)"
+log "web config OK (mode=local-dev, same-origin authorize endpoint)"
 
 log "exchanging code local:${LOCAL_ADMIN_EMAIL} via the callback route"
 SESSION_JSON="$(curl -fsS -X POST "${DASHBOARD_URL}/v1/auth/oauth/callback" \

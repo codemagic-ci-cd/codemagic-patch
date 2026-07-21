@@ -14,7 +14,7 @@ import {
 // Mirrors PLATFORM_BUNDLE_FILENAMES in commands/releaseReact.ts. Kept local to
 // avoid a circular import (releaseReact imports this module). The entry path
 // inside bundle.tar.zst is the bare filename — the archive payload tree has no
-// `contents/` wrapper (PROTOCOL.md §Full Bundle Archive Contract).
+// `contents/` wrapper.
 const PLATFORM_BUNDLE_FILENAMES: Record<"android" | "ios", string> = {
   android: "index.android.bundle",
   ios: "main.jsbundle",
@@ -159,10 +159,9 @@ function isHermesBytecode(bytes: Uint8Array): boolean {
 }
 
 /**
- * Extract a single regular-file entry from a POSIX `ustar` tar stream (the
- * narrow profile written by the server — see PROTOCOL.md §Full Bundle Archive
- * Format). Returns `undefined` if the entry is absent or the stream is
- * truncated.
+ * Extract a single regular-file entry from the narrow POSIX `ustar` profile
+ * written by the server. Returns `undefined` if the entry is absent or the
+ * stream is truncated.
  */
 function extractTarEntry(
   tar: Uint8Array,

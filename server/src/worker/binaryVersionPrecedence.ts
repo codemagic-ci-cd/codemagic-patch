@@ -1,19 +1,19 @@
 // Binary-version precedence comparison for selecting the deployment-level
 // store-update hint (`meta.json` `latest_binary_version`).
 //
-// `binary_version` tokens are path-safe strings, not required to be semver
-// (see PROTOCOL.md). The client surfaces a store-update hint *only when a
-// strictly higher binary version exists*, comparing any consistent
+// `binary_version` tokens are path-safe strings, not required to be semver. The
+// client surfaces a store-update hint *only when a strictly higher binary
+// version exists*, comparing any consistent
 // numeric-dotted scheme (semver, `MAJOR.MINOR`, calver such as `2024.06`) by
 // parsing each dot-separated segment as a number; genuinely opaque tokens
 // (`latest`, hashes, malformed forms) are incomparable. The worker therefore
 // publishes the highest comparable token so the client's directional check is
 // meaningful.
 //
-// `compareBinaryVersionPrecedence` is the canonical contract in PROTOCOL.md and
-// is mirrored on the client in `client/src/version.ts`. Keep the two
-// implementations in sync. This module is deliberately self-contained (it does
-// not use the npm `semver` package) so its semantics match the client exactly.
+// This implementation is mirrored on the client in `client/src/version.ts`.
+// Keep the two implementations in sync. This module is deliberately
+// self-contained (it does not use the npm `semver` package) so its semantics
+// match the client exactly.
 
 // A token is comparable iff it is a numeric-dotted release with optional
 // semver-style prerelease and build identifiers. Leading zeros are allowed in

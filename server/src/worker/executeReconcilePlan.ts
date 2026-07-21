@@ -144,8 +144,8 @@ async function ensurePatches(
       await options.storage.put(patch.internalKey, patchBuffer, {
         cacheControl: DEFAULT_ARTIFACT_CACHE_CONTROL,
         // The patch artifact is a self-contained HDiffPatch directory-diff
-        // container (internal zstd codec), not a standalone zstd frame — see
-        // PROTOCOL.md › Patch Artifact Contract. Label it as opaque binary.
+        // container (internal zstd codec), not a standalone zstd frame. Label
+        // it as opaque binary.
         contentType: "application/octet-stream",
 
       });

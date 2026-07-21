@@ -17,6 +17,8 @@ import type {
 import type { User } from "../model/user";
 import type {
   AppWithDeploymentsResponse,
+  CliAuthorizationBody,
+  CliAuthorizationResponse,
   DeploymentClearResponse,
   IamInvitationCreateBody,
   IamRoleBindingCreateBody,
@@ -145,6 +147,11 @@ export interface SessionWireResponse {
   user: SessionUserWire;
 }
 
+export interface CliAuthorizationWireResponse {
+  code: string;
+  expires_in_seconds: number;
+}
+
 export interface RefreshWireResponse {
   access_token: string;
   access_token_expires_at: string;
@@ -152,14 +159,19 @@ export interface RefreshWireResponse {
   refresh_token_expires_at: string;
 }
 
-export interface OAuthWebConfigWire {
+export interface OAuthWebConfigProviderWire {
+  /** Absolute URL, or a same-origin absolute path (local-dev consent route). */
+  authorize_endpoint: string;
   client_id: string;
   provider: string;
+  /** "" = omit the scope param on the authorize URL. */
   scopes: string;
-  /** Optional; absent = normal GitHub mode. */
+}
+
+export interface OAuthWebConfigWire {
+  /** Optional; absent = normal mode. */
   mode?: string;
-  /** Optional; absent = github.com, "" = same-origin. */
-  authorize_base_url?: string;
+  providers: OAuthWebConfigProviderWire[];
 }
 
 export interface RoleWire {
@@ -516,14 +528,13 @@ export function fromOAuthWebConfigWire(
   config: OAuthWebConfigWire,
 ): OAuthWebConfig {
   return {
-    clientId: config.client_id,
-    provider: config.provider,
-    scopes: config.scopes,
-    // "" is a present value (same-origin authorize) — key on undefined only.
     ...(config.mode === undefined ? {} : { mode: config.mode }),
-    ...(config.authorize_base_url === undefined
-      ? {}
-      : { authorizeBaseUrl: config.authorize_base_url }),
+    providers: config.providers.map((provider) => ({
+      authorizeEndpoint: provider.authorize_endpoint,
+      clientId: provider.client_id,
+      provider: provider.provider,
+      scopes: provider.scopes,
+    })),
   };
 }
 
@@ -748,6 +759,22 @@ export function fromApiTokenCreateWireResponse(
   return {
     apiToken: fromApiTokenWire(response.api_token),
     token: response.token,
+  };
+}
+
+export function toCliAuthorizationWireBody(body: CliAuthorizationBody) {
+  return {
+    code_challenge: body.codeChallenge,
+    port: body.port,
+  };
+}
+
+export function fromCliAuthorizationWire(
+  response: CliAuthorizationWireResponse,
+): CliAuthorizationResponse {
+  return {
+    code: response.code,
+    expiresInSeconds: response.expires_in_seconds,
   };
 }
 

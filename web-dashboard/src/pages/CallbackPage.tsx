@@ -13,13 +13,21 @@
 // means restarting the flow from /login because the authorization code and
 // the PKCE verifier are both single-use (the stash is consumed even on
 // failure). An authorize denial (`?error=` without a code) is bounced to
-// /login?error=… — the login screen owns that banner.
+// /login?error=… — the login screen owns that banner. When the provider
+// returns the matching state, the callback also preserves the stashed
+// returnTo so a retried CLI sign-in can resume /cli/authorize.
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
-import { classifyProblem, HttpProblemError } from "../api/problem";
-import { exchangeCallback, InvalidSignInStateError } from "../auth/webConfig";
+import { classifyProblem } from "../api/problem";
+import { consumePkce } from "../auth/pkce";
+import {
+  CallbackProblemError,
+  exchangeCallback,
+  InvalidSignInStateError,
+  providerDisplayName,
+} from "../auth/webConfig";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { MODAL_ICON, MODAL_ICON_TONE } from "../components/overlay/Modal";
@@ -53,8 +61,15 @@ export function CallbackPage() {
 
     if (code === null || state === null) {
       if (providerError !== null) {
-        // GitHub denied/failed before issuing a code → login-screen banner.
-        void navigate(`/login?error=${encodeURIComponent(providerError)}`, {
+        // Provider denied/failed before issuing a code → login-screen banner.
+        const loginParams = new URLSearchParams({ error: providerError });
+        if (state !== null) {
+          const returnTo = sanitizeReturnTo(consumePkce(state)?.returnTo);
+          if (returnTo !== undefined) {
+            loginParams.set("returnTo", returnTo);
+          }
+        }
+        void navigate(`/login?${loginParams.toString()}`, {
           replace: true,
         });
       }
@@ -158,18 +173,23 @@ function localhostMismatchHint(): string {
 }
 
 /**
- * Distinct message per error row. HttpProblemError is classified
+ * Distinct message per error row. The wrapped HttpProblemError is classified
  * first (registration-closed / account-disabled / provider failure carry
- * type-suffix or extensions semantics), then the remaining rows key off the
- * HTTP status — the 409 identity conflict and the 501 missing-adapter
- * problems are suffix-less, so status is their only discriminator.
+ * type-suffix or extensions semantics), then `extensions.reason`
+ * discriminates the unconfirmed-provider-email 401, and the remaining rows
+ * key off the HTTP status — the 409 identity conflict and the 501
+ * missing-adapter problems are suffix-less, so status is their only
+ * discriminator. The flow's provider (from CallbackProblemError) keeps the
+ * 409/email copy provider-accurate.
  */
 function callbackErrorMessage(error: unknown): string {
   if (error instanceof InvalidSignInStateError) {
     return INVALID_STATE_MESSAGE + localhostMismatchHint();
   }
-  if (error instanceof HttpProblemError) {
-    switch (classifyProblem(error)) {
+  if (error instanceof CallbackProblemError) {
+    const problem = error.problem;
+    const provider = providerDisplayName(error.provider);
+    switch (classifyProblem(problem)) {
       case "registration-closed":
         return "This server is invite-only — ask a team admin to invite your email, then sign in again.";
       case "account-disabled":
@@ -179,17 +199,20 @@ function callbackErrorMessage(error: unknown): string {
       default:
         break;
     }
-    switch (error.status) {
+    if (problem.extensions.reason === "verified_email_required") {
+      return `Sign-in failed — your ${provider} account has no confirmed primary email address. Confirm it on ${provider}, then sign in again.`;
+    }
+    switch (problem.status) {
       case 401:
         return "Sign-in failed — your authorization code was rejected. Try again.";
       case 409:
-        return "Sign-in failed — your GitHub identity conflicts with an existing account. Contact support.";
+        return `Sign-in failed — your ${provider} identity conflicts with an existing account. Contact support.`;
       case 501:
         return "Browser sign-in is not enabled on this server — a server misconfiguration. Contact your administrator.";
       case 503:
         return "Sign-in temporarily unavailable — try again.";
       default:
-        return error.detail ?? "Sign-in failed — try again.";
+        return problem.detail ?? "Sign-in failed — try again.";
     }
   }
   return "We couldn't reach the server — check your connection and try signing in again.";

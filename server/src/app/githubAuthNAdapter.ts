@@ -12,7 +12,6 @@ import {
 } from "./githubApi";
 
 export interface CreateGitHubAuthNAdapterOptions {
-  allowedRedirectUris?: string[];
   apiBaseUrl?: string;
   clientId: string;
   clientSecret: string;
@@ -37,22 +36,14 @@ export function createGitHubAuthNAdapter(
   const apiBaseUrl = trimTrailingSlash(
     options.apiBaseUrl ?? DEFAULT_GITHUB_API_BASE_URL,
   );
-  const allowedRedirectUris = options.allowedRedirectUris ?? [];
 
   return {
     async exchangeCode(input) {
+      // Redirect-URI allowlisting lives in the dispatching registry
+      // (authNAdapterRegistry); the provider guard stays as defense in depth.
       if (input.provider !== "github") {
         return {
           outcome: "unknown_provider",
-        };
-      }
-
-      if (
-        allowedRedirectUris.length > 0 &&
-        !allowedRedirectUris.includes(input.redirectUri)
-      ) {
-        return {
-          outcome: "invalid_grant",
         };
       }
 
@@ -118,9 +109,9 @@ export function createGitHubAuthNAdapter(
         );
       }
       if (email.outcome === "verified_email_required") {
-        return providerError(
-          "GitHub account has no verified primary email address",
-        );
+        return {
+          outcome: "verified_email_required",
+        };
       }
       if (email.outcome !== "success") {
         return email;

@@ -6,16 +6,12 @@
  *
  * Reachable only via the dedicated entrypoint (localDev/entry.ts); the stock
  * dist/main.js cannot enable these adapters. Never use them on a deployment —
- * and the factories enforce that themselves: construction asserts the
+ * and the factory enforces that itself: construction asserts the
  * CODEMAGIC_PATCH_LOCAL_AUTH=1 / non-production opt-ins (assertLocalAuthOptIn),
- * so no caller of the ServerRuntimeOptions seam can wire them by accident.
+ * so no caller of the ServerRuntimeOptions seam can wire it by accident.
  *
- * Two provider axes deliberately never mix:
- * - Flow-level provider stays "github": the CLI hardcodes provider "github"
- *   in device requests and rejects any other value in responses, and the
- *   server compares the poll token's provider against the poll request's.
- * - Identity-level provider is "local-dev": stored on oauth_session /
- *   user_account rows so evaluation sign-ins remain auditable.
+ * The identity-level provider is "local-dev": stored on oauth_session /
+ * user_account rows so evaluation sign-ins remain auditable.
  */
 
 import type {
@@ -23,7 +19,6 @@ import type {
   OAuthProviderIdentity,
 } from "../app/authNAdapter";
 import { canonicalizeEmail } from "../app/email";
-import type { OAuthDeviceAuthAdapter } from "../app/githubDeviceAuthAdapter";
 import { assertLocalAuthOptIn, type LocalDevEntryEnv } from "./guards";
 
 /** Identity-level provider recorded on sessions/users. */
@@ -38,11 +33,6 @@ export const LOCAL_DEV_ADMIN_EMAIL = "local-admin@example.com";
 
 /** Web OAuth codes take the form `local:<email>`. */
 const LOCAL_CODE_PREFIX = "local:";
-
-const LOCAL_DEVICE_CODE = "local-dev-device-code";
-const LOCAL_DEVICE_USER_CODE = "LOCAL-OK";
-const LOCAL_DEVICE_EXPIRES_IN_SECONDS = 300;
-const LOCAL_DEVICE_INTERVAL_SECONDS = 1;
 
 export function localDevIdentity(email: string): OAuthProviderIdentity {
   // Canonicalize BEFORE deriving both fields: account emails are stored
@@ -92,68 +82,6 @@ export function createLocalAuthNAdapter(
 
       return {
         identity: localDevIdentity(email),
-        outcome: "success",
-      };
-    },
-  };
-}
-
-export interface CreateLocalDeviceAuthAdapterOptions {
-  /** Identity every device-flow sign-in resolves to. */
-  email: string;
-  /**
-   * Host-reachable URL printed by the CLI (the dashboard's local consent
-   * page). Cosmetic — approval is instant — but a broken link would read as
-   * a broken product.
-   */
-  verificationUri: string;
-}
-
-/**
- * Device-flow adapter: `cmpatch login` gets an instantly-approved fixed code.
- * The flow-level provider echoes "github" (see the module doc); only the
- * returned identity carries "local-dev".
- *
- * Construction throws unless the environment has explicitly opted in
- * (assertLocalAuthOptIn); tests pass an opted-in `env` instead of mutating
- * process.env.
- */
-export function createLocalDeviceAuthAdapter(
-  options: CreateLocalDeviceAuthAdapterOptions,
-  env: LocalDevEntryEnv = process.env,
-): OAuthDeviceAuthAdapter {
-  assertLocalAuthOptIn(env);
-
-  return {
-    async startDeviceAuthorization(input) {
-      if (input.provider !== "github") {
-        return { outcome: "unknown_provider" };
-      }
-
-      return {
-        deviceCode: LOCAL_DEVICE_CODE,
-        expiresInSeconds: LOCAL_DEVICE_EXPIRES_IN_SECONDS,
-        intervalSeconds: LOCAL_DEVICE_INTERVAL_SECONDS,
-        outcome: "started",
-        provider: "github",
-        userCode: LOCAL_DEVICE_USER_CODE,
-        verificationUri: options.verificationUri,
-      };
-    },
-
-    async pollDeviceAuthorization(input) {
-      if (input.provider !== "github") {
-        return { outcome: "unknown_provider" };
-      }
-
-      // The device code round-trips inside the server-signed poll token, so
-      // anything else means a token minted by a different adapter/deployment.
-      if (input.deviceCode !== LOCAL_DEVICE_CODE) {
-        return { outcome: "expired_token" };
-      }
-
-      return {
-        identity: localDevIdentity(options.email),
         outcome: "success",
       };
     },

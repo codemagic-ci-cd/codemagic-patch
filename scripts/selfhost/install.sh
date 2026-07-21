@@ -10,6 +10,8 @@ ADMIN_EMAIL="${ACME_EMAIL:-}"
 GITHUB_OAUTH_CLIENT_ID="${GITHUB_OAUTH_CLIENT_ID:-}"
 GITHUB_OAUTH_CLIENT_SECRET="${GITHUB_OAUTH_CLIENT_SECRET:-}"
 GITHUB_OAUTH_SCOPES="${GITHUB_OAUTH_SCOPES:-}"
+BITBUCKET_OAUTH_CLIENT_ID="${BITBUCKET_OAUTH_CLIENT_ID:-}"
+BITBUCKET_OAUTH_CLIENT_SECRET="${BITBUCKET_OAUTH_CLIENT_SECRET:-}"
 CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
 CLOUDFLARE_ZONE_ID="${CLOUDFLARE_ZONE_ID:-}"
 CLOUDFLARE_API_BASE_URL="${CLOUDFLARE_API_BASE_URL:-}"
@@ -26,9 +28,10 @@ usage() {
 Usage: scripts/selfhost/install.sh [options]
 
 Prerequisites: public DNS A/AAAA records for both domains pointing at this
-host, ports 80/443 open to the internet (Let's Encrypt), and a GitHub OAuth
-App. Create the OAuth App (device flow enabled, with Authorization callback
-URL https://<api-domain>/auth/callback) before running, and pass its Client ID
+host, ports 80/443 open to the internet (Let's Encrypt), and at least one
+OAuth sign-in provider — a GitHub OAuth App and/or a Bitbucket OAuth
+consumer. Create it (with Authorization callback URL
+https://<api-domain>/auth/callback) before running, and pass its client ID
 and a generated client secret. The admin signs in via the web dashboard or
 `cmpatch login`; the first sign-in by --email creates the admin account.
 
@@ -36,14 +39,27 @@ Options:
   --api-domain <domain>        Public API domain, for example updates.example.com.
   --storage-domain <domain>    Public storage domain, for example storage.updates.example.com.
   --email <email>              Admin and ACME email. Must match the verified
-                               primary email of the admin's GitHub account.
+                               primary email of the admin's GitHub or
+                               Bitbucket account.
   --github-oauth-client-id <id>
-                               REQUIRED. GitHub OAuth App Client ID (device flow).
+                               GitHub OAuth App Client ID. Required unless
+                               Bitbucket OAuth is configured instead.
   --github-oauth-client-secret <secret>
-                               REQUIRED. GitHub OAuth App client secret —
-                               generate one on the same OAuth App; required
-                               for the web dashboard.
+                               GitHub OAuth App client secret — generate one
+                               on the same OAuth App; required together with
+                               the client ID (the web dashboard needs it).
   --github-oauth-scopes <s>    OAuth scopes (default: read:user user:email).
+  --bitbucket-oauth-client-id <key>
+                               Bitbucket OAuth consumer key — adds
+                               "Continue with Bitbucket" to the dashboard,
+                               or serves as the sole provider when GitHub
+                               OAuth is not configured.
+                               Requires --bitbucket-oauth-client-secret.
+  --bitbucket-oauth-client-secret <secret>
+                               OPTIONAL. Bitbucket OAuth consumer secret. The
+                               consumer needs callback URL
+                               https://<api-domain>/auth/callback and the
+                               account + email scopes (set on the consumer).
   --cloudflare                 Front the storage domain with Cloudflare CDN and
                                purge the edge cache after each release.
   --cloudflare-api-token <t>   Cloudflare API Token scoped to Zone > Cache Purge
@@ -68,6 +84,8 @@ while [ "$#" -gt 0 ]; do
     --github-oauth-client-id) GITHUB_OAUTH_CLIENT_ID="${2:-}"; shift 2 ;;
     --github-oauth-client-secret) GITHUB_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
     --github-oauth-scopes) GITHUB_OAUTH_SCOPES="${2:-}"; shift 2 ;;
+    --bitbucket-oauth-client-id) BITBUCKET_OAUTH_CLIENT_ID="${2:-}"; shift 2 ;;
+    --bitbucket-oauth-client-secret) BITBUCKET_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
     --cloudflare) USE_CLOUDFLARE=1; shift ;;
     --cloudflare-api-token) CLOUDFLARE_API_TOKEN="${2:-}"; shift 2 ;;
     --cloudflare-zone-id) CLOUDFLARE_ZONE_ID="${2:-}"; shift 2 ;;
@@ -121,13 +139,30 @@ validate_domain() {
 }
 
 prompt_github_oauth() {
-  # GitHub OAuth is mandatory. Reuse prompt_required so non-interactive runs
-  # fail fast when --github-oauth-client-id or --github-oauth-client-secret
-  # is missing.
+  # At least one OAuth provider (GitHub or Bitbucket) is mandatory. Bitbucket
+  # is flags/env-only, so when it is configured and no GitHub value was given,
+  # skip the GitHub prompts and run Bitbucket-only. Otherwise reuse
+  # prompt_required so non-interactive runs fail fast when
+  # --github-oauth-client-id or --github-oauth-client-secret is missing.
+  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] &&
+    [ -z "$GITHUB_OAUTH_CLIENT_ID" ] && [ -z "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
+    return 0
+  fi
   prompt_required GITHUB_OAUTH_CLIENT_ID \
-    "GitHub OAuth App Client ID (device flow)" "$GITHUB_OAUTH_CLIENT_ID"
+    "GitHub OAuth App Client ID" "$GITHUB_OAUTH_CLIENT_ID"
   prompt_required GITHUB_OAUTH_CLIENT_SECRET \
     "GitHub OAuth App client secret (web dashboard)" "$GITHUB_OAUTH_CLIENT_SECRET"
+}
+
+validate_bitbucket_oauth() {
+  # Bitbucket is optional (flags/env only, no prompt) but all-or-nothing: the
+  # server refuses to boot with a client id and no secret, so catch it here.
+  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -z "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
+    fail_selfhost "--bitbucket-oauth-client-id requires --bitbucket-oauth-client-secret (Bitbucket has no secret-less flow)"
+  fi
+  if [ -z "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
+    fail_selfhost "--bitbucket-oauth-client-secret requires --bitbucket-oauth-client-id"
+  fi
 }
 
 prompt_cloudflare() {
@@ -235,8 +270,9 @@ print_prerequisites() {
   - DNS: A/AAAA records for BOTH the API and storage domains point to THIS
     host's public IP (Let's Encrypt validates over HTTP on port 80).
   - Ports 80 and 443 are open to the internet and free on this host.
-  - A GitHub OAuth App exists: device flow enabled, an Authorization callback
-    URL https://<API domain>/auth/callback, and a generated client secret.
+  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
+    OAuth consumer — with an Authorization callback URL
+    https://<API domain>/auth/callback and a generated client secret.
   (No DNS yet? Re-run later, or pass --skip-public-check to skip the HTTPS wait.)
 EOF
 }
@@ -321,22 +357,41 @@ EOF
     printf '\nDELIVERY_ADAPTER=base-url\n' >>"$env_tmp"
   fi
 
-  # GitHub OAuth is mandatory; the server refuses to boot without it. The
-  # client secret powers the web dashboard's confidential code exchange, and
-  # the redirect allowlist pins the browser callback to the API domain.
+  # At least one OAuth provider (GitHub or Bitbucket) is mandatory; the
+  # server refuses to boot without one. Each client secret powers the web
+  # dashboard's confidential code exchange, and each redirect allowlist pins
+  # the browser callback to the API domain.
+  # OAUTH_CLI_AUTH_SECRET signs the CLI browser-login authorization codes.
   # INITIAL_ADMIN_EMAILS lets the admin's first OAuth sign-in create the
   # admin account under invite-only registration.
-  local poll_secret
-  poll_secret="$(random_selfhost_secret)"
+  local cli_auth_secret
+  cli_auth_secret="$(random_selfhost_secret)"
   cat >>"$env_tmp" <<EOF
+
+OAUTH_CLI_AUTH_SECRET=${cli_auth_secret}
+INITIAL_ADMIN_EMAILS=${ADMIN_EMAIL}
+EOF
+
+  if [ -n "$GITHUB_OAUTH_CLIENT_ID" ]; then
+    cat >>"$env_tmp" <<EOF
 
 GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
 GITHUB_OAUTH_CLIENT_SECRET=${GITHUB_OAUTH_CLIENT_SECRET}
-OAUTH_DEVICE_POLL_TOKEN_SECRET=${poll_secret}
 GITHUB_OAUTH_SCOPES="${GITHUB_OAUTH_SCOPES:-read:user user:email}"
 GITHUB_OAUTH_ALLOWED_REDIRECT_URIS=https://${API_DOMAIN}/auth/callback
-INITIAL_ADMIN_EMAILS=${ADMIN_EMAIL}
 EOF
+  fi
+
+  # Bitbucket sign-in is written only when provided (see
+  # .env.selfhost.example for the consumer setup notes).
+  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ]; then
+    cat >>"$env_tmp" <<EOF
+
+BITBUCKET_OAUTH_CLIENT_ID=${BITBUCKET_OAUTH_CLIENT_ID}
+BITBUCKET_OAUTH_CLIENT_SECRET=${BITBUCKET_OAUTH_CLIENT_SECRET}
+BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS=https://${API_DOMAIN}/auth/callback
+EOF
+  fi
 
   chmod 600 "$env_tmp"
   mv "$env_tmp" "$SELFHOST_ENV_FILE"
@@ -356,6 +411,10 @@ main() {
     prompt_required API_DOMAIN "CodemagicPatch API domain" "$API_DOMAIN"
     prompt_required STORAGE_DOMAIN "Public storage domain" "$STORAGE_DOMAIN"
     prompt_required ADMIN_EMAIL "Admin email" "$ADMIN_EMAIL"
+    # Validate Bitbucket first: prompt_github_oauth skips the GitHub prompts
+    # when Bitbucket is configured, so a half-configured Bitbucket flag pair
+    # must fail before it can silently suppress the GitHub prompts.
+    validate_bitbucket_oauth
     prompt_github_oauth
     prompt_cloudflare
     # DR3/DR4: validate before writing so we never persist a broken env file that
@@ -372,6 +431,10 @@ main() {
       warn_selfhost "ignoring --github-oauth-client-id/--github-oauth-client-secret; OAuth is only written on initial install"
       warn_selfhost "edit GITHUB_OAUTH_CLIENT_ID/GITHUB_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
     fi
+    if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] || [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
+      warn_selfhost "ignoring --bitbucket-oauth-client-id/--bitbucket-oauth-client-secret; OAuth is only written on initial install"
+      warn_selfhost "edit BITBUCKET_OAUTH_CLIENT_ID/BITBUCKET_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
+    fi
     if [ "$USE_CLOUDFLARE" -eq 1 ] ||
       [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ]; then
       warn_selfhost "ignoring --cloudflare/--cloudflare-api-token/--cloudflare-zone-id; delivery config is only written on initial install"
@@ -383,6 +446,8 @@ main() {
   # environment. load_selfhost_env repopulates them from the file.
   GITHUB_OAUTH_CLIENT_ID=""
   GITHUB_OAUTH_CLIENT_SECRET=""
+  BITBUCKET_OAUTH_CLIENT_ID=""
+  BITBUCKET_OAUTH_CLIENT_SECRET=""
   USE_CLOUDFLARE=0
   CLOUDFLARE_API_TOKEN=""
   CLOUDFLARE_ZONE_ID=""
@@ -424,16 +489,12 @@ main() {
   fi
   verify_cloudflare
 
-  # GitHub OAuth is mandatory: the server refuses to boot without it. This
-  # validates an existing env file from a pre-OAuth (token-only) install and
-  # backfills what it can before the server container would crash-loop.
+  # At least one OAuth provider (GitHub or Bitbucket) is mandatory, and each
+  # configured provider needs its client secret: the server refuses to boot
+  # otherwise. This validates an existing env file from a pre-OAuth
+  # (token-only) or hand-edited install and backfills what it can before the
+  # server container would crash-loop.
   ensure_selfhost_oauth_env
-
-  # The client id alone only covers the CLI device flow; the web dashboard
-  # performs the confidential web code exchange and needs the client secret.
-  if [ -z "${GITHUB_OAUTH_CLIENT_SECRET:-}" ]; then
-    fail_selfhost "GITHUB_OAUTH_CLIENT_SECRET is missing from ${SELFHOST_ENV_FILE}. The web dashboard requires a client secret. Add an Authorization callback URL https://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file before rerunning."
-  fi
 
   log_selfhost "building images ${CODEMAGIC_PATCH_SERVER_IMAGE:-codemagic-patch-server:selfhost} and ${CODEMAGIC_PATCH_CADDY_IMAGE:-codemagic-patch-caddy:selfhost}"
   compose_selfhost build server caddy
@@ -456,7 +517,7 @@ main() {
     warn_selfhost "skipping public HTTPS readiness checks"
   fi
 
-  log_selfhost "GitHub OAuth enforced; the admin account is created on first sign-in by ${ACME_EMAIL}"
+  log_selfhost "OAuth sign-in enforced; the admin account is created on first sign-in by ${ACME_EMAIL}"
 
   printf '\nCodemagicPatch self-host is ready.\n\n'
   printf 'Server URL (app config: CodemagicPatchApiUrl):\n  %s\n\n' "$SERVER_URL"
@@ -475,7 +536,7 @@ main() {
   printf "     (no CLI needed), or install the CLI from this repo's root and sign in:\n"
   printf '       yarn install && yarn cli:install-global\n'
   printf '       cmpatch login --server-url %s\n' "$SERVER_URL"
-  printf '     Use the GitHub account whose verified primary email is %s.\n' "$ACME_EMAIL"
+  printf '     Use the GitHub or Bitbucket account whose verified primary email is %s.\n' "$ACME_EMAIL"
   printf '     This first sign-in creates the admin account and makes you owner\n'
   printf '     of the auto-created "default-team".\n'
   printf '  3. The "default-team" is the single fixed team; team creation is disabled.\n'

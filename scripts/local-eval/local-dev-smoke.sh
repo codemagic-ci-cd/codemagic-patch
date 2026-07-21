@@ -157,7 +157,7 @@ if [ "${FALLBACK_HASH}" != "${PACKAGE_HASH}" ]; then
   fail "fallback manifest target_package_hash (${FALLBACK_HASH}) does not match published release (${PACKAGE_HASH})"
 fi
 if printf '%s' "${FALLBACK_JSON}" | jq -e 'has("patch_url")' >/dev/null; then
-  fail "fallback manifest must not advertise patch_url (PROTOCOL.md)"
+  fail "fallback manifest must not advertise patch_url"
 fi
 
 log "fetching deployment meta"

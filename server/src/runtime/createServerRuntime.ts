@@ -89,8 +89,8 @@ import type {
   IdempotencyHandler,
   MetricEventIngestRouteHandler,
   OAuthCallbackRouteHandler,
-  OAuthDevicePollRouteHandler,
-  OAuthDeviceStartRouteHandler,
+  OAuthCliAuthorizationIssueRouteHandler,
+  OAuthCliExchangeRouteHandler,
   OAuthLogoutRouteHandler,
   OAuthRefreshRouteHandler,
   OAuthWebConfig,
@@ -109,12 +109,13 @@ import type {
   UserProfileRouteHandler,
 } from "../app/types";
 import type { AuthNAdapter } from "../app/authNAdapter";
-import { assembleDeploymentTimeseries } from "../app/metricsTimeseries";
-import { createGitHubAuthNAdapter } from "../app/githubAuthNAdapter";
 import {
-  createGitHubDeviceAuthAdapter,
-  type OAuthDeviceAuthAdapter,
-} from "../app/githubDeviceAuthAdapter";
+  createAuthNAdapterRegistry,
+  type AuthNAdapterRegistration,
+} from "../app/authNAdapterRegistry";
+import { assembleDeploymentTimeseries } from "../app/metricsTimeseries";
+import { createBitbucketAuthNAdapter } from "../app/bitbucketAuthNAdapter";
+import { createGitHubAuthNAdapter } from "../app/githubAuthNAdapter";
 import {
   createGitHubUserLookupService,
   type GitHubUserLookupService,
@@ -192,8 +193,8 @@ export interface ServerRuntime {
   idempotencyHandler?: IdempotencyHandler;
   metricEventIngestHandler?: MetricEventIngestRouteHandler;
   oauthCallbackHandler?: OAuthCallbackRouteHandler;
-  oauthDevicePollHandler?: OAuthDevicePollRouteHandler;
-  oauthDeviceStartHandler?: OAuthDeviceStartRouteHandler;
+  oauthCliAuthorizationIssueHandler?: OAuthCliAuthorizationIssueRouteHandler;
+  oauthCliExchangeHandler?: OAuthCliExchangeRouteHandler;
   oauthLogoutHandler?: OAuthLogoutRouteHandler;
   oauthRefreshHandler?: OAuthRefreshRouteHandler;
   oauthWebConfig?: OAuthWebConfig;
@@ -241,7 +242,6 @@ export interface ServerRuntimeOptions {
    * in the same schema_migration table, so names must be unique across both.
    */
   extraMigrations?: readonly SqlMigration[];
-  githubDeviceAuthAdapter?: OAuthDeviceAuthAdapter;
   githubUserLookupService?: GitHubUserLookupService;
   /**
    * Interval for the recurring job sweep that requeues expired-lease work
@@ -255,8 +255,8 @@ export interface ServerRuntimeOptions {
   managementRetryLimit?: number;
   oauthSessionIdGenerator?: OAuthSessionHandlerIdGenerator;
   /**
-   * Replaces the post-sign-in grant hook (runs on web OAuth and device-flow
-   * sign-ins). Defaults to the initial-admin bootstrap-team ownership grant.
+   * Replaces the post-sign-in grant hook (runs on web OAuth sign-ins).
+   * Defaults to the initial-admin bootstrap-team ownership grant.
    */
   oauthSignInGrantService?: (pool: DatabasePool) => OAuthSignInGrantService;
   /**
@@ -285,11 +285,11 @@ export async function createServerRuntime(
   if (
     needsControlPlaneAuth &&
     !config.githubOAuth &&
-    !options.authNAdapter &&
-    !options.githubDeviceAuthAdapter
+    !config.bitbucketOAuth &&
+    !options.authNAdapter
   ) {
     throw new Error(
-      "GITHUB_OAUTH_CLIENT_ID is required when control-plane auth is enabled",
+      "GITHUB_OAUTH_CLIENT_ID or BITBUCKET_OAUTH_CLIENT_ID is required when control-plane auth is enabled",
     );
   }
 
@@ -302,7 +302,7 @@ export async function createServerRuntime(
     // first admin cannot sign in (registration is invite-only) and no admin
     // exists to send invitations.
     throw new Error(
-      "INITIAL_ADMIN_EMAILS is required when registration is invite-only: set it so the first admin can sign in via GitHub OAuth, or set REGISTRATION_MODE=open. On a deployment upgraded from a pre-OAuth install, set it to the existing admin's email — their first sign-in links the GitHub identity to the existing account.",
+      "INITIAL_ADMIN_EMAILS is required when registration is invite-only: set it so the first admin can sign in via OAuth, or set REGISTRATION_MODE=open. On a deployment upgraded from a pre-OAuth install, set it to the existing admin's email — their first sign-in links the OAuth identity to the existing account.",
     );
   }
 
@@ -338,35 +338,40 @@ export async function createServerRuntime(
     const userAuthHandlers = authRepository
       ? createUserAuthHandlers(authRepository)
       : {};
-    // Device flow: an injected adapter is honored without any GitHub config
-    // (local-dev entry, embedders); the GitHub-config-derived adapter remains
-    // the fallback. The handlers additionally require the poll-token secret
-    // (parsed independently of the GitHub config for the same reason), so an
-    // injected adapter without OAUTH_DEVICE_POLL_TOKEN_SECRET still serves 501.
-    const githubDeviceAuthAdapter = authRepository
-      ? options.githubDeviceAuthAdapter ??
-        (config.githubOAuth
-          ? createGitHubDeviceAuthAdapter({
-              apiBaseUrl: config.githubOAuth.apiBaseUrl,
-              clientId: config.githubOAuth.clientId,
-              oauthBaseUrl: config.githubOAuth.oauthBaseUrl,
-              scopes: config.githubOAuth.scopes,
-            })
-          : undefined)
-      : undefined;
-    // Web OAuth (authorization-code exchange) is enabled exactly when the
-    // client secret is configured; device-only config leaves the callback
-    // handler undefined so the route answers 501. Injection always wins.
+    // Web OAuth (authorization-code exchange) providers. Both configs carry a
+    // client secret (config parsing fails fast without one), so a configured
+    // provider is always web-capable. The registry dispatches on the callback
+    // body's provider and enforces the per-provider redirect-URI allowlists.
+    // Injection always wins.
+    const authNAdapterRegistrations: AuthNAdapterRegistration[] = [];
+    if (config.githubOAuth) {
+      authNAdapterRegistrations.push({
+        adapter: createGitHubAuthNAdapter({
+          apiBaseUrl: config.githubOAuth.apiBaseUrl,
+          clientId: config.githubOAuth.clientId,
+          clientSecret: config.githubOAuth.clientSecret,
+          oauthBaseUrl: config.githubOAuth.oauthBaseUrl,
+        }),
+        allowedRedirectUris: config.githubOAuth.allowedRedirectUris,
+        provider: "github",
+      });
+    }
+    if (config.bitbucketOAuth) {
+      authNAdapterRegistrations.push({
+        adapter: createBitbucketAuthNAdapter({
+          apiBaseUrl: config.bitbucketOAuth.apiBaseUrl,
+          clientId: config.bitbucketOAuth.clientId,
+          clientSecret: config.bitbucketOAuth.clientSecret,
+          oauthBaseUrl: config.bitbucketOAuth.oauthBaseUrl,
+        }),
+        allowedRedirectUris: config.bitbucketOAuth.allowedRedirectUris,
+        provider: "bitbucket",
+      });
+    }
     const authNAdapter =
-      authRepository && config.githubOAuth?.clientSecret
+      authRepository && authNAdapterRegistrations.length > 0
         ? options.authNAdapter ??
-          createGitHubAuthNAdapter({
-            allowedRedirectUris: config.githubOAuth.allowedRedirectUris,
-            apiBaseUrl: config.githubOAuth.apiBaseUrl,
-            clientId: config.githubOAuth.clientId,
-            clientSecret: config.githubOAuth.clientSecret,
-            oauthBaseUrl: config.githubOAuth.oauthBaseUrl,
-          })
+          createAuthNAdapterRegistry(authNAdapterRegistrations)
         : options.authNAdapter;
     // Handle→subject directory lookup for GitHub-handle invitations. Enabled
     // whenever GitHub OAuth is configured (self-host always is); injection wins
@@ -397,12 +402,17 @@ export async function createServerRuntime(
               () => bootstrapTeamId,
             )
           : undefined;
+    // The device-poll secret fallback is applied here as well as in env
+    // parsing so embedders that assemble RuntimeConfig objects directly keep
+    // the no-migration guarantee.
+    const oauthCliAuthSecret =
+      config.oauthCliAuthSecret ?? config.oauthDevicePollTokenSecret;
     const oauthSessionHandlers =
-      authRepository && (authNAdapter || githubDeviceAuthAdapter)
+      authRepository && authNAdapter
         ? createOAuthSessionRouteHandlers({
             accessTokenTtlSeconds: config.oauthAccessTokenTtlSeconds,
             authNAdapter,
-            deviceAuthAdapter: githubDeviceAuthAdapter,
+            cliAuthSecret: oauthCliAuthSecret,
             idGenerator: options.oauthSessionIdGenerator,
             initialAdminEmails: config.initialAdminEmails,
             initialAdminTeamMembershipService: oauthSignInGrantService,
@@ -412,25 +422,56 @@ export async function createServerRuntime(
                   auditRepository,
                 )
               : undefined,
-            pollTokenSecret: config.oauthDevicePollTokenSecret,
             refreshTokenTtlDays: config.oauthRefreshTokenTtlDays,
             registrationMode: config.registrationMode,
             repository: authRepository,
           })
         : {};
-    // Web OAuth is enabled exactly when the client secret is configured; the
-    // public web-config route serves 404 (about:blank) otherwise. An injected
-    // web config wins so embedders with an injected authNAdapter can drive
-    // the dashboard login without any GitHub config.
+    // Web OAuth is enabled exactly when at least one web provider is
+    // configured; the public web-config route serves 404 (about:blank)
+    // otherwise. An injected web config wins so embedders with an injected
+    // authNAdapter can drive the dashboard login without any provider config.
+    const oauthWebConfigProviders = [
+      ...(config.githubOAuth
+        ? [
+            {
+              authorizeEndpoint: `${config.githubOAuth.oauthBaseUrl}/login/oauth/authorize`,
+              clientId: config.githubOAuth.clientId,
+              provider: "github",
+              scopes: config.githubOAuth.scopes,
+            },
+          ]
+        : []),
+      ...(config.bitbucketOAuth
+        ? [
+            {
+              authorizeEndpoint: `${config.bitbucketOAuth.oauthBaseUrl}/site/oauth2/authorize`,
+              clientId: config.bitbucketOAuth.clientId,
+              provider: "bitbucket",
+              // Bitbucket scopes live on the OAuth consumer; the SPA omits the
+              // scope param when this is empty.
+              scopes: "",
+            },
+          ]
+        : []),
+    ];
     const oauthWebConfig: OAuthWebConfig | undefined =
       options.oauthWebConfig ??
-      (config.githubOAuth?.clientSecret
-        ? {
-            clientId: config.githubOAuth.clientId,
-            provider: "github",
-            scopes: config.githubOAuth.scopes,
-          }
+      (oauthWebConfigProviders.length > 0
+        ? { providers: oauthWebConfigProviders }
         : undefined);
+
+    // The env parser's fail-fast only covers env-driven GitHub/Bitbucket
+    // configs; an embedder injecting authNAdapter/oauthWebConfig bypasses it.
+    // Without the CLI auth secret such a runtime would pass the CLI's
+    // web-config probe, complete the browser sign-in, and then answer 501 at
+    // the /cli/authorize approve step — the worst possible failure point. Fail
+    // at boot instead.
+    if (authRepository && authNAdapter && oauthWebConfig && !oauthCliAuthSecret) {
+      throw new Error(
+        "a CLI auth secret is required when web OAuth sign-in is served — set OAUTH_CLI_AUTH_SECRET (RuntimeConfig.oauthCliAuthSecret) or the legacy OAUTH_DEVICE_POLL_TOKEN_SECRET fallback; CLI browser login signs its authorization codes with it",
+      );
+    }
     const storage = config.mode === "api" ? null : createStorageAdapter(config);
     const delivery =
       config.mode === "api" ? null : createDeliveryAdapter(config);

@@ -193,7 +193,7 @@ if [ "${FALLBACK_TARGET}" != "${SECOND_PACKAGE_HASH}" ]; then
   fail "fallback manifest targets ${FALLBACK_TARGET}; expected ${SECOND_PACKAGE_HASH}"
 fi
 if printf '%s' "${FALLBACK_JSON}" | jq -e 'has("patch_url")' >/dev/null; then
-  fail "fallback manifest must not advertise root patch_url (PROTOCOL.md)"
+  fail "fallback manifest must not advertise root patch_url"
 fi
 
 FALLBACK_PREVIOUS_HASH="$(printf '%s' "${FALLBACK_JSON}" | jq -r '.previous_package_info.package_hash // empty')"
@@ -201,7 +201,7 @@ if [ "${FALLBACK_PREVIOUS_HASH}" != "${FIRST_PACKAGE_HASH}" ]; then
   fail "fallback previous_package_info hash (${FALLBACK_PREVIOUS_HASH}) does not match first release (${FIRST_PACKAGE_HASH})"
 fi
 if printf '%s' "${FALLBACK_JSON}" | jq -e '.previous_package_info | objects | has("patch_url")' >/dev/null; then
-  fail "fallback previous_package_info must not advertise patch_url (PROTOCOL.md)"
+  fail "fallback previous_package_info must not advertise patch_url"
 fi
 
 FALLBACK_BUNDLE_URL="$(printf '%s' "${FALLBACK_JSON}" | jq -r '.full_bundle_url // empty')"

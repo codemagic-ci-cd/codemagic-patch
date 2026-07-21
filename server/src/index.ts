@@ -23,12 +23,13 @@ export {
 } from "./app/oauthToken";
 export type { GeneratedOAuthToken } from "./app/oauthToken";
 export {
-  createOAuthDevicePollToken,
-  verifyOAuthDevicePollToken,
-  type CreateOAuthDevicePollTokenInput,
-  type VerifyOAuthDevicePollTokenInput,
-  type VerifyOAuthDevicePollTokenResult,
-} from "./app/oauthDevicePollToken";
+  createOAuthCliAuthorizationCode,
+  pkceChallengeMatches,
+  verifyOAuthCliAuthorizationCode,
+  type CreateOAuthCliAuthorizationCodeInput,
+  type VerifyOAuthCliAuthorizationCodeInput,
+  type VerifyOAuthCliAuthorizationCodeResult,
+} from "./app/oauthCliAuthorizationCode";
 export { getOrCreateUser } from "./app/userProvisioning";
 export type {
   AuthNAdapter,
@@ -36,15 +37,6 @@ export type {
   AuthNExchangeResult,
   OAuthProviderIdentity,
 } from "./app/authNAdapter";
-export {
-  createGitHubDeviceAuthAdapter,
-  type CreateGitHubDeviceAuthAdapterOptions,
-  type OAuthDeviceAuthAdapter,
-  type OAuthDevicePollInput,
-  type OAuthDevicePollResult,
-  type OAuthDeviceStartInput,
-  type OAuthDeviceStartResult,
-} from "./app/githubDeviceAuthAdapter";
 export { canonicalizeEmail } from "./app/email";
 export {
   createOAuthSessionRouteHandlers,
@@ -127,12 +119,6 @@ export type {
   OAuthCallbackHandlerInput,
   OAuthCallbackHandlerResult,
   OAuthCallbackRouteHandler,
-  OAuthDevicePollHandlerInput,
-  OAuthDevicePollHandlerResult,
-  OAuthDevicePollRouteHandler,
-  OAuthDeviceStartHandlerInput,
-  OAuthDeviceStartHandlerResult,
-  OAuthDeviceStartRouteHandler,
   OAuthLogoutHandlerInput,
   OAuthLogoutHandlerResult,
   OAuthLogoutRouteHandler,

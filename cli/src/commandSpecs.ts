@@ -638,7 +638,7 @@ const commandSpecs: RunnableCommandSpec[] = [
     defaults: { serverUrl: true },
     execute: (command, deps) =>
       executeLogin(command, deps, {
-        writeDeviceAuthorizationInstructions(message) {
+        writeAuthorizationInstructions(message) {
           writeLine(deps.stdout, message);
         },
       }),
@@ -646,10 +646,10 @@ const commandSpecs: RunnableCommandSpec[] = [
     help: [
       {
         description:
-          "Sign in. Interactively pick GitHub device login or a personal access token; pass --token to skip the prompt. Non-interactive defaults to device login.",
+          "Sign in. Interactively pick browser sign-in or a personal access token; pass --token to skip the prompt. Browser sign-in opens the dashboard and finishes over a localhost redirect; --no-browser prints the URL instead.",
         group: "auth",
         usage:
-          "cmpatch login --server-url <url> [--token <token>] [--non-interactive] [--timeout-seconds <seconds>]",
+          "cmpatch login --server-url <url> [--token <token>] [--no-browser] [--non-interactive] [--timeout-seconds <seconds>]",
       }
     ],
     parse: (args, defaults) => parseLogin(args, defaults),

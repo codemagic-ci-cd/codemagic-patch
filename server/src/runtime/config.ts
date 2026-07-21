@@ -14,10 +14,13 @@ const DEFAULT_IAM_INVITATION_TTL_DAYS = 14;
 const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
 const DEFAULT_GITHUB_OAUTH_BASE_URL = "https://github.com";
 const DEFAULT_GITHUB_OAUTH_SCOPES = "read:user user:email";
+const DEFAULT_BITBUCKET_API_BASE_URL = "https://api.bitbucket.org";
+const DEFAULT_BITBUCKET_OAUTH_BASE_URL = "https://bitbucket.org";
 const MAX_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const MAX_OAUTH_REFRESH_TOKEN_TTL_DAYS = 365;
 const MAX_IAM_INVITATION_TTL_DAYS = 90;
 const MIN_OAUTH_DEVICE_POLL_TOKEN_SECRET_LENGTH = 32;
+const MIN_OAUTH_CLI_AUTH_SECRET_LENGTH = 32;
 const MIN_WORKER_SHARED_SECRET_LENGTH = 32;
 
 type RuntimeEnvironment = Record<string, string | undefined>;
@@ -49,9 +52,23 @@ export interface GitHubOAuthConfig {
   allowedRedirectUris?: string[];
   apiBaseUrl: string;
   clientId: string;
-  clientSecret?: string;
+  clientSecret: string;
   oauthBaseUrl: string;
   scopes: string;
+}
+
+/**
+ * No `scopes`: Bitbucket scopes live on the OAuth consumer, not the authorize
+ * URL, so there is nothing to configure per deployment. `clientSecret` is
+ * required — Bitbucket has web (authorization-code) sign-in only, so a
+ * secret-less consumer cannot serve any flow.
+ */
+export interface BitbucketOAuthConfig {
+  allowedRedirectUris?: string[];
+  apiBaseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  oauthBaseUrl: string;
 }
 
 export type StagedBundleRetention = "delete" | "keep";
@@ -59,6 +76,7 @@ export type StagedBundleRetention = "delete" | "keep";
 export type RegistrationMode = "invite_only" | "open";
 
 export interface RuntimeConfig {
+  bitbucketOAuth?: BitbucketOAuthConfig;
   cloudflare?: CloudflareDeliveryConfig;
   /**
    * Absolute path of a built dashboard SPA to serve from the app: static
@@ -89,9 +107,17 @@ export interface RuntimeConfig {
   mode: ServerMode;
   oauthAccessTokenTtlSeconds: number;
   /**
-   * Secret for signing device-flow poll tokens. Parsed independently of the
-   * GitHub OAuth config so injected device adapters (local-dev entry, embedders)
-   * can enable the device flow without a GitHub client id.
+   * Secret for signing CLI loopback authorization codes. Primary source is
+   * OAUTH_CLI_AUTH_SECRET; when unset, OAUTH_DEVICE_POLL_TOKEN_SECRET is read
+   * as a permanent fallback so existing installs (whose installer already
+   * generates that secret) enable CLI browser login without a migration.
+   */
+  oauthCliAuthSecret?: string;
+  /**
+   * Legacy secret name kept as a PERMANENT fallback source for
+   * `oauthCliAuthSecret`; it has no use of its own since the device flow was
+   * removed. Embedders that assemble RuntimeConfig directly may still set only
+   * this field.
    */
   oauthDevicePollTokenSecret?: string;
   oauthRefreshTokenTtlDays: number;
@@ -113,8 +139,26 @@ export function resolveRuntimeConfig(
   const mode = resolveMode(env.MODE);
   const deliveryAdapter = resolveDeliveryAdapter(env.DELIVERY_ADAPTER);
   const githubOAuth = resolveGitHubOAuthConfig(env);
+  const bitbucketOAuth = resolveBitbucketOAuthConfig(env);
+  const oauthDevicePollTokenSecret = resolveOAuthDevicePollTokenSecret(
+    env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
+  );
+  const oauthCliAuthSecret = resolveOAuthCliAuthSecret(
+    env.OAUTH_CLI_AUTH_SECRET,
+    env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
+  );
+
+  if ((githubOAuth || bitbucketOAuth) && !oauthCliAuthSecret) {
+    // Booting without it would serve a dashboard whose /cli/authorize approve
+    // step answers 501 AFTER the user completed the browser sign-in, leaving
+    // `cmpatch login` hanging until its timeout — fail fast instead.
+    throw new Error(
+      "OAUTH_CLI_AUTH_SECRET (or its fallback OAUTH_DEVICE_POLL_TOKEN_SECRET) is required when a web OAuth provider is configured — CLI browser login signs its authorization codes with it",
+    );
+  }
 
   return {
+    bitbucketOAuth,
     cloudflare:
       deliveryAdapter === "cloudflare"
         ? resolveCloudflareConfig(env)
@@ -149,10 +193,8 @@ export function resolveRuntimeConfig(
       DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
       MAX_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
     ),
-    oauthDevicePollTokenSecret: resolveOAuthDevicePollTokenSecret(
-      env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
-      githubOAuth !== undefined,
-    ),
+    oauthCliAuthSecret,
+    oauthDevicePollTokenSecret,
     oauthRefreshTokenTtlDays: resolvePositiveIntegerWithDefaultAndMax(
       env.OAUTH_REFRESH_TOKEN_TTL_DAYS,
       "OAUTH_REFRESH_TOKEN_TTL_DAYS",
@@ -321,6 +363,16 @@ function resolveGitHubOAuthConfig(
     return undefined;
   }
 
+  const clientSecret = resolveOptionalString(env.GITHUB_OAUTH_CLIENT_SECRET);
+  if (!clientSecret) {
+    // The web dashboard's code exchange needs the secret; a device-only
+    // (secret-less) deployment would silently serve a dashboard whose sign-in
+    // answers 501, so fail fast like the Bitbucket config does.
+    throw new Error(
+      "GITHUB_OAUTH_CLIENT_SECRET is required when GITHUB_OAUTH_CLIENT_ID is set",
+    );
+  }
+
   return {
     allowedRedirectUris: resolveAllowedRedirectUris(
       env.GITHUB_OAUTH_ALLOWED_REDIRECT_URIS,
@@ -330,7 +382,7 @@ function resolveGitHubOAuthConfig(
         DEFAULT_GITHUB_API_BASE_URL,
     ),
     clientId,
-    clientSecret: resolveOptionalString(env.GITHUB_OAUTH_CLIENT_SECRET),
+    clientSecret,
     oauthBaseUrl: trimTrailingSlash(
       resolveOptionalString(env.GITHUB_OAUTH_BASE_URL) ??
         DEFAULT_GITHUB_OAUTH_BASE_URL,
@@ -341,18 +393,72 @@ function resolveGitHubOAuthConfig(
   };
 }
 
+function resolveBitbucketOAuthConfig(
+  env: RuntimeEnvironment,
+): BitbucketOAuthConfig | undefined {
+  const clientId = resolveOptionalString(env.BITBUCKET_OAUTH_CLIENT_ID);
+  if (!clientId) {
+    return undefined;
+  }
+
+  const clientSecret = resolveOptionalString(env.BITBUCKET_OAUTH_CLIENT_SECRET);
+  if (!clientSecret) {
+    // Bitbucket is web-flow only, so a secret-less config could serve nothing;
+    // failing fast beats a silently missing login button.
+    throw new Error(
+      "BITBUCKET_OAUTH_CLIENT_SECRET is required when BITBUCKET_OAUTH_CLIENT_ID is set",
+    );
+  }
+
+  return {
+    allowedRedirectUris: resolveAllowedRedirectUris(
+      env.BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS,
+    ),
+    apiBaseUrl: trimTrailingSlash(
+      resolveOptionalString(env.BITBUCKET_API_BASE_URL) ??
+        DEFAULT_BITBUCKET_API_BASE_URL,
+    ),
+    clientId,
+    clientSecret,
+    oauthBaseUrl: trimTrailingSlash(
+      resolveOptionalString(env.BITBUCKET_OAUTH_BASE_URL) ??
+        DEFAULT_BITBUCKET_OAUTH_BASE_URL,
+    ),
+  };
+}
+
+/**
+ * OAUTH_CLI_AUTH_SECRET with a PERMANENT fallback to
+ * OAUTH_DEVICE_POLL_TOKEN_SECRET: existing installs already generate the old
+ * secret, so CLI browser login works without any env migration. The fallback
+ * value's length is validated by the device-secret resolver; only an explicitly
+ * set new variable is length-checked here.
+ */
+function resolveOAuthCliAuthSecret(
+  value: string | undefined,
+  devicePollTokenSecret: string | undefined,
+): string | undefined {
+  const cliAuthSecret = resolveOptionalString(value);
+
+  if (!cliAuthSecret) {
+    return resolveOptionalString(devicePollTokenSecret);
+  }
+
+  if (cliAuthSecret.length < MIN_OAUTH_CLI_AUTH_SECRET_LENGTH) {
+    throw new Error(
+      `OAUTH_CLI_AUTH_SECRET must be at least ${MIN_OAUTH_CLI_AUTH_SECRET_LENGTH} characters`,
+    );
+  }
+
+  return cliAuthSecret;
+}
+
 function resolveOAuthDevicePollTokenSecret(
   value: string | undefined,
-  githubOAuthConfigured: boolean,
 ): string | undefined {
   const pollTokenSecret = resolveOptionalString(value);
 
   if (!pollTokenSecret) {
-    if (githubOAuthConfigured) {
-      throw new Error(
-        "OAUTH_DEVICE_POLL_TOKEN_SECRET is required when GITHUB_OAUTH_CLIENT_ID is set",
-      );
-    }
     return undefined;
   }
 

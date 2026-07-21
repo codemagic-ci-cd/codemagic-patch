@@ -250,22 +250,43 @@ strip_trailing_slash() {
 # Validate (and migrate) the OAuth env the server refuses to boot without.
 # Call after load_selfhost_env. Pre-OAuth installs recorded the admin email
 # only as ACME_EMAIL, so INITIAL_ADMIN_EMAILS is backfilled from it; the
-# device-poll secret is server-local and can simply be generated.
+# CLI auth secret is server-local and can simply be generated.
 ensure_selfhost_oauth_env() {
   local env_changed=0
 
-  if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ]; then
-    fail_selfhost "GITHUB_OAUTH_CLIENT_ID is missing from ${SELFHOST_ENV_FILE}. GitHub OAuth is now required. Create a GitHub OAuth App (device flow) and add its client ID to the env file, then rerun. Existing API tokens keep working."
+  # The server refuses to boot in MODE=all/api unless at least one OAuth
+  # provider (GitHub or Bitbucket) is configured.
+  if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_ID:-}" ]; then
+    fail_selfhost "Neither GITHUB_OAUTH_CLIENT_ID nor BITBUCKET_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE}. At least one OAuth sign-in provider is required. Create a GitHub OAuth App or a Bitbucket OAuth consumer and add its client id and secret to the env file, then rerun. Existing API tokens keep working."
   fi
 
-  if [ -z "${OAUTH_DEVICE_POLL_TOKEN_SECRET:-}" ]; then
-    log_selfhost "OAUTH_DEVICE_POLL_TOKEN_SECRET is missing; generating one"
-    set_selfhost_env_value OAUTH_DEVICE_POLL_TOKEN_SECRET "$(random_selfhost_secret)"
+  # Per-provider config is all-or-nothing: the server refuses to boot with a
+  # client id and no secret. Callers run this preflight right before
+  # destructive steps (upgrade.sh recreates the stack, restore.sh wipes the
+  # data volumes), so a half-configured provider must fail here, not at boot.
+  # A GitHub id without a secret is a real legacy shape: the retired device
+  # flow needed no secret, so old env files and backups can carry it.
+  if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_CLIENT_SECRET:-}" ]; then
+    fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL https://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun."
+  fi
+  if [ -n "${BITBUCKET_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_SECRET:-}" ]; then
+    fail_selfhost "BITBUCKET_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but BITBUCKET_OAUTH_CLIENT_SECRET is missing. Add the consumer secret (or remove the client id), then rerun."
+  fi
+
+  # OAUTH_CLI_AUTH_SECRET signs the CLI browser-login authorization codes.
+  # Older env files carry it under the legacy name
+  # OAUTH_DEVICE_POLL_TOKEN_SECRET, which the server reads as a permanent
+  # fallback — keep whichever is present, generate only when both are absent.
+  if [ -z "${OAUTH_CLI_AUTH_SECRET:-}" ] && [ -z "${OAUTH_DEVICE_POLL_TOKEN_SECRET:-}" ]; then
+    log_selfhost "OAUTH_CLI_AUTH_SECRET is missing; generating one"
+    set_selfhost_env_value OAUTH_CLI_AUTH_SECRET "$(random_selfhost_secret)"
     env_changed=1
-  elif [ "${#OAUTH_DEVICE_POLL_TOKEN_SECRET}" -lt 32 ]; then
+  elif [ -n "${OAUTH_CLI_AUTH_SECRET:-}" ] && [ "${#OAUTH_CLI_AUTH_SECRET}" -lt 32 ]; then
     # The server enforces this minimum at boot; fail here instead of after
     # the backup/build.
-    fail_selfhost "OAUTH_DEVICE_POLL_TOKEN_SECRET in ${SELFHOST_ENV_FILE} is shorter than 32 characters and the server will refuse to boot with it. Set a longer value, or remove the line to have one generated."
+    fail_selfhost "OAUTH_CLI_AUTH_SECRET in ${SELFHOST_ENV_FILE} is shorter than 32 characters and the server will refuse to boot with it. Set a longer value, or remove the line to have one generated."
+  elif [ -z "${OAUTH_CLI_AUTH_SECRET:-}" ] && [ "${#OAUTH_DEVICE_POLL_TOKEN_SECRET}" -lt 32 ]; then
+    fail_selfhost "OAUTH_DEVICE_POLL_TOKEN_SECRET in ${SELFHOST_ENV_FILE} is shorter than 32 characters and the server will refuse to boot with it. Set a longer value (or replace the line with OAUTH_CLI_AUTH_SECRET), or remove it to have one generated."
   fi
 
   # The server requires INITIAL_ADMIN_EMAILS only under invite-only
@@ -274,11 +295,11 @@ ensure_selfhost_oauth_env() {
     [ -z "${INITIAL_ADMIN_EMAILS:-}" ]; then
     if [ -n "${ACME_EMAIL:-}" ]; then
       log_selfhost "INITIAL_ADMIN_EMAILS is missing; backfilling from ACME_EMAIL=${ACME_EMAIL}"
-      warn_selfhost "the admin must sign in with the GitHub account whose verified primary email is ${ACME_EMAIL}; edit INITIAL_ADMIN_EMAILS in ${SELFHOST_ENV_FILE} if that is not the admin's email"
+      warn_selfhost "the admin must sign in with the GitHub or Bitbucket account whose verified primary email is ${ACME_EMAIL}; edit INITIAL_ADMIN_EMAILS in ${SELFHOST_ENV_FILE} if that is not the admin's email"
       set_selfhost_env_value INITIAL_ADMIN_EMAILS "$ACME_EMAIL"
       env_changed=1
     else
-      fail_selfhost "INITIAL_ADMIN_EMAILS is missing from ${SELFHOST_ENV_FILE} and there is no ACME_EMAIL to backfill from. Add INITIAL_ADMIN_EMAILS=<admin email> (the admin's verified primary GitHub email), then rerun."
+      fail_selfhost "INITIAL_ADMIN_EMAILS is missing from ${SELFHOST_ENV_FILE} and there is no ACME_EMAIL to backfill from. Add INITIAL_ADMIN_EMAILS=<admin email> (the admin's verified primary email on GitHub or Bitbucket), then rerun."
     fi
   fi
 

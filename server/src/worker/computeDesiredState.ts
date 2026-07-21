@@ -655,8 +655,8 @@ function buildDesiredDeploymentMeta(
   // precedence and surface a hint only when it is strictly higher, so we
   // publish the highest comparable binary version. Non-semver but
   // numeric-dotted tokens (e.g. `2024.06`) are valid candidates; opaque tokens
-  // are only chosen when no comparable version exists. See PROTOCOL.md and
-  // `binaryVersionPrecedence.ts`.
+  // are only chosen when no comparable version exists. The comparison semantics
+  // live in `binaryVersionPrecedence.ts`.
   const latestBinaryVersion = selectLatestBinaryVersion(effectiveVersions);
 
   if (!latestBinaryVersion) {
@@ -696,8 +696,7 @@ function sortBinaryVersions(versions: Iterable<string>): string[] {
 // the generated manifest / bundle / patch lists in a stable order. Binary
 // versions are not required to be semver: semver deployments order by semver
 // and opaque tokens fall back to lexical order. The store-update metadata token
-// is selected separately by `selectLatestBinaryVersion` (see PROTOCOL.md), not
-// by this ordering.
+// is selected separately by `selectLatestBinaryVersion`, not by this ordering.
 function compareBinaryVersions(left: string, right: string): number {
   const leftIsSemver = validSemver(left) !== null;
   const rightIsSemver = validSemver(right) !== null;
