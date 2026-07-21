@@ -937,4 +937,12 @@ List/metrics commands accept `--format table|json`.
 
 ## Feedback
 
-We'd love to hear about your experience—what's working well, what's frustrating, and what features or improvements you'd like to see. Start a discussion in [GitHub Discussions](https://github.com/codemagic-ci-cd/codemagic-patch/discussions) or share your feedback directly with us here.
+Your feedback helps us improve Codemagic Patch. We'd love to hear what's working well, what's been challenging, and what features or improvements you'd like to see.
+
+You can share your thoughts in any of the following ways:
+
+💬 Start a discussion in [GitHub Discussions](https://github.com/codemagic-ci-cd/codemagic-patch/discussions)
+📅 Book a [feedback call](https://calendly.com/zach-codemagic/30min)
+📧 Send an email to: zach@codemagic.io
+
+We appreciate your time and look forward to hearing from you!
