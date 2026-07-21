@@ -76,14 +76,15 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 | --- | --- | --- |
 | Hosting | Provider plugins (Supabase, Cloudflare, and others) | All-in-one Compose stack (Postgres, MinIO, API, dashboard) |
 | Architecture | Bring-your-own backend | Integrated server product you deploy anywhere Docker runs |
-| Local dev | Supported via provider plugins | Full stack can run locally |
-| Storage / CDN | Plugins are the main integration path | Built-in adapters; optional S3/GCS storage and Cloudflare delivery |
-| Update check | Your backend | Static manifest on storage or CDN |
+| Local dev | Unsupported | Full stack can run locally |
+| Update check | Server polling database | Static manifest on storage or CDN |
 | Bundle download | Your storage (often CDN-backed) | Storage or CDN URLs from manifest |
-| Web console | Oriented toward editing released bundles | Release management, metrics, IAM, and team roles |
+| Web console | Local console for editing releases | Cloud dashboard with release management, metrics and IAM |
+| Team access | Share backend credentials | RBAC with management in the dashboard |
+| Audit trail | No built in audit logging | CLI identity is tied to GitHub OAuth |
+| Backups and DR | Build your own backup/restore process | Explcit `backup.sh` and `restore.sh` |
 | Stewardship | Community open source | Built and maintained by [Codemagic](https://codemagic.io) |
-| License | MIT | [Codemagic Fair Source License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) (FSL 1.1–based) |
-| Commercial use at scale | MIT, no MAU threshold | Free under Fair Source below 1M MAU; license required above that |
+| License | MIT | [Codemagic Fair Source License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) |
 
 Hot Updater is a good fit if you want MIT licensing and are comfortable assembling storage and hosting yourself. Patch targets teams that want an integrated server with dashboard and metrics, and optional vendor support for licensed deployments.
 

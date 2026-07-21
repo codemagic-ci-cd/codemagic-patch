@@ -456,21 +456,24 @@ body:has(.theme-doc-sidebar-container) .navbar {
   border-radius: 0;
 }
 
-/* Tables — codemagic-docs grid style */
+/* Doc tables — card-style instead of heavy grid borders */
 .markdown table {
   display: table;
   width: 100%;
   margin: 1.25rem 0 1.5rem;
-  border: none;
-  border-collapse: collapse;
+  border: 1px solid var(--cm-grey-l);
+  border-radius: 0.65rem;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: auto;
-  font-size: 14px;
-  line-height: 1.2;
-  box-shadow: none;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
 }
 
 .markdown table thead {
-  background: transparent;
+  background: var(--patch-table-header-bg);
 }
 
 .markdown table thead tr {
@@ -479,21 +482,22 @@ body:has(.theme-doc-sidebar-container) .navbar {
 
 .markdown table tr {
   border-top: none;
-  background: transparent;
+  background: var(--ifm-background-color);
 }
 
 .markdown table tr:nth-child(2n) {
-  background: transparent;
+  background: var(--ifm-background-color);
 }
 
 .markdown table tbody tr:hover {
-  background: transparent;
+  background: var(--cm-grey-xl);
 }
 
 .markdown table th,
 .markdown table td {
-  border: 2px solid var(--cm-grey-bg);
-  padding: 15px;
+  border: none;
+  border-bottom: 1px solid var(--cm-grey-l);
+  padding: 0.7rem 0.9rem;
   vertical-align: top;
   text-align: left;
   text-transform: none;
@@ -501,22 +505,40 @@ body:has(.theme-doc-sidebar-container) .navbar {
   white-space: normal;
   background: transparent;
   color: var(--ifm-font-color-base);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 400;
 }
 
+.markdown table tr:last-child th,
+.markdown table tr:last-child td {
+  border-bottom: none;
+}
+
 .markdown table th {
+  color: var(--ifm-font-color-secondary);
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--cm-navy);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .markdown table td code,
 .markdown table th code {
-  font-size: 0.8em;
-  border: 1px solid var(--cm-grey-l);
-  background: var(--cm-grey-bg-light);
-  padding: 2px 5px;
+  font-size: 0.84em;
+  border: none;
+  background: var(--cm-grey-bg);
+  padding: 0.1em 0.35em;
   word-break: keep-all;
+}
+
+[data-theme='dark'] .markdown table {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] .markdown table td code,
+[data-theme='dark'] .markdown table th code {
+  background: var(--cm-grey-bg);
 }
 
 /* Admonitions / notebox feel */
