@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "yarn workspaces foreach -A -t run build",
-    "cli:install-global": "yarn workspace codemagic-patch build && rm -rf .tmp-pack && mkdir -p .tmp-pack && cd cli && npm pack --silent --pack-destination ../.tmp-pack && cd .. && npm install -g .tmp-pack/*.tgz && rm -rf .tmp-pack",
+    "cli:install-global": "yarn workspace @codemagic/patch-cli build && rm -rf .tmp-pack && mkdir -p .tmp-pack && cd cli && npm pack --silent --pack-destination ../.tmp-pack && cd .. && npm install -g .tmp-pack/*.tgz && rm -rf .tmp-pack",
     "clean": "yarn workspaces foreach -A run clean && rimraf coverage",
     "fixtures:package-hash": "yarn exec tsx shared/test-vectors/package-hash/generate.ts",
     "lint": "yarn workspaces foreach -A run lint",

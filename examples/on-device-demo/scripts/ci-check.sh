@@ -23,7 +23,7 @@ elif [ -f ../../cli/dist/cmpatch.js ]; then
 else
   echo "error: no cmpatch CLI available." >&2
   echo "  either run ../../scripts/local-eval/up.sh (installs it globally)," >&2
-  echo "  or build the repo CLI: (cd ../.. && yarn install && yarn workspace codemagic-patch build)" >&2
+  echo "  or build the repo CLI: (cd ../.. && yarn install && yarn workspace @codemagic/patch-cli build)" >&2
   exit 1
 fi
 

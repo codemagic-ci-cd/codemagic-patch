@@ -186,7 +186,7 @@ if [ "${CLI_READY}" -eq 1 ]; then
        --app demo-app-ios --deployment cli-smoke-test \\
        --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \\
        --target-binary-version 1.0.0 --fingerprint local-dev-fingerprint
-     # uninstall later with: npm uninstall -g codemagic-patch
+     # uninstall later with: npm uninstall -g @codemagic/patch-cli
 EOF
 else
   cat <<EOF

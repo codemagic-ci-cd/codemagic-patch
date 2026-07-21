@@ -56,7 +56,7 @@ fi
 
 if [ ! -f "${CLI_BIN}" ]; then
   log "CLI build not found, building once..."
-  (cd "${REPO_ROOT}" && yarn workspace codemagic-patch build)
+  (cd "${REPO_ROOT}" && yarn workspace @codemagic/patch-cli build)
 fi
 
 log "checking server health at ${SERVER_URL}/health"

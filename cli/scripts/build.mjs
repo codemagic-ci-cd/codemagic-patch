@@ -30,7 +30,8 @@ await build({
   bundle: true,
   platform: "node",
   format: "cjs",
-  target: "node22",
+  // Must not exceed the package.json engines floor (node >=20).
+  target: "node20",
   sourcemap: true,
   // Keep published runtime deps external; bundle only first-party code.
   external: Object.keys(pkg.dependencies ?? {}),

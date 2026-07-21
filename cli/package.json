@@ -1,5 +1,5 @@
 {
-  "name": "codemagic-patch",
+  "name": "@codemagic/patch-cli",
   "version": "0.1.0",
   "description": "Codemagic Patch CLI for releasing and managing over-the-air React Native updates",
   "license": "Apache-2.0",
@@ -19,14 +19,13 @@
     "deployment"
   ],
   "engines": {
-    "node": ">=22.20.0"
+    "node": ">=20.0.0"
   },
   "publishConfig": {
     "access": "public"
   },
   "bin": {
-    "cmpatch": "./dist/cmpatch.js",
-    "codemagic-patch": "./dist/cmpatch.js"
+    "cmpatch": "./dist/cmpatch.js"
   },
   "files": [
     "dist"
