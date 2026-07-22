@@ -933,3 +933,16 @@ List/metrics commands accept `--format table|json`.
 | `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
 | `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
 | `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
+
+
+## Feedback
+
+Your feedback helps us improve Codemagic Patch. We'd love to hear what's working well, what's been challenging, and what features or improvements you'd like to see.
+
+You can share your thoughts in any of the following ways:
+
+💬 Start a discussion in [GitHub Discussions](https://github.com/codemagic-ci-cd/codemagic-patch/discussions)
+📅 Book a [feedback call](https://calendly.com/zach-codemagic/30min)
+📧 Send an email to: zach@codemagic.io
+
+We appreciate your time and look forward to hearing from you!
