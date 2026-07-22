@@ -76,8 +76,6 @@ Configure at least one platform. Every block you provide needs `deploymentKey`, 
 
 Add `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` (optional `CodemagicPatchPublicKey`) to Android `strings.xml` and iOS `Info.plist`, then point RN’s JS bundle path at `CodemagicPatch.getJSBundleFile` / `CodemagicPatch.bundleURL()` so boot order is pending package → current package → embedded bundle.
 
-Full platform steps: [Native setup](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs-site/docs/setup/native-setup.mdx).
-
 ### Call `sync()`
 
 ```ts
@@ -90,7 +88,7 @@ const status = await sync();
 
 `sync()` never throws. It checks for an update, downloads and installs when appropriate, and reports app readiness so a bad package can roll back.
 
-For check / download / install as separate steps, or restart timing helpers (`restartApp`, `allowRestart` / `disallowRestart`), see the [SDK types](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/client/src/types.ts) and [checking for updates](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs-site/docs/setup/checking-for-updates.mdx).
+For check / download / install as separate steps, or restart timing helpers (`restartApp`, `allowRestart` / `disallowRestart`), see the [SDK types](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/client/src/types.ts).
 
 ## Configuration
 
