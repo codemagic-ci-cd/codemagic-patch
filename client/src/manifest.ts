@@ -36,7 +36,7 @@ export function isBinaryRevert(manifest: ManifestResponse): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Target selection — Spec §Manifest Handling 13 steps
+// Target selection — Spec §Manifest Handling steps
 // ---------------------------------------------------------------------------
 
 export interface SignatureVerifier {
@@ -46,11 +46,12 @@ export interface SignatureVerifier {
 /**
  * Select the target package from a manifest.
  *
- * Implements Spec §Manifest Handling steps 1-13:
+ * Implements Spec §Manifest Handling steps 6-9:
  * 1. validate manifest (done by parser.parseManifest)
- * 2-5. binary revert handling (done by caller checking isBinaryRevert)
- * 6-7. no-op check (done by caller checking isNoOp)
- * 8-13. rollout evaluation + previous_package_info fallback
+ * 2-3. binary revert handling (done by caller checking isBinaryRevert)
+ * 4-5. no-op check (done by caller checking isNoOp)
+ * 6-9. rollout evaluation + previous_package_info fallback
+ * 10. pending-package skip (done by caller against the selected target)
  *
  * @param manifest - Validated manifest (non-null target, not no-op)
  * @param runningPackageHash - Currently running OTA package hash

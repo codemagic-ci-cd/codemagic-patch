@@ -167,6 +167,13 @@ async function evaluateManifest(
     return upToDateResult();
   }
 
+  // The selected target is already installed and awaiting restart — nothing to
+  // download or install, so skip before signature enforcement (a path that
+  // installs nothing is not signature-verified, same as the no-op path).
+  if (state.pendingPackage?.packageHash === target.packageHash) {
+    return upToDateResult();
+  }
+
   const signatureError = await getManifestSignatureError(
     target.signature,
     target.packageHash,
