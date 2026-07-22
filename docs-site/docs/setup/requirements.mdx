@@ -22,6 +22,14 @@ Self-hosting requires:
 - A GitHub OAuth App (see [Self-host](/docs/setup/self-host))
 - Using Cloudflare for DNS or CDN? See [Cloudflare setup](/docs/setup/cloudflare) before install (Free plans have a nested-hostname SSL caveat)
 
+### Machine size (default single-host stack)
+
+The Compose install runs Caddy, the API and release worker, Postgres, and MinIO on one host.
+
+- **RAM:** 2 GB is enough for typical use. Prefer 4 GB for large or overlapping releases, or a long on-box history of artifacts and metrics.
+- **CPU:** 1 vCPU to start; 2 vCPU if builds or patch jobs overlap with traffic.
+- **Disk:** tens of GB is fine to start. Object storage grows with retained releases; Postgres grows with device metrics (`metric_event` is not auto-pruned).
+
 ## Building / using the CLI (local or CI)
 
 - Node.js `>=22.20.0`
