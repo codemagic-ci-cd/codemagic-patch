@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/patch-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codemagic Patch CLI for releasing and managing over-the-air React Native updates",
   "license": "Apache-2.0",
   "repository": {

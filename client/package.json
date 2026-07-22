@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/react-native-patch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "React Native client SDK for Codemagic Patch — over-the-air JavaScript & asset updates for React Native and Expo apps.",
   "keywords": [
     "react-native",
