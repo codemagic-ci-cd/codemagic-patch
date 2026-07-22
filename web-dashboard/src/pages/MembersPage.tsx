@@ -1,4 +1,4 @@
-// Members screen (through the three-mode modal). The ENTIRE screen is
+// Members screen (through the single Add-member modal). The ENTIRE screen is
 // `iam.manage`-gated: while useTeamRole resolves → skeleton; non-managers
 // (exact viewer/developer binding, or the bindings 403 inference) get a
 // FULL-PAGE permission notice instead of a broken table; non-403 bindings
@@ -14,13 +14,22 @@
 // instead of a toast. Role changes are NOT optimistic: the confirm dialog
 // stays open until the PATCH lands, so both 409s (last-owner, the member
 // already holds the role) surface in its inline error slot where the user can
-// pick a different role. The sole owner's kebab disables both actions. The Add/Invite/Provision modal discriminates
-// 201-created vs 200-already_exists by comparing the returned binding id
-// against the pre-mutation cache (the hook envelope carries no status), and
-// success swaps to the show-once PAT modal (`disableEscapeClose`, Copyable
-// full token — bindings refresh is already handled by useProvisionMember's
-// invalidation). Helpers (Glyph icons, gate, dates) are file-local — promote
-// to components/ui if a third consumer appears.
+// pick a different role. The sole owner's kebab disables both actions. The
+// Add-member modal is ONE flow over the three IAM endpoints: it tries
+// role-bindings first and falls back to an invitation on 404 user_not_found
+// (no invitation is ever "sent" — access materializes on the invitee's next
+// sign-in, and the copy says so), goes straight to an invitation for GitHub
+// handles (the only handle kind the server can resolve; gated on a configured
+// GitHub provider via web-config), and uses provisioning when "Provision with
+// an API token" is checked (new accounts only — 409 user-exists renders the
+// add-without-token callout). 201-created vs 200-already_exists is discriminated by
+// comparing the returned binding id against the pre-mutation cache (the hook
+// envelope carries no status), and a fresh-vs-already-pending invitation the
+// same way against the cached invitation list. Provision success swaps to the
+// show-once PAT modal (`disableEscapeClose`, Copyable full token — bindings
+// refresh is already handled by useProvisionMember's invalidation). Helpers
+// (Glyph icons, gate, dates) are file-local — promote to components/ui if a
+// third consumer appears.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
@@ -44,6 +53,8 @@ import {
   useRoles,
   useUpdateRoleBinding,
 } from "../api/hooks/iam";
+import { useWebConfig } from "../api/hooks/webConfig";
+import { LOCAL_DEV_MODE, providerDisplayName } from "../auth/webConfig";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ConfirmDialog } from "../components/overlay/ConfirmDialog";
 import { Modal } from "../components/overlay/Modal";
@@ -111,8 +122,6 @@ export function MembersPage() {
 // Screen
 // ---------------------------------------------------------------------------
 
-type AddMode = "add" | "invite" | "provision";
-
 function MembersScreen({ teamId }: { teamId: string }) {
   const { isLoading, can } = useTeamRole(teamId);
   // Same query key as the one useTeamRole reads — a single fetch serves both
@@ -122,10 +131,7 @@ function MembersScreen({ teamId }: { teamId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  const [addModal, setAddModal] = useState<{ open: boolean; mode: AddMode }>({
-    open: false,
-    mode: "add",
-  });
+  const [addOpen, setAddOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<RoleBinding | null>(
     null,
   );
@@ -138,11 +144,8 @@ function MembersScreen({ teamId }: { teamId: string }) {
 
   const canManage = !isLoading && can("iam.manage");
 
-  const openAddModal = (mode: AddMode) => {
-    setAddModal({ open: true, mode });
-  };
   const closeAddModal = () => {
-    setAddModal((current) => ({ ...current, open: false }));
+    setAddOpen(false);
   };
 
   /**
@@ -260,30 +263,20 @@ function MembersScreen({ teamId }: { teamId: string }) {
           </p>
         </div>
         {canManage ? (
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              className={buttonVariants({ intent: "ghost" })}
-              onClick={() => openAddModal("invite")}
-            >
-              <Users2Icon /> Invite
-            </button>
-            <button
-              type="button"
-              className={buttonVariants({ intent: "primary" })}
-              onClick={() => openAddModal("add")}
-            >
-              <PlusIcon /> Add member
-            </button>
-          </div>
+          <button
+            type="button"
+            className={buttonVariants({ intent: "primary" })}
+            onClick={() => setAddOpen(true)}
+          >
+            <PlusIcon /> Add member
+          </button>
         ) : null}
       </div>
       {body}
       {canManage ? (
         <AddMemberModal
           teamId={teamId}
-          open={addModal.open}
-          initialMode={addModal.mode}
+          open={addOpen}
           onClose={closeAddModal}
           onProvisioned={handleProvisioned}
         />
@@ -550,7 +543,7 @@ function MemberTable({
         <EmptyState
           icon={<UsersIcon />}
           title="No members yet"
-          description="Add an existing user or send an invitation to get started."
+          description="Add a member to get started — existing accounts get access immediately, everyone else on their first sign-in."
         />
       ) : (
         <div className={TBL_WRAP}>
@@ -955,22 +948,15 @@ function ChangeRoleDialog({
 }
 
 // ---------------------------------------------------------------------------
-// Add / Invite / Provision modal
+// Add member modal (one flow over role-bindings / invitations / provision)
 // ---------------------------------------------------------------------------
 
 interface AddMemberModalProps {
   teamId: string;
   open: boolean;
-  initialMode: AddMode;
   onClose: () => void;
   onProvisioned: (result: IamUserProvisionResponse) => void;
 }
-
-const MODES: readonly { value: AddMode; label: string }[] = [
-  { value: "add", label: "Add existing" },
-  { value: "invite", label: "Invite" },
-  { value: "provision", label: "Provision" },
-];
 
 // Segmented control (legacy `.segmented` + `.segmented button` / `.active`).
 // File-local: this modal is the only remaining consumer. The button's
@@ -984,12 +970,17 @@ const SEGMENTED_BTN =
 const SEGMENTED_BTN_IDLE = "bg-transparent text-fg-2";
 const SEGMENTED_BTN_ACTIVE = "bg-surface text-blue shadow-xs";
 
-// Invite target kind, chosen explicitly (no @-sniffing): email matches the
-// invitee's verified email, handle binds to the GitHub account id.
-const INVITE_TARGETS = [
+// Target kind, chosen explicitly (no @-sniffing): email/user-ID goes through
+// role-bindings (with the invitation fallback), a handle binds to the GitHub
+// account id. The handle target only renders when web-config lists a GitHub
+// provider — it is the sole handle kind the server can resolve, and saying so
+// beats a 422 after the fact (Bitbucket exposes no handle-lookup API).
+const ADD_TARGETS = [
   { value: "email", label: "Email" },
   { value: "githubHandle", label: "GitHub handle" },
 ] as const;
+
+type AddTarget = (typeof ADD_TARGETS)[number]["value"];
 
 function AddMemberModal(props: AddMemberModalProps) {
   // Remount on every open/close transition so a reopen never carries stale
@@ -1002,35 +993,47 @@ function AddMemberModal(props: AddMemberModalProps) {
 function AddMemberModalContent({
   teamId,
   open,
-  initialMode,
   onClose,
   onProvisioned,
 }: AddMemberModalProps) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const rolesQuery = useRoles();
+  // Provider list, fetched only once the modal opens (session-cached after) —
+  // gates the GitHub-handle target on an actually-configured GitHub provider.
+  const webConfigQuery = useWebConfig({ enabled: open });
   const addBinding = useAddRoleBinding();
   const createInvitation = useCreateInvitation();
   const provisionMember = useProvisionMember();
 
-  const [mode, setMode] = useState<AddMode>(initialMode);
-  const [identifier, setIdentifier] = useState(""); // Add panel: email OR userId
-  const [email, setEmail] = useState(""); // Invite + Provision panels
-  const [inviteTarget, setInviteTarget] =
-    useState<(typeof INVITE_TARGETS)[number]["value"]>("email");
+  const [target, setTarget] = useState<AddTarget>("email");
+  const [identifier, setIdentifier] = useState(""); // email/user ID, or handle
   const [roleId, setRoleId] = useState<string | null>(null);
   const [inviteExpires, setInviteExpires] = useState(""); // 1–90, blank → server default
+  const [mintToken, setMintToken] = useState(false);
   const [tokenName, setTokenName] = useState("");
   const [tokenExpires, setTokenExpires] = useState(""); // PAT expiry: 1–3650
   const [formError, setFormError] = useState<string | null>(null);
-  const [userNotFound, setUserNotFound] = useState(false);
+  // Set on provision 409 user-exists — renders the add-without-token callout.
+  const [tokenConflictEmail, setTokenConflictEmail] = useState<string | null>(
+    null,
+  );
 
   const idBase = useId();
   const formId = `${idBase}-form`;
-  const tabId = (value: AddMode) => `${idBase}-tab-${value}`;
 
   const roles = rolesQuery.data;
   const selectedRoleId = roleId ?? defaultRoleId(roles);
+  const githubConfigured =
+    webConfigQuery.data?.providers.some(
+      (provider) => provider.provider === "github",
+    ) ?? false;
+  // "GitHub", "GitHub or Bitbucket", … for the email hint; local-dev (and an
+  // unloaded config) fall back to provider-less copy.
+  const oauthProviderNames = (webConfigQuery.data?.providers ?? [])
+    .filter((provider) => provider.provider !== LOCAL_DEV_MODE)
+    .map((provider) => providerDisplayName(provider.provider))
+    .join(" or ");
   const busy =
     addBinding.isPending ||
     createInvitation.isPending ||
@@ -1042,47 +1045,106 @@ function AddMemberModalContent({
     }
   };
 
-  const switchMode = (next: AddMode) => {
-    if (busy || next === mode) {
+  const switchTarget = (next: AddTarget) => {
+    if (busy || next === target) {
       return;
     }
-    // The 404 user_not_found switch keeps the user's input: an email typed
-    // into "Add existing" pre-fills the Invite/Provision email field.
-    if (mode === "add" && identifier.includes("@") && email.trim() === "") {
-      setEmail(identifier.trim());
-      setInviteTarget("email"); // the pre-filled value is an email
-    }
-    setMode(next);
+    setTarget(next);
+    setIdentifier("");
     setFormError(null);
-    setUserNotFound(false);
+    setTokenConflictEmail(null);
   };
 
-  const handleTablistKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+  /**
+   * Invitation leg, shared by the email fallback and the handle path. Nothing
+   * is ever "sent" — the row turns up as pending and access materializes on
+   * the invitee's next sign-in, and the copy promises exactly that.
+   * `outcome: "pending"` covers both a fresh invitation and an already-pending
+   * one (the envelope doesn't distinguish), so fresh-vs-duplicate is decided
+   * against the pre-mutation invitation cache — same pattern as the binding
+   * 201-vs-200 discrimination below.
+   */
+  const submitInvitation = (
+    invitationTarget: { email: string } | { githubHandle: string },
+    subject: string,
+    roleIdValue: string,
+  ) => {
+    const expires = parseDays(inviteExpires, 90);
+    if (expires === "invalid") {
+      setFormError("Expiry must be a whole number between 1 and 90 days.");
       return;
     }
-    event.preventDefault();
-    const index = MODES.findIndex((entry) => entry.value === mode);
-    const delta = event.key === "ArrowRight" ? 1 : -1;
-    const next = MODES[(index + delta + MODES.length) % MODES.length];
-    switchMode(next.value);
-    document.getElementById(tabId(next.value))?.focus();
+    const cached = queryClient.getQueryData<TeamInvitation[]>(
+      iamKeys.invitationList(teamId, "all"),
+    );
+    const alreadyPending =
+      cached?.some(
+        (invitation) =>
+          invitation.status === "pending" &&
+          ("email" in invitationTarget
+            ? invitation.email?.toLowerCase() ===
+              invitationTarget.email.toLowerCase()
+            : invitation.githubHandle?.toLowerCase() ===
+              invitationTarget.githubHandle.toLowerCase()),
+      ) ?? false;
+    const body: IamInvitationCreateBody = {
+      ...invitationTarget,
+      roleId: roleIdValue,
+      teamId,
+    };
+    if (expires !== null) {
+      body.expiresInDays = expires;
+    }
+    createInvitation.mutate(body, {
+      onSuccess: (result) => {
+        if (result.outcome === "pending") {
+          if (alreadyPending) {
+            toast.info("Already added", {
+              description: `${subject} already has a pending spot in this team.`,
+            });
+          } else {
+            const signIn =
+              "githubHandle" in invitationTarget
+                ? "sign in with GitHub"
+                : "sign in";
+            toast.success("Member added", {
+              description: `${subject} doesn't have an account yet — they get access when they next ${signIn}.`,
+            });
+          }
+        } else if (result.outcome === "accepted_existing_user") {
+          toast.success("Member added", {
+            description: `${subject} already has an account — access was granted immediately.`,
+          });
+        } else {
+          toast.info("Already a member", {
+            description: `${subject} already holds a role in this team.`,
+          });
+        }
+        onClose();
+      },
+      // Includes 409 invitation-conflict and 422 github-handle-not-found, inline.
+      onError: (error) => setFormError(problemDescription(error)),
+    });
   };
 
-  const submitAdd = () => {
+  /** Email/user-ID path: role binding first, invitation fallback on the 404. */
+  const submitViaRoleBinding = (roleIdValue: string) => {
     const trimmed = identifier.trim();
     if (trimmed === "") {
       setFormError("Enter an email or user ID.");
       return;
     }
-    if (selectedRoleId === null) {
-      setFormError("Choose a role.");
+    const isEmail = trimmed.includes("@");
+    // The fallback's expiry validates up front — failing AFTER the 404 would
+    // waste the round trip.
+    if (isEmail && parseDays(inviteExpires, 90) === "invalid") {
+      setFormError("Expiry must be a whole number between 1 and 90 days.");
       return;
     }
     // Exactly one selector — values containing @ are emails.
-    const body: IamRoleBindingCreateBody = trimmed.includes("@")
-      ? { teamId, roleId: selectedRoleId, email: trimmed }
-      : { teamId, roleId: selectedRoleId, userId: trimmed };
+    const body: IamRoleBindingCreateBody = isEmail
+      ? { teamId, roleId: roleIdValue, email: trimmed }
+      : { teamId, roleId: roleIdValue, userId: trimmed };
     // 201-created vs 200-already_exists is not surfaced by the hook (the
     // envelope is identical) — compare against the pre-mutation cache.
     const before = queryClient.getQueryData<RoleBinding[]>(
@@ -1105,8 +1167,16 @@ function AddMemberModalContent({
       },
       onError: (error) => {
         if (error instanceof HttpProblemError && error.status === 404) {
-          // user_not_found → offer Invite or Provision.
-          setUserNotFound(true);
+          if (isEmail) {
+            // No account yet — same submit continues into the invitation leg.
+            submitInvitation({ email: trimmed }, trimmed, roleIdValue);
+            return;
+          }
+          // A user ID can't be turned into an invitation — only the server
+          // knows ids, and this one doesn't exist.
+          setFormError(
+            "No account matches that user ID. Add by email instead — people without an account get access on their first sign-in.",
+          );
           return;
         }
         // Covers 400 role-not-supported and the rest, inline.
@@ -1115,76 +1185,13 @@ function AddMemberModalContent({
     });
   };
 
-  const submitInvite = () => {
-    const trimmed = email.trim();
-    // The target kind is chosen explicitly (no @-sniffing). Email invites match
-    // the invitee's verified email; handle invites bind to the GitHub account
-    // id, resolved server-side. A leading @ on a handle is absorbed defensively.
-    let target: { email: string } | { githubHandle: string };
-    let subject: string;
-    if (inviteTarget === "email") {
-      if (!trimmed.includes("@")) {
-        setFormError("Enter a valid email address.");
-        return;
-      }
-      target = { email: trimmed };
-      subject = trimmed;
-    } else {
-      const handle = trimmed.replace(/^@/, "");
-      if (handle === "") {
-        setFormError("Enter a GitHub handle.");
-        return;
-      }
-      target = { githubHandle: handle };
-      subject = `@${handle}`;
-    }
-    if (selectedRoleId === null) {
-      setFormError("Choose a role.");
-      return;
-    }
-    const expires = parseDays(inviteExpires, 90);
-    if (expires === "invalid") {
-      setFormError("Expiry must be a whole number between 1 and 90 days.");
-      return;
-    }
-    const body: IamInvitationCreateBody = {
-      ...target,
-      roleId: selectedRoleId,
-      teamId,
-    };
-    if (expires !== null) {
-      body.expiresInDays = expires;
-    }
-    createInvitation.mutate(body, {
-      onSuccess: (result) => {
-        if (result.outcome === "pending") {
-          toast.success("Invitation sent", {
-            description: `${subject} gains access on their next GitHub login.`,
-          });
-        } else if (result.outcome === "accepted_existing_user") {
-          toast.success("Access granted", {
-            description: `${subject} already has an account — the role was granted immediately.`,
-          });
-        } else {
-          toast.info("Already granted", {
-            description: `${subject} already holds a role in this team.`,
-          });
-        }
-        onClose();
-      },
-      // Includes 409 invitation-conflict and 422 github-handle-not-found, inline.
-      onError: (error) => setFormError(problemDescription(error)),
-    });
-  };
-
-  const submitProvision = () => {
-    const trimmedEmail = email.trim();
+  /** Mint-token path (`POST /iam/users`) — new accounts only, email required. */
+  const submitWithToken = (roleIdValue: string) => {
+    const trimmedEmail = identifier.trim();
     if (!trimmedEmail.includes("@")) {
-      setFormError("Enter a valid email address.");
-      return;
-    }
-    if (selectedRoleId === null) {
-      setFormError("Choose a role.");
+      setFormError(
+        "Minting a token creates the account, so an email address is required.",
+      );
       return;
     }
     const expires = parseDays(tokenExpires, 3650);
@@ -1197,7 +1204,7 @@ function AddMemberModalContent({
     const body: IamUserProvisionBody = {
       teamId,
       email: trimmedEmail,
-      roleId: selectedRoleId,
+      roleId: roleIdValue,
     };
     const trimmedTokenName = tokenName.trim();
     if (trimmedTokenName !== "") {
@@ -1209,29 +1216,60 @@ function AddMemberModalContent({
     provisionMember.mutate(body, {
       // Owner closes this modal and opens the show-once PAT modal.
       onSuccess: (result) => onProvisioned(result),
-      onError: (error) => setFormError(problemDescription(error)),
+      onError: (error) => {
+        if (
+          error instanceof HttpProblemError &&
+          error.typeSuffix === "user-exists"
+        ) {
+          // Tokens are mintable only while creating the account (an admin
+          // must not mint one that impersonates an existing user) — offer
+          // the plain add instead.
+          setTokenConflictEmail(trimmedEmail);
+          return;
+        }
+        setFormError(problemDescription(error));
+      },
     });
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError(null);
-    setUserNotFound(false);
-    if (mode === "add") {
-      submitAdd();
-    } else if (mode === "invite") {
-      submitInvite();
+    setTokenConflictEmail(null);
+    if (selectedRoleId === null) {
+      setFormError("Choose a role.");
+      return;
+    }
+    if (target === "githubHandle") {
+      // A leading @ on a handle is absorbed defensively.
+      const handle = identifier.trim().replace(/^@/, "");
+      if (handle === "") {
+        setFormError("Enter a GitHub handle.");
+        return;
+      }
+      submitInvitation({ githubHandle: handle }, `@${handle}`, selectedRoleId);
+    } else if (mintToken) {
+      submitWithToken(selectedRoleId);
     } else {
-      submitProvision();
+      submitViaRoleBinding(selectedRoleId);
     }
   };
 
+  /** The token-conflict callout's escape hatch: same email, plain add. */
+  const addWithoutToken = () => {
+    if (busy || selectedRoleId === null) {
+      return;
+    }
+    setMintToken(false);
+    setFormError(null);
+    setTokenConflictEmail(null);
+    submitViaRoleBinding(selectedRoleId);
+  };
+
+  // The provision path is a direct add (the account exists the moment it
+  // succeeds), so its label uses the explicit "provision" verb.
   const submitLabel =
-    mode === "add"
-      ? "Add member"
-      : mode === "invite"
-        ? "Send invite"
-        : "Provision member";
+    mintToken && target === "email" ? "Provision member" : "Add member";
 
   return (
     <Modal
@@ -1240,7 +1278,7 @@ function AddMemberModalContent({
       wide
       icon={<Users2Icon />}
       title="Add member"
-      description="Grant an existing user access, invite by email or GitHub handle, or provision an account with a show-once API token."
+      description="Existing accounts get access immediately; everyone else shows up as pending and gets access on their first sign-in."
       footer={
         <>
           <button
@@ -1264,228 +1302,181 @@ function AddMemberModalContent({
         </>
       }
     >
-      <div
-        className={`${SEGMENTED} mb-[18px]`}
-        role="tablist"
-        aria-label="How to add the member"
-        onKeyDown={handleTablistKeyDown}
-      >
-        {MODES.map((entry) => (
-          <button
-            key={entry.value}
-            type="button"
-            id={tabId(entry.value)}
-            role="tab"
-            aria-selected={mode === entry.value}
-            tabIndex={mode === entry.value ? 0 : -1}
-            className={`${SEGMENTED_BTN} ${
-              mode === entry.value ? SEGMENTED_BTN_ACTIVE : SEGMENTED_BTN_IDLE
-            }`}
-            onClick={() => switchMode(entry.value)}
+      <form id={formId} onSubmit={handleSubmit}>
+        {githubConfigured ? (
+          <div
+            className={`${SEGMENTED} mb-3`}
+            role="group"
+            aria-label="Add by"
           >
-            {entry.label}
-          </button>
-        ))}
-      </div>
-      <form
-        id={formId}
-        role="tabpanel"
-        aria-labelledby={tabId(mode)}
-        onSubmit={handleSubmit}
-      >
-        {mode === "add" ? (
-          <>
-            <label className={FIELD}>
-              <span className={FIELD_LABEL}>Email or user ID</span>
-              <input
-                className={`${INPUT} ${INPUT_STATE.normal}`}
-                value={identifier}
-                onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="user@example.com or usr_xxxxx"
-                autoComplete="off"
+            {ADD_TARGETS.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                aria-pressed={target === entry.value}
+                className={`${SEGMENTED_BTN} ${
+                  target === entry.value
+                    ? SEGMENTED_BTN_ACTIVE
+                    : SEGMENTED_BTN_IDLE
+                }`}
+                onClick={() => switchTarget(entry.value)}
                 disabled={busy}
-              />
-              <span className={FIELD_HINT}>
-                Exactly one selector — values containing @ are treated as an
-                email, anything else as a user ID.
-              </span>
-            </label>
-            <RoleField
-              roles={roles}
-              isError={rolesQuery.isError}
-              value={selectedRoleId}
-              onChange={setRoleId}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {target === "email" ? (
+          <label className={FIELD}>
+            <span className={FIELD_LABEL}>Email or user ID</span>
+            <input
+              className={`${INPUT} ${INPUT_STATE.normal}`}
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              placeholder={
+                mintToken
+                  ? "ci-bot@example.com"
+                  : "teammate@example.com or usr_xxxxx"
+              }
+              autoComplete="off"
               disabled={busy}
             />
-            {userNotFound ? (
-              <div className={`${CALLOUT} ${CALLOUT_TONE.info}`} role="alert">
-                <InfoIcon />
-                <div>
-                  No account matches <b>{identifier.trim()}</b>{" "}
-                  <code>(404)</code>. Invite them by email, or provision an
-                  account directly.
-                  <div className="mt-2.5 flex gap-2">
-                    <button
-                      type="button"
-                      className={buttonVariants({ intent: "ghost", size: "sm" })}
-                      onClick={() => switchMode("invite")}
-                    >
-                      Switch to Invite
-                    </button>
-                    <button
-                      type="button"
-                      className={buttonVariants({ intent: "ghost", size: "sm" })}
-                      onClick={() => switchMode("provision")}
-                    >
-                      Switch to Provision
-                    </button>
+            <span className={FIELD_HINT}>
+              {mintToken
+                ? "The new account is created with this email."
+                : oauthProviderNames === ""
+                  ? "Use the verified primary email of the account they sign in with."
+                  : `Use the verified primary email of their ${oauthProviderNames} account — that's what matches them on sign-in.`}
+            </span>
+          </label>
+        ) : (
+          <label className={FIELD}>
+            <span className={FIELD_LABEL}>GitHub handle</span>
+            <input
+              className={`${INPUT} ${INPUT_STATE.normal}`}
+              type="text"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              placeholder="octocat"
+              autoComplete="off"
+              disabled={busy}
+            />
+            <span className={FIELD_HINT}>
+              GitHub accounts only — resolved to the account&apos;s id right
+              away, so later renames don&apos;t matter. Add Bitbucket users
+              by email instead.
+            </span>
+          </label>
+        )}
+        <RoleField
+          roles={roles}
+          isError={rolesQuery.isError}
+          value={selectedRoleId}
+          onChange={setRoleId}
+          disabled={busy}
+        />
+        {mintToken && target === "email" ? null : (
+          <label className={FIELD}>
+            <span className={FIELD_LABEL}>Invitation expires in (days)</span>
+            <input
+              className={`${INPUT} ${INPUT_STATE.normal}`}
+              type="number"
+              min={1}
+              max={90}
+              value={inviteExpires}
+              onChange={(event) => setInviteExpires(event.target.value)}
+              placeholder="30"
+              disabled={busy}
+            />
+            <span className={FIELD_HINT}>
+              Only used when they don&apos;t have an account yet. Leave empty
+              for the server default; maximum 90 days.
+            </span>
+          </label>
+        )}
+        {target === "email" ? (
+          <>
+            <label className="mb-3.5 flex items-center gap-2.5 text-[13px] font-semibold">
+              <input
+                type="checkbox"
+                checked={mintToken}
+                onChange={(event) => {
+                  setMintToken(event.target.checked);
+                  setFormError(null);
+                  setTokenConflictEmail(null);
+                }}
+                disabled={busy}
+              />
+              Provision with an API token
+            </label>
+            {mintToken ? (
+              <>
+                <label className={FIELD}>
+                  <span className={FIELD_LABEL}>Token display name</span>
+                  <input
+                    className={`${INPUT} ${INPUT_STATE.normal}`}
+                    value={tokenName}
+                    onChange={(event) => setTokenName(event.target.value)}
+                    placeholder="CI deploy token"
+                    autoComplete="off"
+                    disabled={busy}
+                  />
+                  <span className={FIELD_HINT}>
+                    Optional — how the minted personal API token is listed.
+                  </span>
+                </label>
+                <label className={FIELD}>
+                  <span className={FIELD_LABEL}>Token expires in (days)</span>
+                  <input
+                    className={`${INPUT} ${INPUT_STATE.normal}`}
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={tokenExpires}
+                    onChange={(event) => setTokenExpires(event.target.value)}
+                    placeholder="365"
+                    disabled={busy}
+                  />
+                  <span className={FIELD_HINT}>
+                    Optional — leave empty for the server default. Maximum 3650
+                    days.
+                  </span>
+                </label>
+                <div className={`${CALLOUT} ${CALLOUT_TONE.warn}`}>
+                  <AlertIcon />
+                  <div>
+                    The account is created immediately (no sign-in needed, new
+                    accounts only) and the token is <b>shown only once</b> on
+                    success — be ready to copy it.
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className={`${CALLOUT} ${CALLOUT_TONE.info}`}>
-                <InfoIcon />
-                <div>
-                  If the user isn&apos;t found <code>(404)</code> you can
-                  switch to <b>Invite</b> or <b>Provision</b> without
-                  retyping.
-                </div>
-              </div>
-            )}
+              </>
+            ) : null}
           </>
-        ) : mode === "invite" ? (
-          <>
-            <div
-              className={`${SEGMENTED} mb-3`}
-              role="group"
-              aria-label="Invite by"
-            >
-              {INVITE_TARGETS.map((target) => (
+        ) : null}
+        {tokenConflictEmail !== null ? (
+          <div
+            className={`${CALLOUT} ${CALLOUT_TONE.info} mt-3.5`}
+            role="alert"
+          >
+            <InfoIcon />
+            <div>
+              An account for <b>{tokenConflictEmail}</b> already exists, and a
+              token can only be minted while creating one — they can mint
+              their own from the Tokens page instead.
+              <div className="mt-2.5">
                 <button
-                  key={target.value}
                   type="button"
-                  aria-pressed={inviteTarget === target.value}
-                  className={`${SEGMENTED_BTN} ${
-                    inviteTarget === target.value
-                      ? SEGMENTED_BTN_ACTIVE
-                      : SEGMENTED_BTN_IDLE
-                  }`}
-                  onClick={() => {
-                    setInviteTarget(target.value);
-                    setEmail("");
-                    setFormError(null);
-                  }}
-                  disabled={busy}
+                  className={buttonVariants({ intent: "ghost", size: "sm" })}
+                  onClick={addWithoutToken}
                 >
-                  {target.label}
+                  Add without a token
                 </button>
-              ))}
-            </div>
-            <label className={FIELD}>
-              <span className={FIELD_LABEL}>
-                {inviteTarget === "email" ? "Email address" : "GitHub handle"}
-              </span>
-              <input
-                className={`${INPUT} ${INPUT_STATE.normal}`}
-                type="text"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder={
-                  inviteTarget === "email" ? "newmember@example.com" : "octocat"
-                }
-                autoComplete="off"
-                disabled={busy}
-              />
-              <span className={FIELD_HINT}>
-                {inviteTarget === "email"
-                  ? "Access is granted on their next GitHub login."
-                  : "Resolved to the account's id at invite time; immune to handle renames."}
-              </span>
-            </label>
-            <RoleField
-              roles={roles}
-              isError={rolesQuery.isError}
-              value={selectedRoleId}
-              onChange={setRoleId}
-              disabled={busy}
-            />
-            <label className={FIELD}>
-              <span className={FIELD_LABEL}>Expires in (days)</span>
-              <input
-                className={`${INPUT} ${INPUT_STATE.normal}`}
-                type="number"
-                min={1}
-                max={90}
-                value={inviteExpires}
-                onChange={(event) => setInviteExpires(event.target.value)}
-                placeholder="30"
-                disabled={busy}
-              />
-              <span className={FIELD_HINT}>
-                Leave empty for the server default. Maximum 90 days.
-              </span>
-            </label>
-          </>
-        ) : (
-          <>
-            <label className={FIELD}>
-              <span className={FIELD_LABEL}>Email address</span>
-              <input
-                className={`${INPUT} ${INPUT_STATE.normal}`}
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="ci-bot@example.com"
-                autoComplete="off"
-                disabled={busy}
-              />
-            </label>
-            <RoleField
-              roles={roles}
-              isError={rolesQuery.isError}
-              value={selectedRoleId}
-              onChange={setRoleId}
-              disabled={busy}
-            />
-            <label className={FIELD}>
-              <span className={FIELD_LABEL}>Token display name</span>
-              <input
-                className={`${INPUT} ${INPUT_STATE.normal}`}
-                value={tokenName}
-                onChange={(event) => setTokenName(event.target.value)}
-                placeholder="CI deploy token"
-                autoComplete="off"
-                disabled={busy}
-              />
-              <span className={FIELD_HINT}>Optional — how the minted personal API token is listed.</span>
-            </label>
-            <label className={FIELD}>
-              <span className={FIELD_LABEL}>Token expires in (days)</span>
-              <input
-                className={`${INPUT} ${INPUT_STATE.normal}`}
-                type="number"
-                min={1}
-                max={3650}
-                value={tokenExpires}
-                onChange={(event) => setTokenExpires(event.target.value)}
-                placeholder="365"
-                disabled={busy}
-              />
-              <span className={FIELD_HINT}>
-                Optional — leave empty for the server default. Maximum 3650
-                days.
-              </span>
-            </label>
-            <div className={`${CALLOUT} ${CALLOUT_TONE.warn}`}>
-              <AlertIcon />
-              <div>
-                Provisioning creates (or reuses) the account, grants the role,
-                and mints a personal API token <b>shown only once</b> on
-                success — be ready to copy it.
               </div>
             </div>
-          </>
-        )}
+          </div>
+        ) : null}
         {formError !== null ? (
           <div
             className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-3.5`}

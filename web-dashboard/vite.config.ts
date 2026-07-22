@@ -14,8 +14,9 @@ export default defineConfig({
   server: {
     proxy: {
       // 127.0.0.1, not localhost: the dev API binds IPv4 and localhost can
-      // resolve to IPv6 ::1, which the proxy then can't reach.
-      "/v1": "http://127.0.0.1:3000",
+      // resolve to IPv6 ::1, which the proxy then can't reach. Overridable
+      // for a dev API on a non-default port (e.g. a port-shifted eval stack).
+      "/v1": process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:3000",
     },
   },
 });

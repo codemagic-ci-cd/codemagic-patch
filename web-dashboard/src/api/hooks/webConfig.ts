@@ -18,12 +18,18 @@ export const webConfigKeys = {
  * `GET /v1/auth/oauth/web-config` (public, no bearer). Errors propagate as
  * HttpProblemError — the login page classifies them (`classifyWebConfigError`);
  * the consent page renders its standalone 404 card on error.
+ *
+ * `enabled: false` defers the fetch — the Add-member modal only needs the
+ * provider list once it opens (the GitHub-handle target is gated on a
+ * configured GitHub provider), and the authenticated shell should not spend
+ * a request on this login-flow endpoint at boot.
  */
-export function useWebConfig() {
+export function useWebConfig(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: webConfigKeys.all,
     queryFn: fetchWebConfig,
     // The SPA caches the provider config for the session.
     staleTime: Infinity,
+    enabled: options?.enabled ?? true,
   });
 }
