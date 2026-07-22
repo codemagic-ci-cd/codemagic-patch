@@ -3,7 +3,9 @@ import path from "node:path";
 
 import { zipSync, type Zippable } from "fflate";
 
-const ZIP_MTIME = new Date("1980-01-01T00:00:00.000Z");
+// fflate writes ZIP timestamps from Date's local-time fields. Constructing the
+// DOS epoch in local time keeps it in range and byte-identical in every timezone.
+const ZIP_MTIME = new Date(1980, 0, 1);
 
 export async function createZipFromDirectory(
   sourceDir: string,
@@ -52,7 +54,9 @@ async function collectArchiveFiles(
     }
 
     if (!entry.isFile()) {
-      throw new Error(`Bundle output contains an unsupported entry: ${archivePath}`);
+      throw new Error(
+        `Bundle output contains an unsupported entry: ${archivePath}`,
+      );
     }
 
     files.push(archivePath);
