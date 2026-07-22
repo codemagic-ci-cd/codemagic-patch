@@ -12,41 +12,6 @@ Command-line interface for releasing and managing over-the-air (OTA) React Nativ
 npm install -g @codemagic/patch-cli
 ```
 
-After installation, `cmpatch` is available on your `PATH`. To run one-off commands without installing globally:
-
-```sh
-npx -p @codemagic/patch-cli cmpatch <command>
-```
-
-Note that plain `npx cmpatch` does not resolve — npx looks up packages by package name, not by binary name.
-
-To remove the global installation:
-
-```sh
-npm uninstall -g @codemagic/patch-cli
-```
-
-### From source
-
-To build and install the CLI from a clone of this repository, run at the repository root:
-
-```sh
-yarn install
-yarn cli:install-global
-```
-
-This builds the CLI, packs it into a tarball, and installs it globally.
-
-### Development mode
-
-To run the CLI directly from source without installing:
-
-```sh
-yarn workspace @codemagic/patch-cli dev -- <args>
-# e.g.
-yarn workspace @codemagic/patch-cli dev -- --version
-```
-
 ## Quick start
 
 ```sh
@@ -55,7 +20,7 @@ yarn workspace @codemagic/patch-cli dev -- --version
 #     print the URL, or --token <cm_pat_...> for headless machines)
 cmpatch login --server-url https://updates.example.com
 
-# 2. Set up project defaults (interactive wizard)
+# 2. Set up project defaults
 cmpatch init
 
 # 3. Publish a React Native bundle as an OTA release
@@ -83,17 +48,6 @@ Most commands accept `--format json|table`. When stdout is a terminal, output de
 ```sh
 cmpatch app list --format json | jq '.[].name'
 ```
-
-## Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | Success |
-| 1 | Server or runtime error (not found, conflict, rate limited, …) |
-| 2 | Authentication required or usage error |
-| 3 | Validation error |
-| 4 | Account disabled |
-| 130 | Interactive prompt aborted (Ctrl-C) |
 
 ## Configuration
 
