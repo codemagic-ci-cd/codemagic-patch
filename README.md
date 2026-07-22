@@ -134,10 +134,10 @@ The default self-host stack runs four services on a single Docker host:
   - Storage — e.g. `storage.updates.example.com`
 - A **GitHub OAuth App** (see below)
 
-**Building / using the CLI (local or CI)**
+**Using the CLI**
 
-- Node.js `>=22.20.0`
-- Yarn `4.12.0` (via Corepack)
+- Node.js `>=20` (installed from npm: `npm install -g @codemagic/patch-cli`)
+- Building from this repo instead requires Node.js `>=22.20.0` and Yarn `4.12.0` (via Corepack)
 
 **React Native app**
 
@@ -279,7 +279,13 @@ Then rerun `scripts/selfhost/install.sh` — it re-reads the file, verifies the 
 
 ## Part 2 — Install the CLI and sign in
 
-You can do everything from the dashboard, but CI and scripting use the CLI. The CLI is built from this repo (only the app SDK `@codemagic/react-native-patch` is on npm). Install it globally:
+You can do everything from the dashboard, but CI and scripting use the CLI. Install it globally from npm (requires Node.js `>=20`):
+
+```bash
+npm install -g @codemagic/patch-cli
+```
+
+Alternatively, build it from this repo (requires Node.js `>=22.20.0`):
 
 ```bash
 corepack enable
