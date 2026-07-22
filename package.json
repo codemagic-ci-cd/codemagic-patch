@@ -6,7 +6,6 @@
   "workspaces": [
     "cli",
     "client",
-    "docs-site",
     "server",
     "shared",
     "web-dashboard"
