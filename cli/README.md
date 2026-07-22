@@ -33,8 +33,8 @@ cmpatch release-react --deployment Staging
 | Group | Description |
 | --- | --- |
 | `release` | Publish, inspect, patch, promote, and roll back OTA releases. |
-| `management` | Manage teams, apps, deployments, and deployment history. |
-| `iam` | Authenticate, manage tokens, and manage team members. |
+| `management` | Manage apps, deployments, and deployment history. |
+| `auth` | Authenticate, manage tokens, and manage team members. |
 | `diagnostics` | Diagnose local setup and OTA readiness (`cmpatch doctor`). |
 | `config` | Store defaults and inspect the effective local context. |
 | `fingerprint` | Compute fingerprints and inspect device update logs. |
@@ -46,13 +46,13 @@ Use `cmpatch help <group>` for the commands in a group, `cmpatch help <command>`
 Most commands accept `--format json|table`. When stdout is a terminal, output defaults to a human-readable table; when piped, it defaults to JSON, so the CLI is directly scriptable:
 
 ```sh
-cmpatch app list --format json | jq '.[].name'
+cmpatch app list --format json | jq '.apps[].name'
 ```
 
 ## Configuration
 
 - **User config:** `~/.codemagic-patch/config.json` — CLI-wide defaults such as `serverUrl` and `team`. Credentials are stored per server in `~/.codemagic-patch/credentials.json`. Set the `CODEMAGIC_PATCH_HOME` environment variable to relocate this directory.
-- **Project config:** `codemagic-patch.config.json` at your project root (or a `cmpatch` key in `package.json`) — per-project defaults such as `app`, `deployment`, and platform-specific overrides. Created by `cmpatch init`.
+- **Project config:** `codemagic-patch.config.json` at your project root (or a `codemagicPatch` key in `package.json`) — per-project defaults such as `app`, `deployment`, and platform-specific overrides. Created by `cmpatch init`.
 
 Explicit flags always take precedence over configured defaults. Run `cmpatch context` to inspect the effective configuration, and `cmpatch doctor` to diagnose setup issues.
 
