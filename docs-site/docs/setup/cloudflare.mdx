@@ -44,10 +44,10 @@ Use **Create Custom Token** with a single permission:
 
 Copy the token once. This becomes `CLOUDFLARE_API_TOKEN`.
 
-The installer verifies the token (active status and purge permission on the zone). Pass `--skip-cloudflare-check` only if you need to bypass verification temporarily.
+The installer verifies the token by calling Cloudflare's `purge_cache` API for the zone (requires Zone → Cache Purge). Pass `--skip-cloudflare-check` only if you need to bypass verification temporarily.
 
 :::info Free Cloudflare plans and nested subdomains
-Cloudflare's free Universal SSL certificate covers `example.com` and `*.example.com` only. A storage hostname like `storage.updates.example.com` is a third-level name under the zone, so HTTPS at the edge can fail on a free plan unless you add [Advanced Certificate Manager](https://developers.cloudflare.com/ssl/edge-certificates/advanced-certificate-manager/) (or use a single-level storage hostname such as `updates-cdn.example.com`).
+Nested storage names such as `storage.updates.example.com` are fine and common. On Cloudflare Free, Universal SSL covers `example.com` and `*.example.com` only, so a third-level name needs [Advanced Certificate Manager](https://developers.cloudflare.com/ssl/edge-certificates/advanced-certificate-manager/) (or a hostname Universal SSL already covers, such as `updates-cdn.example.com`).
 :::
 
 ## 2. Install with Cloudflare flags

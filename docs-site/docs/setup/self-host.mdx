@@ -84,3 +84,7 @@ Before you rely on this stack in production, run `scripts/selfhost/backup.sh` an
 ## Cloudflare (optional but recommended)
 
 For production, front the **storage** domain with Cloudflare CDN so artifacts and manifests are served from the edge and Patch can purge stale manifests after releases. Prepare the zone ID and cache-purge token, install with `--cloudflare` flags, then finish DNS proxying and Cache Rules after the stack is up. Full walkthrough: [Cloudflare setup](/docs/setup/cloudflare).
+
+:::info Free Cloudflare plans
+Nested storage hostnames work, but on Cloudflare Free they need Advanced Certificate Manager (Universal SSL only covers `*.example.com`). Details: [Cloudflare setup](/docs/setup/cloudflare#1-prepare-cloudflare-before-install).
+:::

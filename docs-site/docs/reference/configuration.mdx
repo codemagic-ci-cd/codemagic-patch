@@ -35,11 +35,11 @@ The server refuses to boot while `WORKER_SHARED_SECRET` or `OAUTH_DEVICE_POLL_TO
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `MODE` | `all` | `all` · `api` · `worker` |
+| `MODE` | `all` | `all` · `api` · `worker`. Self-host Compose hardcodes `MODE=all`; changing `.env.selfhost` alone does not split API/worker |
 | `REGISTRATION_MODE` | `invite_only` | `invite_only` or `open` |
 | `STORAGE_ADAPTER` | `s3` (self-host) | `s3` · `gcs` · `memory`, see [Infrastructure adapters](/docs/setup/infrastructure) |
 | `DELIVERY_ADAPTER` | `base-url` | `base-url` or `cloudflare` (+ `CLOUDFLARE_*`), see [Cloudflare setup](/docs/setup/cloudflare) and [Infrastructure adapters](/docs/setup/infrastructure) |
 | `MANIFEST_CACHE_CONTROL` | `no-cache, must-revalidate` | Cache-Control header for `meta.json` and manifest JSON (client revalidation). With Cloudflare CDN, leave the default and use Cache Rules for edge TTL; see [Cloudflare setup](/docs/setup/cloudflare) |
-| `MAX_UPLOAD_SIZE` | `200mb` | Max artifact upload size |
+| `MAX_UPLOAD_SIZE` | `200mb` | Max artifact upload size. Self-host Compose does not pass this through; customize `docker-compose.selfhost.yml` to override |
 | `RUN_MIGRATIONS` | `true` | Run DB migrations on boot |
 | `LOGGER` | `true` | Set `false` to silence server logs |

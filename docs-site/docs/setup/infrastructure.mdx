@@ -34,9 +34,9 @@ The server never serves OTA artifacts from the API domain; clients fetch from yo
 - `STORAGE_ADAPTER=s3` with bundled MinIO
 - `DELIVERY_ADAPTER=base-url`: clients fetch directly from `PUBLIC_BASE_URL`
 - `PUBLIC_BASE_URL` on your storage domain, e.g. `https://storage.updates.example.com/codemagic-patch`
-- `MODE=all`: API and release worker in one process
+- Compose hardcodes `MODE=all` (API and release worker in one process)
 
-That single-host layout is enough for most installs.
+That single-host layout is enough for most installs. Splitting `MODE=api` / `MODE=worker` needs a customized Compose layout; editing `.env.selfhost` alone is not enough.
 
 ## Storage adapter
 
