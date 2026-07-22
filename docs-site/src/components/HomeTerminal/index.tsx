@@ -1,4 +1,5 @@
 import React, {type ReactNode} from 'react';
+import {useColorMode} from '@docusaurus/theme-common';
 import {Highlight, themes} from 'prism-react-renderer';
 
 import styles from './styles.module.css';
@@ -28,15 +29,18 @@ export default function HomeTerminal({
   children,
   language,
 }: Props): ReactNode {
+  const {colorMode} = useColorMode();
   const code = children.replace(/^\n/, '').replace(/\n$/, '');
   const lang = language ?? guessLanguage(label, code);
+  const prismTheme =
+    colorMode === 'dark' ? themes.vsDark : themes.github;
 
   return (
     <div className={styles.terminal}>
       <div className={styles.bar}>
         <span className={styles.label}>{label}</span>
       </div>
-      <Highlight theme={themes.vsDark} code={code} language={lang}>
+      <Highlight theme={prismTheme} code={code} language={lang}>
         {({className, style, tokens, getLineProps, getTokenProps}) => (
           <pre
             className={`${styles.body} ${className}`}

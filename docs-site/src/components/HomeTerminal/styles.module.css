@@ -1,10 +1,11 @@
 .terminal {
-  --home-terminal-bg: #071a45;
-  --home-terminal-title: #ffffff;
-  --home-terminal-line-number: #5b7ab5;
-  --home-terminal-shadow: 0 12px 40px rgba(6, 34, 93, 0.22);
+  --home-terminal-bg: #ffffff;
+  --home-terminal-title: var(--cm-navy, #06225d);
+  --home-terminal-line-number: #97a5c5;
+  --home-terminal-shadow: 0 8px 28px rgba(6, 34, 93, 0.08);
+  --home-terminal-border: 1px solid #e8ecf8;
 
-  border: none;
+  border: var(--home-terminal-border);
   border-radius: 1.5rem;
   background: var(--home-terminal-bg);
   overflow: hidden;
@@ -56,47 +57,50 @@
   white-space: pre;
 }
 
-.body :global(.token.comment),
-.body :global(.token.prolog),
-.body :global(.token.doctype) {
+[data-theme='dark'] .terminal {
+  --home-terminal-bg: #01091a;
+  --home-terminal-title: #ffffff;
+  --home-terminal-line-number: #5b7ab5;
+  --home-terminal-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  --home-terminal-border: none;
+}
+
+[data-theme='dark'] .body :global(.token.comment),
+[data-theme='dark'] .body :global(.token.prolog),
+[data-theme='dark'] .body :global(.token.doctype) {
   color: #7e95b9;
 }
 
-.body :global(.token.punctuation) {
+[data-theme='dark'] .body :global(.token.punctuation) {
   color: #9db4e0;
 }
 
-.body :global(.token.property),
-.body :global(.token.tag),
-.body :global(.token.boolean),
-.body :global(.token.number),
-.body :global(.token.constant),
-.body :global(.token.symbol),
-.body :global(.token.deleted),
-.body :global(.token.function),
-.body :global(.token.keyword) {
+[data-theme='dark'] .body :global(.token.property),
+[data-theme='dark'] .body :global(.token.tag),
+[data-theme='dark'] .body :global(.token.boolean),
+[data-theme='dark'] .body :global(.token.number),
+[data-theme='dark'] .body :global(.token.constant),
+[data-theme='dark'] .body :global(.token.symbol),
+[data-theme='dark'] .body :global(.token.deleted),
+[data-theme='dark'] .body :global(.token.function),
+[data-theme='dark'] .body :global(.token.keyword) {
   color: #33ccff;
 }
 
-.body :global(.token.selector),
-.body :global(.token.attr-name),
-.body :global(.token.string),
-.body :global(.token.char),
-.body :global(.token.builtin),
-.body :global(.token.inserted),
-.body :global(.token.attr-value),
-.body :global(.token.url) {
+[data-theme='dark'] .body :global(.token.selector),
+[data-theme='dark'] .body :global(.token.attr-name),
+[data-theme='dark'] .body :global(.token.string),
+[data-theme='dark'] .body :global(.token.char),
+[data-theme='dark'] .body :global(.token.builtin),
+[data-theme='dark'] .body :global(.token.inserted),
+[data-theme='dark'] .body :global(.token.attr-value),
+[data-theme='dark'] .body :global(.token.url) {
   color: #e8ecfc;
 }
 
-.body :global(.token.operator),
-.body :global(.token.entity),
-.body :global(.token.atrule),
-.body :global(.token.class-name) {
+[data-theme='dark'] .body :global(.token.operator),
+[data-theme='dark'] .body :global(.token.entity),
+[data-theme='dark'] .body :global(.token.atrule),
+[data-theme='dark'] .body :global(.token.class-name) {
   color: #fbb03b;
-}
-
-[data-theme='dark'] .terminal {
-  --home-terminal-bg: #01091a;
-  --home-terminal-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
 }

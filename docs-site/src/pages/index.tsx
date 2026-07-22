@@ -18,7 +18,7 @@ const OTA_REASONS = [
       'Update the product as often as you want, without being slowed down by store reviews.',
   },
   {
-    title: 'Rollouts and roll backs',
+    title: 'Roll out and back',
     description:
       "Revert a bad release or only fully roll out a release when you're ready.",
   },
@@ -43,8 +43,6 @@ const LOCAL_EVAL_COMMAND = `./scripts/local-eval/up.sh
 const SECTIONS = [
   {
     title: 'Invisible updates',
-    description:
-      'Minimal download sizes and background install modes mean updates without interruptions.',
     bullets: [
       'Binary diffs mean users only download the required code changes.',
       'Options to download and install updates while the app is in the background',
@@ -60,8 +58,6 @@ const SECTIONS = [
   },
   {
     title: 'Reliable delivery',
-    description:
-      'Both checks and downloads can live on the CDN, so updates keep flowing even when the server is down.',
     bullets: [
       "Checks and downloads don't hit the server",
       'Cache and scale at the edge',
@@ -77,8 +73,6 @@ const SECTIONS = [
   },
   {
     title: 'Publish and monitor releases',
-    description:
-      'Everything you need to publish, monitor, and control releases in production.',
     bullets: [
       'Web dashboard for releases, metrics, and team access',
       'Native fingerprinting so bundles only reach compatible binaries',
@@ -89,12 +83,10 @@ const SECTIONS = [
     reverse: false,
     media: 'image' as const,
     imageAlt:
-      'Codemagic Patch metrics: active version distribution and adoption over time',
+      'Codemagic Patch adoption over time: daily active devices by release version',
   },
   {
     title: 'Run it yourself',
-    description:
-      'Try the full stack on your laptop, then self-host when you leave localhost.',
     bullets: [
       'One-command local evaluation: server, dashboard, Postgres, MinIO',
       'On-device demo to watch an OTA apply on simulator or emulator',
@@ -157,14 +149,12 @@ const COMPARISON_ROWS = [
 
 function FeatureCopy({
   title,
-  description,
   bullets,
   link,
   linkLabel,
   id,
 }: {
   title: string;
-  description: string;
   bullets: readonly string[];
   link: string;
   linkLabel: string;
@@ -173,7 +163,6 @@ function FeatureCopy({
   return (
     <div className={styles.featureCopy}>
       <h3 id={id}>{title}</h3>
-      <p className={styles.featureDescription}>{description}</p>
       <ul className={styles.featureBullets}>
         {bullets.map((bullet) => (
           <li key={bullet}>{bullet}</li>
@@ -222,8 +211,8 @@ export default function Home(): ReactNode {
                 className={styles.productShotImage}
                 src={dashboardOverviewSrc}
                 alt="Codemagic Patch dashboard showing Production release history, rollouts, and deployment metrics"
-                width={3024}
-                height={1490}
+                width={2377}
+                height={1229}
               />
             </div>
           </div>
@@ -273,7 +262,6 @@ export default function Home(): ReactNode {
                   <FeatureCopy
                     id={`home-${index}`}
                     title={section.title}
-                    description={section.description}
                     bullets={section.bullets}
                     link={section.link}
                     linkLabel={section.linkLabel}
@@ -286,12 +274,14 @@ export default function Home(): ReactNode {
                         {section.terminalContent}
                       </HomeTerminal>
                     ) : (
-                      <img
-                        className={styles.featureImage}
-                        src={dashboardSrc}
-                        alt={section.imageAlt}
-                        loading="lazy"
-                      />
+                      <div className={styles.featureImageFrame}>
+                        <img
+                          className={styles.featureImage}
+                          src={dashboardSrc}
+                          alt={section.imageAlt}
+                          loading="lazy"
+                        />
+                      </div>
                     )}
                   </div>
                 </div>

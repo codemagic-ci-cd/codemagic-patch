@@ -77,6 +77,10 @@ scripts/selfhost/smoke.sh
 CODEMAGIC_PATCH_TOKEN=cm_pat_xxx scripts/selfhost/smoke.sh
 ```
 
+:::tip
+Before you rely on this stack in production, run `scripts/selfhost/backup.sh` and store a copy off the host. Restore and upgrade use the same scripts. See [Operations](/docs/reference/operations).
+:::
+
 ## Cloudflare (optional but recommended)
 
 For production, front the **storage** domain with Cloudflare CDN so artifacts and manifests are served from the edge and Patch can purge stale manifests after releases. Prepare the zone ID and cache-purge token, install with `--cloudflare` flags, then finish DNS proxying and Cache Rules after the stack is up. Full walkthrough: [Cloudflare setup](/docs/setup/cloudflare).
