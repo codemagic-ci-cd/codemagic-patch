@@ -1,8 +1,26 @@
 # `@codemagic/react-native-patch`
 
-React Native client SDK for [**Codemagic Patch**](https://github.com/codemagic-ci-cd/codemagic-patch) — a self-hosted over-the-air (OTA) update service for React Native apps. Ship JavaScript and asset updates straight to installed apps, with no app-store review for changes that live in your JS bundle.
+Client SDK for [Codemagic Patch](https://github.com/codemagic-ci-cd/codemagic-patch): a self-hosted CodePush successor for over-the-air updates on React Native and Expo apps. Download, verify, and boot JS/asset bundles on device so you can ship JS changes without a new store binary.
 
-This SDK downloads, verifies, and boots update bundles on device. It pairs with the Codemagic Patch server and the [`codemagic-patch` CLI](https://github.com/codemagic-ci-cd/codemagic-patch); see the [main repository](https://github.com/codemagic-ci-cd/codemagic-patch) for the server, protocol, and self-hosting guide.
+This package is only the on-device side. You also need a Patch server (self-hosted) and the [`cmpatch` CLI](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/cli) to publish releases. The monorepo has both, plus a dashboard and a local evaluation stack.
+
+## What you get
+
+From the [monorepo](https://github.com/codemagic-ci-cd/codemagic-patch):
+
+- Full stack via Docker Compose (API, worker, Postgres, MinIO, dashboard)
+- Web dashboard with RBAC and release management
+- On-device demo app for trying OTA updates quickly
+
+From this SDK:
+
+- Binary patches when available, for smaller downloads (falls back to a full bundle)
+- Signature verification when you configure a public key
+- Automatic rollback if a new package fails before the app reports ready
+- Expo config plugin for prebuild projects, plus bare React Native wiring
+- CodePush-style `sync()`, or step-by-step APIs when you need control
+
+  <img width="700" alt="the self-hosted Patch dashboard" src="https://github.com/user-attachments/assets/e48f2c99-78e9-48c0-ae75-5a5278581e7d" />
 
 ## Requirements
 
@@ -25,6 +43,52 @@ yarn add @codemagic/react-native-patch
 ```sh
 cd ios && pod install
 ```
+## Quick start
+
+Configuration lives in **native resources** (deployment key, API URL, download base URL, optional public key), not in a JS config object. The Expo plugin writes those for you; bare apps set them in `Info.plist` / `strings.xml` and wire bundle selection.
+
+### Expo (config plugin)
+
+```json
+{
+  "plugins": [
+    ["@codemagic/react-native-patch", {
+      "ios": {
+        "deploymentKey": "<key>",
+        "downloadBaseUrl": "<url>",
+        "apiUrl": "<url>",
+        "publicKey": "<pem>"
+      },
+      "android": {
+        "deploymentKey": "<key>",
+        "downloadBaseUrl": "<url>",
+        "apiUrl": "<url>",
+        "publicKey": "<pem>"
+      }
+    }]
+  ]
+}
+```
+
+Configure at least one platform. Every block you provide needs `deploymentKey`, `downloadBaseUrl`, and `apiUrl` (`publicKey` is optional). Then run `expo prebuild`.
+
+### Bare React Native
+
+Add `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` (optional `CodemagicPatchPublicKey`) to Android `strings.xml` and iOS `Info.plist`, then point RN’s JS bundle path at `CodemagicPatch.getJSBundleFile` / `CodemagicPatch.bundleURL()` so boot order is pending package → current package → embedded bundle.
+
+### Call `sync()`
+
+```ts
+import { sync } from "@codemagic/react-native-patch";
+
+const status = await sync();
+// "update-installed" | "up-to-date" | "embedded-revert-applied"
+// | "sync-in-progress" | "error"
+```
+
+`sync()` never throws. It checks for an update, downloads and installs when appropriate, and reports app readiness so a bad package can roll back.
+
+For check / download / install as separate steps, or restart timing helpers (`restartApp`, `allowRestart` / `disallowRestart`), see the [SDK types](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/client/src/types.ts).
 
 ## Configuration
 
