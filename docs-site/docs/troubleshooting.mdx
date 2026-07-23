@@ -213,12 +213,12 @@ GitHub Actions and remote CI runners cannot call `http://127.0.0.1` or `localhos
 ### First admin sign-in rejected
 
 - `INITIAL_ADMIN_EMAILS` matches the GitHub account's verified primary email
-- OAuth callback URL is `https://<api-domain>/auth/callback` and Device Flow is enabled
+- OAuth callback URL is `https://<api-domain>/auth/callback` and Device Flow is enabled on the app ([OAuth Apps](https://github.com/settings/developers))
 
 ### Caddy certificate issuance is slow
 
 - API and storage DNS point at the host; ports 80/443 are open
-- With Cloudflare, keep the storage domain **DNS only** until the first certificate is issued: see [Cloudflare setup](/docs/setup/cloudflare)
+- With Cloudflare, keep the storage domain DNS only (grey cloud in [DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records)) until the first certificate is issued: see [Cloudflare setup](/docs/setup/cloudflare)
 
 ## Release published but app finds no update
 
@@ -237,4 +237,4 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
 
 ## Source maps
 
-OTA bundles are minified. Upload source maps to Sentry, Datadog, or your error tracker for each release so production stack traces map back to source.
+For Datadog, Sentry, and similar tools, see [Monitoring such as Datadog or Sentry](/docs/using-patch/analytics#monitoring-such-as-datadog-or-sentry).

@@ -1,9 +1,11 @@
 ---
 title: Analytics and metrics
 description: >-
-  Monitor download, install, success, and rollback metrics from the dashboard
-  and CLI.
-llmsDescription: 'Release metrics — downloads, installs, success, rollback via dashboard/CLI.'
+  Monitor download, install, success, and rollback metrics; source maps for
+  Datadog and other crash tools.
+llmsDescription: >-
+  Release metrics — downloads, installs, success, rollback; source maps for
+  Datadog/Sentry vs Patch storage.
 ---
 
 # Analytics and metrics
@@ -49,6 +51,16 @@ Spikes after a release often mean a bad bundle or incompatible native project. C
 Active count
 
 How many devices are running a given release label, helps confirm a gradual rollout is progressing.
+
+## Monitoring such as Datadog or Sentry
+
+Tools like Datadog or Sentry need extra information to see which OTA release a device has installed. That usually means uploading a source map for each release.
+
+OTA JS ships minified, so without a map your crash tool only shows a wall of names. Upload the map to a tool such as Datadog or Sentry. Keeping a copy on Patch alone does not symbolicate those stack traces.
+
+You can still attach a map when you publish (`cmpatch release create --sourcemap …`, or `cmpatch release-react --sourcemap-output …`). Patch stores it privately under `_internal`. Apps never download it for OTA, and Patch does not push it to your crash tool for you.
+
+In practice: build the map in the same CI job as the release, then run your tracker’s upload step (for example Datadog’s React Native / `datadog-ci` flow). Use a version tag that matches how you label that OTA release in RUM or errors.
 
 ## Example rollout monitoring workflow
 

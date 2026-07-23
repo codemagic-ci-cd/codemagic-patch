@@ -103,6 +103,7 @@ const sidebars: SidebarsConfig = {
     },
     'troubleshooting',
     'faq',
+    'licensing',
     'roadmap',
   ],
 

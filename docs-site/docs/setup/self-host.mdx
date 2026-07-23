@@ -12,13 +12,13 @@ For a quick local try without domains or TLS, start with the [Quickstart](/docs/
 
 ## Prepare a GitHub OAuth App
 
-Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. Create one OAuth App and collect:
+Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. [Register a new OAuth App](https://github.com/settings/applications/new) (or manage existing ones under [OAuth Apps](https://github.com/settings/developers)) and collect:
 
 | Setting | Value |
 | --- | --- |
 | Homepage URL | `https://updates.example.com` |
 | Authorization callback URL | `https://updates.example.com/auth/callback` |
-| Enable Device Flow | Required for `cmpatch login` |
+| Enable Device Flow | Required for `cmpatch login` (checkbox on the same form) |
 | Client ID | e.g. `Iv1.xxxxxxxxxxxxxxxx` |
 | Client Secret | generated on the same app |
 

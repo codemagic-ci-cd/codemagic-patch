@@ -143,7 +143,7 @@ const COMPARISON_ROWS = [
     feature: 'License',
     expo: 'EAS usage pricing',
     hotUpdater: 'MIT',
-    patch: 'Fair Source License',
+    patch: 'Codemagic Server License',
   },
 ] as const;
 

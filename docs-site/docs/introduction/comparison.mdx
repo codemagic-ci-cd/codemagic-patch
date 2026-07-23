@@ -34,7 +34,7 @@ The headline difference is build vs buy.
 | | Expo Updates | Codemagic Patch |
 | --- | --- | --- |
 | Hosting | Hosted-only (EAS) | Self-hosted; you run the stack |
-| Cost model | Free tier, then usage-based EAS pricing | Free to self-host under Fair Source; optional commercial license at scale |
+| Cost model | Free tier, then usage-based EAS pricing | Free to self-host under the Server License; [commercial pricing](/docs/licensing) at scale |
 | Bare React Native | Works, but needs Expo modules in bare projects | Bare RN and Expo (prebuild plugin) |
 | Dashboard | Expo / EAS web UI | Patch web dashboard (releases, metrics, team roles) |
 
@@ -82,10 +82,10 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 | Web console | Local console for editing releases | Cloud dashboard with release management, metrics and IAM |
 | Team access | Share backend credentials | RBAC with management in the dashboard |
 | Audit trail | No built in audit logging | CLI identity is tied to GitHub OAuth |
-| Backups and DR | Build your own backup/restore process | Explcit `backup.sh` and `restore.sh` |
+| Backups and DR | Build your own backup/restore process | Built-in `backup.sh`, `restore.sh`, and `upgrade.sh` |
 | Migrations | Required for new major features | Only for management changes |
 | Stewardship | Community open source | Built and maintained by [Codemagic](https://codemagic.io) |
-| License | MIT | [Codemagic Fair Source License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) |
+| License | MIT | [Codemagic Server License](/docs/licensing) |
 
 Hot Updater is a good fit if you want MIT licensing and are comfortable assembling storage and hosting yourself. Patch targets teams that want an integrated server with dashboard and metrics, and optional vendor support for licensed deployments.
 
@@ -93,7 +93,7 @@ Hot Updater is a good fit if you want MIT licensing and are comfortable assembli
 
 ## Licensing
 
-Patch is released under the Codemagic Fair Source License (based on FSL 1.1, converting to Apache 2.0 after two years on each version). You may use, modify, and self-host Patch without a paid license while your monthly active users stay at or below one million. Above that threshold, you need a commercial license from Codemagic.
+Patch uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) for the server (based on FSL 1.1, converting to Apache 2.0 after two years on each version), and Apache 2.0 for the SDK and CLI. You may use, modify, and self-host without a paid license while monthly active users stay at or below one million. Above that, you need a commercial license from Codemagic. Details and pricing: [License and pricing](/docs/licensing).
 
 Hot Updater is MIT. Expo Updates is tied to EAS pricing, not a source license on the client SDK. Codemagic CodePush is a hosted service with its own subscription terms.
 
