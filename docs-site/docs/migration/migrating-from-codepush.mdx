@@ -72,9 +72,10 @@ Remove the `codePush(...)(App)` HOC if you used it, call `sync()` from a `useEff
 
 ## 3. Point CI at Patch
 
-Install and authenticate the Patch CLI ([Install the CLI](/docs/setup/cli)):
+Install and authenticate the Patch CLI:
 
 ```bash
+npm install -g @codemagic/patch-cli
 cmpatch config set server-url https://updates.example.com
 cmpatch token create --name ci   # store cm_pat_… as a CI secret
 ```

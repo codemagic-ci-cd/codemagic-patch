@@ -20,6 +20,8 @@ describe('resolveMarkdownPath', () => {
   });
 
   it('uses simple slug under docs', () => {
-    expect(resolveMarkdownPath('setup/cli', 'cli')).toBe('/docs/cli.md');
+    expect(resolveMarkdownPath('setup/self-host', 'self-host')).toBe(
+      '/docs/self-host.md',
+    );
   });
 });

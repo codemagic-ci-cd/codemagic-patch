@@ -16,6 +16,7 @@ export const LLMS_SECTIONS = [
       'introduction/how-it-works',
       'introduction/core-concepts',
       'introduction/comparison',
+      'introduction/pricing',
     ],
   },
   {
@@ -26,7 +27,7 @@ export const LLMS_SECTIONS = [
       'setup/self-host',
       'setup/cloudflare',
       'setup/infrastructure',
-      'setup/cli',
+      'setup/ongoing-maintenance',
       'setup/apps-deployments',
       'setup/native-setup',
       'setup/checking-for-updates',

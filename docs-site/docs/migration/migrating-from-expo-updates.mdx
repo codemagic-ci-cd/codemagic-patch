@@ -82,9 +82,10 @@ Tune when checks run in [Checking for updates](/docs/setup/checking-for-updates)
 
 ## 3. Move publishing off EAS Update
 
-Install the Patch CLI ([Install the CLI](/docs/setup/cli)) and create a CI token:
+Install the Patch CLI and create a CI token:
 
 ```bash
+npm install -g @codemagic/patch-cli
 cmpatch config set server-url https://updates.example.com
 cmpatch token create --name ci
 ```

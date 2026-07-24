@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'introduction/how-it-works',
         'introduction/core-concepts',
         'introduction/comparison',
+        'introduction/pricing',
       ],
     },
     {
@@ -30,7 +31,7 @@ const sidebars: SidebarsConfig = {
             'setup/self-host',
             'setup/cloudflare',
             'setup/infrastructure',
-            'setup/cli',
+            'setup/ongoing-maintenance',
           ],
         },
         {
@@ -103,7 +104,6 @@ const sidebars: SidebarsConfig = {
     },
     'troubleshooting',
     'faq',
-    'licensing',
     'roadmap',
   ],
 

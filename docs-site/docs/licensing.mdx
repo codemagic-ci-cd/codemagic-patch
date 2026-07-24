@@ -1,37 +1,9 @@
 ---
 title: License and pricing
-description: >-
-  How Codemagic Patch is licensed, the free MAU threshold, and commercial
-  pricing above one million users.
-llmsDescription: >-
-  Patch licensing: Apache SDK/CLI, Codemagic Server License, 1M MAU free,
-  commercial tiers, sales@codemagic.io.
+slug: /licensing
+unlisted: true
 ---
 
-# License and pricing
+import {Redirect} from '@docusaurus/router';
 
-Codemagic Patch uses two licenses, split by component. The React Native SDK and CLI are [Apache License 2.0](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/client/LICENSE). The server and its supporting pieces use the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) (based on [Functional Source License 1.1](https://fsl.software/), converting to Apache 2.0).
-
-Each directory’s own `LICENSE` file is authoritative. The root [LICENSE](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) covers anything without one. [LICENSING.md](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSING.md) on GitHub is the short summary this page follows.
-
-## Codemagic Server License (key terms)
-
-- Free up to 1,000,000 Monthly Active Users (unique devices that request an update in a month). Above that, you need a commercial license.
-- No Competing Use: self-hosting for your own apps is fine, including production and commercial apps. You cannot offer Patch (or something substantially similar) as a commercial product or service that substitutes for Codemagic Patch.
-- Converts to Apache 2.0 two years after each version is published.
-
-## Commercial pricing
-
-Above 1,000,000 MAU, pricing is per million users per year. Tiers apply progressively: each band of MAU is billed at that band’s rate.
-
-| Monthly Active Users | Price (per million users per year) |
-| --- | --- |
-| 1-50 million | $990 |
-| 50-100 million | $750 |
-| Over 100 million | $500 |
-
-For example, 120 million MAU is $97,000/year (50 × $990 + 50 × $750 + 20 × $500).
-
-Codemagic can also host the service for your company on request, for an additional cost.
-
-To buy a commercial license or talk about hosting, email [sales@codemagic.io](mailto:sales@codemagic.io).
+<Redirect to="/docs/introduction/pricing" />

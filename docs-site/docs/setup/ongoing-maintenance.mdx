@@ -1,0 +1,77 @@
+---
+title: Ongoing maintenance
+description: >-
+  Day-2 care for a self-hosted Patch server: backups, upgrades, health checks,
+  and disk growth.
+llmsDescription: >-
+  Self-host maintenance cadence: scheduled backups, upgrade.sh, health, disk,
+  link to Operations reference.
+---
+
+# Ongoing maintenance
+
+Self-hosting means you own the box. Patch automates as much of install, backup, upgrade, and restore as it can; this page is the remaining ops rhythm you should expect. Exact commands live in [Operations](/docs/reference/operations).
+
+## Backups
+
+Run `scripts/selfhost/backup.sh` on a schedule you trust, and copy each backup off the host. On-box copies help with a bad upgrade; they do not help if the droplet or disk is gone.
+
+A backup quiesces the server, dumps Postgres, and mirrors the MinIO bucket (plus a copy of `.env.selfhost`). Restore with `scripts/selfhost/restore.sh`.
+
+Before you treat the stack as production, take one backup and confirm you can find it somewhere other than the server.
+
+## Upgrades
+
+When you want a newer server build:
+
+```bash
+scripts/selfhost/upgrade.sh
+# or pin a registry image:
+scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
+```
+
+By default the script:
+
+1. Creates a pre-upgrade backup under `backups/pre-upgrade/`
+2. Pulls or rebuilds the server image, and rebuilds the Caddy (dashboard) image from source
+3. Recreates the Compose stack and waits for health
+4. Runs `scripts/selfhost/smoke.sh` (full publish smoke needs `CODEMAGIC_PATCH_TOKEN`)
+
+Pass `--i-have-a-backup` only if you already took an external backup for this upgrade. If the upgrade fails after the stack is recreated, use `restore.sh --restore-env` on the pre-upgrade backup. Re-pinning the old image alone is not a safe rollback once migrations may have run.
+
+## Health and monitoring
+
+Point your existing uptime monitor at the ready endpoint (it checks Postgres and storage, not only the process):
+
+```bash
+curl -fsS https://updates.example.com/health/ready
+```
+
+Also alert on host disk filling up. Storage health (`https://storage.updates.example.com/minio/health/ready`) is useful if your monitor can hit a second URL.
+
+Use Compose status and logs when something is already wrong, not as the primary check:
+
+```bash
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml ps
+
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml logs -f server
+```
+
+If you use [Cloudflare CDN](/docs/setup/cloudflare) and clients report stale updates, look in server logs for `delivery cache purge completed with failures`.
+
+## Disk growth
+
+The default single-host stack keeps release artifacts in object storage and device metrics in Postgres (`metric_event` is not auto-pruned). Disk use grows with retained releases and traffic. See [Requirements](/docs/setup/requirements#machine-size-default-single-host-stack) for starting sizes. Plan retention or more disk before the volume fills.
+
+## When the default stack is not enough
+
+Most installs stay on one Docker host. Add [Cloudflare](/docs/setup/cloudflare) when you want edge caching and automatic manifest purge. Move to external object storage or a split API/worker layout only when you outgrow the defaults; see [Infrastructure adapters](/docs/setup/infrastructure).
+
+## Related
+
+- [Operations](/docs/reference/operations): backup, restore, upgrade, and smoke commands
+- [Self-host](/docs/setup/self-host): first install and verify
+- [Security](/docs/using-patch/security): tokens, access, and hardening
+- [Preparing for production](/docs/using-patch/preparing-for-production): release-side checklist before real users
