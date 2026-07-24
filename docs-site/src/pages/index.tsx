@@ -177,7 +177,9 @@ function FeatureCopy({
 
 export default function Home(): ReactNode {
   const dashboardSrc = useBaseUrl('/img/dashboard.png');
+  const dashboardDarkSrc = useBaseUrl('/img/dashboard-dark.png');
   const dashboardOverviewSrc = useBaseUrl('/img/dashboard-overview.png');
+  const dashboardOverviewDarkSrc = useBaseUrl('/img/dashboard-overview-dark.png');
 
   return (
     <Layout
@@ -195,10 +197,7 @@ export default function Home(): ReactNode {
             </p>
             <div className={styles.actions}>
               <Link className={styles.primaryButton} to="/docs/">
-                Try locally
-              </Link>
-              <Link className={styles.secondaryButton} to="/docs/setup/self-host">
-                Self-host guide
+                Visit the docs
               </Link>
             </div>
           </div>
@@ -208,11 +207,18 @@ export default function Home(): ReactNode {
           <div className={styles.productShotInner}>
             <div className={styles.productShotFrame}>
               <img
-                className={styles.productShotImage}
+                className={`${styles.productShotImage} ${styles.productShotImageLight}`}
                 src={dashboardOverviewSrc}
                 alt="Codemagic Patch dashboard showing Production release history, rollouts, and deployment metrics"
                 width={2377}
                 height={1229}
+              />
+              <img
+                className={`${styles.productShotImage} ${styles.productShotImageDark}`}
+                src={dashboardOverviewDarkSrc}
+                alt="Codemagic Patch dashboard showing Production release history, rollouts, and deployment metrics"
+                width={1024}
+                height={465}
               />
             </div>
           </div>
@@ -276,8 +282,14 @@ export default function Home(): ReactNode {
                     ) : (
                       <div className={styles.featureImageFrame}>
                         <img
-                          className={styles.featureImage}
+                          className={`${styles.featureImage} ${styles.featureImageLight}`}
                           src={dashboardSrc}
+                          alt={section.imageAlt}
+                          loading="lazy"
+                        />
+                        <img
+                          className={`${styles.featureImage} ${styles.featureImageDark}`}
+                          src={dashboardDarkSrc}
                           alt={section.imageAlt}
                           loading="lazy"
                         />
@@ -369,11 +381,11 @@ export default function Home(): ReactNode {
               control.
             </p>
             <a
-              className={styles.maintainerLink}
+              className={styles.secondaryButton}
               href="https://codemagic.io"
               target="_blank"
               rel="noopener noreferrer">
-              Visit Codemagic.io →
+              Visit Codemagic.io
             </a>
           </div>
         </section>

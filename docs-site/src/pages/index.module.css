@@ -4,6 +4,7 @@
   /* Infima headings use --ifm-heading-font-family, not inherited font-family */
   --ifm-font-family-base: var(--cm-font-marketing);
   --ifm-heading-font-family: var(--cm-font-marketing);
+  --ifm-link-hover-color: var(--cm-neverblue);
   font-family: var(--ifm-font-family-base);
   overflow-x: clip;
 }
@@ -94,27 +95,44 @@
   background: var(--cm-brand-sunrise);
   color: var(--cm-text-white);
   box-shadow: var(--cm-btn-sunrise-shadow);
-  border: 1px solid transparent;
+  border: none;
+  outline: none;
 }
 
-.primaryButton:hover {
+.primaryButton:hover,
+.primaryButton:focus-visible {
   filter: brightness(1.02);
   color: var(--cm-text-white);
   text-decoration: none;
+  border: none;
+  outline: none;
 }
 
 .secondaryButton {
-  /* landing_pages .btn--border-blue (light-theme text) */
-  border: 2px solid var(--cm-neverblue);
-  color: var(--cm-neverblue);
-  background: transparent;
+  /* CodePush "Talk to Sales" secondary */
+  border: none;
+  color: var(--cm-text-1);
+  background: var(--cm-grey-bg);
 }
 
-.secondaryButton:hover {
-  border-color: var(--cm-neverblue);
-  background: var(--cm-neverblue);
-  color: var(--cm-text-white);
+.secondaryButton:hover,
+.secondaryButton:focus-visible {
+  background: var(--cm-grey-m);
+  color: var(--cm-text-1);
   text-decoration: none;
+  border: none;
+  outline: none;
+}
+
+[data-theme='dark'] .secondaryButton {
+  background: var(--cm-grey-bg);
+  color: var(--cm-text-white);
+}
+
+[data-theme='dark'] .secondaryButton:hover,
+[data-theme='dark'] .secondaryButton:focus-visible {
+  background: var(--cm-bg-level-5);
+  color: var(--cm-text-white);
 }
 
 .productShot {
@@ -182,6 +200,10 @@
   box-sizing: border-box;
 }
 
+.productShotImageDark {
+  display: none;
+}
+
 .whySection {
   position: relative;
   padding: 4.5rem 0 5rem;
@@ -218,7 +240,7 @@
 
 .whyCard {
   margin: 0;
-  padding: 1.25rem 1.35rem;
+  padding: 1.75rem 1.85rem;
   border: none;
   border-radius: 0.75rem;
   background: var(--ifm-background-surface-color);
@@ -228,15 +250,15 @@
 .whyCard h3 {
   margin: 0 0 0.5rem;
   color: var(--cm-text-1);
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.2em;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3em;
 }
 
 .whyCard p {
   margin: 0;
-  color: var(--ifm-font-color-secondary);
-  font-size: 18px;
+  color: var(--cm-text-1);
+  font-size: 1rem;
   line-height: 1.5em;
 }
 
@@ -277,7 +299,7 @@
 .featureCopy {
   position: relative;
   z-index: 1;
-  padding: 1.5rem 1.6rem;
+  padding: 2rem 2.5rem;
   border: none;
   border-radius: 1rem;
   background: var(--ifm-background-surface-color);
@@ -287,9 +309,9 @@
 .featureCopy h3 {
   margin: 0 0 0.75rem;
   color: var(--cm-text-1);
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.2em;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3em;
 }
 
 .sectionHeading {
@@ -310,15 +332,15 @@
 .sectionHeadingLead {
   margin: 0 auto;
   max-width: 48rem;
-  color: var(--ifm-font-color-secondary);
+  color: var(--cm-text-2);
   font-size: 18px;
   line-height: 1.5em;
 }
 
 .featureBullets {
-  font-size: 18px;
-  line-height: 1.5em;
-  color: var(--ifm-font-color-base);
+  font-size: 1rem;
+  line-height: 1.55em;
+  color: var(--cm-text-1);
   margin: 0 0 1.25rem;
   padding-left: 1.1rem;
 }
@@ -330,6 +352,12 @@
 .featureLink {
   font-size: 0.9375rem;
   font-weight: 600;
+  color: var(--ifm-link-color);
+}
+
+.featureLink:hover {
+  color: var(--ifm-link-hover-color);
+  text-decoration: none;
 }
 
 .featureMedia {
@@ -353,9 +381,8 @@
   border-radius: 0.5rem;
 }
 
-.maintainerSection {
-  padding: 4rem 0 5rem;
-  border-top: 1px solid var(--ifm-color-emphasis-200);
+.featureImageDark {
+  display: none;
 }
 
 .comparisonSection {
@@ -414,7 +441,7 @@
 .comparisonCard {
   position: relative;
   z-index: 1;
-  padding: 1.75rem 2rem 2rem;
+  padding: 2rem 2.25rem 2.25rem;
   border-radius: 1rem;
   background: var(--ifm-background-surface-color);
   box-shadow: var(--patch-home-card-shadow);
@@ -487,6 +514,8 @@
 }
 
 .comparisonGridRow .comparisonCell:last-child {
+  color: var(--cm-text-1);
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -497,7 +526,7 @@
 .comparisonFootnote {
   margin: 1.25rem auto 0;
   max-width: 36rem;
-  color: var(--ifm-font-color-secondary);
+  color: var(--cm-text-2);
   font-size: 0.875rem;
   line-height: 1.55;
 }
@@ -518,11 +547,16 @@
 .comparisonLinkSecondary {
   font-size: 0.9375rem;
   font-weight: 500;
-  color: var(--ifm-font-color-secondary);
+  color: var(--cm-text-2);
 }
 
 .comparisonLinkSecondary:hover {
-  color: var(--ifm-color-primary);
+  color: var(--ifm-link-hover-color);
+}
+
+.maintainerSection {
+  padding: 4rem 0 5rem;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
 }
 
 .maintainerInner {
@@ -541,15 +575,10 @@
 }
 
 .maintainerText {
-  margin: 0 0 1.25rem;
-  color: var(--ifm-font-color-secondary);
+  margin: 0 0 1.5rem;
+  color: var(--cm-text-2);
   font-size: 18px;
   line-height: 1.5em;
-}
-
-.maintainerLink {
-  font-size: 0.9375rem;
-  font-weight: 600;
 }
 
 @media (min-width: 768px) {
@@ -669,7 +698,7 @@
   }
 
   .featureCopy {
-    padding: 1.25rem;
+    padding: 1.75rem 2rem;
   }
 }
 
@@ -687,7 +716,7 @@
 
   .whyCard h3,
   .featureCopy h3 {
-    font-size: 24px;
+    font-size: 1.125rem;
   }
 }
 
@@ -700,7 +729,7 @@
   }
 
   .comparisonCard {
-    padding: 1.15rem;
+    padding: 1.35rem 1.5rem;
   }
 
   .comparisonGrid {
@@ -752,6 +781,25 @@
 
 [data-theme='dark'] .page {
   --patch-home-card-shadow: var(--cm-card-shadow);
+  --ifm-link-hover-color: var(--cm-sww-yellow);
+  --patch-home-surface: #0a1228;
+  background: var(--cm-bg-dark);
+  color: var(--cm-text-1);
+}
+
+[data-theme='dark'] .whyCard,
+[data-theme='dark'] .featureCopy,
+[data-theme='dark'] .comparisonCard {
+  background: var(--patch-home-surface);
+}
+
+[data-theme='dark'] .comparisonSection {
+  background: transparent;
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme='dark'] .maintainerSection {
+  border-top-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme='dark'] .comparisonBg::before {
@@ -783,23 +831,41 @@
   border-color: #232a3f;
 }
 
-[data-theme='dark'] .whyLead {
+[data-theme='dark'] .whyLead,
+[data-theme='dark'] .sectionHeadingLead,
+[data-theme='dark'] .comparisonFootnote {
   color: var(--cm-text-2);
 }
 
 [data-theme='dark'] .featureImageFrame {
-  background: #1a1f28;
+  background: var(--patch-home-surface);
   box-shadow: var(--patch-home-card-shadow);
+  padding: 1.25rem;
+}
+
+[data-theme='dark'] .featureImageLight {
+  display: none;
+}
+
+[data-theme='dark'] .featureImageDark {
+  display: block;
+  border-radius: 0.5rem;
 }
 
 [data-theme='dark'] .productShotFrame {
-  background: linear-gradient(
-    137deg,
-    rgba(255, 255, 255, 0.12) 23.28%,
-    rgba(255, 255, 255, 0.06) 71.87%
-  );
-  border-color: rgba(255, 255, 255, 0.28);
-  box-shadow:
-    0 4px 4px 0 rgba(0, 0, 0, 0.4),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+  background: var(--patch-home-surface);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.35);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-theme='dark'] .productShotImageLight {
+  display: none;
+}
+
+[data-theme='dark'] .productShotImageDark {
+  display: block;
+  border-color: transparent;
+  background: transparent;
 }

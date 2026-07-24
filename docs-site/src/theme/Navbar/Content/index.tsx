@@ -1,5 +1,7 @@
 import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
+import {useLocation} from '@docusaurus/router';
+import useBaseUrl from '@docusaurus/useBaseUrl';
 import {
   useThemeConfig,
   ErrorCauseBoundary,
@@ -76,6 +78,10 @@ export default function NavbarContent(): ReactNode {
   const items = useNavbarItems();
   const [leftItems, rightItems] = splitNavbarItems(items);
   const searchBarItem = items.find((item) => item.type === 'search');
+  const {pathname} = useLocation();
+  const homePath = useBaseUrl('/');
+  const isHomepage =
+    pathname === homePath || pathname === homePath.replace(/\/$/, '');
 
   return (
     <NavbarContentLayout
@@ -89,7 +95,7 @@ export default function NavbarContent(): ReactNode {
       right={
         <>
           <NavbarItems items={rightItems} />
-          {!searchBarItem && (
+          {!searchBarItem && !isHomepage && (
             <NavbarSearch className={styles.navbarSearch}>
               <SearchBar />
             </NavbarSearch>

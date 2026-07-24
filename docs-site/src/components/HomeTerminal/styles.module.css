@@ -1,12 +1,13 @@
 .terminal {
   --home-terminal-bg: #ffffff;
+  --home-terminal-chrome: #f5f7fb;
   --home-terminal-title: var(--cm-navy, #06225d);
-  --home-terminal-line-number: #97a5c5;
+  --home-terminal-prompt: var(--cm-neverblue, #0051ff);
   --home-terminal-shadow: 0 8px 28px rgba(6, 34, 93, 0.08);
   --home-terminal-border: 1px solid #e8ecf8;
 
   border: var(--home-terminal-border);
-  border-radius: 1.5rem;
+  border-radius: 1rem;
   background: var(--home-terminal-bg);
   overflow: hidden;
   box-shadow: var(--home-terminal-shadow);
@@ -15,20 +16,23 @@
 .bar {
   display: flex;
   align-items: center;
-  padding: 1.15rem 1.35rem 0.35rem;
+  padding: 0.7rem 1.15rem;
+  background: var(--home-terminal-chrome);
+  border-bottom: 1px solid var(--cm-bg-level-5, #e9efff);
 }
 
 .label {
   color: var(--home-terminal-title);
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
 .body {
   margin: 0;
-  padding: 0.85rem 1.15rem 1.35rem;
+  padding: 1rem 1.15rem 1.25rem;
   overflow-x: auto;
   font-size: 0.8125rem;
   line-height: 1.7;
@@ -42,13 +46,17 @@
   min-height: 1.7em;
 }
 
-.lineNumber {
-  flex: 0 0 2rem;
-  margin-right: 1rem;
-  color: var(--home-terminal-line-number);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+.prompt {
+  flex: 0 0 1.25rem;
+  margin-right: 0.75rem;
+  color: var(--home-terminal-prompt);
+  font-weight: 600;
+  text-align: left;
   user-select: none;
+}
+
+.promptEmpty {
+  visibility: hidden;
 }
 
 .lineContent {
@@ -59,10 +67,15 @@
 
 [data-theme='dark'] .terminal {
   --home-terminal-bg: #01091a;
-  --home-terminal-title: #ffffff;
-  --home-terminal-line-number: #5b7ab5;
+  --home-terminal-chrome: #0a1228;
+  --home-terminal-title: #9da4af;
+  --home-terminal-prompt: #33ccff;
   --home-terminal-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-  --home-terminal-border: none;
+  --home-terminal-border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme='dark'] .bar {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme='dark'] .body :global(.token.comment),

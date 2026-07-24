@@ -105,6 +105,38 @@ const config: Config = {
         },
       ],
     },
+    footer: {
+      style: 'light',
+      links: [
+        {
+          title: 'Docs',
+          items: [
+            {
+              label: 'Quickstart',
+              to: '/docs/',
+            },
+            {
+              label: 'Self-host guide',
+              to: '/docs/setup/self-host',
+            },
+          ],
+        },
+        {
+          title: 'Codemagic',
+          items: [
+            {
+              label: 'Codemagic.io',
+              href: 'https://codemagic.io',
+            },
+            {
+              label: 'CodePush',
+              href: 'https://codemagic.io/codepush',
+            },
+          ],
+        },
+      ],
+      copyright: `Built by Codemagic. © ${new Date().getFullYear()} Nevercode Ltd.`,
+    },
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,

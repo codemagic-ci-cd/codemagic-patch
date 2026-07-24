@@ -24,6 +24,26 @@ function guessLanguage(label: string, code: string): string {
   return 'typescript';
 }
 
+/** Shell-style gutter: `$` for commands, `›` for code, blank for empty/comment lines. */
+function promptForLine(
+  language: string,
+  lineText: string,
+  lineIndex: number,
+  firstCodeLine: number,
+): string {
+  const trimmed = lineText.trim();
+  if (trimmed === '') {
+    return '';
+  }
+  if (language === 'bash') {
+    if (trimmed.startsWith('#')) {
+      return '';
+    }
+    return '$';
+  }
+  return lineIndex === firstCodeLine ? '›' : '';
+}
+
 export default function HomeTerminal({
   label,
   children,
@@ -34,6 +54,8 @@ export default function HomeTerminal({
   const lang = language ?? guessLanguage(label, code);
   const prismTheme =
     colorMode === 'dark' ? themes.vsDark : themes.github;
+  const lines = code.split('\n');
+  const firstCodeLine = lines.findIndex((line) => line.trim() !== '');
 
   return (
     <div className={styles.terminal}>
@@ -45,18 +67,28 @@ export default function HomeTerminal({
           <pre
             className={`${styles.body} ${className}`}
             style={{...style, background: 'transparent'}}>
-            {tokens.map((line, i) => (
-              <div key={i} {...getLineProps({line})} className={styles.line}>
-                <span className={styles.lineNumber} aria-hidden="true">
-                  {i + 1}
-                </span>
-                <span className={styles.lineContent}>
-                  {line.map((token, key) => (
-                    <span key={key} {...getTokenProps({token})} />
-                  ))}
-                </span>
-              </div>
-            ))}
+            {tokens.map((line, i) => {
+              const lineText = lines[i] ?? '';
+              const prompt = promptForLine(lang, lineText, i, firstCodeLine);
+              return (
+                <div key={i} {...getLineProps({line})} className={styles.line}>
+                  <span
+                    className={
+                      prompt
+                        ? styles.prompt
+                        : `${styles.prompt} ${styles.promptEmpty}`
+                    }
+                    aria-hidden="true">
+                    {prompt}
+                  </span>
+                  <span className={styles.lineContent}>
+                    {line.map((token, key) => (
+                      <span key={key} {...getTokenProps({token})} />
+                    ))}
+                  </span>
+                </div>
+              );
+            })}
           </pre>
         )}
       </Highlight>
