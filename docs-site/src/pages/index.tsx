@@ -93,7 +93,7 @@ const SECTIONS = [
       'Same Compose building blocks for production self-host with TLS and GitHub OAuth',
     ],
     link: '/docs/',
-    linkLabel: 'Quickstart',
+    linkLabel: 'Local quickstart',
     reverse: true,
     media: 'terminal' as const,
     terminalLabel: 'local-eval',

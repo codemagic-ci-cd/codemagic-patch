@@ -34,7 +34,7 @@ Where the app runs determines which server URLs work.
 
 | How you install | Typical use | Server URLs |
 | --- | --- | --- |
-| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Quickstart](/docs/#point-your-own-app-at-localhost) |
+| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Local quickstart](/docs/#point-your-own-app-at-localhost) |
 | **Physical device (USB / local debug build)** | Dev phone on your desk | Your machine's LAN IP (not `localhost`), or an [Install](/docs/install) domain |
 | **TestFlight, Play internal testing, or other test track** | QA validates Staging like real users | Public HTTPS API + storage domains from [Install](/docs/install) |
 
@@ -121,5 +121,5 @@ Production devices must use a native binary built with the **Production** deploy
 
 - [First release](/docs/setup/first-release): initial publish
 - [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
-- [Quickstart](/docs/): local evaluation stack and on-device demo
+- [Local quickstart](/docs/): local evaluation stack and on-device demo
 - [Native setup](/docs/setup/native-setup): SDK and config keys

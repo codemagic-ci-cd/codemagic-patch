@@ -112,7 +112,7 @@ const config: Config = {
           title: 'Docs',
           items: [
             {
-              label: 'Quickstart',
+              label: 'Local quickstart',
               to: '/docs/',
             },
             {
