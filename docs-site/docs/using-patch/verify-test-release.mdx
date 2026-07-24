@@ -34,14 +34,14 @@ Where the app runs determines which server URLs work.
 
 | How you install | Typical use | Server URLs |
 | --- | --- | --- |
-| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Run locally](/docs/setup/local-development#point-your-app-at-localhost) |
-| **Physical device (USB / local debug build)** | Dev phone on your desk | Your machine's LAN IP (not `localhost`), or a [self-host](/docs/setup/self-host) domain |
-| **TestFlight, Play internal testing, or other test track** | QA validates Staging like real users | Public HTTPS API + storage domains from self-host |
+| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Quickstart](/docs/#point-your-own-app-at-localhost) |
+| **Physical device (USB / local debug build)** | Dev phone on your desk | Your machine's LAN IP (not `localhost`), or an [Install](/docs/install) domain |
+| **TestFlight, Play internal testing, or other test track** | QA validates Staging like real users | Public HTTPS API + storage domains from [Install](/docs/install) |
 
 You do not need separate guides for each path; the test loop is the same. Only the URLs and how you install the binary differ.
 
 :::tip
-For self-host Staging, most teams ship an internal or TestFlight build with the **Staging** deployment key embedded, then OTA against `https://updates.example.com`. Production users stay on the **Production** key until you promote.
+For Staging on a public install, most teams ship an internal or TestFlight build with the **Staging** deployment key embedded, then OTA against `https://updates.example.com`. Production users stay on the **Production** key until you promote.
 :::
 
 ## The test loop
@@ -122,5 +122,4 @@ Production devices must use a native binary built with the **Production** deploy
 - [First release](/docs/setup/first-release): initial publish
 - [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
 - [Quickstart](/docs/): local evaluation stack and on-device demo
-- [Run locally](/docs/setup/local-development): endpoints and localhost app config
 - [Native setup](/docs/setup/native-setup): SDK and config keys

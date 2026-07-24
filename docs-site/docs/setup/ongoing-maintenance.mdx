@@ -63,7 +63,7 @@ If you use [Cloudflare CDN](/docs/setup/cloudflare) and clients report stale upd
 
 ## Disk growth
 
-The default single-host stack keeps release artifacts in object storage and device metrics in Postgres (`metric_event` is not auto-pruned). Disk use grows with retained releases and traffic. See [Requirements](/docs/setup/requirements#machine-size-default-single-host-stack) for starting sizes. Plan retention or more disk before the volume fills.
+The default single-host stack keeps release artifacts in object storage and device metrics in Postgres (`metric_event` is not auto-pruned). Disk use grows with retained releases and traffic. See [Machine size](/docs/install#machine-size) for starting sizes. Plan retention or more disk before the volume fills.
 
 ## When the default stack is not enough
 
@@ -72,6 +72,6 @@ Most installs stay on one Docker host. Add [Cloudflare](/docs/setup/cloudflare) 
 ## Related
 
 - [Operations](/docs/reference/operations): backup, restore, upgrade, and smoke commands
-- [Self-host](/docs/setup/self-host): first install and verify
+- [Install](/docs/install): first install and verify
 - [Security](/docs/using-patch/security): tokens, access, and hardening
 - [Preparing for production](/docs/using-patch/preparing-for-production): release-side checklist before real users

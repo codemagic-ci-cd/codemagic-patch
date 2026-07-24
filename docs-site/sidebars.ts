@@ -26,9 +26,7 @@ const sidebars: SidebarsConfig = {
           label: 'Server',
           collapsible: false,
           items: [
-            'setup/requirements',
-            'setup/local-development',
-            'setup/self-host',
+            'setup/install',
             'setup/cloudflare',
             'setup/infrastructure',
             'setup/ongoing-maintenance',

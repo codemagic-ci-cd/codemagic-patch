@@ -22,9 +22,7 @@ export const LLMS_SECTIONS = [
   {
     label: 'Setup',
     docIds: [
-      'setup/requirements',
-      'setup/local-development',
-      'setup/self-host',
+      'setup/install',
       'setup/cloudflare',
       'setup/infrastructure',
       'setup/ongoing-maintenance',

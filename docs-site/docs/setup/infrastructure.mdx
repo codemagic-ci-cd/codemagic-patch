@@ -9,7 +9,7 @@ llmsDescription: 'Storage and delivery adapters — S3, GCS, MinIO, base-url, Cl
 # Infrastructure adapters
 
 :::info
-Most teams use the default [self-host](/docs/setup/self-host) Compose stack and never touch adapter settings. This page is for higher-scale or custom deployments, external object storage, a CDN in front of downloads, or splitting the API and worker.
+Most teams use the default [Install](/docs/install) Compose stack and never touch adapter settings. This page is for higher-scale or custom deployments, external object storage, a CDN in front of downloads, or splitting the API and worker.
 :::
 
 Patch is an integrated product, not a plugin marketplace. Under the hood it has two fixed integration points, storage adapters and delivery adapters, that let you swap backends without changing the CLI, dashboard, or SDK.
@@ -117,6 +117,6 @@ If you add a CDN, `CodemagicPatchDownloadBaseUrl` should match the CDN-facing ba
 - [Configuration reference](/docs/reference/configuration): all env vars
 - [How delivery works](/docs/using-patch/delivery): manifest paths and public vs internal objects
 - [Cloudflare setup](/docs/setup/cloudflare): DNS, CDN delivery adapter, install flags
-- [Self-host](/docs/setup/self-host): default install
+- [Install](/docs/install): default install
 - [Ongoing maintenance](/docs/setup/ongoing-maintenance): backups, upgrades, health
 - [Operations](/docs/reference/operations): backup, restore, upgrade commands

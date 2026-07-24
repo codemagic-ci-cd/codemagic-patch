@@ -24,7 +24,7 @@ const LLMS_PREAMBLE = [
   '**Where to start**',
   '- Try Patch locally → `/intro/local-quickstart.md`',
   '- How it works → `/docs/introduction/how-it-works.md`',
-  '- Self-host in production → `/docs/setup/self-host.md`',
+  '- Install for production → `/docs/install.md`',
   '- Migrate from CodePush → `/docs/migration/migrating-from-codepush.md`',
   '- Migrate from Expo Updates → `/docs/migration/migrating-from-expo-updates.md`',
   '- CLI reference → `/docs/reference/cli-reference.md`',

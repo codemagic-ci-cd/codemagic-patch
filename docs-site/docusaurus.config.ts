@@ -116,8 +116,8 @@ const config: Config = {
               to: '/docs/',
             },
             {
-              label: 'Self-host guide',
-              to: '/docs/setup/self-host',
+              label: 'Install guide',
+              to: '/docs/install',
             },
           ],
         },

@@ -16,7 +16,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 
 | Expo Updates | Codemagic Patch |
 | --- | --- |
-| EAS-hosted update server | [Self-hosted](/docs/setup/self-host) Patch API + storage |
+| EAS-hosted update server | [Self-hosted](/docs/install) Patch API + storage |
 | Update channel (`preview`, `production`, …) | Deployment (`Staging`, `Production`, …) |
 | `runtimeVersion` / fingerprint (EAS) | `targetBinaryVersion` + native [fingerprint](/docs/introduction/core-concepts) |
 | `eas update` | `cmpatch release-react` |
@@ -27,7 +27,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 
 ## 1. Stand up Patch
 
-Follow [Self-host](/docs/setup/self-host) or the [Quickstart](/docs/) for a local evaluation stack. Note your API URL and download base URL; they replace EAS Update endpoints in app config.
+Follow [Install](/docs/install) or the [Quickstart](/docs/) for a local evaluation stack. Note your API URL and download base URL; they replace EAS Update endpoints in app config.
 
 Create Patch apps and deployments:
 

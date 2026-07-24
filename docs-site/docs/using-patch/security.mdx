@@ -14,9 +14,9 @@ Patch separates who can publish updates (CLI and dashboard auth) from whether cl
 
 ### Dashboard sign-in
 
-The dashboard uses GitHub OAuth. Self-host installs require a GitHub OAuth App; the first admin email must match a verified primary GitHub address when `REGISTRATION_MODE=invite_only`.
+The dashboard uses GitHub OAuth. Installs with domains require a GitHub OAuth App; the first admin email must match a verified primary GitHub address when `REGISTRATION_MODE=invite_only`.
 
-See [Self-host](/docs/setup/self-host#prepare-a-github-oauth-app) for OAuth App setup ([register an OAuth App](https://github.com/settings/applications/new)).
+See [Install](/docs/install#github-oauth-app) for OAuth App setup ([register an OAuth App](https://github.com/settings/applications/new)).
 
 ### CLI sign-in
 
@@ -71,7 +71,7 @@ Embed the matching public key in native SDK config as `CodemagicPatchPublicKey` 
 
 With the key in the binary, the client rejects releases with missing or invalid signatures.
 
-## Self-host secrets
+## Server secrets
 
 `.env.selfhost` contains production secrets (Postgres, MinIO, OAuth, worker keys). Back it up and never commit it. See [Configuration reference](/docs/reference/configuration).
 

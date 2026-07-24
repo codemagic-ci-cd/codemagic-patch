@@ -46,7 +46,7 @@ When it finishes you get:
 - Seeded `demo-app-ios` / `demo-app-android` for the on-device demo, plus **Example Data** (Staging / Production releases and metrics) so the dashboard looks populated before you publish
 
 :::warning
-Evaluation only, not a deployment. Authentication is disabled and all ports bind to localhost. For production, follow [Self-host](/docs/setup/self-host).
+Evaluation only, not a production install. Authentication is disabled and all ports bind to localhost. To deploy with your own domains, follow [Install](/docs/install).
 :::
 
 ## 2. Sign in with the CLI
@@ -146,12 +146,21 @@ Re-print the ready banner without reinstalling the CLI:
 The seeded API token (`cm_pat_local-dev-token-change-me-00000001`) is for local scripting only. Do not reuse it in production.
 :::
 
+### Point your own app at localhost
+
+| Config key | Local value |
+| --- | --- |
+| `CodemagicPatchApiUrl` | `http://localhost:3000` |
+| `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
+| `CodemagicPatchDeploymentKey` | `dev_local_ios_deployment_key` or `dev_local_android_deployment_key` |
+
+Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does. Use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs. The on-device demo uses `adb reverse` for the Android emulator.
+
 ## Where to go next
 
 | Goal | Page |
 | --- | --- |
-| Endpoints, fixtures, pointing your own app at localhost | [Run locally](/docs/setup/local-development) |
 | Install and configure the app SDK | [Native setup](/docs/setup/native-setup) |
 | Confirm update behavior on your app | [Verify a test release](/docs/using-patch/verify-test-release) |
 | Coming from CodePush or Expo Updates | [Migration](/docs/migration/migrating-from-codepush) |
-| Production deployment | [Self-host](/docs/setup/self-host) |
+| Deploy with your own domains | [Install](/docs/install) |
