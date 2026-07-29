@@ -67,9 +67,33 @@ const K = new Uint32Array(
   ),
 );
 
+// Hand-rolled UTF-8 encoding: Hermes ships TextEncoder only from RN 0.74,
+// and the SDK supports RN 0.73.
 function encodeUtf8(str: string): Uint8Array {
-  const encoder = new TextEncoder();
-  return encoder.encode(str);
+  const bytes: number[] = [];
+  for (let i = 0; i < str.length; i++) {
+    const code = str.codePointAt(i) as number;
+    if (code > 0xffff) i++; // consumed both halves of a surrogate pair
+    if (code <= 0x7f) {
+      bytes.push(code);
+    } else if (code <= 0x7ff) {
+      bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+    } else if (code <= 0xffff) {
+      bytes.push(
+        0xe0 | (code >> 12),
+        0x80 | ((code >> 6) & 0x3f),
+        0x80 | (code & 0x3f),
+      );
+    } else {
+      bytes.push(
+        0xf0 | (code >> 18),
+        0x80 | ((code >> 12) & 0x3f),
+        0x80 | ((code >> 6) & 0x3f),
+        0x80 | (code & 0x3f),
+      );
+    }
+  }
+  return Uint8Array.from(bytes);
 }
 
 function padMessage(bytes: Uint8Array): Uint8Array {
