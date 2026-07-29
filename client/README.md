@@ -24,7 +24,8 @@ From this SDK:
 
 ## Requirements
 
-- React Native `0.76+` — Old Architecture and New Architecture
+- React Native `0.73+` — New Architecture support starts at RN 0.76; RN 0.73–0.75 are supported on the Old (Paper) Architecture only
+- Android `minSdkVersion` 23+ (the library follows the host's `rootProject.ext.minSdkVersion`; without one it builds at 23)
 - Android native build with CMake/JNI support
 - iOS native build with CocoaPods and mixed Swift/ObjC++ compilation
 - Expo SDK 52+ (via the bundled config plugin — see [Expo apps](#expo-apps))
@@ -38,7 +39,7 @@ npm install @codemagic/react-native-patch
 yarn add @codemagic/react-native-patch
 ```
 
-`react` (`>=18`) and `react-native` (`>=0.76`) are peer dependencies. On iOS, install the native pod:
+`react` (`>=18`) and `react-native` (`>=0.73`) are peer dependencies. On iOS, install the native pod:
 
 ```sh
 cd ios && pod install
@@ -139,6 +140,25 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    }
    ```
 
+   On RN ≤ 0.76, where the app template still ships an Objective-C++ `AppDelegate.mm`, override `sourceURLForBridge:` with the same selection. The native module is a Swift pod exposed to Objective-C as `@objc(CodemagicPatch)`; its generated `-Swift.h` is not on the host target's header search paths and `@import` is unavailable in ObjC++, so forward-declare the surface you call:
+
+   ```objc
+   // CodemagicPatch is a Swift pod exposed as @objc(CodemagicPatch); forward-declare it —
+   // the implementation links in from the pod's static library.
+   @interface CodemagicPatch : NSObject
+   + (NSURL *_Nullable)bundleURL;
+   @end
+
+   - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
+   {
+     NSURL *otaBundle = [CodemagicPatch bundleURL];
+     if (otaBundle != nil) {
+       return otaBundle;
+     }
+     return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
+   }
+   ```
+
    Expected embedded bundle names are `index.android.bundle` (Android) and `main.jsbundle` (iOS). If the SDK cannot determine a non-blank binary version (`versionName` / `CFBundleShortVersionString`), it no-ops and falls back to the embedded bundle.
 
 3. **Register the native module** for your architecture — the TurboModule (New Architecture) or the bridge module/package (Old Architecture). Autolinking handles this in most apps.
@@ -188,6 +208,8 @@ import {
 ## Documentation
 
 Full integration guide, update protocol, and self-hosting instructions live in the [Codemagic Patch repository](https://github.com/codemagic-ci-cd/codemagic-patch).
+
+Coming from `react-native-code-push`? The [CodePush migration guide](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/migrate-from-codepush.md) maps the native config resources, JS APIs, and CLI commands to their Codemagic Patch equivalents.
 
 ## License
 
