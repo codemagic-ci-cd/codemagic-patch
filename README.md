@@ -73,6 +73,10 @@ docker compose -f docker-compose.dev.yml down -v
 16. [CLI command reference](#cli-command-reference)
 17. [Repository layout](#repository-layout)
 
+**Guides**
+
+18. [Migrating from CodePush](docs/migrate-from-codepush.md)
+
 ---
 
 ## How it works
@@ -141,7 +145,8 @@ The default self-host stack runs four services on a single Docker host:
 
 **React Native app**
 
-- React Native `>=0.76`, React `>=18`
+- React Native `>=0.73`, React `>=18` — New Architecture support starts at RN 0.76; RN 0.73–0.75 are supported on the Old (Paper) Architecture only
+- Android `minSdkVersion` 23+
 
 ---
 
@@ -337,6 +342,8 @@ cmpatch deployment list --app MyApp-Android --format table
 
 ## Part 4 — Connect your React Native app
 
+> **Migrating from CodePush?** The [migration guide](docs/migrate-from-codepush.md) maps `react-native-code-push` native config, JS APIs, and `code-push` CLI commands to their Codemagic Patch equivalents.
+
 Add the SDK:
 
 ```bash
@@ -378,6 +385,8 @@ Wire the config and native bundle selection manually.
   // ...
   CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
   ```
+  On RN ≤ 0.76, where the app template still ships an Objective-C++ `AppDelegate.mm`, override `sourceURLForBridge:` with the same selection — see [`client/README.md` §Configuration](client/README.md#configuration) for the forward-declaration snippet.
+
   Reference: `client/plugin/src/withIosBundleURL.ts`
 
 **Android**
@@ -939,6 +948,7 @@ List/metrics commands accept `--format table|json`.
 | `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
 | `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
 | `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
+| `docs/`            | —                         | Guides — e.g. [migrating from CodePush](docs/migrate-from-codepush.md)  |
 
 
 ## Feedback
