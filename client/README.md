@@ -71,11 +71,11 @@ Configuration lives in **native resources** (deployment key, API URL, download b
 }
 ```
 
-Configure at least one platform. Every block you provide needs `deploymentKey`, `downloadBaseUrl`, and `apiUrl` (`publicKey` is optional). Then run `expo prebuild`.
+Configure at least one platform. Every block you provide needs `deploymentKey`, `downloadBaseUrl`, and `apiUrl` (`publicKey` is optional). Then run `expo prebuild`. See [Configuration](#configuration) for where each value comes from.
 
 ### Bare React Native
 
-Add `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` (optional `CodemagicPatchPublicKey`) to Android `strings.xml` and iOS `Info.plist`, then point RN’s JS bundle path at `CodemagicPatch.getJSBundleFile` / `CodemagicPatch.bundleURL()` so boot order is pending package → current package → embedded bundle.
+Add `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` (optional `CodemagicPatchPublicKey`) to Android `strings.xml` and iOS `Info.plist`, then point RN’s JS bundle path at `CodemagicPatch.getJSBundleFile` / `CodemagicPatch.bundleURL()` so boot order is pending package → current package → embedded bundle. Full snippets are in [Configuration](#configuration) below.
 
 ### Call `sync()`
 
@@ -104,9 +104,37 @@ Codemagic Patch is configured through **native resources**, not a JS API — the
 
 The two URLs point at different systems (API server vs. object storage / CDN), which is why one usually carries a path and the other does not.
 
+**Where the values come from:** the deployment key is the `DEPLOYMENT_KEY` column of `cmpatch deployment list --app <app-name> --format table` (or the deployment's page in the dashboard); the API URL and download base URL are printed by the self-host installer when the server is set up. Use **separate apps — and therefore separate deployment keys — for iOS and Android**.
+
 ### Bare React Native
 
-1. **Declare the resources.** Add the keys above to Android `strings.xml` and iOS `Info.plist`.
+1. **Declare the resources.**
+
+   iOS — `ios/<YourApp>/Info.plist`:
+
+   ```xml
+   <key>CodemagicPatchDeploymentKey</key>
+   <string>ios-staging-deployment-key</string>
+   <key>CodemagicPatchDownloadBaseUrl</key>
+   <string>https://storage.updates.example.com/codemagic-patch</string>
+   <key>CodemagicPatchApiUrl</key>
+   <string>https://updates.example.com</string>
+   <!-- optional, only when enforcing code signing -->
+   <key>CodemagicPatchPublicKey</key>
+   <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+   ```
+
+   Android — `android/app/src/main/res/values/strings.xml`:
+
+   ```xml
+   <resources>
+     <string name="CodemagicPatchDeploymentKey" translatable="false">android-staging-deployment-key</string>
+     <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage.updates.example.com/codemagic-patch</string>
+     <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
+     <!-- optional, only when enforcing code signing -->
+     <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+   </resources>
+   ```
 
 2. **Wire native bundle selection** before the RN bridge starts, so boot order is **pending package → current package → embedded bundle**.
 
@@ -129,14 +157,23 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    }
    ```
 
-   iOS — override `bundleURL()` / `sourceURL(for:)` in `AppDelegate` with the same selection order:
+   iOS — import `CodemagicPatchClient` and override `bundleURL()` / `sourceURL(for:)` in `AppDelegate` with the same selection order. Keep the `DEBUG` branch pointing at Metro so local development keeps working:
 
    ```swift
-   override func bundleURL() -> URL? {
-     if let otaBundle = CodemagicPatch.bundleURL() {
-       return otaBundle
+   import CodemagicPatchClient
+
+   class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
+     override func sourceURL(for bridge: RCTBridge) -> URL? {
+       self.bundleURL()
      }
-     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+
+     override func bundleURL() -> URL? {
+   #if DEBUG
+       RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+   #else
+       CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+   #endif
+     }
    }
    ```
 
@@ -151,15 +188,17 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
 
    - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
    {
-     NSURL *otaBundle = [CodemagicPatch bundleURL];
-     if (otaBundle != nil) {
-       return otaBundle;
-     }
-     return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
+   #if DEBUG
+     return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
+   #else
+     return [CodemagicPatch bundleURL] ?: [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
+   #endif
    }
    ```
 
    Expected embedded bundle names are `index.android.bundle` (Android) and `main.jsbundle` (iOS). If the SDK cannot determine a non-blank binary version (`versionName` / `CFBundleShortVersionString`), it no-ops and falls back to the embedded bundle.
+
+   > **Debug builds load JS from Metro**, so OTA updates are not picked up there — that is expected, not a wiring problem. To see an update apply, run a release-style build.
 
 3. **Register the native module** for your architecture — the TurboModule (New Architecture) or the bridge module/package (Old Architecture). Autolinking handles this in most apps.
 

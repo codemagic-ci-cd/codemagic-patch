@@ -147,6 +147,7 @@ The default self-host stack runs four services on a single Docker host:
 
 - React Native `>=0.73`, React `>=18` — New Architecture support starts at RN 0.76; RN 0.73–0.75 are supported on the Old (Paper) Architecture only
 - Android `minSdkVersion` 23+
+- Expo: SDK 52+ via the bundled config plugin (prebuild / development builds). **Expo Go is not supported** — the native module is not part of the Expo Go runtime.
 
 ---
 
@@ -367,6 +368,10 @@ Wire the config and native bundle selection manually.
 
 **iOS**
 
+- Install the native pod:
+  ```bash
+  cd ios && pod install && cd ..
+  ```
 - Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, `CodemagicPatchApiUrl` to `ios/<YourApp>/Info.plist`:
   ```xml
   <key>CodemagicPatchDeploymentKey</key>
@@ -379,11 +384,23 @@ Wire the config and native bundle selection manually.
   <key>CodemagicPatchPublicKey</key>
   <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
   ```
-- In your AppDelegate, prefer the OTA bundle before the embedded fallback:
+- In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working. On the Swift AppDelegate (RN 0.77+ template):
   ```swift
   import CodemagicPatchClient
-  // ...
-  CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+
+  class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
+    override func sourceURL(for bridge: RCTBridge) -> URL? {
+      self.bundleURL()
+    }
+
+    override func bundleURL() -> URL? {
+  #if DEBUG
+      RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+  #else
+      CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+  #endif
+    }
+  }
   ```
   On RN ≤ 0.76, where the app template still ships an Objective-C++ `AppDelegate.mm`, override `sourceURLForBridge:` with the same selection — see [`client/README.md` §Configuration](client/README.md#configuration) for the forward-declaration snippet.
 
@@ -401,15 +418,36 @@ Wire the config and native bundle selection manually.
     <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
   </resources>
   ```
-- In `MainApplication.kt`, make `getJSBundleFile()` (or `getDefaultReactHost(..., jsBundleFilePath = ...)`) use the SDK:
+- In `MainApplication.kt`, feed the SDK's bundle path into React Native. On RN ≤ 0.81 (`ReactNativeHost`), override `getJSBundleFile()` inside the host object:
   ```kotlin
   import io.codemagic.patch.CodemagicPatch
   // ...
-  override fun getJSBundleFile(): String? = CodemagicPatch.getJSBundleFile(applicationContext)
+  override val reactNativeHost: ReactNativeHost =
+      object : DefaultReactNativeHost(this) {
+        // ...existing overrides...
+        override fun getJSBundleFile(): String? =
+            CodemagicPatch.getJSBundleFile(applicationContext)
+      }
+  ```
+  On RN ≥ 0.82 (`reactHost` via `getDefaultReactHost`), pass it as `jsBundleFilePath`:
+  ```kotlin
+  import io.codemagic.patch.CodemagicPatch
+  // ...
+  override val reactHost: ReactHost by lazy {
+    getDefaultReactHost(
+      context = applicationContext,
+      packageList = PackageList(this).packages,
+      jsBundleFilePath = CodemagicPatch.getJSBundleFile(applicationContext),
+    )
+  }
   ```
   Reference: `client/plugin/src/withAndroidBundleFile.ts`
 
+> **Debug builds load JS from Metro**, so OTA updates are not picked up there — that is expected, not a wiring problem. To see an update apply, run a release-style build (`npx react-native run-ios --mode Release` / `npx react-native run-android --mode release`).
+
 ### Option B — Expo (prebuild)
+
+Requires Expo SDK 52+ and a prebuild / development-build workflow — **Expo Go is not supported**.
 
 Add the config plugin to `app.json` / `app.config.js`:
 
@@ -446,8 +484,8 @@ cd ios && pod install && cd ..
 
 The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) **and** wires native bundle selection for you — the same wiring shown in Option A:
 
-- **iOS** AppDelegate → prefers `CodemagicPatch.bundleURL()`, falling back to the embedded bundle.
-- **Android** MainApplication → prefers `CodemagicPatch.getJSBundleFile(applicationContext)`.
+- **iOS** AppDelegate → prefers `CodemagicPatch.bundleURL()`, falling back to the embedded bundle. The `DEBUG` / Metro branch is left untouched, so local development keeps working.
+- **Android** MainApplication → prefers `CodemagicPatch.getJSBundleFile(applicationContext)` (both the RN ≤ 0.81 `getJSBundleFile()` and RN ≥ 0.82 `jsBundleFilePath` host shapes are handled).
 
 ### Run updates in app code
 
