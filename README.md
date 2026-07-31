@@ -153,6 +153,10 @@ The default self-host stack runs four services on a single Docker host:
 
 ## Part 1 — Run the server (self-host)
 
+> Condensed setup. The full self-hosting guide — smoke checks, storage
+> hardening, and operational detail — is
+> [`docs/self-hosting-compose.md`](docs/self-hosting-compose.md).
+
 ### 1.1 Prepare a GitHub OAuth App
 
 Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. Create **one** OAuth App and collect:

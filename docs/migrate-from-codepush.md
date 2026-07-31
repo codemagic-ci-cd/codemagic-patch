@@ -10,8 +10,9 @@ to Codemagic Patch. It covers the two things that change on your side:
    `code-push` CLI (or `appcenter codepush`) to `cmpatch`
 
 Server setup is a prerequisite, not part of this guide. See
-[Part 1 — Run the server (self-host)](../README.md#part-1--run-the-server-self-host)
-in the root README for a production self-host, or the
+[`docs/self-hosting-compose.md`](self-hosting-compose.md) for a production
+self-host ([Part 1 of the root README](../README.md#part-1--run-the-server-self-host)
+is the condensed version), or the
 [local quickstart](../README.md#quickstart--try-it-locally) to evaluate on a
 laptop first.
 
