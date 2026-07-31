@@ -703,7 +703,7 @@ cmpatch release list --app MyApp-iOS --deployment Staging --format table
 cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
 ```
 
-> 💡 `cmpatch bundle --platform ios` builds a `.cmpatch` artifact **without** uploading — useful for inspecting or publishing later via `cmpatch release create --bundle-path file.cmpatch`.
+> 💡 `cmpatch bundle --platform ios` builds a `.cmpatch` artifact **without** uploading — useful for inspecting or publishing later via `cmpatch release create --bundle-path file.cmpatch`.When building a `.cmpatch` artifact with code signing enabled, the `--private-key-path` parameter must be provided. For example: `cmpatch bundle --private-key-path <path-to-key>`.
 
 ---
 
@@ -767,6 +767,18 @@ Require signed releases at app creation, or enable it later:
 cmpatch app create  --name MySignedApp-iOS --require-code-signing
 cmpatch app setting --app MyApp-iOS --require-code-signing=true
 ```
+
+Create private and public keys using OpenSSL:
+
+```bash
+# generate private RSA key and write it to patch-private-key.pem file
+openssl genrsa -out patch-private-key.pem 2048
+
+# export public key from patch-private-key.pem into patch-public-key.pem
+openssl rsa -in patch-private-key.pem -pubout -out patch-public-key.pem
+```
+
+You can then expose the public key by running `cat patch-public-key.pem`. Copy the output (including the -----BEGIN PUBLIC KEY----- and -----END PUBLIC KEY----- lines) and add it to `Info.plist` as the `CodemagicPatchPublicKey` value for iOS and to `strings.xml` as the `CodemagicPatchPublicKey` for Android.
 
 When publishing a signed app, sign the package-hash JWT with your private key:
 
