@@ -9,6 +9,7 @@ import type { Artifact } from "@codemagic/patch-shared";
 
 import { useCreateReleaseFromArtifact } from "../../../api/hooks/releases";
 import { classifyProblem, HttpProblemError } from "../../../api/problem";
+import { SOURCE_REPO_URL } from "../../../branding";
 import type { ProblemBehavior } from "../../../api/problem";
 import { useToast } from "../../../components/overlay/ToastProvider";
 import { toastReleaseWarnings } from "./releaseWarnings";
@@ -45,6 +46,8 @@ import {
   seedPolicyForm,
   type PolicyForm,
 } from "../../../model/artifactUpload";
+
+const README_CODE_SIGNING_URL = `${SOURCE_REPO_URL}#code-signing-optional`;
 
 export interface UseUploadArtifactFormOptions {
   deploymentId: string;
@@ -126,7 +129,10 @@ export function useUploadArtifactForm({
           const created = data.release;
           toast.success(
             `Uploaded ${created.releaseLabel} to ${deploymentName}`,
-            { description: "Opening the new release — its worker job is queued." },
+            {
+              description:
+                "Opening the new release — its worker job is queued.",
+            },
           );
           toastReleaseWarnings(toast, data.warnings);
           onComplete();
@@ -145,9 +151,19 @@ export function useUploadArtifactForm({
   };
 
   const behavior = problemBehavior(createMutation.error);
+  const notice = createMutation.isError ? (
+    <ErrorSlot
+      behavior={behavior}
+      error={createMutation.error}
+      busy={busy}
+      onUploadAnyway={() => submit(true)}
+    />
+  ) : undefined;
 
   const updateForm = (patch: Partial<PolicyForm>) => {
-    setForm((previous) => (previous === null ? previous : { ...previous, ...patch }));
+    setForm((previous) =>
+      previous === null ? previous : { ...previous, ...patch },
+    );
   };
 
   const content = (
@@ -250,7 +266,9 @@ export function useUploadArtifactForm({
                   <span className="flex flex-none items-center gap-[7px]">
                     <input
                       className={`${INPUT} ${
-                        rolloutValue === null ? INPUT_STATE.invalid : INPUT_STATE.normal
+                        rolloutValue === null
+                          ? INPUT_STATE.invalid
+                          : INPUT_STATE.normal
                       } text-right tabular-nums`}
                       style={{ width: 86 }}
                       inputMode="numeric"
@@ -313,15 +331,6 @@ export function useUploadArtifactForm({
                   }
                 />
               </div>
-
-              {createMutation.isError ? (
-                <ErrorSlot
-                  behavior={behavior}
-                  error={createMutation.error}
-                  busy={busy}
-                  onUploadAnyway={() => submit(true)}
-                />
-              ) : null}
             </form>
           ) : null}
         </>
@@ -352,7 +361,7 @@ export function useUploadArtifactForm({
     </>
   );
 
-  return { content, footer, busy, requestClose, reset };
+  return { content, footer, notice, busy, requestClose, reset };
 }
 
 function DescriptorSummary({
@@ -394,7 +403,9 @@ function DescriptorSummary({
       </div>
       <div className={SUMMARY_ROW}>
         <span className={SUMMARY_KEY}>Bundle size</span>
-        <span className={SUMMARY_VALUE}>{formatBytes(descriptor.bundleSize)}</span>
+        <span className={SUMMARY_VALUE}>
+          {formatBytes(descriptor.bundleSize)}
+        </span>
       </div>
       <div className={SUMMARY_ROW}>
         <span className={SUMMARY_KEY}>Built with</span>
@@ -444,16 +455,43 @@ function ErrorSlot({
   busy: boolean;
   onUploadAnyway: () => void;
 }) {
-  if (behavior === "duplicate-release") {
+  if (isSignatureRequiredProblem(error)) {
     return (
       <div
-        className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK} mt-[18px]`}
+        className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK}`}
         role="alert"
       >
         <AlertIcon />
         <div>
-          <b>This deployment already has this content.</b> Uploading again records
-          a duplicate release entry.
+          <b>This app requires signed releases.</b> Rebuild this .cmpatch
+          artifact with{" "}
+          <code className="rounded bg-red-tint px-1 py-0.5">
+            cmpatch bundle --private-key-path &lt;pem&gt;
+          </code>
+          , then upload the signed artifact. Start with the{" "}
+          <a
+            className="font-bold underline underline-offset-2"
+            href={README_CODE_SIGNING_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            README code signing guide
+          </a>
+          .
+        </div>
+      </div>
+    );
+  }
+  if (behavior === "duplicate-release") {
+    return (
+      <div
+        className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK}`}
+        role="alert"
+      >
+        <AlertIcon />
+        <div>
+          <b>This deployment already has this content.</b> Uploading again
+          records a duplicate release entry.
           <div className="mt-2.5">
             <button
               type="button"
@@ -470,7 +508,7 @@ function ErrorSlot({
   }
   return (
     <div
-      className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`}
+      className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK}`}
       role="alert"
     >
       <AlertIcon />
@@ -488,6 +526,23 @@ function describeProblem(error: unknown): string {
     return error.detail ?? error.title ?? "The upload couldn't be completed.";
   }
   return "The upload couldn't be completed. Check your connection and try again.";
+}
+
+function isSignatureRequiredProblem(error: unknown): boolean {
+  if (!(error instanceof HttpProblemError)) {
+    return false;
+  }
+  if (error.typeSuffix !== "validation-error") {
+    return false;
+  }
+  return (
+    error.errors?.some(
+      (fieldError) =>
+        fieldError.reason === "required" &&
+        (fieldError.field === "metadata.signature" ||
+          fieldError.field === "signature"),
+    ) ?? false
+  );
 }
 
 function IconSvg({ children }: { children: ReactNode }) {

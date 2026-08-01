@@ -16,6 +16,7 @@ import { useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { useApps, useCreateApp } from "../api/hooks/apps";
+import { SOURCE_REPO_URL } from "../branding";
 import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { Modal } from "../components/overlay/Modal";
@@ -494,8 +495,7 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
 
 // --- Presentation helpers ----------------------------------------------------
 
-const CONNECT_APP_DOCS_URL =
-  "https://github.com/codemagic-ci-cd/codemagic-patch#part-4--connect-your-react-native-app";
+const CONNECT_APP_DOCS_URL = `${SOURCE_REPO_URL}#part-4--connect-your-react-native-app`;
 
 function AppCreatedSuccess({
   appName,
