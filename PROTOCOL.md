@@ -250,26 +250,60 @@ Rules:
 tar** stream. This is a deliberately narrow, load-bearing wire contract: the
 server writer and the client C extractor each implement and enforce exactly the
 subset below, so a producer that switches to a general-purpose tar library
-(which typically emits directory entries and PAX/GNU headers for long paths or
-non-zero mtime) would produce archives every client rejects. Any change to the
-writer must preserve this profile or update all decoders together.
+(which typically emits directory entries, PAX records, or non-zero mtime) would
+produce archives every client rejects. Any change to the writer must preserve
+this profile or update all decoders together.
 
 **Tar profile** (512-byte blocks, `ustar` magic at offset 257, version `00` at
 offset 263):
 
 - **Regular files only.** The type flag (offset 156) is `'0'` (`0x30`) — a NUL
-  byte is also accepted as a regular file. Decoders **must reject** any other
-  type, including directory (`'5'`), symlink, hardlink, and PAX/GNU extension
-  records (`'x'`, `'g'`, `'L'`, `'K'`). There are **no directory entries**;
-  parent directories are implied by file paths and created on extraction.
+  byte is also accepted as a regular file. The only other accepted type is the
+  GNU long-name record (`'L'`) defined under **Long paths** below. Decoders
+  **must reject** every other type, including directory (`'5'`), symlink,
+  hardlink, and PAX/GNU extension records (`'x'`, `'g'`, `'K'`). There are
+  **no directory entries**; parent directories are implied by file paths and
+  created on extraction.
 - **Zeroed metadata.** `mode` = `0644`, `uid` = `0`, `gid` = `0`, `mtime` = `0`.
   `uname`/`gname`/`devmajor`/`devminor` are left empty. This keeps the archive
   byte-identical regardless of the build host.
 - **Long paths via `ustar` prefix splitting.** A path longer than 100 bytes is
   split at a `/` boundary into `name` (≤100 bytes, offset 0) and `prefix`
-  (≤155 bytes, offset 345); decoders reconstruct `prefix + "/" + name`. A path
-  that cannot be split to fit both fields is unrepresentable and is an error —
-  no `'L'`/PAX long-name fallback exists.
+  (≤155 bytes, offset 345); decoders reconstruct `prefix + "/" + name`.
+- **Unsplittable paths via GNU long-name records (`'L'`).** A path that cannot
+  be split to fit both fields (e.g. a single path segment longer than 100
+  bytes, as produced by Metro's flattened Android asset names) is encoded as a
+  GNU long-name sequence, emitted **only** when prefix splitting fails so that
+  archives without such paths remain byte-identical to the pre-`'L'` profile:
+  1. A header block with `name` = `././@LongLink`, type flag `'L'`, the same
+     zeroed metadata as regular entries, empty `prefix`, and `size` = byte
+     length of the full UTF-8 path + 1 (a single trailing NUL).
+  2. Data blocks containing the path bytes + one NUL, zero-padded to the next
+     512-byte boundary.
+  3. The entry's regular header (`'0'`), whose `name` field carries the first
+     100 bytes of the path as an opaque deterministic placeholder (it may end
+     mid-codepoint) and whose `prefix` is empty, followed by file data as
+     usual. Decoders replace this header's path with the long-name path.
+
+  Decoder rules: the long-name path is the data bytes before the trailing NUL;
+  it must be non-empty, at most **4096 bytes**, and passes the same path
+  normalization/validation as reconstructed split paths. An `'L'` record not
+  immediately followed by a regular-file header (end of archive, zero block, or
+  another `'L'`) is an error. Writers must reject paths longer than 4096 bytes.
+
+  **Producer path limits.** The wire format can express paths no device can
+  materialize, so the server rejects them before publishing rather than
+  shipping a release that fails every install: a path segment longer than
+  **255 bytes** exceeds `NAME_MAX` on Android ext4/f2fs and iOS APFS
+  (`mkdir`/`open` fail with `ENAMETOOLONG`). The server additionally caps each
+  relative path at **512 bytes** to reserve roughly half of iOS `PATH_MAX` for
+  the absolute application container and package directories. Both limits are
+  enforced at bundle ingest and again in the archive writer.
+
+  **Compatibility:** client SDKs earlier than `0.1.4` reject `'L'` records, so
+  a release whose payload contains an unsplittable path installs only on
+  devices running SDK ≥ 0.1.4; the CLI warns at publish time when a bundle
+  needs long-name encoding.
 - **Standard checksum.** Header checksum is the unsigned sum of all 512 header
   bytes with the checksum field taken as eight spaces, written at offset 148 as
   six octal digits + NUL + space.

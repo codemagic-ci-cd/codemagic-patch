@@ -57,7 +57,9 @@ export function readBundleTreeFromCanonicalArchiveBuffer(
 ): BundleTree {
   const tarBytes = zstdDecompressSync(archiveBuffer);
   const entries: BundleEntryInput[] = [];
+  const seenPaths = new Set<string>();
   let offset = 0;
+  let pendingLongName: string | null = null;
 
   while (offset < tarBytes.length) {
     if (offset + 512 > tarBytes.length) {
@@ -69,19 +71,44 @@ export function readBundleTreeFromCanonicalArchiveBuffer(
       break;
     }
 
-    const archivePath = readTarPath(header);
     const typeFlag = header[156] ?? 0;
     const size = readTarOctal(header, 124, 12);
     const contentStart = offset + 512;
     const contentEnd = contentStart + size;
 
+    // A negative or fractional size would leave the offset unchanged and spin
+    // this loop forever instead of failing the job.
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new Error(`Invalid TAR entry size: ${size}`);
+    }
+
     if (contentEnd > tarBytes.length) {
-      throw new Error(`TAR entry exceeds archive bounds: ${archivePath}`);
+      throw new Error("TAR entry exceeds archive bounds");
+    }
+
+    if (typeFlag === TAR_LONGNAME_TYPE_FLAG) {
+      if (pendingLongName !== null) {
+        throw new Error("TAR long-name record follows another long-name record");
+      }
+
+      pendingLongName = readTarLongName(tarBytes.subarray(contentStart, contentEnd));
+      offset = contentStart + roundUpToTarBlock(size);
+      continue;
     }
 
     if (typeFlag !== 0 && typeFlag !== 48) {
-      throw new Error(`Unsupported TAR entry type for ${archivePath}: ${String.fromCharCode(typeFlag)}`);
+      throw new Error(`Unsupported TAR entry type: ${String.fromCharCode(typeFlag)}`);
     }
+
+    const archivePath = validateCanonicalArchivePath(
+      pendingLongName ?? readTarPath(header),
+    );
+    pendingLongName = null;
+
+    if (seenPaths.has(archivePath)) {
+      throw new Error(`TAR archive contains duplicate path: ${archivePath}`);
+    }
+    seenPaths.add(archivePath);
 
     entries.push({
       bytes: tarBytes.subarray(contentStart, contentEnd),
@@ -91,7 +118,73 @@ export function readBundleTreeFromCanonicalArchiveBuffer(
     offset = contentStart + roundUpToTarBlock(size);
   }
 
+  if (pendingLongName !== null) {
+    throw new Error("TAR long-name record has no following entry");
+  }
+
   return buildBundleTree(entries);
+}
+
+/**
+ * PROTOCOL.md requires every decoded path — split or long-name — to pass the
+ * same validation, which is what the client C extractor does before joining a
+ * path onto the output directory. Entries reach the filesystem via
+ * writeBundleTreeToDirectory, so the server must not be the weaker decoder.
+ */
+function validateCanonicalArchivePath(archivePath: string): string {
+  if (archivePath.length === 0 || archivePath.startsWith("/")) {
+    throw new Error("TAR entry path must be relative and non-empty");
+  }
+
+  if (archivePath.includes("\\")) {
+    throw new Error(`TAR entry path must not contain backslashes: ${archivePath}`);
+  }
+
+  const segments = archivePath.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`TAR entry path must not contain '.' or '..' segments: ${archivePath}`);
+  }
+
+  if (
+    segments.some(
+      (segment) => Buffer.byteLength(segment, "utf8") > MAX_ARCHIVE_PATH_SEGMENT_BYTES,
+    )
+  ) {
+    throw new Error(`TAR entry path segment exceeds ${MAX_ARCHIVE_PATH_SEGMENT_BYTES} bytes`);
+  }
+
+  return archivePath;
+}
+
+// PROTOCOL.md › Full Bundle Archive Format › GNU long-name records. The writer
+// (materializeBundleArchive.ts) imports these so reader and writer cannot drift
+// to different caps or type flags.
+export const TAR_LONGNAME_TYPE_FLAG = 76; // 'L'
+export const MAX_TAR_LONGNAME_BYTES = 4096;
+
+/**
+ * Filesystem NAME_MAX on Android ext4/f2fs and iOS APFS. A longer segment is
+ * encodable on the wire but fails mkdir/fopen with ENAMETOOLONG on every
+ * device, so producers must reject it rather than publish it.
+ */
+export const MAX_ARCHIVE_PATH_SEGMENT_BYTES = 255;
+
+/**
+ * Reserve half of iOS PATH_MAX for the absolute install root and separators
+ * added when archive paths are joined beneath the application container.
+ */
+export const MAX_DEVICE_ARCHIVE_PATH_BYTES = 512;
+
+function readTarLongName(data: Uint8Array): string {
+  if (data.length < 2 || data.length > MAX_TAR_LONGNAME_BYTES + 1) {
+    throw new Error(`Invalid TAR long-name record length: ${data.length}`);
+  }
+
+  if (data.indexOf(0) !== data.length - 1) {
+    throw new Error("TAR long-name record must end with a single trailing NUL");
+  }
+
+  return Buffer.from(data.subarray(0, data.length - 1)).toString("utf8");
 }
 
 export function buildBundleTree(entries: BundleEntryInput[]): BundleTree {
@@ -176,7 +269,32 @@ function normalizeArchivePath(archivePath: string): string | null {
     return null;
   }
 
+  assertDeviceRepresentablePath(normalized, segments);
+
   return normalized;
+}
+
+/**
+ * Reject at upload the paths the archive can encode but no device can
+ * materialize — otherwise the API accepts the bundle and the release job fails
+ * asynchronously, or worse, publishes an archive that fails every install.
+ */
+function assertDeviceRepresentablePath(archivePath: string, segments: string[]): void {
+  const pathBytes = Buffer.byteLength(archivePath, "utf8");
+  if (pathBytes > MAX_DEVICE_ARCHIVE_PATH_BYTES) {
+    throw new Error(
+      `ZIP entry path is ${pathBytes} bytes, over the ${MAX_DEVICE_ARCHIVE_PATH_BYTES}-byte limit devices can extract: ${archivePath}`,
+    );
+  }
+
+  for (const segment of segments) {
+    const segmentBytes = Buffer.byteLength(segment, "utf8");
+    if (segmentBytes > MAX_ARCHIVE_PATH_SEGMENT_BYTES) {
+      throw new Error(
+        `ZIP entry path segment is ${segmentBytes} bytes, over the ${MAX_ARCHIVE_PATH_SEGMENT_BYTES}-byte filesystem limit: ${archivePath}`,
+      );
+    }
+  }
 }
 
 function validateZipEntryPaths(zipBytes: Uint8Array): void {
