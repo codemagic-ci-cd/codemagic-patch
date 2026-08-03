@@ -15,7 +15,7 @@ const OTA_REASONS = [
   {
     title: 'Ship on your schedule',
     description:
-      'Update the product as often as you want, without being slowed down by store reviews.',
+      'Ship updates as often as you want, without delays from store reviews.',
   },
   {
     title: 'Roll out and back',
@@ -44,8 +44,8 @@ const SECTIONS = [
   {
     title: 'Invisible updates',
     bullets: [
-      'Binary diffs mean users only download the required code changes.',
-      'Options to download and install updates while the app is in the background',
+      'Binary diffs mean smaller downloads for users.',
+      'Install updates while the app is in the background',
       'Critical updates can be wired to user approval buttons',
     ],
     link: '/docs/setup/applying-updates',
@@ -59,9 +59,9 @@ const SECTIONS = [
   {
     title: 'Reliable delivery',
     bullets: [
-      "Checks and downloads don't hit the server",
-      'Cache and scale at the edge',
-      'Metrics report back separately',
+      'Checks and downloads stay on the CDN, not your API',
+      'Edge cache is purged after each release',
+      'Metrics report back to the API on a separate path',
     ],
     link: '/docs/using-patch/delivery',
     linkLabel: 'How delivery works',
@@ -75,8 +75,8 @@ const SECTIONS = [
     title: 'Publish and monitor releases',
     bullets: [
       'Web dashboard for releases, metrics, and team access',
-      'Native fingerprinting so bundles only reach compatible binaries',
-      'cmpatch CLI for CI; SDK with Expo config plugin',
+      'Reduce risk with controlled rollouts and promotions',
+      'Monitor release adoption with graphs of version adoption',
     ],
     link: '/docs/using-patch/dashboard',
     linkLabel: 'Web dashboard',
@@ -88,9 +88,9 @@ const SECTIONS = [
   {
     title: 'Run it yourself',
     bullets: [
-      'One-command local evaluation: server, dashboard, Postgres, MinIO',
-      'On-device demo to watch an OTA apply on simulator or emulator',
-      'Same Compose building blocks for production self-host with TLS and GitHub OAuth',
+      'One command brings up the local evaluation stack',
+      'Try an OTA update update with the included demo app',
+      'Deploy the same stack on a VM for production',
     ],
     link: '/docs/',
     linkLabel: 'Local quickstart',

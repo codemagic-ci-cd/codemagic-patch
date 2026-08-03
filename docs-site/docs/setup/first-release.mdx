@@ -58,7 +58,7 @@ cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
 ```
 
 :::tip
-`cmpatch bundle --platform ios` builds a `.cmpatch` artifact without uploading, useful for inspecting or publishing later via `cmpatch release create --bundle-path file.cmpatch`.
+`cmpatch bundle --platform ios` builds a `.cmpatch` artifact without uploading, useful for inspecting or publishing later via `cmpatch release create --bundle-path file.cmpatch`. When the app requires code signing, pass `--private-key-path` to `cmpatch bundle` as well.
 :::
 
 ## Next steps

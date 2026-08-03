@@ -60,14 +60,28 @@ cmpatch app create --name MySignedApp-iOS --require-code-signing
 cmpatch app setting --app MyApp-iOS --require-code-signing=true
 ```
 
-Publish signed releases:
+Create a private and public key pair with OpenSSL:
+
+```bash
+# generate private RSA key
+openssl genrsa -out patch-private-key.pem 2048
+
+# export public key
+openssl rsa -in patch-private-key.pem -pubout -out patch-public-key.pem
+```
+
+Copy the public key (`cat patch-public-key.pem`, including the `BEGIN` / `END` lines) into native config as `CodemagicPatchPublicKey`. See [Native setup](/docs/setup/native-setup) for `Info.plist`, `strings.xml`, or Expo plugin wiring.
+
+Publish signed releases with the private key:
 
 ```bash
 cmpatch release-react --platform ios --deployment Staging \
   --private-key-path ./patch-private-key.pem --yes
 ```
 
-Embed the matching public key in native SDK config as `CodemagicPatchPublicKey` — see [Native setup](/docs/setup/native-setup) for `Info.plist`, `strings.xml`, or Expo plugin wiring. The SDK reads this value from the binary at launch, so **ship a new native build** (and reinstall on devices) before clients can verify signed OTAs. OTA updates cannot add or change the public key.
+When building a `.cmpatch` artifact with code signing enabled, pass `--private-key-path` to `cmpatch bundle` as well.
+
+The SDK reads the public key from the binary at launch, so ship a new native build (and reinstall on devices) before clients can verify signed OTAs. OTA updates cannot add or change the public key.
 
 With the key in the binary, the client rejects releases with missing or invalid signatures.
 
