@@ -6,6 +6,13 @@ import path, { resolve } from "node:path";
 import { serializeArtifact } from "@codemagic/patch-shared";
 
 import { buildArtifactFromBundleDir } from "../artifactBuild";
+import {
+  findLongNamePaths,
+  findUnsupportedArchivePaths,
+  formatLongNameWarning,
+  formatUnsupportedPathsError,
+} from "../tarLongPaths";
+import { listZipPayloadFiles } from "../zip";
 import { resolveBaseBytecode } from "../baseBytecode";
 import type {
   BundleCommand,
@@ -274,6 +281,17 @@ export async function executeBundle(
         : {}),
       ...(sourcemapPath !== undefined ? { sourcemapPath } : {}),
     });
+
+    const payloadPaths = listZipPayloadFiles(artifact.bundleZip);
+    const unsupportedPaths = findUnsupportedArchivePaths(payloadPaths);
+    if (unsupportedPaths.length > 0) {
+      throw new UsageError(formatUnsupportedPathsError(unsupportedPaths));
+    }
+
+    const longNamePaths = findLongNamePaths(payloadPaths);
+    if (longNamePaths.length > 0) {
+      progress.warn(formatLongNameWarning(longNamePaths));
+    }
 
     const outputPath = resolveBundleOutputPath(command, projectRoot);
     await fs.mkdir(path.dirname(outputPath), { recursive: true });

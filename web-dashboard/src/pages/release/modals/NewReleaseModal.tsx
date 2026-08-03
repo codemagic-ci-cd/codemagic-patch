@@ -8,7 +8,12 @@ import type { ReactNode } from "react";
 import { Modal } from "../../../components/overlay/Modal";
 import { CliCommandBuilder } from "../../../components/ui/CliCommandBuilder";
 import { buttonVariants } from "../../../components/ui/Button";
-import { RC_DESC, RC_TITLE, RADIO_CARD, RADIO_CARD_STATE } from "../../../components/ui/form";
+import {
+  RC_DESC,
+  RC_TITLE,
+  RADIO_CARD,
+  RADIO_CARD_STATE,
+} from "../../../components/ui/form";
 import { UploadIcon, useUploadArtifactForm } from "./uploadArtifactForm";
 
 type Step = "choose" | "cli" | "upload";
@@ -101,6 +106,7 @@ function NewReleaseModalContent({
       title={header.title}
       description={header.description}
       icon={header.icon}
+      notice={step === "upload" ? uploadForm.notice : undefined}
       wide={step !== "choose"}
       footer={footer}
     >
@@ -111,7 +117,10 @@ function NewReleaseModalContent({
             className={`${RADIO_CARD} ${RADIO_CARD_STATE.idle} text-left`}
             onClick={() => setStep("cli")}
           >
-            <span className="mt-0.5 size-[18px] shrink-0 text-blue" aria-hidden="true">
+            <span
+              className="mt-0.5 size-[18px] shrink-0 text-blue"
+              aria-hidden="true"
+            >
               <TerminalIcon />
             </span>
             <div>
@@ -130,16 +139,24 @@ function NewReleaseModalContent({
             className={`${RADIO_CARD} ${RADIO_CARD_STATE.idle} text-left`}
             onClick={() => setStep("upload")}
           >
-            <span className="mt-0.5 size-[18px] shrink-0 text-blue" aria-hidden="true">
+            <span
+              className="mt-0.5 size-[18px] shrink-0 text-blue"
+              aria-hidden="true"
+            >
               <UploadIcon />
             </span>
             <div>
               <div className={RC_TITLE}>Bundle upload</div>
               <div className={RC_DESC}>
                 Drop a pre-built{" "}
-                <code className="rounded bg-surface-3 px-1 py-0.5">.cmpatch</code>{" "}
+                <code className="rounded bg-surface-3 px-1 py-0.5">
+                  .cmpatch
+                </code>{" "}
                 artifact from{" "}
-                <code className="rounded bg-surface-3 px-1 py-0.5">cmpatch bundle</code>.
+                <code className="rounded bg-surface-3 px-1 py-0.5">
+                  cmpatch bundle
+                </code>
+                .
               </div>
             </div>
           </button>
@@ -183,7 +200,8 @@ function stepMeta(
     default:
       return {
         title: `New release to ${deploymentName}`,
-        description: "Choose how you want to publish an update to this deployment.",
+        description:
+          "Choose how you want to publish an update to this deployment.",
         icon: <RocketIcon />,
       };
   }

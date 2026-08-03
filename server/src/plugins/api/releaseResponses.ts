@@ -22,6 +22,9 @@ import {
   toReleaseWire,
 } from "./wireSerializers";
 
+const SIGNATURE_REQUIRED_DETAIL =
+  "This app requires signed releases. Rebuild the release with a code-signing private key, for example `cmpatch bundle --private-key-path <pem>` or `cmpatch release-react --private-key-path <pem>`, then upload or publish the signed release. Start with the README code signing guide: https://github.com/codemagic-ci-cd/codemagic-patch#code-signing-optional";
+
 export function releasePatchInvalidProblem(
   reason:
     | "release_not_patchable"
@@ -31,7 +34,7 @@ export function releasePatchInvalidProblem(
 ): ProblemDetails {
   if (reason === "signature_required") {
     return singleFieldValidationProblem(
-      "signature is required for this app",
+      SIGNATURE_REQUIRED_DETAIL,
       "signature",
       "required",
     );
@@ -45,7 +48,9 @@ export function releasePatchInvalidProblem(
     );
   }
 
-  return createValidationProblem("release is not patchable in its current state");
+  return createValidationProblem(
+    "release is not patchable in its current state",
+  );
 }
 
 export function prepareReleaseCreationResponse(
@@ -120,7 +125,7 @@ export function prepareReleaseLifecycleCreateResponse(
     const problem =
       result.reason === "signature_required"
         ? singleFieldValidationProblem(
-            "signature is required for this app",
+            SIGNATURE_REQUIRED_DETAIL,
             "signature",
             "required",
           )
@@ -189,7 +194,9 @@ export function prepareReleaseLifecycleCreateResponse(
   };
 }
 
-export function releasePatchAuditAction(input: ReleasePatchHandlerInput): string {
+export function releasePatchAuditAction(
+  input: ReleasePatchHandlerInput,
+): string {
   if (input.status === "disabled") {
     return "release.disabled";
   }
@@ -241,10 +248,7 @@ export function problemForReleaseCreationFailure(
     });
   }
 
-  if (
-    result.outcome === "conflict" &&
-    result.reason === "duplicate_release"
-  ) {
+  if (result.outcome === "conflict" && result.reason === "duplicate_release") {
     return createProblem({
       detail: DUPLICATE_RELEASE_DETAIL,
       status: 409,
@@ -254,7 +258,7 @@ export function problemForReleaseCreationFailure(
 
   if (result.outcome === "invalid" && result.reason === "signature_required") {
     return singleFieldValidationProblem(
-      "signature is required for this app",
+      SIGNATURE_REQUIRED_DETAIL,
       "metadata.signature",
       "required",
     );

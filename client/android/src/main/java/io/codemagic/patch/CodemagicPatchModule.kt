@@ -26,7 +26,6 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Callable
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
@@ -91,21 +90,16 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
       val candidateUrl = "$downloadBaseUrl${primaryPath ?: fallbackPath}"
 
       // Fetch meta + candidate concurrently on OkHttp's dispatcher threads; the network
-      // executor only blocks on the join below (never re-submits to itself), so no deadlock.
-      // meta is fire-and-forget: handle() folds it to a 200-only body (else null) and
-      // absorbs any failure, so only a candidate failure propagates out of allOf.
-      val metaFuture =
-          getAsync(metaUrl).handle { result, _ -> result?.takeIf { it.status == 200 }?.body }
-      val candidateFuture = getAsync(candidateUrl)
-      // callTimeout(10s) bounds each call; this 12s join is just a safety net.
-      try {
-        CompletableFuture.allOf(metaFuture, candidateFuture).get(12, TimeUnit.SECONDS)
-      } catch (e: ExecutionException) {
-        throw e.cause ?: e
-      }
-
-      val metaJson = metaFuture.getNow(null)
-      val candidate = candidateFuture.getNow(null) ?: error("manifest request did not complete")
+      // executor only blocks on the joins below (never re-submits to itself), so no deadlock.
+      // meta is fire-and-forget: awaitOrNull() folds any failure or timeout to null and the
+      // read keeps 200-only bodies, so only a candidate failure propagates.
+      val metaResult = getAsync(metaUrl)
+      val candidateResult = getAsync(candidateUrl)
+      // callTimeout(10s) bounds each call; this shared 12s deadline is just a safety net.
+      // Candidate is joined first so a slow meta response can never starve it.
+      val deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(12)
+      val candidate = candidateResult.awaitOrThrow(deadlineNanos)
+      val metaJson = metaResult.awaitOrNull(deadlineNanos)?.takeIf { it.status == 200 }?.body
 
 
       val response =
@@ -245,7 +239,18 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
           } catch (_: Throwable) {
             null
           }
-      val reactHost = application.reactHost
+      // Probe `reactHost` defensively too: the RN <= 0.75 template's getter
+      // constructs a ReactHost eagerly via `getDefaultReactHost(...)`, and on a
+      // legacy/paper build of those minors the Fabric JNI it initializes is not
+      // packaged (pre-0.76 split .so files), so the getter itself throws
+      // UnsatisfiedLinkError. Treat that as "no ReactHost" and fall through to
+      // the legacy ReactNativeHost reload path.
+      val reactHost =
+          try {
+            application.reactHost
+          } catch (_: Throwable) {
+            null
+          }
 
       // New-arch reactHost-only host (e.g. RN 0.82+ default `reactHost by lazy {
       // getDefaultReactHost(...) }`). The ReactHost is cached on the Application
@@ -887,34 +892,34 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  // Async GET on a dispatcher thread, returning a future for the concurrent meta +
-  // candidate fetch. Same status mapping as getWithStatus; non-2xx (except 404)
-  // completes the future exceptionally.
-  private fun getAsync(url: String): CompletableFuture<HttpBody> {
-    val future = CompletableFuture<HttpBody>()
+  // Async GET on a dispatcher thread, returning a joinable result for the concurrent
+  // meta + candidate fetch. Same status mapping as getWithStatus; non-2xx (except 404)
+  // completes the result exceptionally.
+  private fun getAsync(url: String): AsyncResult<HttpBody> {
+    val result = AsyncResult<HttpBody>()
     val request = Request.Builder().url(url).get().build()
     CodemagicPatchExecutors.httpClient.newCall(request).enqueue(object : Callback {
       override fun onFailure(call: Call, e: IOException) {
-        future.completeExceptionally(e)
+        result.completeExceptionally(e)
       }
 
       override fun onResponse(call: Call, response: Response) {
         response.use {
           try {
             val status = it.code
-            future.complete(
+            result.complete(
                 when {
                   status == 404 -> HttpBody(404, null)
                   status in 200..299 -> HttpBody(status, it.body?.string())
                   else -> error("HTTP $status")
                 })
           } catch (e: Throwable) {
-            future.completeExceptionally(e)
+            result.completeExceptionally(e)
           }
         }
       }
     })
-    return future
+    return result
   }
 }
 

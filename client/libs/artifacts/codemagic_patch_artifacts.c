@@ -14,6 +14,8 @@
 
 #define CODEMAGIC_PATCH_IO_BUFFER_SIZE (128 * 1024)
 #define CODEMAGIC_PATCH_TAR_BLOCK_SIZE 512
+/* PROTOCOL.md › Full Bundle Archive Format: GNU long-name paths are capped. */
+#define CODEMAGIC_PATCH_TAR_MAX_LONGNAME 4096
 
 static int codemagic_patch_mkdirs(const char *path) {
   char *copy = NULL;
@@ -270,6 +272,7 @@ cleanup:
 static int codemagic_patch_extract_tar_file(const char *tar_path, const char *out_dir) {
   FILE *tar = NULL;
   unsigned char header[CODEMAGIC_PATCH_TAR_BLOCK_SIZE];
+  char *long_name = NULL;
   int result = -1;
 
   tar = fopen(tar_path, "rb");
@@ -281,6 +284,7 @@ static int codemagic_patch_extract_tar_file(const char *tar_path, const char *ou
     char name[101];
     char prefix[156];
     char relative[257];
+    const char *entry_path = NULL;
     char *target = NULL;
     uint64_t size = 0;
     uint64_t padding = 0;
@@ -290,51 +294,90 @@ static int codemagic_patch_extract_tar_file(const char *tar_path, const char *ou
       goto cleanup;
     }
     if (codemagic_patch_is_zero_block(header)) {
-      result = 0;
+      /* A long-name record must be followed by a regular entry. */
+      if (long_name == NULL) {
+        result = 0;
+      }
       goto cleanup;
     }
 
-    if (codemagic_patch_read_tar_string(name, sizeof(name), header, 100) != 0 ||
-        codemagic_patch_read_tar_string(prefix, sizeof(prefix), header + 345, 155) != 0 ||
-        codemagic_patch_read_tar_octal(header + 124, 12, &size) != 0) {
+    if (codemagic_patch_read_tar_octal(header + 124, 12, &size) != 0) {
       goto cleanup;
     }
 
     typeflag = header[156];
-    if (prefix[0] != '\0') {
-      if (snprintf(relative, sizeof(relative), "%s/%s", prefix, name) >=
-          (int)sizeof(relative)) {
-        goto cleanup;
-      }
-    } else {
-      if (snprintf(relative, sizeof(relative), "%s", name) >= (int)sizeof(relative)) {
-        goto cleanup;
-      }
-    }
+    padding = (CODEMAGIC_PATCH_TAR_BLOCK_SIZE - (size % CODEMAGIC_PATCH_TAR_BLOCK_SIZE)) %
+              CODEMAGIC_PATCH_TAR_BLOCK_SIZE;
 
-    if (codemagic_patch_validate_relative_path(relative) != 0) {
-      goto cleanup;
+    if (typeflag == 'L') {
+      /* GNU long-name record: data is the next entry's path + one trailing NUL. */
+      if (long_name != NULL || size < 2 ||
+          size > (uint64_t)CODEMAGIC_PATCH_TAR_MAX_LONGNAME + 1) {
+        goto cleanup;
+      }
+
+      long_name = (char *)malloc((size_t)size);
+      if (long_name == NULL ||
+          fread(long_name, 1, (size_t)size, tar) != (size_t)size) {
+        goto cleanup;
+      }
+      if (long_name[size - 1] != '\0' ||
+          strlen(long_name) != (size_t)size - 1 ||
+          codemagic_patch_skip_bytes(tar, padding) != 0) {
+        goto cleanup;
+      }
+      continue;
     }
 
     if (typeflag != '\0' && typeflag != '0') {
       goto cleanup;
     }
 
-    padding = (CODEMAGIC_PATCH_TAR_BLOCK_SIZE - (size % CODEMAGIC_PATCH_TAR_BLOCK_SIZE)) %
-              CODEMAGIC_PATCH_TAR_BLOCK_SIZE;
+    if (long_name != NULL) {
+      /* The header's name field is a truncated placeholder; the long-name wins. */
+      entry_path = long_name;
+    } else {
+      if (codemagic_patch_read_tar_string(name, sizeof(name), header, 100) != 0 ||
+          codemagic_patch_read_tar_string(prefix, sizeof(prefix), header + 345, 155) != 0) {
+        goto cleanup;
+      }
+      if (prefix[0] != '\0') {
+        if (snprintf(relative, sizeof(relative), "%s/%s", prefix, name) >=
+            (int)sizeof(relative)) {
+          goto cleanup;
+        }
+      } else {
+        if (snprintf(relative, sizeof(relative), "%s", name) >= (int)sizeof(relative)) {
+          goto cleanup;
+        }
+      }
+      entry_path = relative;
+    }
 
-    if (codemagic_patch_should_skip_path(relative)) {
+    if (codemagic_patch_validate_relative_path(entry_path) != 0) {
+      goto cleanup;
+    }
+
+    if (codemagic_patch_should_skip_path(entry_path)) {
       if (codemagic_patch_skip_bytes(tar, size + padding) != 0) {
         goto cleanup;
       }
+      free(long_name);
+      long_name = NULL;
+      entry_path = NULL;
       continue;
     }
 
-    if (codemagic_patch_join_path(&target, out_dir, relative) != 0 ||
+    if (codemagic_patch_join_path(&target, out_dir, entry_path) != 0 ||
         codemagic_patch_parent_mkdirs(target) != 0) {
       free(target);
       goto cleanup;
     }
+
+    /* entry_path may alias long_name; clear both so nothing below can read it. */
+    free(long_name);
+    long_name = NULL;
+    entry_path = NULL;
 
     FILE *out = fopen(target, "wb");
     free(target);
@@ -360,6 +403,7 @@ static int codemagic_patch_extract_tar_file(const char *tar_path, const char *ou
   }
 
 cleanup:
+  free(long_name);
   if (tar != NULL) {
     fclose(tar);
   }

@@ -16,17 +16,51 @@ react {
   codegenJavaPackageName = "io.codemagic.patch"
 }
 
+// Resolve the host app's react-native package the same way autolinking does
+// (from the host android root), so hoisted/monorepo layouts work.
+def resolveReactNativeDirectory() {
+  def rnDirOverride = safeExtGet("reactNativeDir", null)
+  if (rnDirOverride != null) {
+    return file(rnDirOverride)
+  }
+  def resolved = providers.exec {
+    workingDir(rootDir)
+    commandLine("node", "--print", "require.resolve('react-native/package.json')")
+  }.standardOutput.asText.get().trim()
+  return file(resolved).parentFile
+}
+
+def resolveReactNativeMinorVersion() {
+  def reactProperties = new Properties()
+  file("${resolveReactNativeDirectory().absolutePath}/ReactAndroid/gradle.properties")
+      .withInputStream { reactProperties.load(it) }
+  def versionName = reactProperties.getProperty("VERSION_NAME")
+  // Nightlies ship as 0.0.0-* — treat them as newest.
+  return versionName.startsWith("0.0.0") ? Integer.MAX_VALUE : versionName.split("\\.")[1].toInteger()
+}
+
+def reactNativeMinorVersion = resolveReactNativeMinorVersion()
+
 android {
   namespace "io.codemagic.patch"
   compileSdkVersion safeExtGet("compileSdkVersion", 35)
 
   defaultConfig {
-    minSdkVersion safeExtGet("minSdkVersion", 24)
+    minSdkVersion safeExtGet("minSdkVersion", 23)
     targetSdkVersion safeExtGet("targetSdkVersion", 35)
     externalNativeBuild {
       cmake {
         cppFlags "-std=c++17"
       }
+    }
+  }
+
+  sourceSets {
+    main {
+      // CodemagicPatchPackage lives in a per-RN-version slice: BaseReactPackage
+      // only exists from RN 0.74, so RN 0.73 builds compile the
+      // TurboReactPackage variant instead.
+      java.srcDirs += reactNativeMinorVersion >= 74 ? "src/rn74plus/java" : "src/rn73/java"
     }
   }
 

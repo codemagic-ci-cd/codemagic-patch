@@ -17,7 +17,18 @@ import { computePackageHashFromZipBuffer } from "../packageHash";
 import { signContentHashJwt, SIGNATURE_HASH_ALGORITHM } from "../signing";
 import { writeLine } from "../output";
 import { assertExplicitBinaryVersion } from "../targetBinaryVersion";
-import { createZipFromDirectory, listArchiveFiles } from "../zip";
+import {
+  findLongNamePaths,
+  findUnsupportedArchivePaths,
+  formatLongNameWarning,
+  formatUnsupportedPathsError,
+} from "../tarLongPaths";
+import {
+  createZipFromDirectory,
+  listArchiveFiles,
+  listZipPayloadFiles,
+  toPayloadPaths,
+} from "../zip";
 import { enforceMutationSafety } from "./mutationSafety";
 import { resolveDeploymentId } from "./resolveNames";
 import {
@@ -78,7 +89,12 @@ export async function executeReleaseCreate(
   try {
     // Validate the bundle path before any network work or the confirm prompt
     // so a typo fails instantly (and before "Missing --yes" can mask it).
-    await statBundlePath(deps, command.bundlePath);
+    const bundlePath = await statBundlePath(deps, command.bundlePath);
+
+    // Path limits and the long-name compat warning belong before the confirm
+    // prompt: a publisher who sees the warning only as the upload starts has
+    // no abort point left.
+    await checkBundlePayloadPaths(deps, bundlePath.resolvedPath, bundlePath.stats);
 
     const fingerprint = await resolveFingerprint(command, deps);
     const deploymentId = await resolveDeploymentId(
@@ -176,6 +192,13 @@ async function executeArtifactReleaseCreate(
   }
 
   assertExplicitBinaryVersion(descriptor.targetBinaryVersion);
+
+  // The integrity check above already parsed the bundle ZIP, so the entry
+  // listing here cannot fail — and the artifact path must apply the same path
+  // limits and long-name warning as the directory/ZIP paths do.
+  const artifactPayloadPaths = listZipPayloadFiles(artifact.bundleZip);
+  assertInstallableArchivePaths(artifactPayloadPaths);
+  warnAboutLongNamePaths(deps, artifactPayloadPaths);
 
   const deploymentId = await resolveDeploymentId(
     command.deployment,
@@ -373,6 +396,60 @@ async function prepareBundleArchive(
   throw new UsageError(
     `bundle path is neither a file nor a directory: ${resolvedPath}`,
   );
+}
+
+// Payload paths decide two things before the confirm prompt: whether any path
+// is unusable on device (hard error) and whether the release needs a newer SDK
+// (warning). Both need the same listing, so it runs regardless of stderr.
+async function checkBundlePayloadPaths(
+  deps: CommandDeps,
+  resolvedPath: string,
+  stats: Awaited<ReturnType<CommandDeps["stat"]>>,
+): Promise<void> {
+  const files = stats.isDirectory()
+    ? toPayloadPaths(await listArchiveFiles(resolvedPath))
+    : stats.isFile()
+      ? await listZipEntryFiles(deps, resolvedPath)
+      : [];
+
+  assertInstallableArchivePaths(files);
+  warnAboutLongNamePaths(deps, files);
+}
+
+// A path past the filesystem or validator limits produces a release no device
+// can extract, so it must fail here rather than in the release job.
+function assertInstallableArchivePaths(files: string[]): void {
+  const unsupported = findUnsupportedArchivePaths(files);
+  if (unsupported.length > 0) {
+    throw new UsageError(formatUnsupportedPathsError(unsupported));
+  }
+}
+
+// Best-effort file listing of a prebuilt ZIP; an unreadable archive is left
+// for the server to diagnose. deps.readFile returns a Buffer, which fflate
+// accepts directly — wrapping it would copy the whole archive.
+async function listZipEntryFiles(
+  deps: CommandDeps,
+  zipFilePath: string,
+): Promise<string[]> {
+  try {
+    return listZipPayloadFiles(await deps.readFile(zipFilePath));
+  } catch {
+    return [];
+  }
+}
+
+function warnAboutLongNamePaths(deps: CommandDeps, files: string[]): void {
+  if (deps.stderr === undefined) {
+    return;
+  }
+
+  const longNamePaths = findLongNamePaths(files);
+  if (longNamePaths.length === 0) {
+    return;
+  }
+
+  writeLine(deps.stderr, formatLongNameWarning(longNamePaths));
 }
 
 function isJsBundleFile(archivePath: string): boolean {

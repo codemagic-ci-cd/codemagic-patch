@@ -49,6 +49,17 @@ Most commands accept `--format json|table`. When stdout is a terminal, output de
 cmpatch app list --format json | jq '.apps[].name'
 ```
 
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | Server or runtime error (not found, conflict, rate limited, …) |
+| 2 | Authentication required or usage error |
+| 3 | Validation error |
+| 4 | Account disabled |
+| 130 | Interactive prompt aborted (Ctrl-C) |
+
 ## Configuration
 
 - **User config:** `~/.codemagic-patch/config.json` — CLI-wide defaults such as `serverUrl` and `team`. Credentials are stored per server in `~/.codemagic-patch/credentials.json`. Set the `CODEMAGIC_PATCH_HOME` environment variable to relocate this directory.

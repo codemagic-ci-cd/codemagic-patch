@@ -43,6 +43,8 @@ export interface ModalProps {
   /** Inline SVG for the .modal__ico tile; the tile is omitted when absent. */
   icon?: ReactNode;
   tone?: ModalTone;
+  /** Non-scrolling banner rendered between the header and scrollable body. */
+  notice?: ReactNode;
   /** .modal.wide (620px instead of 520px). */
   wide?: boolean;
   /**
@@ -110,6 +112,7 @@ export function Modal({
   description,
   icon,
   tone = "default",
+  notice,
   wide = false,
   disableEscapeClose = false,
   closeOnOverlayClick,
@@ -268,7 +271,10 @@ export function Modal({
             </div>
           ) : null}
           <div>
-            <h3 id={titleId} className="text-[18px] font-extrabold tracking-[-.02em]">
+            <h3
+              id={titleId}
+              className="text-[18px] font-extrabold tracking-[-.02em]"
+            >
               {title}
             </h3>
             {description !== undefined ? (
@@ -288,6 +294,9 @@ export function Modal({
             </button>
           ) : null}
         </div>
+        {notice !== undefined ? (
+          <div className="border-t border-border px-6 py-3">{notice}</div>
+        ) : null}
         <div className="overflow-auto px-6 pb-2 pt-1">{children}</div>
         {footer !== undefined ? (
           <div className="mt-3 flex justify-end gap-2.5 border-t border-border bg-surface px-6 pb-[22px] pt-[18px]">
