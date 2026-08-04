@@ -1,7 +1,7 @@
 ---
 title: Comparison
-description: 'Compare Codemagic Patch with Expo Updates, hosted CodePush, and Hot Updater.'
-llmsDescription: 'Patch vs CodePush, Expo Updates, Hot Updater — hosting, licensing, trade-offs.'
+description: 'Compare Codemagic Patch with Expo Updates, CodePush forks, and Hot Updater.'
+llmsDescription: 'Patch vs CodePush forks, Expo Updates, Hot Updater — hosting, licensing, trade-offs.'
 ---
 
 # How Patch compares
@@ -14,10 +14,11 @@ Products change over time. Treat this as a high-level guide when evaluating opti
 
 ## What most OTA tools share
 
-Patch, [Codemagic CodePush](https://docs.codemagic.io/rn-codepush/), [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/), and [Hot Updater](https://hot-updater.dev/) all target the same core problem: ship JavaScript and asset changes to installed apps without a full store release.
+Patch, CodePush-compatible services and forks, [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/), and [Hot Updater](https://hot-updater.dev/) all target the same core problem: ship JavaScript and asset changes to installed apps without a full store release.
 
 Common ground includes:
 
+- Rollout and rollback controls, to ship JavaScript or asset changes with minimal risk
 - Fingerprinting: detect when the native project changed so you do not ship an incompatible JS bundle
 - Binary diffs: prefer smaller patch downloads when only part of the bundle changed
 - Deployment channels: separate Staging from Production (or equivalent) so you can test before wide release
@@ -50,19 +51,25 @@ Migrating? See [Migrating from Expo Updates](/docs/migration/migrating-from-expo
 
 ---
 
-## vs Codemagic CodePush
+## vs CodePush forks
 
-Patch and Codemagic CodePush are sibling products from Codemagic, with a similar mental model (apps per platform, Staging / Production, `release-react`-style CLI flows), different delivery model.
+After App Center CodePush, a family of compatible forks and hosted successors remains ([Codemagic CodePush](https://docs.codemagic.io/rn-codepush/), Revopush, `@code-push-next`, and self-hosted CodePush servers). They share a familiar mental model with Patch (apps per platform, Staging / Production, `release-react`-style CLI, `sync()` install modes), but delivery and operations differ.
 
-| | Codemagic CodePush | Codemagic Patch |
+| | CodePush forks | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Hosted by Codemagic (`codepush.pro`) | Self-hosted on your infrastructure |
-| Operations | No server to run | You install, backup, and upgrade the stack |
-| Authentication | CodePush access keys | GitHub OAuth + API tokens on your instance |
-| Data control | Codemagic-operated | Your Postgres, object storage, and domains |
-| Integration | Fits Codemagic CI users who want managed OTA | Fits teams that need on-prem, air-gapped, or custom hosting |
+| Hosting | Hosted SaaS or a self-hosted CodePush-compatible server | All-in-one Compose stack (Postgres, MinIO, API, dashboard) |
+| Architecture | CodePush-compatible control plane (often access-key based) | Integrated server product you deploy anywhere Docker runs |
+| Local dev | Varies by fork; many assume a remote server | Full stack can run locally |
+| Update check | Typically server API checks | Static manifest on storage or CDN |
+| Bundle download | Storage behind the service or your configured CDN | Storage or CDN URLs from the manifest |
+| Web console | Varies (hosted dashboard or limited tooling) | Dashboard with release management, metrics, and IAM |
+| Team access | Access keys / org settings on the fork | RBAC managed in the dashboard |
+| Audit trail | Varies | CLI identity tied to GitHub OAuth |
+| Backups and DR | Build your own if self-hosting; hosted forks handle theirs | Built-in `backup.sh`, `restore.sh`, and `upgrade.sh` |
+| Stewardship | Community forks or third-party hosts | Built and maintained by [Codemagic](https://codemagic.io) |
+| License / terms | Varies by fork | [Codemagic Server License](/docs/introduction/pricing) |
 
-Choose hosted CodePush when you want OTA without running a service. Choose Patch when you need full control of the update plane, custom domains, or deployment inside your own cloud.
+Choose a CodePush fork when you want drop-in CodePush compatibility or a managed host. Choose Patch when you want an integrated self-host stack with dashboard, metrics, and CDN-oriented delivery, without staying on the CodePush wire protocol.
 
 Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush).
 
@@ -95,7 +102,7 @@ Hot Updater is a good fit if you want MIT licensing and are comfortable assembli
 
 Patch uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) for the server (based on FSL 1.1, converting to Apache 2.0 after two years on each version), and Apache 2.0 for the SDK and CLI. You may use, modify, and self-host without a paid license while monthly active users stay at or below one million. Above that, you need a commercial license from Codemagic. Details and pricing: [Pricing](/docs/introduction/pricing).
 
-Hot Updater is MIT. Expo Updates is tied to EAS pricing, not a source license on the client SDK. Codemagic CodePush is a hosted service with its own subscription terms.
+Hot Updater is MIT. Expo Updates is tied to EAS pricing, not a source license on the client SDK. CodePush forks use their own hosted terms or upstream licenses.
 
 ---
 
@@ -112,7 +119,7 @@ Those details are worth comparing during integration, not at the hosting layer. 
 | If you… | Consider |
 | --- | --- |
 | Already live on EAS and want minimal setup | Expo Updates |
-| Want Codemagic to run OTA for you | Codemagic CodePush (hosted) |
+| Want CodePush-compatible APIs or a managed CodePush host | A CodePush fork |
 | Want to self-host with dashboard, metrics, and team IAM | Codemagic Patch |
 | Want MIT and BYO storage via plugins | Hot Updater |
 
