@@ -1,7 +1,10 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
+  Alert,
+  AppState,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -14,191 +17,384 @@ import {
   installUpdate,
   notifyAppReady,
   restartApp,
+  sync,
+  type InstallMode,
+  type LocalPackage,
 } from '@codemagic/react-native-patch';
 
 // ---------------------------------------------------------------------------
-// THIS is the line the walkthrough asks you to edit. Change 'v1' to 'v2',
-// publish with `cmpatch release-react`, relaunch the app, and watch the
-// banner flip — that's the OTA update applying.
+// Demo toggles. Change values, then rebuild or publish an OTA.
 // ---------------------------------------------------------------------------
-const APP_VERSION = 'v1';
 
-const BANNER_COLORS: Record<string, string> = {
-  v1: '#1e6fd9',
-  v2: '#1a9e63',
-};
+// THIS is the line the walkthrough asks you to edit. Set CHECKOUT_BROKEN to
+// false, publish with `cmpatch release-react`, relaunch the app, and Add to
+// cart stops failing with the intentional bug.
+const CHECKOUT_BROKEN = true;
 
-type Phase =
-  | {kind: 'idle'}
-  | {kind: 'checking'}
-  | {kind: 'downloading'; percent: number | null}
-  | {kind: 'installed'}
-  | {kind: 'up-to-date'}
-  | {kind: 'unreachable'; detail: string}
-  | {kind: 'error'; detail: string};
+/**
+ * When the app looks for an update.
+ * Options: "on-launch" | "on-resume" | "both"
+ */
+const CHECK_CONDITION: string = 'both';
 
-function phaseLabel(phase: Phase): string {
-  switch (phase.kind) {
-    case 'idle':
-      return 'Starting…';
-    case 'checking':
-      return 'Checking for updates…';
-    case 'downloading':
-      return phase.percent === null
-        ? 'Downloading update…'
-        : `Downloading update… ${phase.percent}%`;
-    case 'installed':
-      return 'Update installed.';
-    case 'up-to-date':
-      return `Up to date — you are running ${APP_VERSION}.`;
-    case 'unreachable':
-      return 'Local stack unreachable — is it running?\nStart it with: ./scripts/local-eval/up.sh';
-    case 'error':
-      return 'Update check failed.';
+/**
+ * true  = show Later / Install Now after download
+ * false = install with no confirm UI (uses sync())
+ */
+const INSTALL_CONFIRMATION = true;
+
+/**
+ * How the install is staged once it runs.
+ * Options: "IMMEDIATE" | "ON_NEXT_RESTART" | "ON_NEXT_RESUME" | "ON_NEXT_SUSPEND"
+ * IMMEDIATE reloads on its own; other modes call restartApp after install.
+ */
+const INSTALL_MODE: string = 'ON_NEXT_RESTART';
+
+const PRODUCTS = [
+  {
+    id: 'box',
+    name: 'Premium Cardboard Box',
+    description: 'Perfect for cats to sit in.',
+    price: '$99.99',
+    emoji: '📦',
+    badge: 'Best Seller',
+    stars: 5,
+  },
+  {
+    id: 'glow',
+    name: 'Cool Glow Sticks',
+    description: 'Shake vigorously. Do not eat. Results may vary.',
+    price: '$29.99',
+    emoji: '✨',
+    badge: 'Hot',
+    stars: 4,
+  },
+];
+
+function shouldCheck(trigger: 'launch' | 'resume'): boolean {
+  if (CHECK_CONDITION === 'both') {
+    return true;
   }
+  return CHECK_CONDITION === `on-${trigger}`;
+}
+
+async function applyInstalledUpdate() {
+  if (INSTALL_MODE === 'IMMEDIATE') {
+    return;
+  }
+  await restartApp(true);
+}
+
+async function installReadyPackage(localPackage: LocalPackage) {
+  await installUpdate(localPackage, {
+    installMode: INSTALL_MODE as InstallMode,
+  });
+  await applyInstalledUpdate();
 }
 
 function App(): React.JSX.Element {
-  const [phase, setPhase] = useState<Phase>({kind: 'idle'});
+  const readyPackage = useRef<LocalPackage | null>(null);
+  const checking = useRef(false);
+  const [updateReady, setUpdateReady] = useState(false);
 
-  const runUpdateFlow = useCallback(async () => {
-    setPhase({kind: 'checking'});
+  const runUpdateCheck = useCallback(async () => {
+    if (checking.current) {
+      return;
+    }
+
+    if (INSTALL_CONFIRMATION && readyPackage.current) {
+      setUpdateReady(true);
+      return;
+    }
+
+    checking.current = true;
     try {
-      // Manual flow: notifyAppReady() confirms this launch as healthy before
-      // we look for the next update (sync() would do the same internally).
-      await notifyAppReady();
-      const result = await checkForUpdate();
-
-      if (result.action !== 'ota-update') {
-        setPhase({kind: 'up-to-date'});
+      if (!INSTALL_CONFIRMATION) {
+        const syncStatus = await sync({
+          installMode: INSTALL_MODE as InstallMode,
+        });
+        if (syncStatus === 'update-installed') {
+          await applyInstalledUpdate();
+        }
         return;
       }
 
-      setPhase({kind: 'downloading', percent: null});
-      const localPackage = await downloadUpdate(result.remotePackage, progress => {
-        if (progress.totalBytes > 0) {
-          setPhase({
-            kind: 'downloading',
-            percent: Math.round(
-              (progress.receivedBytes / progress.totalBytes) * 100,
-            ),
-          });
-        }
-      });
+      const result = await checkForUpdate();
+      if (result.action !== 'ota-update') {
+        return;
+      }
 
-      // Default install mode is ON_NEXT_RESTART: the update becomes pending
-      // and boots on the next launch — the Relaunch button below triggers it.
-      await installUpdate(localPackage);
-      setPhase({kind: 'installed'});
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      // The most common first failure is simply "the evaluation stack is not
-      // up" — say that instead of surfacing a bare network error.
-      setPhase(
-        /network|fetch|connect|refused|timed? ?out|unreachable/i.test(detail)
-          ? {kind: 'unreachable', detail}
-          : {kind: 'error', detail},
-      );
+      readyPackage.current = await downloadUpdate(result.remotePackage);
+      setUpdateReady(true);
+    } catch {
+      // Stay on the current bundle if check/download fails.
+    } finally {
+      checking.current = false;
     }
   }, []);
 
   useEffect(() => {
-    void runUpdateFlow();
-  }, [runUpdateFlow]);
+    // sync() confirms the launch internally; the manual path must do it here.
+    if (INSTALL_CONFIRMATION) {
+      void notifyAppReady();
+    }
 
-  const bannerColor = BANNER_COLORS[APP_VERSION] ?? '#7a4fd0';
-  const showDetail = phase.kind === 'unreachable' || phase.kind === 'error';
+    if (shouldCheck('launch')) {
+      void runUpdateCheck();
+    }
+
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active' && shouldCheck('resume')) {
+        void runUpdateCheck();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [runUpdateCheck]);
+
+  useEffect(() => {
+    if (!updateReady || !INSTALL_CONFIRMATION) {
+      return;
+    }
+
+    Alert.alert('Update Available', 'A new JS bundle is ready to install.', [
+      {
+        text: 'Later',
+        style: 'cancel',
+        onPress: () => setUpdateReady(false),
+      },
+      {
+        text: 'Install Now',
+        onPress: () => {
+          void (async () => {
+            const localPackage = readyPackage.current;
+            if (!localPackage) {
+              return;
+            }
+            try {
+              await installReadyPackage(localPackage);
+            } catch {
+              Alert.alert('Install failed', 'Could not install the update.');
+              setUpdateReady(false);
+            }
+          })();
+        },
+      },
+    ]);
+  }, [updateReady]);
+
+  const onBuy = (productName: string) => {
+    if (CHECKOUT_BROKEN) {
+      Alert.alert('Payment failed', 'Error 418: intentional bug');
+      return;
+    }
+    Alert.alert('Order confirmed', `Your ${productName} is on the way.`);
+  };
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      <View style={[styles.banner, {backgroundColor: bannerColor}]}>
-        <Text style={styles.bannerLabel}>Codemagic Patch demo</Text>
-        <Text style={styles.bannerVersion}>{APP_VERSION}</Text>
-      </View>
-      <View style={styles.status}>
-        <Text style={styles.statusText}>{phaseLabel(phase)}</Text>
-        {showDetail ? (
-          <Text style={styles.detailText}>{(phase as {detail: string}).detail}</Text>
-        ) : null}
-        {phase.kind === 'installed' ? (
-          <Pressable
-            style={styles.button}
-            onPress={() => void restartApp()}
-            accessibilityRole="button">
-            <Text style={styles.buttonText}>Update installed — Relaunch</Text>
-          </Pressable>
-        ) : null}
-        {phase.kind !== 'checking' && phase.kind !== 'downloading' ? (
-          <Pressable
-            style={[styles.button, styles.secondaryButton]}
-            onPress={() => void runUpdateFlow()}
-            accessibilityRole="button">
-            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-              Check again
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.promoBar}>
+          <Text style={styles.promoText}>Demo store for OTA patch testing</Text>
+        </View>
+
+        <View style={styles.header}>
+          <Text style={styles.title}>Convincing Demo Store</Text>
+          <Text style={styles.subtitle}>Might plausibly sell something</Text>
+        </View>
+
+        <View style={styles.navBar}>
+          {['Home', 'Products', 'About'].map(link => (
+            <Text key={link} style={styles.navLink}>
+              {link}
             </Text>
-          </Pressable>
-        ) : null}
-      </View>
+          ))}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Featured products</Text>
+        </View>
+
+        <View style={styles.productGrid}>
+          {PRODUCTS.map(product => (
+            <View key={product.id} style={styles.productCard}>
+              {product.badge ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{product.badge}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.productImage}>
+                <Text style={styles.productEmoji}>{product.emoji}</Text>
+              </View>
+
+              <Text style={styles.productName}>{product.name}</Text>
+              <Text style={styles.stars}>
+                {'★'.repeat(product.stars)}
+                {'☆'.repeat(5 - product.stars)}
+              </Text>
+              <Text style={styles.productDescription}>{product.description}</Text>
+              <Text style={styles.price}>{product.price}</Text>
+
+              <Pressable
+                style={styles.buyButton}
+                onPress={() => onBuy(product.name)}
+                accessibilityRole="button">
+                <Text style={styles.buyButtonText}>Add to cart</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+
+        <Text style={styles.footer}>
+          Secure checkout · Visa / Mastercard accepted
+        </Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
+  container: {
     flex: 1,
-    backgroundColor: '#101418',
+    backgroundColor: '#f5f5f5',
   },
-  banner: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  scrollContent: {
+    paddingBottom: 24,
   },
-  bannerLabel: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 16,
-    marginBottom: 8,
+  promoBar: {
+    backgroundColor: '#111',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
-  bannerVersion: {
-    color: '#ffffff',
-    fontSize: 96,
-    fontWeight: '800',
-  },
-  status: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  statusText: {
-    color: '#e6ebf0',
-    fontSize: 18,
-    textAlign: 'center',
-  },
-  detailText: {
-    color: '#8b97a3',
+  promoText: {
+    color: '#fff',
     fontSize: 13,
+    fontWeight: '500',
     textAlign: 'center',
   },
-  button: {
-    backgroundColor: '#1a9e63',
-    borderRadius: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+  header: {
+    backgroundColor: '#fff',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+    alignItems: 'center',
   },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-    borderColor: '#3a4652',
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111',
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: '#737373',
+    marginTop: 6,
+  },
+  navBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+  },
+  navLink: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#525252',
+  },
+  sectionHeader: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111',
+  },
+  productGrid: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  productCard: {
+    backgroundColor: '#fff',
     borderWidth: 1,
+    borderColor: '#e5e5e5',
+    borderRadius: 8,
+    padding: 20,
+    position: 'relative',
   },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
+  badge: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    backgroundColor: '#111',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 11,
     fontWeight: '600',
   },
-  secondaryButtonText: {
-    color: '#aab6c2',
+  productImage: {
+    width: 96,
+    height: 96,
+    backgroundColor: '#fafafa',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    alignSelf: 'center',
+  },
+  productEmoji: {
+    fontSize: 44,
+  },
+  productName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111',
+    marginBottom: 4,
+  },
+  stars: {
+    fontSize: 14,
+    color: '#f59e0b',
+    marginBottom: 8,
+  },
+  productDescription: {
+    fontSize: 14,
+    color: '#737373',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  price: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 16,
+  },
+  buyButton: {
+    backgroundColor: '#111',
+    paddingVertical: 14,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  buyButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  footer: {
+    marginTop: 24,
+    paddingHorizontal: 20,
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#a3a3a3',
   },
 });
 
