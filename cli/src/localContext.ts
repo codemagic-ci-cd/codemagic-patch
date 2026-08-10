@@ -1,4 +1,8 @@
-import type { CliConfig, ProjectConfig } from "./configStore";
+import type {
+  CliConfig,
+  ProjectConfig,
+  ProjectPlatformConfig,
+} from "./configStore";
 
 type ConfigSource = "env" | "project" | "user";
 
@@ -13,6 +17,7 @@ type ResolveEffectiveContextOptions = {
 
 export type EffectiveContext = {
   app?: EffectiveValue;
+  appId?: EffectiveValue;
   bundler?: EffectiveValue;
   deployment?: EffectiveValue;
   platform?: EffectiveValue;
@@ -42,13 +47,11 @@ export function resolveEffectiveContext(
     requestedPlatform === undefined
       ? undefined
       : projectConfig.apps?.[requestedPlatform];
-  const app = platformConfig?.app ?? projectConfig.app;
+  const appSelector = firstEffectiveAppSelector(platformConfig, projectConfig);
   const deployment = platformConfig?.deployment ?? projectConfig.deployment;
 
   return {
-    ...(app !== undefined
-      ? { app: { source: "project" as const, value: app } }
-      : {}),
+    ...(appSelector !== undefined ? appSelector : {}),
     ...(projectConfig.bundler !== undefined
       ? { bundler: { source: "project" as const, value: projectConfig.bundler } }
       : {}),
@@ -121,6 +124,34 @@ function firstEffectiveTeamSelector(
 
   if (userConfig.team !== undefined) {
     return { team: { source: "user", value: userConfig.team } };
+  }
+
+  return undefined;
+}
+
+/**
+ * Mirrors firstEffectiveTeamSelector: the platform-specific config wins over
+ * the project-wide one, and within each tier the rename-safe id wins over the
+ * name.
+ */
+function firstEffectiveAppSelector(
+  platformConfig: ProjectPlatformConfig | undefined,
+  projectConfig: ProjectConfig,
+): Pick<EffectiveContext, "app" | "appId"> | undefined {
+  if (platformConfig?.appId !== undefined) {
+    return { appId: { source: "project", value: platformConfig.appId } };
+  }
+
+  if (platformConfig?.app !== undefined) {
+    return { app: { source: "project", value: platformConfig.app } };
+  }
+
+  if (projectConfig.appId !== undefined) {
+    return { appId: { source: "project", value: projectConfig.appId } };
+  }
+
+  if (projectConfig.app !== undefined) {
+    return { app: { source: "project", value: projectConfig.app } };
   }
 
   return undefined;

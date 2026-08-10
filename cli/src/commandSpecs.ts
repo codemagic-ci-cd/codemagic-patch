@@ -473,7 +473,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Clear release history.",
         group: "management",
-        usage: "cmpatch deployment clear --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--token <token>] [--yes] [--non-interactive]",
+        usage: "cmpatch deployment clear --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) [--token <token>] [--yes] [--non-interactive]",
       }
     ],
     parse: parseDeploymentClear,
@@ -531,7 +531,7 @@ const commandSpecs: RunnableCommandSpec[] = [
         description: "Show per-release metrics for a deployment.",
         examples: ["cmpatch deployment metrics --app MyApp-iOS --deployment Staging","cmpatch deployment metrics --deployment-id <id>"],
         group: "management",
-        usage: "cmpatch deployment metrics --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--token <token>] [--format json|table] [--limit <1-100>] [--offset <0+>]",
+        usage: "cmpatch deployment metrics --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) [--token <token>] [--format json|table] [--limit <1-100>] [--offset <0+>]",
       }
     ],
     parse: parseDeploymentMetrics,
@@ -566,7 +566,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Delete a deployment (confirms unless --yes).",
         group: "management",
-        usage: "cmpatch deployment remove --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--yes] [--non-interactive] [--token <token>]",
+        usage: "cmpatch deployment remove --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) [--yes] [--non-interactive] [--token <token>]",
       }
     ],
     parse: parseDeploymentRemove,
@@ -581,7 +581,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Rename a deployment.",
         group: "management",
-        usage: "cmpatch deployment rename --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) --new-name <name> [--token <token>]",
+        usage: "cmpatch deployment rename --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --new-name <name> [--token <token>]",
       }
     ],
     parse: parseDeploymentRename,
@@ -838,7 +838,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Upload a prebuilt bundle or .cmpatch.",
         group: "release",
-        usage: "cmpatch release create --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) (--bundle-path <dir|zip> --target-binary-version <version> (--platform <ios|android> [--project-root <path>] | --fingerprint <hash>) [--sourcemap <path>] [--private-key-path <path>] | --bundle-path <file.cmpatch>) [--token <token>] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory] [--disabled] [--dry-run] [--yes] [--non-interactive] [--no-duplicate-release-error]",
+        usage: "cmpatch release create --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) (--bundle-path <dir|zip> --target-binary-version <version> (--platform <ios|android> [--project-root <path>] | --fingerprint <hash>) [--sourcemap <path>] [--private-key-path <path>] | --bundle-path <file.cmpatch>) [--token <token>] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory] [--disabled] [--dry-run] [--yes] [--non-interactive] [--no-duplicate-release-error]",
       }
     ],
     parse: parseReleaseCreate,
@@ -854,7 +854,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Inspect release processing status.",
         group: "release",
-        usage: "cmpatch release inspect --server-url <url> (--release-id <id> | (--deployment-id <id> | --app <name> --deployment <name>) --label <label>) [--wait] [--timeout <seconds>] [--token <token>] [--format json|table]",
+        usage: "cmpatch release inspect --server-url <url> (--release-id <id> | (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --label <label>) [--wait] [--timeout <seconds>] [--token <token>] [--format json|table]",
       }
     ],
     parse: parseReleaseInspect,
@@ -871,17 +871,17 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Update release metadata.",
         group: "release",
-        usage: "cmpatch release patch --server-url <url> (--release-id <id> | (--deployment-id <id> | --app <name> --deployment <name>) --label <label>) [--token <token>] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory | --not-mandatory] [--target-binary-version <version>] [--status disabled|published] [--yes] [--non-interactive]",
+        usage: "cmpatch release patch --server-url <url> (--release-id <id> | (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --label <label>) [--token <token>] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory | --not-mandatory] [--target-binary-version <version>] [--status disabled|published] [--yes] [--non-interactive]",
       },
       {
         description: "Disable a release.",
         group: "release",
-        usage: "cmpatch release disable --server-url <url> (--release-id <id> | (--deployment-id <id> | --app <name> --deployment <name>) --label <label>) [--token <token>] [--yes] [--non-interactive]",
+        usage: "cmpatch release disable --server-url <url> (--release-id <id> | (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --label <label>) [--token <token>] [--yes] [--non-interactive]",
       },
       {
         description: "Enable a release.",
         group: "release",
-        usage: "cmpatch release enable --server-url <url> (--release-id <id> | (--deployment-id <id> | --app <name> --deployment <name>) --label <label>) [--token <token>] [--yes] [--non-interactive]",
+        usage: "cmpatch release enable --server-url <url> (--release-id <id> | (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --label <label>) [--token <token>] [--yes] [--non-interactive]",
       }
     ],
     parse: parseReleasePatch,
@@ -910,13 +910,13 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "List deployment releases.",
         group: "release",
-        usage: "cmpatch release list --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--token <token>] [--format json|table] [--limit <1-100>] [--offset <0+>] [--include metrics]",
+        usage: "cmpatch release list --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) [--token <token>] [--format json|table] [--limit <1-100>] [--offset <0+>] [--include metrics]",
       },
       {
         description: "Show deployment release history.",
         examples: ["cmpatch deployment history --app MyApp-iOS --deployment Staging","cmpatch deployment history --deployment-id <id>"],
         group: "management",
-        usage: "cmpatch deployment history --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--token <token>] [--limit <1-100>] [--offset <0+>]",
+        usage: "cmpatch deployment history --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) [--token <token>] [--limit <1-100>] [--offset <0+>]",
       }
     ],
     parse: parseReleaseList,
@@ -961,7 +961,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Show release metrics.",
         group: "release",
-        usage: "cmpatch release metrics --server-url <url> (--release-id <id> | (--deployment-id <id> | --app <name> --deployment <name>) --label <label>) [--token <token>] [--format json|table]",
+        usage: "cmpatch release metrics --server-url <url> (--release-id <id> | (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --label <label>) [--token <token>] [--format json|table]",
       }
     ],
     parse: parseReleaseMetrics,
@@ -977,7 +977,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Promote a release.",
         group: "release",
-        usage: "cmpatch release promote --server-url <url> (--release-id <id> | (--source-deployment-id <id> | --app <name> --source-deployment <name>) --label <label>) (--dest-deployment-id <id> | --app <name> --dest-deployment <name>) [--token <token>] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory | --not-mandatory] [--disabled] [--target-binary-version <version>] [--yes] [--non-interactive] [--no-duplicate-release-error]",
+        usage: "cmpatch release promote --server-url <url> (--release-id <id> | (--source-deployment-id <id> | (--app-id <id> | --app <name>) --source-deployment <name>) --label <label>) (--dest-deployment-id <id> | (--app-id <id> | --app <name>) --dest-deployment <name>) [--token <token>] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory | --not-mandatory] [--disabled] [--target-binary-version <version>] [--yes] [--non-interactive] [--no-duplicate-release-error]",
       }
     ],
     parse: parseReleasePromote,
@@ -993,7 +993,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Roll back a deployment.",
         group: "release",
-        usage: "cmpatch release rollback --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) [--label <label>] [--token <token>] [--yes] [--non-interactive]",
+        usage: "cmpatch release rollback --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) [--label <label>] [--token <token>] [--yes] [--non-interactive]",
       }
     ],
     parse: parseReleaseRollback,
@@ -1009,7 +1009,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Show release details.",
         group: "release",
-        usage: "cmpatch release show --server-url <url> (--release-id <id> | (--deployment-id <id> | --app <name> --deployment <name>) --label <label>) [--token <token>]",
+        usage: "cmpatch release show --server-url <url> (--release-id <id> | (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --label <label>) [--token <token>]",
       }
     ],
     parse: parseReleaseShow,
@@ -1024,7 +1024,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       {
         description: "Build a React Native bundle and upload it.",
         group: "release",
-        usage: "cmpatch release-react --server-url <url> (--deployment-id <id> | --app <name> --deployment <name>) --platform <ios|android> [--target-binary-version <version>] [--token <token>] [--entry-file <path>] [--project-root <path>] [--plist-file <path>] [--plist-file-prefix <prefix>] [--gradle-file <path>] [--xcode-project-file <path>] [--xcode-target-name <name>] [--build-configuration-name <name>] [--bundler auto|metro|expo] [--bundler-args <arg>] [--hermes auto|true|false (metro only)] [--extra-hermes-flag <flag> (metro only)] [--base-bytecode auto|off] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory] [--disabled] [--dry-run] [--yes] [--non-interactive] [--no-duplicate-release-error] [--sourcemap-output <path>] [--private-key-path <path>]",
+        usage: "cmpatch release-react --server-url <url> (--deployment-id <id> | (--app-id <id> | --app <name>) --deployment <name>) --platform <ios|android> [--target-binary-version <version>] [--token <token>] [--entry-file <path>] [--project-root <path>] [--plist-file <path>] [--plist-file-prefix <prefix>] [--gradle-file <path>] [--xcode-project-file <path>] [--xcode-target-name <name>] [--build-configuration-name <name>] [--bundler auto|metro|expo] [--bundler-args <arg>] [--hermes auto|true|false (metro only)] [--extra-hermes-flag <flag> (metro only)] [--base-bytecode auto|off] [--release-notes <text>] [--rollout-percentage <1-100>] [--mandatory] [--disabled] [--dry-run] [--yes] [--non-interactive] [--no-duplicate-release-error] [--sourcemap-output <path>] [--private-key-path <path>]",
       }
     ],
     parse: parseReleaseReact,

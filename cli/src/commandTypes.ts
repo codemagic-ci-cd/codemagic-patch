@@ -4,6 +4,7 @@ export type OutputFormat = "json" | "table";
 
 export type DeploymentSelector =
   | {
+      appId?: never;
       deploymentId: string;
       teamId?: never;
       teamName?: never;
@@ -11,6 +12,15 @@ export type DeploymentSelector =
       deploymentName?: never;
     }
   | {
+      appId: string;
+      deploymentId?: never;
+      teamId?: never;
+      teamName?: never;
+      appName?: never;
+      deploymentName: string;
+    }
+  | {
+      appId?: never;
       deploymentId?: never;
       teamId?: never;
       teamName?: never;
@@ -18,6 +28,7 @@ export type DeploymentSelector =
       deploymentName: string;
     }
   | {
+      appId?: never;
       deploymentId?: never;
       teamId?: never;
       teamName: string;
@@ -25,6 +36,7 @@ export type DeploymentSelector =
       deploymentName: string;
     }
   | {
+      appId?: never;
       deploymentId?: never;
       teamId: string;
       teamName?: never;
@@ -647,6 +659,7 @@ export type ParseCliError = Extract<ParseCliResult, { ok: false }>;
 export type CommandDefaultFlagValues = Partial<
   Record<
     | "app"
+    | "appId"
     | "bundler"
     | "deployment"
     | "platform"
