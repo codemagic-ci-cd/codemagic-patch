@@ -190,8 +190,9 @@ function DeploymentDetail({
   // Resolves release authors (createdBy, an opaque user id) to member names
   // where the role bindings are readable; falls back to a shortened id.
   const resolveUser = useUserLabel(teamId);
-  // App name only feeds the CLI snippet — usually a cache hit from the app
-  // detail screen; a failure degrades to the id without erroring the page.
+  // App record feeds the New release wizard (name for the CLI command,
+  // code-signing requirement for upload hints) — usually a cache hit from the
+  // app detail screen; a failure degrades to the id without erroring the page.
   const appQuery = useApp(appId);
   const releasesQuery = useReleases(deployment.id, { includeMetrics: true });
 
@@ -258,8 +259,6 @@ function DeploymentDetail({
       />
     );
   } else if (isEmpty) {
-    // Empty release history → the CLI hint (uploads are
-    // CLI-only, so the pre-filled command IS the call to action).
     body = (
       <EmptyState
         icon={<ActivityIcon />}

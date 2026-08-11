@@ -36,10 +36,12 @@ differ.
   the certificate step.
 - Sizing: at runtime the stack (PostgreSQL, MinIO, the server, and Caddy in one
   Compose project) fits in roughly **2 GB RAM** plus a few GB of disk that grows
-  with the OTA artifacts you store. The memory peak, though, is the **first
-  install**, which builds the server and dashboard images on the host — budget
-  **~4 GB RAM (or add swap)** for that build; a 2 GB host with no swap risks an
-  OOM-killed build.
+  with the OTA artifacts you store. The memory peak is the **first install**,
+  which builds the server and dashboard images on the host. The build itself
+  fits within 2 GiB (measured peak ~1.6 GiB with both images building in
+  parallel), but the OS and Docker daemon share that same memory, so headroom
+  on a 2 GB host is thin — if the build is OOM-killed, add a few GB of swap or
+  use a larger host, then rerun the installer.
 - **Docker Engine** with **Docker Compose v2**.
 - **TCP ports 80 and 443 open** to the internet (host firewall / cloud security
   group).
@@ -88,7 +90,7 @@ with the provider account whose **verified primary email** you pass as
 ### Release workstation — for the `cmpatch` CLI
 
 Publishing updates uses the `cmpatch` CLI, which you build from this repo with
-**Node.js 22.20+ (`<23`)** and **Yarn 4** (via Corepack) — see
+**Node.js 22.20+** and **Yarn 4** (via Corepack) — see
 [Install the CLI](#install-the-cli). This can be the server host or any dev
 machine; the server-host install itself does not need Node.
 
@@ -365,24 +367,22 @@ fails otherwise.
 
 **2. The team already exists.** Self-host provisions a single fixed team on boot
 as the fixed `default-team` (the name is not configurable), and your first sign-in makes
-you its owner (which grants `iam.manage`, the permission needed to invite). Team
-creation, renaming, and deletion are disabled in the CLI and dashboard.
+you its owner (which grants `iam.manage`, the permission needed to invite).
 
 **3. Invite members.** Invite by email, or by GitHub handle if that is all you
-know:
+know. The single `default-team` is resolved automatically, so no team flag is
+needed:
 
 ```bash
 # By email — matches the invitee's verified primary email on first sign-in.
 cmpatch member invite \
   --server-url https://updates.example.com \
-  --team <team> \
   --email coworker@example.com \
   --role developer
 
 # By GitHub handle — resolved to the account's id at invite time.
 cmpatch member invite \
   --server-url https://updates.example.com \
-  --team <team> \
   --github-handle coworker-gh \
   --role developer
 ```
@@ -401,7 +401,7 @@ automatically. Uninvited users are rejected with a 403.
 Manage pending invitations with:
 
 ```bash
-cmpatch member invite-list --server-url https://updates.example.com --team <team>
+cmpatch member invite-list --server-url https://updates.example.com
 cmpatch member invite-revoke --server-url https://updates.example.com --invitation-id <id>
 ```
 
@@ -529,7 +529,7 @@ two ways to get one:
 your own use (e.g. for CI or the smoke/upgrade scripts):
 
 ```bash
-cmpatch token create --server-url https://updates.example.com
+cmpatch token create --server-url https://updates.example.com --name <token-name>
 ```
 
 **Provision a machine/service account.** Any team admin (anyone with
@@ -539,7 +539,6 @@ and token in one command:
 ```bash
 cmpatch member provision \
   --server-url https://updates.example.com \
-  --team <team> \
   --email ci-bot@example.com \
   --role developer
 ```
@@ -580,10 +579,11 @@ trip manually, run it yourself with an API token:
 CODEMAGIC_PATCH_TOKEN=cm_pat_... ./scripts/selfhost/smoke.sh
 ```
 
-The smoke check creates a temporary team/app/deployment, publishes a release,
-fetches manifests and bundle URLs through `PUBLIC_BASE_URL`, verifies
-`_internal/*` is not anonymously readable, and verifies bucket listing is
-denied.
+The smoke check reuses the bootstrap `default-team` and a fixed app named
+`selfhost-smoke` (created on first run and kept — nothing temporary is created
+or deleted) with its `Staging` deployment, publishes a release, fetches
+manifests and bundle URLs through `PUBLIC_BASE_URL`, verifies `_internal/*` is
+not anonymously readable, and verifies bucket listing is denied.
 
 Without `CODEMAGIC_PATCH_TOKEN` the script still runs, but only the unauthenticated
 checks: API health, control-plane requests are rejected with 401, `_internal/*`
@@ -598,6 +598,11 @@ Create a manual backup before upgrades or risky changes:
 ./scripts/selfhost/backup.sh
 ```
 
+Note that the backup stops the server container while the dump runs to
+quiesce writes and restarts it when done — expect a short API outage. The
+upgrade script runs a backup first, so the same applies at the start of every
+upgrade.
+
 The backup directory contains:
 
 ```text
@@ -607,7 +612,9 @@ minio-codemagic-patch.tar.gz
 versions.txt
 ```
 
-Backups are written under `backups/` by default and are ignored by git.
+Deployments that use a `docker-compose.selfhost.override.yml` get that file
+copied into the backup as well. Backups are written under `backups/` by default
+and are ignored by git.
 
 ## Restore
 

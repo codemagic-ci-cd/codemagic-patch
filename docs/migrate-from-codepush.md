@@ -44,6 +44,7 @@ differences worth knowing before you start:
 
   ```sh
   cmpatch login --server-url https://updates.example.com
+  cmpatch config set server-url https://updates.example.com  # remember it for later commands
   cmpatch app create --name my-app        # creates Staging + Production
   cmpatch deployment list --app my-app    # note the new deployment keys
   ```
@@ -187,14 +188,17 @@ way.
 | Legacy | `cmpatch` | Notes |
 | --- | --- | --- |
 | `code-push register` | — | Accounts come from the server's sign-in (GitHub OAuth) or `cmpatch member invite` / `member provision` |
-| `code-push login <serverUrl> --accessKey <key>` | `cmpatch login --server-url <url>` | Opens browser sign-in (loopback redirect); `--token cm_pat_...` for headless machines |
+| `code-push login <serverUrl> --accessKey <key>` | `cmpatch login --server-url <url>` | In a terminal it first asks: browser sign-in (loopback redirect) or paste a token; `--token cm_pat_...` for headless machines |
 | `code-push logout` | `cmpatch logout` | |
 | `code-push whoami` | `cmpatch whoami` | |
 | `code-push access-key add/ls/rm` | `cmpatch token create/list/revoke` | Token value shown once at creation |
 | `code-push session ls/rm` | — | |
 
-Credentials are stored per server under `~/.codemagic-patch/`; the server URL
-is remembered after login instead of being passed per command.
+Credentials are stored per server under `~/.codemagic-patch/`. `login` itself
+does not set a default server URL — store it once with
+`cmpatch config set server-url <url>` (or `cmpatch init`, or the
+`CODEMAGIC_PATCH_SERVER_URL` environment variable) instead of passing
+`--server-url` per command.
 
 ### 2.2 App and deployment management
 
@@ -203,7 +207,7 @@ is remembered after login instead of being passed per command.
 | `code-push app add/ls/rename/rm` | `cmpatch app create/list/rename/remove` | `app create` seeds `Staging` + `Production`, same as CodePush. Also new: `app show`, `app setting` (e.g. `--require-code-signing`) |
 | `code-push app transfer` | — | OSS self-host runs a single team; use `member` roles instead |
 | `code-push collaborator add/ls/rm` | `cmpatch member add/invite/list/update/remove` | Team-scoped roles (`viewer`/`developer`/`admin`/`owner`) instead of per-app collaborators |
-| `code-push deployment add/ls/rename/rm/clear` | `cmpatch deployment create/list/rename/remove/clear` | `deployment list` prints deployment keys and a metrics summary |
+| `code-push deployment add/ls/rename/rm/clear` | `cmpatch deployment create/list/rename/remove/clear` | `deployment list` prints deployment keys; metrics live in `cmpatch deployment metrics` |
 | `code-push deployment history` | `cmpatch deployment history` | Alias for `release list --include metrics --limit 50` |
 
 ### 2.3 Releasing
@@ -211,13 +215,13 @@ is remembered after login instead of being passed per command.
 | Legacy | `cmpatch` | Notes |
 | --- | --- | --- |
 | `code-push release-react <app> <platform>` | `cmpatch release-react --app <app> --platform <ios\|android>` | Positionals become flags; see the flag map below |
-| `code-push release <app> <contents> <targetBinaryVersion>` | `cmpatch release create` | Pre-built bundle directory; explicit `--target-binary-version` and `--platform` required |
+| `code-push release <app> <contents> <targetBinaryVersion>` | `cmpatch release create` | Pre-built bundle via `--bundle-path` (directory, zip, or `.cmpatch` artifact). `--platform` is required unless `--fingerprint` is given; a `.cmpatch` carries its own target version and fingerprint, so those flags are rejected with it |
 | `code-push release-expo` | — | `release-react` auto-detects Expo (`--bundler auto\|metro\|expo`) |
 | `code-push release-native` | — | Binary releases are not registered through the CLI |
 | `code-push patch` | `cmpatch release patch` | Rollout, mandatory, description, target binary version |
 | `code-push promote` | `cmpatch release promote` | |
 | `code-push rollback` | `cmpatch release rollback` | |
-| `code-push debug <platform>` | `cmpatch debug` | Streams device logs via `adb` / `xcrun` |
+| `code-push debug <platform>` | `cmpatch debug <ios\|android>` | Platform stays positional; streams device logs via `adb` / `xcrun` |
 | — | `cmpatch release list/show/inspect`, `release disable/enable` | New: inspect worker status (`--wait`), pull a release from/back into static delivery |
 | — | `cmpatch deployment metrics`, `cmpatch release metrics` | Replaces reading metrics off `deployment ls` |
 | — | `cmpatch init`, `cmpatch context`, `cmpatch doctor`, `cmpatch fingerprint` | Project defaults wizard, effective-config dump, setup diagnosis, fingerprint tooling |
@@ -238,13 +242,16 @@ is remembered after login instead of being passed per command.
 | `--gradleFile` | `--gradle-file` | |
 | `--plistFile` | `--plist-file` | |
 | `--plistFilePrefix` | `--plist-file-prefix` | |
-| `--sourcemapOutput` | `--sourcemap-output` | |
+| `--sourcemapOutput` | `--sourcemap-output` | `release create` names the same thing `--sourcemap` |
 | `--privateKeyPath` | `--private-key-path` | Code signing parity |
 | `--noDuplicateReleaseError` | `--no-duplicate-release-error` | Byte-identical duplicates are rejected by default, as before |
 | `--useHermes` | `--hermes auto\|true\|false` | `auto` reads the project config |
 | `--extraHermesFlags` | `--extra-hermes-flag` | Repeatable |
 | `--extraBundlerOption` | `--bundler-args` | Repeatable; use `--bundler-args=--reset-cache` for values starting with a dash |
-| `--development`, `--bundleName`, `--outputDir`, `--podFile`, `--xcodeProjectFile`, `--xcodeTargetName`, `--buildConfigurationName`, `--buildNumber` | — | Dropped: releases are production bundles with platform-standard names, and iOS version detection reads `Info.plist` directly |
+| `--xcodeProjectFile` | `--xcode-project-file` | With `--xcode-target-name` / `--build-configuration-name`, steers the `project.pbxproj` lookup that iOS version detection falls back to when `Info.plist` holds `$(MARKETING_VERSION)` |
+| `--xcodeTargetName` | `--xcode-target-name` | |
+| `--buildConfigurationName` | `--build-configuration-name` | |
+| `--development`, `--bundleName`, `--outputDir`, `--podFile`, `--buildNumber` | — | Dropped: releases are production bundles with platform-standard names |
 | — | `--bundler`, `--dry-run`, `--yes`, `--non-interactive`, `--format json\|table` | New |
 
 ### 2.5 Behavioral differences to expect
