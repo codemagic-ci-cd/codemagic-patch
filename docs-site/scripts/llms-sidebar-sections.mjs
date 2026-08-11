@@ -26,7 +26,6 @@ export const LLMS_SECTIONS = [
       'setup/cloudflare',
       'setup/infrastructure',
       'setup/ongoing-maintenance',
-      'setup/apps-deployments',
       'setup/native-setup',
       'setup/checking-for-updates',
       'setup/applying-updates',

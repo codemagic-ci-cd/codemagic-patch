@@ -119,6 +119,22 @@ cmpatch release create \
   --yes
 ```
 
+## 5. Try it with your own app
+
+The demo proves the loop. To see Patch on your project, keep this stack running and wire the SDK against localhost:
+
+| Config key | Local value |
+| --- | --- |
+| `CodemagicPatchApiUrl` | `http://localhost:3000` |
+| `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
+| `CodemagicPatchDeploymentKey` | from `cmpatch deployment list` for your app |
+
+Create your own apps and deployments with `cmpatch` (do not reuse `demo-app-*` unless you only need the bundled demo). Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does; use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs. The on-device demo uses `adb reverse` for the Android emulator.
+
+- [Native setup](/docs/setup/native-setup) for bare React Native or the Expo config plugin
+- Coming from Expo Updates: [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) (local PoC path first)
+- Coming from a CodePush fork: [Migrating from CodePush](/docs/migration/migrating-from-codepush)
+
 ## Tear down
 
 ```bash
@@ -146,21 +162,12 @@ Re-print the ready banner without reinstalling the CLI:
 The seeded API token (`cm_pat_local-dev-token-change-me-00000001`) is for local scripting only. Do not reuse it in production.
 :::
 
-### Point your own app at localhost
-
-| Config key | Local value |
-| --- | --- |
-| `CodemagicPatchApiUrl` | `http://localhost:3000` |
-| `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
-| `CodemagicPatchDeploymentKey` | `dev_local_ios_deployment_key` or `dev_local_android_deployment_key` |
-
-Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does. Use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs. The on-device demo uses `adb reverse` for the Android emulator.
-
 ## Where to go next
 
 | Goal | Page |
 | --- | --- |
 | Install and configure the app SDK | [Native setup](/docs/setup/native-setup) |
 | Confirm update behavior on your app | [Verify a test release](/docs/using-patch/verify-test-release) |
-| Coming from CodePush or Expo Updates | [Migration](/docs/migration/migrating-from-codepush) |
+| Coming from Expo Updates | [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) |
+| Coming from a CodePush fork | [Migrating from CodePush](/docs/migration/migrating-from-codepush) |
 | Deploy with your own domains | [Install](/docs/install) |

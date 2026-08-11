@@ -1,12 +1,40 @@
 ---
 title: Native setup
 description: Integrate the Patch SDK in bare React Native or Expo prebuild projects.
-llmsDescription: 'SDK install — native config keys, bundle boot order, bare RN and Expo.'
+llmsDescription: >-
+  Create apps and deployments, then install the SDK with native config keys for
+  bare RN or Expo.
 ---
 
 # Native setup
 
-Add the SDK:
+Wire `@codemagic/react-native-patch` into a bare React Native or Expo prebuild app so release builds can check, download, and apply OTAs.
+
+You need:
+
+- A running Patch server ([local quickstart](/docs/) or [Install](/docs/install))
+- The `cmpatch` CLI signed in (`cmpatch login`)
+- A native project you can rebuild (Expo Go is not supported)
+
+## Create apps and deployments
+
+Keep iOS and Android in separate apps:
+
+```bash
+cmpatch app create --name MyApp-iOS
+cmpatch app create --name MyApp-Android
+
+cmpatch deployment list --app MyApp-iOS --format table
+cmpatch deployment list --app MyApp-Android --format table
+```
+
+`app create` automatically creates the `Staging` and `Production` deployments. The `DEPLOYMENT_KEY` column from `deployment list` is the value your app embeds (`CodemagicPatchDeploymentKey`).
+
+The same operations are available in the [web dashboard](/docs/using-patch/dashboard): open your app, open a deployment, and copy the deployment key plus SDK URLs from the SDK configuration panel.
+
+## Install the SDK
+
+Add the package:
 
 ```bash
 yarn add @codemagic/react-native-patch
@@ -21,7 +49,7 @@ The SDK is configured through four native values (injected at build time):
 | `CodemagicPatchApiUrl` | your API URL |
 | `CodemagicPatchPublicKey` | *(optional)* PEM public key for code-signing enforcement |
 
-The snippets below use placeholder values. Substitute your deployment keys and URLs from [Apps and deployments](/docs/setup/apps-deployments) and [Install](/docs/install).
+The snippets below use placeholder values. Substitute your deployment keys from above and your API / download URLs from [Install](/docs/install) (or [local quickstart](/docs/#5-try-it-with-your-own-app) for localhost).
 
 ## Option A. Bare React Native
 

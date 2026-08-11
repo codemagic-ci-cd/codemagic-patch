@@ -1,24 +1,26 @@
 ---
 title: Migrating from CodePush
-description: Move from Codemagic CodePush or react-native-code-push to self-hosted Patch.
-llmsDescription: 'CodePush to Patch — SDK swap, deployment keys, server URL, CLI mapping.'
+description: >-
+  Move from a CodePush-compatible fork or hosted successor to self-hosted Patch.
+llmsDescription: >-
+  CodePush forks to Patch: SDK swap, deployment keys, server URL, CLI mapping.
 ---
 
 # Migrating from CodePush
 
-This guide covers moving from [Codemagic CodePush](https://docs.codemagic.io/rn-codepush/) (hosted), `@code-push-next/react-native-code-push`, or another CodePush-compatible integration to self-hosted Codemagic Patch. For a feature-level comparison, see [How Patch compares](/docs/introduction/comparison#vs-codepush-forks).
+This guide covers moving from any CodePush-compatible client and server (community forks, hosted successors, or a self-hosted CodePush-compatible API) to self-hosted Codemagic Patch. The wire protocol and package names differ by fork; the apps / deployments / `sync()` mental model usually transfers. For trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-codepush-forks).
 
 :::warning
-The Patch SDK ships in the **native binary**. Plan a store release (or internal distribution build) that embeds Patch before OTA updates can run through your Patch server. You cannot swap the update client purely over the air.
+The Patch SDK ships in the native binary. Plan a store release (or internal distribution build) that embeds Patch before OTA updates can run through your Patch server. You cannot swap the update client purely over the air.
 :::
 
 ## Concept mapping
 
-| CodePush | Codemagic Patch |
+| CodePush fork (typical) | Codemagic Patch |
 | --- | --- |
-| Hosted service (`codepush.pro`) | [Self-hosted](/docs/install) stack on your domains |
+| Hosted or self-hosted CodePush-compatible server | [Self-hosted](/docs/install) Patch stack on your domains |
 | App access key / service token | GitHub OAuth (dashboard) + `cm_pat_…` API tokens (CLI/CI) |
-| Deployment key in native config | `CodemagicPatchDeploymentKey` ([same idea](/docs/setup/apps-deployments)) |
+| Deployment key in native config | `CodemagicPatchDeploymentKey` ([same idea](/docs/setup/native-setup#create-apps-and-deployments)) |
 | `Staging` / `Production` deployments | Same channel names by default |
 | `codePush.sync()` / HOC wrapper | [`sync()`](/docs/setup/checking-for-updates) from `@codemagic/react-native-patch` |
 | `release-react` (CodePush CLI) | `cmpatch release-react` |
@@ -46,17 +48,17 @@ Copy each deployment key into native config when you integrate the SDK.
 
 ## 2. Replace the client SDK
 
-Remove CodePush from dependencies and native projects:
+Remove your CodePush client package and native wiring (package name varies by fork):
 
 ```bash
-yarn remove @code-push-next/react-native-code-push   # or your CodePush package name
+yarn remove @code-push-next/react-native-code-push   # or your fork's package
 yarn add @codemagic/react-native-patch
 cd ios && pod install && cd ..
 ```
 
 Wire Patch per [Native setup](/docs/setup/native-setup): bare RN (Info.plist / `strings.xml` + bundle selection) or Expo (config plugin + `prebuild`).
 
-Replace CodePush calls in JS:
+Replace CodePush calls in JS (example uses `@code-push-next`; adjust the import for your fork):
 
 ```tsx
 // Before (CodePush)
@@ -80,7 +82,7 @@ cmpatch config set server-url https://updates.example.com
 cmpatch token create --name ci   # store cm_pat_… as a CI secret
 ```
 
-Swap CodePush release steps for:
+Swap your fork's release / `release-react` CI steps for:
 
 ```bash
 cmpatch release-react \
@@ -97,7 +99,7 @@ See [CI integration](/docs/using-patch/ci-integration): including `--disabled` a
 1. **Publish a native build** with the Patch SDK and deployment keys embedded (Staging first).
 2. **Publish an OTA release** to that deployment with `cmpatch release-react` targeting the same binary version users install.
 3. Validate on Staging, then repeat for Production.
-4. Decommission CodePush releases once no active binaries still call the old service.
+4. Decommission the old CodePush server or SaaS once no active binaries still call it.
 
 ## Checklist
 

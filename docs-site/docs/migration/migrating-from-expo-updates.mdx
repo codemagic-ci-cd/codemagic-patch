@@ -1,12 +1,14 @@
 ---
 title: Migrating from Expo Updates
 description: Move from Expo Updates or EAS Update to self-hosted Patch.
-llmsDescription: 'Expo Updates/EAS to Patch — SDK swap, config keys, deployment mapping.'
+llmsDescription: >-
+  Expo Updates/EAS to Patch: local eval PoC on your app, then SDK swap and
+  cutover.
 ---
 
 # Migrating from Expo Updates
 
-This guide covers moving from [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/) / EAS Update to self-hosted Codemagic Patch. You can keep EAS Build for native binaries if you want; only the **update delivery** layer changes. For a comparison of trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-expo-updates).
+This guide covers moving from [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/) / EAS Update to self-hosted Codemagic Patch. You can keep EAS Build for native binaries if you want; only the update delivery layer changes. Start against the [local evaluation stack](/docs/) with your own app before provisioning domains. For trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-expo-updates).
 
 :::warning
 Patch requires a **development build** (not Expo Go) and a **new native binary** with the Patch SDK embedded. Plan a store or internal build before OTA can flow through Patch.
@@ -22,22 +24,32 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 | `eas update` | `cmpatch release-react` |
 | `Updates.checkForUpdateAsync()` / `fetchUpdateAsync()` | [`sync()`](/docs/setup/checking-for-updates) or `checkForUpdate()` + `downloadUpdate()` + `installUpdate()` |
 | `Updates.reloadAsync()` | `restartApp()` (or install mode `IMMEDIATE`) |
-| `expo-updates` config in `app.config` | `@codemagic/react-native-patch` [config plugin](/docs/setup/native-setup#option-b--expo-prebuild) |
+| `expo-updates` config in `app.config` | `@codemagic/react-native-patch` [config plugin](/docs/setup/native-setup#option-b-expo-prebuild) |
 | EAS project credentials | GitHub OAuth + `cm_pat_…` tokens on your Patch instance |
 
 ## 1. Stand up Patch
 
-Follow [Install](/docs/install) or the [Local quickstart](/docs/) for a local evaluation stack. Note your API URL and download base URL; they replace EAS Update endpoints in app config.
+For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/) (`./scripts/local-eval/up.sh`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server.
 
-Create Patch apps and deployments:
+| | Local eval | Running on VM |
+| --- | --- | --- |
+| API (`apiUrl`) | `http://localhost:3000` | `https://updates.example.com` |
+| Download base (`downloadBaseUrl`) | `http://localhost:9100/codemagic-patch` | `https://storage.updates.example.com/codemagic-patch` |
+
+Create apps for your product (skip the seeded `demo-app-*` apps unless you are only trying the bundled on-device demo):
 
 ```bash
-cmpatch app create --name MyApp-iOS
-cmpatch app create --name MyApp-Android
-cmpatch deployment list --app MyApp-iOS --format table
+cmpatch login --server-url http://localhost:3000
+cmpatch app create --server-url http://localhost:3000 --name MyApp-iOS
+cmpatch app create --server-url http://localhost:3000 --name MyApp-Android
+cmpatch deployment list --server-url http://localhost:3000 --app MyApp-iOS --format table
 ```
 
-Map each EAS channel you use today to a Patch deployment (e.g. EAS `preview` → Patch `Staging`, EAS `production` → Patch `Production`).
+Map each EAS channel you use today to a Patch deployment (e.g. EAS `preview` → Patch `Staging`, EAS `production` → Patch `Production`). Copy each deployment key into the Expo config plugin in the next step.
+
+:::info
+Local eval is enough to answer "does Patch work on our app?" It is not a production host: authentication is disabled and ports bind to localhost. Physical devices and Android emulators need a LAN IP (or `adb reverse`); see [Try it with your own app](/docs/#5-try-it-with-your-own-app).
+:::
 
 ## 2. Replace the client integration
 
@@ -55,14 +67,40 @@ Add Patch:
 yarn add @codemagic/react-native-patch
 ```
 
-Configure the [Expo config plugin](/docs/setup/native-setup#option-b--expo-prebuild) with deployment key, `apiUrl`, and `downloadBaseUrl` per platform, then regenerate native projects:
+Configure the [Expo config plugin](/docs/setup/native-setup#option-b-expo-prebuild) with deployment key, `apiUrl`, and `downloadBaseUrl` per platform. For local eval:
+
+```json
+{
+  "expo": {
+    "plugins": [
+      [
+        "@codemagic/react-native-patch",
+        {
+          "ios": {
+            "deploymentKey": "<from deployment list>",
+            "downloadBaseUrl": "http://localhost:9100/codemagic-patch",
+            "apiUrl": "http://localhost:3000"
+          },
+          "android": {
+            "deploymentKey": "<from deployment list>",
+            "downloadBaseUrl": "http://localhost:9100/codemagic-patch",
+            "apiUrl": "http://localhost:3000"
+          }
+        }
+      ]
+    ]
+  }
+}
+```
+
+Then regenerate native projects:
 
 ```bash
 npx expo prebuild --clean
 cd ios && pod install && cd ..
 ```
 
-Replace update logic in JS:
+Build a **development or release** binary (not Expo Go) and install it on a simulator or emulator. Replace update logic in JS:
 
 ```tsx
 // Before (Expo Updates)
@@ -80,9 +118,22 @@ void sync();
 
 Tune when checks run in [Checking for updates](/docs/setup/checking-for-updates) and install timing in [Applying updates](/docs/setup/applying-updates).
 
-## 3. Move publishing off EAS Update
+## 3. Ship OTAs with Patch instead of EAS Update
 
-Install the Patch CLI and create a CI token:
+For a local proof of concept, run `release-react` from your machine against the eval stack (no CI token required):
+
+```bash
+cmpatch release-react \
+  --server-url http://localhost:3000 \
+  --platform ios \
+  --deployment Staging \
+  --release-notes "Local PoC" \
+  --yes
+```
+
+Confirm the update on the binary you built in step 2 (check / relaunch, same loop as the [on-device demo](/docs/#3-watch-an-update-apply-on-device-demo)). That is enough to decide whether a production install is worth it.
+
+When you cut over for real, install the CLI against your hosted API and create a CI token:
 
 ```bash
 npm install -g @codemagic/patch-cli
@@ -90,32 +141,25 @@ cmpatch config set server-url https://updates.example.com
 cmpatch token create --name ci
 ```
 
-Replace `eas update` (or EAS Update workflow steps) with:
-
-```bash
-cmpatch release-react \
-  --platform ios \
-  --deployment Staging \
-  --release-notes "…" \
-  --yes
-```
-
-`release-react` bundles JS, computes fingerprint and target binary version, and uploads in one step, similar in role to `eas update` plus local bundling. See [CI integration](/docs/using-patch/ci-integration).
+Replace `eas update` (or EAS Update workflow steps) with the same `release-react` command, pointed at your production server URL. `release-react` bundles JS, computes fingerprint and target binary version, and uploads in one step, similar in role to `eas update` plus local bundling. See [CI integration](/docs/using-patch/ci-integration).
 
 You can keep **EAS Build** (or any CI) to produce the native `.ipa` / `.apk`. After each new native build, consider a `--disabled` release to record the fingerprint for that binary version before shipping JS-only OTAs.
 
 ## 4. Cut over
 
-1. Ship a **development or store build** with the Patch plugin and deployment keys (Staging first).
-2. Publish an OTA with `cmpatch release-react` targeting the binary version users install.
-3. Confirm updates on real devices; then promote the same workflow to Production.
-4. Turn off EAS Update for the project once no binaries depend on it.
+1. [Install](/docs/install) Patch on your domains (or keep using local only until the PoC is done).
+2. Point the Expo plugin at the production API and download URLs; ship a **development or store build** with those keys (Staging first).
+3. Publish an OTA with `cmpatch release-react` targeting the binary version users install.
+4. Confirm updates on real devices; then promote the same workflow to Production.
+5. Turn off EAS Update for the project once no binaries depend on it.
 
 ## Checklist
 
-- [ ] Patch server running; apps and deployments created
-- [ ] `expo-updates` removed; Patch plugin configured in `app.config`
-- [ ] `expo prebuild` run; not relying on Expo Go for OTA testing
+- [ ] Local eval (or hosted Install) running; apps and deployments created
+- [ ] `expo-updates` removed; Patch plugin configured in `app.config` (local URLs for PoC)
+- [ ] `expo prebuild` run; development/release binary installed (not Expo Go)
 - [ ] `sync()` (or manual API) replaces Expo Updates calls
+- [ ] Local `cmpatch release-react` lands an update on that binary
+- [ ] Hosted Install done before any shared/Staging cutover
 - [ ] CI publishes with `cmpatch` instead of `eas update`
 - [ ] New native binary in users' hands; Staging validated before Production

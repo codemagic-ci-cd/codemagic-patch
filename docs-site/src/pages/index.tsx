@@ -134,7 +134,13 @@ const COMPARISON_ROWS = [
     patch: 'Team web dashboard',
   },
   {
-    feature: 'Team RBAC',
+    feature: 'Adoption metrics',
+    expo: 'Dashboard and CLI',
+    hotUpdater: 'No',
+    patch: 'Dashboard and CLI',
+  },
+  {
+    feature: 'User roles',
     expo: 'Yes',
     hotUpdater: 'No',
     patch: 'Yes',

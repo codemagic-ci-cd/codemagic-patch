@@ -37,7 +37,6 @@ const sidebars: SidebarsConfig = {
           label: 'App & SDK',
           collapsible: false,
           items: [
-            'setup/apps-deployments',
             'setup/native-setup',
             'setup/checking-for-updates',
             'setup/applying-updates',

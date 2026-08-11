@@ -35,9 +35,17 @@ The headline difference is build vs buy.
 | | Expo Updates | Codemagic Patch |
 | --- | --- | --- |
 | Hosting | Hosted-only (EAS) | Self-hosted; you run the stack |
-| Cost model | Free tier, then usage-based EAS pricing | Free to self-host under the Server License; [commercial pricing](/docs/introduction/pricing) at scale |
+| Pricing | Free tier, then usage-based pricing | Free to self-host under 1 million MAU, [commercial pricing](/docs/introduction/pricing) at scale |
 | Bare React Native | Works, but needs Expo modules in bare projects | Bare RN and Expo (prebuild plugin) |
-| Dashboard | Expo / EAS web UI | Patch web dashboard (releases, metrics, team roles) |
+| Fingerprinting | Yes | Yes |
+| Binary diffs | Yes | Yes |
+| Channels | EAS channels and branches | Staging and Production deployments |
+| Rollout and rollback | Yes | Yes |
+| Dashboard | Expo / EAS web UI | Patch web dashboard |
+| Metrics | Release history, installs, failures | Release history, installs, failures |
+| Team access | EAS org roles | User roles |
+| Local evaluation | Against EAS | Full stack on localhost |
+| Source | Client SDK open source; update server is proprietary | SDK, CLI, and server are source-available |
 
 Expo Updates is a strong default if you already use EAS Build and EAS Update together; fingerprinting and channel wiring are largely handled inside that ecosystem with minimal setup.
 
@@ -87,6 +95,7 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 | Update check | Server polling database | Static manifest on storage or CDN |
 | Bundle download | Your storage (often CDN-backed) | Storage or CDN URLs from manifest |
 | Web console | Local console for editing releases | Cloud dashboard with release management, metrics and IAM |
+| Adoption metrics | Not built in | Dashboard and CLI (downloads, installs, success / failure) |
 | Team access | Share backend credentials | RBAC with management in the dashboard |
 | Audit trail | No built in audit logging | CLI identity is tied to GitHub OAuth |
 | Backups and DR | Build your own backup/restore process | Built-in `backup.sh`, `restore.sh`, and `upgrade.sh` |
