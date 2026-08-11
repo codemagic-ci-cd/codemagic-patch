@@ -38,7 +38,7 @@ export function formatDeploymentSelector(
   }
 
   return [
-    deployment.teamId ?? deployment.teamName,
+    deployment.teamId ?? deployment.teamName ?? deployment.appId,
     deployment.appName,
     deployment.deploymentName,
   ]
@@ -68,11 +68,13 @@ export async function resolveDeploymentId(
   }
 
   const appId = await resolveAppId(
-    deployment.teamId !== undefined
-      ? { appName: deployment.appName, teamId: deployment.teamId }
-      : deployment.teamName !== undefined
-        ? { appName: deployment.appName, teamName: deployment.teamName }
-        : { appName: deployment.appName },
+    deployment.appId !== undefined
+      ? { appId: deployment.appId }
+      : deployment.teamId !== undefined
+        ? { appName: deployment.appName, teamId: deployment.teamId }
+        : deployment.teamName !== undefined
+          ? { appName: deployment.appName, teamName: deployment.teamName }
+          : { appName: deployment.appName },
     serverUrl,
     token,
     deps,
@@ -92,9 +94,10 @@ export async function resolveDeploymentId(
   );
 
   if (!resolvedDeployment) {
+    const appDescription = deployment.appId ?? deployment.appName;
     throw new UsageError(
       [
-        `Deployment "${deployment.deploymentName}" not found for app "${deployment.appName}" (${appId}).`,
+        `Deployment "${deployment.deploymentName}" not found for app "${appDescription}" (${appId}).`,
         `Context: server ${serverUrl}; app ${appId}; deployment source: --deployment/project config value "${deployment.deploymentName}".`,
         `Next: run \`cmpatch deployment list --server-url ${serverUrl} --app-id ${appId}\` or update codemagic-patch.config.json.`,
       ].join("\n"),
@@ -200,7 +203,7 @@ export async function resolveAppId(
       [
         `App "${app.appName}" not found in team "${teamDescription}" (${teamId}).`,
         `Context: server ${serverUrl}; team ${teamId}; app source: --app/project config value "${app.appName}".`,
-        `Next: run \`cmpatch app list --server-url ${serverUrl} --team-id ${teamId}\` or update codemagic-patch.config.json.`,
+        `Next: run \`cmpatch app list --server-url ${serverUrl}\` or update codemagic-patch.config.json.`,
       ].join("\n"),
     );
   }

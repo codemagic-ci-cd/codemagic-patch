@@ -541,7 +541,7 @@ main() {
   printf '     of the auto-created "default-team".\n'
   printf '  3. The "default-team" is the single fixed team; team creation is disabled.\n'
   printf '     Onboard others with: cmpatch member invite --email <email> --role <role>\n'
-  printf '     For CI/machine access, mint a token: cmpatch token create.\n'
+  printf '     For CI/machine access, mint a token: cmpatch token create --name <token-name>.\n'
   printf '  4. Run scripts/selfhost/backup.sh before upgrades or risky changes.\n'
 }
 

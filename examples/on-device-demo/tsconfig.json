@@ -1,6 +1,7 @@
 {
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "types": [],
     // Resolve @codemagic/react-native-patch to its published dist/*.d.ts types
     // instead of its shipped TS sources (which the base config's

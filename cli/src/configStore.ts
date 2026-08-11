@@ -19,6 +19,7 @@ export interface CliConfig {
 
 export interface ProjectConfig extends CliConfig {
   app?: string;
+  appId?: string;
   apps?: ProjectPlatformConfigMap;
   bundler?: string;
   deployment?: string;
@@ -27,6 +28,7 @@ export interface ProjectConfig extends CliConfig {
 
 export interface ProjectPlatformConfig {
   app?: string;
+  appId?: string;
   deployment?: string;
 }
 
@@ -120,6 +122,7 @@ export async function loadProjectConfigFile(
 
   return stripEmptyProjectConfig({
     app: parsed.app,
+    appId: parsed.appId,
     apps: parsed.apps,
     bundler: parsed.bundler,
     deployment: parsed.deployment,
@@ -158,6 +161,7 @@ async function loadPackageProjectConfig(
 
   return stripEmptyProjectConfig({
     app: cmpatch.app,
+    appId: cmpatch.appId,
     apps: cmpatch.apps,
     bundler: cmpatch.bundler,
     deployment: cmpatch.deployment,
@@ -226,6 +230,9 @@ function stripEmptyProjectConfig(config: ProjectConfig): ProjectConfig {
     ...(resolveOptionalString(config.app) !== undefined
       ? { app: resolveOptionalString(config.app) }
       : {}),
+    ...(resolveOptionalString(config.appId) !== undefined
+      ? { appId: resolveOptionalString(config.appId) }
+      : {}),
     ...(apps !== undefined ? { apps } : {}),
     ...(resolveOptionalString(config.bundler) !== undefined
       ? { bundler: resolveOptionalString(config.bundler) }
@@ -255,6 +262,7 @@ function isProjectConfigFile(value: unknown): value is ProjectConfig {
   return (
     isRecord(value) &&
     optionalStringField(value, "app") &&
+    optionalStringField(value, "appId") &&
     optionalProjectPlatformConfigMapField(value, "apps") &&
     optionalStringField(value, "bundler") &&
     optionalStringField(value, "deployment") &&
@@ -307,6 +315,9 @@ function stripEmptyProjectPlatformConfig(
     ...(resolveOptionalString(value.app) !== undefined
       ? { app: resolveOptionalString(value.app) }
       : {}),
+    ...(resolveOptionalString(value.appId) !== undefined
+      ? { appId: resolveOptionalString(value.appId) }
+      : {}),
     ...(resolveOptionalString(value.deployment) !== undefined
       ? { deployment: resolveOptionalString(value.deployment) }
       : {}),
@@ -345,6 +356,7 @@ function optionalProjectPlatformConfigField(
   return (
     isRecord(config) &&
     optionalStringField(config, "app") &&
+    optionalStringField(config, "appId") &&
     optionalStringField(config, "deployment")
   );
 }

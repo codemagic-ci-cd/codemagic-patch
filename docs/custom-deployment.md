@@ -47,13 +47,30 @@ DATABASE_URL=postgresql://...
 WORKER_SHARED_SECRET=<32+-chars>
 STORAGE_ADAPTER=s3
 PUBLIC_BASE_URL=https://storage.example.com/codemagic-patch
-MANIFEST_CACHE_CONTROL="no-cache, must-revalidate"
 ```
+
+(`MANIFEST_CACHE_CONTROL` is optional tuning — the built-in default is already
+`no-cache, must-revalidate`.)
 
 An OAuth sign-in provider is **required** for `MODE=all`/`MODE=api` — the
 server refuses to boot without at least one of GitHub
 (`GITHUB_OAUTH_CLIENT_ID`) or Bitbucket (`BITBUCKET_OAUTH_CLIENT_ID`)
-configured. For GitHub, create a GitHub OAuth App (Authorization callback URL
+configured. Two more values are refuse-to-boot requirements **regardless of
+which provider you pick**: `OAUTH_CLI_AUTH_SECRET` (32+ chars; signs the CLI
+browser-login codes) and — under the default invite-only registration —
+`INITIAL_ADMIN_EMAILS` — the server hard-fails at startup when it is missing,
+since no first account could ever be created. (Installations upgrading from an
+older release: the legacy `OAUTH_DEVICE_POLL_TOKEN_SECRET` variable still
+fully satisfies the CLI-secret requirement, so you do not need to rename it to
+`OAUTH_CLI_AUTH_SECRET`.)
+
+The `/auth/callback` URL you register at the provider is a dashboard SPA
+route: the server serves it only when `DASHBOARD_STATIC_DIR` points at the
+built dashboard (the official server image sets it to `/app/dashboard`). If
+you run the process yourself, add `DASHBOARD_STATIC_DIR=<path-to-built-dashboard>`
+to the configuration above — without it, that callback URL will 404.
+
+For GitHub, create a GitHub OAuth App (Authorization callback URL
 `https://<host>/auth/callback`), then set:
 
 ```bash
@@ -64,10 +81,12 @@ GITHUB_OAUTH_SCOPES="read:user user:email"
 INITIAL_ADMIN_EMAILS=admin@example.com
 ```
 
-Optionally add Bitbucket Cloud as a second dashboard sign-in provider (an
-OAuth consumer with callback URL `https://<host>/auth/callback` and the
-`account` + `email` scopes set on the consumer; both values are required
-together):
+Optionally add Bitbucket Cloud as a second dashboard sign-in provider, or run
+it as the only provider (`OAUTH_CLI_AUTH_SECRET` and `INITIAL_ADMIN_EMAILS`
+above still apply). Create an OAuth consumer with callback URL
+`https://<host>/auth/callback` and the `account` + `email` scopes set on the
+consumer. Setting the client id enables the provider; the secret is then
+mandatory — an id without its secret refuses to boot:
 
 ```bash
 BITBUCKET_OAUTH_CLIENT_ID=<bitbucket-consumer-key>
@@ -143,16 +162,16 @@ CodemagicPatch API server.
 ## First admin
 
 There is no token-minting bootstrap step. The single team is provisioned on boot
-as the fixed `default-team` (the name is not configurable); team creation is disabled in
-the CLI and dashboard. The first admin account is created the first time an email
-in `INITIAL_ADMIN_EMAILS` signs in via GitHub OAuth (allowed past invite-only
-registration). That email must match the **verified** primary email of the
-admin's GitHub account — that first sign-in also makes the admin the team owner.
-The admin then mints tokens for CI as needed:
+as the fixed `default-team` (the name is not configurable). The first admin
+account is created the first time an email in `INITIAL_ADMIN_EMAILS` signs in
+through any configured OAuth provider (allowed past invite-only registration).
+That email must match the admin's **verified** primary email at the provider
+(GitHub calls it verified, Bitbucket confirmed) — that first sign-in also makes
+the admin the team owner. The admin then mints tokens for CI as needed:
 
 ```bash
 cmpatch login --server-url https://updates.example.com
-cmpatch token create --server-url https://updates.example.com   # for CI/machines
+cmpatch token create --server-url https://updates.example.com --name ci
 ```
 
 If you are migrating from seeded or pre-existing data, grant owner access to the

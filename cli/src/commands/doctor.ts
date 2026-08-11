@@ -589,14 +589,26 @@ function checkDefaultConflicts(
     ...(projectConfig.team !== undefined && projectConfig.teamId !== undefined
       ? ["Project config contains both team and teamId."]
       : []),
+    ...(projectConfig.app !== undefined && projectConfig.appId !== undefined
+      ? ["Project config contains both app and appId."]
+      : []),
+    ...(["android", "ios"] as const).flatMap((platform) => {
+      const platformConfig = projectConfig.apps?.[platform];
+      return platformConfig?.app !== undefined &&
+        platformConfig.appId !== undefined
+        ? [`Project config contains both app and appId for ${platform}.`]
+        : [];
+    }),
   ];
 
   if (issues.length > 0) {
     return {
-      detail: "Conflicting team defaults were found.",
+      detail: "Conflicting team or app defaults were found.",
       id: "default-conflicts",
       issues,
-      advice: ["Keep only one of team or team-id in each config scope."],
+      advice: [
+        "Keep only one of team or team-id, and one of app or app-id, in each config scope.",
+      ],
       nextCommands: ["cmpatch context"],
       status: "fail",
       title: "Default conflicts",
@@ -2499,6 +2511,9 @@ function summarizeEffectiveContext(
       : {}),
     ...(context.app !== undefined
       ? { app: summarizeEffectiveValue(context.app) }
+      : {}),
+    ...(context.appId !== undefined
+      ? { appId: summarizeEffectiveValue(context.appId) }
       : {}),
     ...(context.deployment !== undefined
       ? { deployment: summarizeEffectiveValue(context.deployment) }

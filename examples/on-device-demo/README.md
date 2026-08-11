@@ -1,8 +1,8 @@
-# On-device demo — watch an OTA update apply
+# On-device demo: watch an OTA update apply
 
-A minimal React Native app, preconfigured against the [local evaluation stack](../../README.md#quickstart--try-it-locally), built for a single purpose: making an OTA update visible. It fills the screen with a version banner (**v1**, blue). You change one line, publish a release, relaunch — and the banner flips to **v2**, green. That flip is Codemagic Patch replacing the app's JS bundle, using the same client SDK, CLI, and server code paths as production.
+A React Native demo storefront, preconfigured against the [local evaluation stack](../../README.md#quickstart--try-it-locally). Checkout starts broken on purpose. You flip one line, publish a release, and watch the running app install the fix over the air, using the same client SDK, CLI, and server code paths as production.
 
-The app uses the SDK's manual flow (`checkForUpdate` → `downloadUpdate` → `installUpdate`) so you can see each phase on screen — checking, download progress, installed — instead of it all happening silently inside `sync()`.
+By default the app checks for updates on launch and resume. With install confirmation on, it downloads in the background and shows an **Update Available** alert so you can choose **Install Now**.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ yarn install
 yarn demo:setup:ios   # iOS only — installs pods (Bundler with the pinned lockfile, falling back to `pod` on PATH)
 ```
 
-## Build and install the app (v1)
+## Build and install the app
 
 ```bash
 yarn demo:ios       # iOS Simulator
@@ -32,14 +32,14 @@ Both build the **Release** configuration with `--no-packager` — deliberate: th
 
 `demo:android` first runs `adb reverse tcp:3000 tcp:3000` and `adb reverse tcp:9100 tcp:9100`, so `localhost` inside the emulator reaches the stack's API and storage ports on your host.
 
-On launch the app shows the blue **v1** banner and, after a moment, *"Up to date — you are running v1."*
+On launch the app shows a fake storefront. Tap **Add to cart** on any product and you should see "Payment failed" / "Error 418: intentional bug".
 
 ## Publish an update and watch it apply
 
 1. Edit [`App.tsx`](App.tsx) — change the marked line:
 
    ```ts
-   const APP_VERSION = 'v1';   // → 'v2'
+   const CHECKOUT_BROKEN = true;   // → false
    ```
 
 2. Publish it as an OTA release, from this directory:
@@ -58,9 +58,9 @@ On launch the app shows the blue **v1** banner and, after a moment, *"Up to date
      --platform android
    ```
 
-3. In the app, tap **Check again**. It finds the release, shows download progress, then offers **Update installed — Relaunch**. Tap it: the banner flips to the green **v2**.
+3. In the running app, background it and bring it back (or relaunch). With the default settings the app checks on resume, downloads the update, and shows **Update Available**. Tap **Install Now**. The app reloads into your update: **Add to cart** now confirms the order.
 
-The update was staged with the default `ON_NEXT_RESTART` install mode, so a manual cold start (or the Relaunch button, which calls `restartApp()`) is what boots the new bundle.
+The update was staged with the default `ON_NEXT_RESTART` install mode. After you confirm install, the app calls `restartApp()` so the new bundle boots.
 
 ## How it's wired
 
@@ -78,5 +78,5 @@ The matching `demo-app-ios` / `demo-app-android` apps, each with a `staging` dep
 
 - **"Local stack unreachable — is it running?"** — the evaluation stack isn't up (or was torn down). From the repo root, run `./scripts/local-eval/up.sh` and check again.
 - **Android stops finding updates after an emulator restart** — `adb reverse` mappings don't survive the emulator or adb server restarting. Re-run `yarn demo:android`, or only the two `adb reverse` commands from [`package.json`](package.json).
-- **`release-react` fails with a duplicate-release error** — you published the exact same bundle twice. Change `APP_VERSION` (or any other code) and publish again.
-- **Reset the environment** — from the repo root, run `docker compose -f docker-compose.dev.yml down -v`, then `./scripts/local-eval/up.sh`; the seed recreates the apps, deployments, and token.
+- **`release-react` fails with a duplicate-release error** — you published the exact same bundle twice. Change `CHECKOUT_BROKEN` (or any other code) and publish again.
+- **Reset the environment** — set `CHECKOUT_BROKEN` back to `true`, uninstall the app so a previous OTA is not still active, clean the native Release outputs if needed, then from the repo root run `docker compose -f docker-compose.dev.yml down -v` and `./scripts/local-eval/up.sh`. Confirm **Add to cart** still shows the payment error before publishing again.

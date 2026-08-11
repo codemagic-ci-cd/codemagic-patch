@@ -652,7 +652,25 @@ function resolveDefaultFlagValues(
   }
 
   if (
-    supportsTeamDefault(argv, policy, projectConfig) &&
+    supportsAppDefault(argv, policy) &&
+    !hasOption(argv, "--app") &&
+    !hasOption(argv, "--app-id")
+  ) {
+    const appId = context.appId?.value;
+    const app = context.app?.value;
+
+    if (appId !== undefined) {
+      defaults.appId = appId;
+    } else if (app !== undefined) {
+      defaults.app = app;
+    }
+  }
+
+  // Resolved after the app default: an app-selector command whose default is
+  // the rename-safe appId must not also receive a team default, because the
+  // parsers reject --app-id combined with --team/--team-id.
+  if (
+    supportsTeamDefault(argv, policy, defaults) &&
     !hasOption(argv, "--team") &&
     !hasOption(argv, "--team-id")
   ) {
@@ -663,18 +681,6 @@ function resolveDefaultFlagValues(
       defaults.teamId = teamId;
     } else if (team !== undefined) {
       defaults.team = team;
-    }
-  }
-
-  if (
-    supportsAppDefault(argv, policy) &&
-    !hasOption(argv, "--app") &&
-    !hasOption(argv, "--app-id")
-  ) {
-    const app = context.app?.value;
-
-    if (app !== undefined) {
-      defaults.app = app;
     }
   }
 
@@ -747,13 +753,13 @@ async function loadDefaultOptionsConfig(
 function supportsTeamDefault(
   argv: string[],
   policy: CommandDefaultPolicy,
-  projectConfig: ProjectConfig,
+  defaults: CommandDefaultFlagValues,
 ): boolean {
   switch (policy.team) {
     case "always":
       return true;
     case "app-selector":
-      return supportsAppSelectorTeamDefault(argv, policy, projectConfig);
+      return supportsAppSelectorTeamDefault(argv, defaults);
     case "app-selector-explicit":
       return supportsExplicitAppSelectorTeamDefault(argv);
     case "doctor":
@@ -825,17 +831,13 @@ function supportsDeploymentDefault(
 
 function supportsAppSelectorTeamDefault(
   argv: string[],
-  policy: CommandDefaultPolicy,
-  projectConfig: ProjectConfig,
+  defaults: CommandDefaultFlagValues,
 ): boolean {
   if (hasOption(argv, "--app-id") || hasOption(argv, "--deployment-id")) {
     return false;
   }
 
-  return (
-    hasOption(argv, "--app") ||
-    (supportsAppDefault(argv, policy) && hasProjectAppDefault(argv, projectConfig))
-  );
+  return hasOption(argv, "--app") || defaults.app !== undefined;
 }
 
 function supportsExplicitAppSelectorTeamDefault(argv: string[]): boolean {
@@ -848,19 +850,6 @@ function supportsExplicitAppSelectorTeamDefault(argv: string[]): boolean {
 
 function hasOption(argv: string[], option: string): boolean {
   return argv.some((arg) => arg === option || arg.startsWith(`${option}=`));
-}
-
-function hasProjectAppDefault(argv: string[], projectConfig: ProjectConfig): boolean {
-  if (projectConfig.app !== undefined) {
-    return true;
-  }
-
-  const platform = readOptionValue(argv, "--platform") ?? projectConfig.platform;
-  if (platform !== "android" && platform !== "ios") {
-    return false;
-  }
-
-  return projectConfig.apps?.[platform]?.app !== undefined;
 }
 
 function readOptionValue(argv: string[], option: string): string | undefined {

@@ -79,6 +79,7 @@ const contextSchema: Record<string, FlagSchema> = {
 
 const releaseCreateSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   bundlePath: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
@@ -102,6 +103,7 @@ const releaseCreateSchema: Record<string, FlagSchema> = {
 
 const releaseReactSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   baseBytecode: STRING_FLAG,
   buildConfigurationName: STRING_FLAG,
   bundler: STRING_FLAG,
@@ -161,6 +163,7 @@ const bundleSchema: Record<string, FlagSchema> = {
 
 const releaseShowSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   label: STRING_FLAG,
@@ -171,6 +174,7 @@ const releaseShowSchema: Record<string, FlagSchema> = {
 
 const releaseMetricsSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   format: STRING_FLAG,
@@ -182,6 +186,7 @@ const releaseMetricsSchema: Record<string, FlagSchema> = {
 
 const releaseInspectSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   format: STRING_FLAG,
@@ -197,6 +202,7 @@ const releaseInspectSchema: Record<string, FlagSchema> = {
 
 const releaseListSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   format: STRING_FLAG,
@@ -209,6 +215,7 @@ const releaseListSchema: Record<string, FlagSchema> = {
 
 const releasePatchSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   label: STRING_FLAG,
@@ -227,6 +234,7 @@ const releasePatchSchema: Record<string, FlagSchema> = {
 
 const releaseStatusSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   label: STRING_FLAG,
@@ -239,6 +247,7 @@ const releaseStatusSchema: Record<string, FlagSchema> = {
 
 const releasePromoteSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   destDeployment: STRING_FLAG,
   destDeploymentId: STRING_FLAG,
   disabled: BOOLEAN_FLAG,
@@ -260,6 +269,7 @@ const releasePromoteSchema: Record<string, FlagSchema> = {
 
 const releaseRollbackSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   label: STRING_FLAG,
@@ -434,6 +444,7 @@ const deploymentCreateSchema: Record<string, FlagSchema> = {
 
 const deploymentRenameSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   newName: STRING_FLAG,
@@ -443,6 +454,7 @@ const deploymentRenameSchema: Record<string, FlagSchema> = {
 
 const deploymentRemoveSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   nonInteractive: BOOLEAN_FLAG,
@@ -453,6 +465,7 @@ const deploymentRemoveSchema: Record<string, FlagSchema> = {
 
 const deploymentClearSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   nonInteractive: BOOLEAN_FLAG,
@@ -463,6 +476,7 @@ const deploymentClearSchema: Record<string, FlagSchema> = {
 
 const deploymentHistorySchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   limit: INTEGER_FLAG,
@@ -474,6 +488,7 @@ const deploymentHistorySchema: Record<string, FlagSchema> = {
 
 const deploymentMetricsSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
+  appId: STRING_FLAG,
   deployment: STRING_FLAG,
   deploymentId: STRING_FLAG,
   format: STRING_FLAG,
@@ -817,6 +832,7 @@ function parseFlags(
 function parseDeploymentSelector(
   flags: Record<string, FlagValue>,
 ): DeploymentSelector | ParseCliError {
+  const appId = typeof flags.appId === "string" ? flags.appId : undefined;
   const deploymentId =
     typeof flags.deploymentId === "string" ? flags.deploymentId : undefined;
   const teamId = typeof flags.teamId === "string" ? flags.teamId : undefined;
@@ -825,6 +841,7 @@ function parseDeploymentSelector(
   const deploymentName =
     typeof flags.deployment === "string" ? flags.deployment : undefined;
   const blankSelectorError =
+    emptyStringFlagError(appId, "app-id") ??
     emptyStringFlagError(deploymentId, "deployment-id") ??
     emptyStringFlagError(teamId, "team-id") ??
     emptyStringFlagError(teamName, "team") ??
@@ -839,9 +856,26 @@ function parseDeploymentSelector(
     (value) => value !== undefined,
   ).length;
 
-  if (deploymentId !== undefined && nameFlagCount > 0) {
+  if (
+    deploymentId !== undefined &&
+    (appId !== undefined || nameFlagCount > 0)
+  ) {
     return {
-      error: "--deployment-id cannot be combined with --app or --deployment",
+      error:
+        appId !== undefined
+          ? "--deployment-id cannot be combined with --app-id, --app, or --deployment"
+          : "--deployment-id cannot be combined with --app or --deployment",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  if (
+    appId !== undefined &&
+    (teamId !== undefined || teamName !== undefined || appName !== undefined)
+  ) {
+    return {
+      error: "--app-id cannot be combined with --app, --team-id, or --team",
       ok: false,
       showHelp: true,
     };
@@ -857,6 +891,18 @@ function parseDeploymentSelector(
 
   if (deploymentId !== undefined) {
     return { deploymentId };
+  }
+
+  if (appId !== undefined && deploymentName !== undefined) {
+    return { appId, deploymentName };
+  }
+
+  if (appId !== undefined) {
+    return {
+      error: "--deployment must be provided with --app-id",
+      ok: false,
+      showHelp: true,
+    };
   }
 
   if (
@@ -919,6 +965,7 @@ function describeDeploymentHistorySelectorError(
 ): ParseCliError {
   const deploymentId =
     typeof flags.deploymentId === "string" ? flags.deploymentId : undefined;
+  const appId = typeof flags.appId === "string" ? flags.appId : undefined;
   const appName = typeof flags.app === "string" ? flags.app : undefined;
   const deploymentName =
     typeof flags.deployment === "string" ? flags.deployment : undefined;
@@ -928,7 +975,7 @@ function describeDeploymentHistorySelectorError(
     appName !== undefined ||
     deploymentName !== undefined;
   const missingFlags = [
-    appName === undefined ? "--app" : null,
+    appName === undefined && appId === undefined ? "--app or --app-id" : null,
     deploymentName === undefined ? "--deployment" : null,
   ].filter((flag): flag is string => flag !== null);
   const examples = deploymentHistorySelectorExamples(flags);
@@ -993,6 +1040,7 @@ function parseReleaseSelector(
   const releaseLabel =
     typeof flags.label === "string" ? flags.label : undefined;
   const hasDeploymentSelectorFlag =
+    flags.appId !== undefined ||
     flags.deploymentId !== undefined ||
     flags.team !== undefined ||
     flags.app !== undefined ||
@@ -1011,7 +1059,9 @@ function parseReleaseSelector(
   ) {
     return {
       error:
-        "--release-id cannot be combined with --deployment-id, --app, --deployment, or --label",
+        flags.appId !== undefined
+          ? "--release-id cannot be combined with --deployment-id, --app-id, --app, --deployment, or --label"
+          : "--release-id cannot be combined with --deployment-id, --app, --deployment, or --label",
       ok: false,
       showHelp: true,
     };
@@ -2647,14 +2697,24 @@ export function parseReleasePromote(
   }
 
   const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
-  const sourceRelease = parsePromoteSourceReleaseSelector(parsedFlags.flags);
-  const destinationDeployment = parsePromoteDestinationDeploymentSelector(
-    parsedFlags.flags,
-  );
+  const app = parsePromoteAppSelector(parsedFlags.flags);
 
   if (isParseError(serverUrl)) {
     return serverUrl;
   }
+
+  if (isParseError(app)) {
+    return app;
+  }
+
+  const sourceRelease = parsePromoteSourceReleaseSelector(
+    parsedFlags.flags,
+    app,
+  );
+  const destinationDeployment = parsePromoteDestinationDeploymentSelector(
+    parsedFlags.flags,
+    app,
+  );
 
   if (isParseError(sourceRelease)) {
     return sourceRelease;
@@ -2725,8 +2785,50 @@ export function parseReleasePromote(
   };
 }
 
+type PromoteAppSelector =
+  | { appId: string; appName?: never }
+  | { appId?: never; appName: string }
+  | undefined;
+
+function parsePromoteAppSelector(
+  flags: Record<string, FlagValue>,
+): PromoteAppSelector | ParseCliError {
+  const appId = typeof flags.appId === "string" ? flags.appId : undefined;
+  const appName = typeof flags.app === "string" ? flags.app : undefined;
+  const blankSelectorError =
+    emptyStringFlagError(appId, "app-id") ??
+    emptyStringFlagError(appName, "app");
+
+  if (blankSelectorError) {
+    return blankSelectorError;
+  }
+
+  if (appId !== undefined && appName !== undefined) {
+    return {
+      error: "--app-id cannot be combined with --app",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  if (appId !== undefined && typeof flags.team === "string") {
+    return {
+      error: "--app-id cannot be combined with --team",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  if (appId !== undefined) {
+    return { appId };
+  }
+
+  return appName !== undefined ? { appName } : undefined;
+}
+
 function parsePromoteSourceReleaseSelector(
   flags: Record<string, FlagValue>,
+  app: PromoteAppSelector,
 ): ReleaseSelector | ParseCliError {
   const releaseId =
     typeof flags.releaseId === "string" ? flags.releaseId : undefined;
@@ -2735,7 +2837,6 @@ function parsePromoteSourceReleaseSelector(
       ? flags.sourceDeploymentId
       : undefined;
   const teamName = typeof flags.team === "string" ? flags.team : undefined;
-  const appName = typeof flags.app === "string" ? flags.app : undefined;
   const sourceDeploymentName =
     typeof flags.sourceDeployment === "string"
       ? flags.sourceDeployment
@@ -2746,7 +2847,6 @@ function parsePromoteSourceReleaseSelector(
     emptyStringFlagError(releaseId, "release-id") ??
     emptyStringFlagError(sourceDeploymentId, "source-deployment-id") ??
     emptyStringFlagError(teamName, "team") ??
-    emptyStringFlagError(appName, "app") ??
     emptyStringFlagError(sourceDeploymentName, "source-deployment") ??
     emptyStringFlagError(releaseLabel, "label");
 
@@ -2798,19 +2898,22 @@ function parsePromoteSourceReleaseSelector(
     };
   }
 
-  const nameFlagCount = [appName, sourceDeploymentName].filter(
+  const nameFlagCount = [app, sourceDeploymentName].filter(
     (value) => value !== undefined,
   ).length;
 
   if (nameFlagCount === 1) {
     return {
-      error: "--app and --source-deployment must be provided together",
+      error:
+        app === undefined
+          ? "--app or --app-id must be provided with --source-deployment"
+          : "--source-deployment must be provided with --app or --app-id",
       ok: false,
       showHelp: true,
     };
   }
 
-  if (appName !== undefined && sourceDeploymentName !== undefined) {
+  if (app !== undefined && sourceDeploymentName !== undefined) {
     if (releaseLabel === undefined) {
       return {
         error: "Missing required flag --label",
@@ -2821,16 +2924,25 @@ function parsePromoteSourceReleaseSelector(
 
     return {
       deployment:
-        teamName !== undefined
-          ? { appName, deploymentName: sourceDeploymentName, teamName }
-          : { appName, deploymentName: sourceDeploymentName },
+        app.appId !== undefined
+          ? { appId: app.appId, deploymentName: sourceDeploymentName }
+          : teamName !== undefined
+            ? {
+                appName: app.appName,
+                deploymentName: sourceDeploymentName,
+                teamName,
+              }
+            : {
+                appName: app.appName,
+                deploymentName: sourceDeploymentName,
+              },
       releaseLabel,
     };
   }
 
   return {
     error:
-      "Missing required flag --release-id or --source-deployment-id/--label or --app/--source-deployment/--label",
+      "Missing required flag --release-id or --source-deployment-id/--label or (--app-id or --app)/--source-deployment/--label",
     ok: false,
     showHelp: true,
   };
@@ -2838,13 +2950,13 @@ function parsePromoteSourceReleaseSelector(
 
 function parsePromoteDestinationDeploymentSelector(
   flags: Record<string, FlagValue>,
+  app: PromoteAppSelector,
 ): DeploymentSelector | ParseCliError {
   const destDeploymentId =
     typeof flags.destDeploymentId === "string"
       ? flags.destDeploymentId
       : undefined;
   const teamName = typeof flags.team === "string" ? flags.team : undefined;
-  const appName = typeof flags.app === "string" ? flags.app : undefined;
   const destDeploymentName =
     typeof flags.destDeployment === "string"
       ? flags.destDeployment
@@ -2852,7 +2964,6 @@ function parsePromoteDestinationDeploymentSelector(
   const blankSelectorError =
     emptyStringFlagError(destDeploymentId, "dest-deployment-id") ??
     emptyStringFlagError(teamName, "team") ??
-    emptyStringFlagError(appName, "app") ??
     emptyStringFlagError(destDeploymentName, "dest-deployment");
 
   if (blankSelectorError) {
@@ -2871,26 +2982,34 @@ function parsePromoteDestinationDeploymentSelector(
     return { deploymentId: destDeploymentId };
   }
 
-  const nameFlagCount = [appName, destDeploymentName].filter(
+  const nameFlagCount = [app, destDeploymentName].filter(
     (value) => value !== undefined,
   ).length;
 
-  if (appName !== undefined && destDeploymentName !== undefined) {
+  if (app !== undefined && destDeploymentName !== undefined) {
+    if (app.appId !== undefined) {
+      return { appId: app.appId, deploymentName: destDeploymentName };
+    }
+
     return teamName !== undefined
-      ? { appName, deploymentName: destDeploymentName, teamName }
-      : { appName, deploymentName: destDeploymentName };
+      ? { appName: app.appName, deploymentName: destDeploymentName, teamName }
+      : { appName: app.appName, deploymentName: destDeploymentName };
   }
 
   if (nameFlagCount > 0) {
     return {
-      error: "--app and --dest-deployment must be provided together",
+      error:
+        app === undefined
+          ? "--app or --app-id must be provided with --dest-deployment"
+          : "--dest-deployment must be provided with --app or --app-id",
       ok: false,
       showHelp: true,
     };
   }
 
   return {
-    error: "Missing required flag --dest-deployment-id or --app/--dest-deployment",
+    error:
+      "Missing required flag --dest-deployment-id or (--app-id or --app)/--dest-deployment",
     ok: false,
     showHelp: true,
   };
