@@ -27,7 +27,7 @@ flowchart LR
   sdk -->|metrics| api
 ```
 
-1. You publish a release with the CLI. It bundles your JS, computes a fingerprint, resolves a target binary version, and uploads to the API, which stores the artifact and manifest in object storage.
+1. You publish a release with the CLI. It bundles your JS, resolves a target binary version, and uploads to the API, which stores the artifact and manifest in object storage.
 2. On launch (or resume), the SDK fetches the manifest from your download base URL (the storage domain, or a CDN in front of it), not the API. It downloads the new bundle (or a smaller binary patch when available) from URLs in the manifest, then swaps it in on the next restart.
 3. The SDK reports download/install/success/failure metrics to the API control plane.
 

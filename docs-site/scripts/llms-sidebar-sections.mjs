@@ -2,7 +2,7 @@
  * Top-level llms.txt sections. Keep in sync with docs-site/sidebars.ts.
  *
  * Nested sidebar categories are flattened into their parent section.
- * Troubleshooting, FAQ, and Changelog are grouped under Optional per the
+ * Troubleshooting and FAQ are grouped under Optional per the
  * llmstxt.org "Optional" section convention.
  */
 export const LLMS_SECTIONS = [
@@ -65,6 +65,6 @@ export const LLMS_SECTIONS = [
   },
   {
     label: 'Optional',
-    docIds: ['troubleshooting', 'faq', 'roadmap', 'changelog'],
+    docIds: ['troubleshooting', 'faq'],
   },
 ];

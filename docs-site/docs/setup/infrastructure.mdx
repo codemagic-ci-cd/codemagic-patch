@@ -36,7 +36,7 @@ The server never serves OTA artifacts from the API domain; clients fetch from yo
 - `PUBLIC_BASE_URL` on your storage domain, e.g. `https://storage.updates.example.com/codemagic-patch`
 - Compose hardcodes `MODE=all` (API and release worker in one process)
 
-That single-host layout is enough for most installs. Splitting `MODE=api` / `MODE=worker` needs a customized Compose layout; editing `.env.selfhost` alone is not enough.
+That single-host layout is the supported self-host path. The Compose file also hardcodes the MinIO endpoint and bucket for the server service, so pointing at external object storage, or splitting `MODE=api` / `MODE=worker`, means a customized deployment, not only editing `.env.selfhost`.
 
 ## Storage adapter
 
@@ -44,8 +44,8 @@ Controls where release artifacts live.
 
 | Value | Typical use |
 | --- | --- |
-| `s3` | Default. MinIO in the Compose stack, or any S3-compatible store (AWS S3, Cloudflare R2, etc.) |
-| `gcs` | Google Cloud Storage with separate public and internal buckets |
+| `s3` | Default. MinIO in the Compose stack, or any S3-compatible store (AWS S3, Cloudflare R2, etc.) in a custom deployment |
+| `gcs` | Google Cloud Storage with separate public and internal buckets (custom deployment) |
 | `memory` | Local development and tests only, not for production |
 
 ### S3-compatible storage
@@ -64,6 +64,8 @@ Key variables (full list in [Configuration reference](/docs/reference/configurat
 
 `PUBLIC_BASE_URL` must point at the publicly readable origin for artifacts: the storage domain in a default install, or your CDN domain if fronted.
 
+On the default Compose stack, `S3_ENDPOINT`, `S3_BUCKET`, and MinIO credentials are set in `docker-compose.selfhost.yml`. Changing only `STORAGE_ADAPTER` in `.env.selfhost` does not retarget the server at AWS S3 or R2.
+
 ### Google Cloud Storage
 
 Set `STORAGE_ADAPTER=gcs` with:
@@ -71,7 +73,7 @@ Set `STORAGE_ADAPTER=gcs` with:
 - `GCS_PUBLIC_BUCKET`: artifacts clients download
 - `GCS_INTERNAL_BUCKET`: staged uploads (`_internal/*`); must be a different bucket
 
-GCS is not part of the default Compose installer. Use it when you run Patch on GCP infrastructure instead of the bundled MinIO container.
+GCS is not part of the default Compose installer. Use it when you run Patch on GCP infrastructure instead of the bundled MinIO container. The runtime uses Application Default Credentials from the host environment.
 
 ## Delivery adapter
 
@@ -93,14 +95,14 @@ Purge is best-effort: a failed purge does not roll back a release, but you may s
 You usually need to think about adapters when:
 
 - Download volume or geographic reach outgrows a single origin: add Cloudflare ([Cloudflare setup](/docs/setup/cloudflare))
-- You want managed object storage instead of bundled MinIO: point `STORAGE_ADAPTER=s3` at AWS S3 or R2, or use `gcs` on GCP
-- You split processes for scale: `MODE=api` and `MODE=worker` on separate hosts (worker routes are not exposed publicly in the self-host Caddy config)
+- You want managed object storage instead of bundled MinIO: customize the deployment so the server reaches AWS S3, R2, or GCS (the Compose installer keeps MinIO wired in)
 
 You usually do not need to change adapters when:
 
 - You are evaluating Patch or running a single Docker host
 - You publish through `cmpatch` and the dashboard on the default installer layout
 
+The server accepts `MODE=api` and `MODE=worker`, but the self-host Compose topology is `MODE=all` only. Caddy does not expose `/worker/*` publicly. Split API/worker is not a turnkey self-host option.
 ## Client config stays the same
 
 Adapter changes are server-side. Apps still need two URLs:

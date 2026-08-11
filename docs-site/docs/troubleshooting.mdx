@@ -108,30 +108,6 @@ cmpatch release-react --target-binary-version "1.2.0" ...
 
 If you shipped a new store build but forgot to target its version, eligible devices will not receive the OTA.
 
-### Fingerprint mismatch
-
-Patch records a **native fingerprint** per binary version. The first release that targets a version (including a `--disabled` snapshot after a native build) sets the fingerprint devices must match. If a later OTA was built against a different native project, the server may accept the upload but **eligible devices never see it**.
-
-Symptoms:
-
-- Release shows as **Published** in the dashboard or `cmpatch release list`, but devices stay on the old bundle
-- Server logs mention **binary version fingerprint disagreement** during reconcile
-- `cmpatch doctor` or local `cmpatch fingerprint` does not match what you expect for the installed binary
-
-Common causes:
-
-- Native files changed (`Podfile`, `build.gradle`, native modules, RN upgrade) but you kept the same `targetBinaryVersion` and only published JS
-- CI builds OTA on a different checkout or machine than the native build that users installed
-- You skipped the post-native-build `--disabled` snapshot, then published JS from a project state that does not match store binaries
-
-Fix:
-
-1. Compare fingerprints: `cmpatch fingerprint --platform ios` (or `android`) from the same tree that built the native binary users have installed
-2. After each **new native build**, run `release-react` with `--disabled --target-binary-version <version>` to record the fingerprint, see [CI integration](/docs/using-patch/ci-integration#native-fingerprint-snapshot-disabled)
-3. If the native layer actually changed, ship a new store binary with a bumped version, snapshot it, then publish OTA for that version
-
-See [Core concepts. Fingerprint](/docs/introduction/core-concepts#deployment-model).
-
 ### Update downloaded but not visible yet
 
 With default `sync()` settings, non-mandatory releases use **`ON_NEXT_RESTART`**: the SDK can download and stage a release, but the new bundle does not run until the app process is killed and opened again.

@@ -20,7 +20,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 | --- | --- |
 | EAS-hosted update server | [Self-hosted](/docs/install) Patch API + storage |
 | Update channel (`preview`, `production`, …) | Deployment (`Staging`, `Production`, …) |
-| `runtimeVersion` / fingerprint (EAS) | `targetBinaryVersion` + native [fingerprint](/docs/introduction/core-concepts) |
+| `runtimeVersion` (EAS) | `targetBinaryVersion` |
 | `eas update` | `cmpatch release-react` |
 | `Updates.checkForUpdateAsync()` / `fetchUpdateAsync()` | [`sync()`](/docs/setup/checking-for-updates) or `checkForUpdate()` + `downloadUpdate()` + `installUpdate()` |
 | `Updates.reloadAsync()` | `restartApp()` (or install mode `IMMEDIATE`) |
@@ -141,9 +141,9 @@ cmpatch config set server-url https://updates.example.com
 cmpatch token create --name ci
 ```
 
-Replace `eas update` (or EAS Update workflow steps) with the same `release-react` command, pointed at your production server URL. `release-react` bundles JS, computes fingerprint and target binary version, and uploads in one step, similar in role to `eas update` plus local bundling. See [CI integration](/docs/using-patch/ci-integration).
+Replace `eas update` (or EAS Update workflow steps) with the same `release-react` command, pointed at your production server URL. `release-react` bundles JS, resolves a target binary version, and uploads in one step, similar in role to `eas update` plus local bundling. See [CI integration](/docs/using-patch/ci-integration).
 
-You can keep **EAS Build** (or any CI) to produce the native `.ipa` / `.apk`. After each new native build, consider a `--disabled` release to record the fingerprint for that binary version before shipping JS-only OTAs.
+You can keep **EAS Build** (or any CI) to produce the native `.ipa` / `.apk`.
 
 ## 4. Cut over
 

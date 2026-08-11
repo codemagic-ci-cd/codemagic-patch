@@ -19,7 +19,6 @@ Patch, CodePush-compatible services and forks, [Expo Updates](https://docs.expo.
 Common ground includes:
 
 - Rollout and rollback controls, to ship JavaScript or asset changes with minimal risk
-- Fingerprinting: detect when the native project changed so you do not ship an incompatible JS bundle
 - Binary diffs: prefer smaller patch downloads when only part of the bundle changed
 - Deployment channels: separate Staging from Production (or equivalent) so you can test before wide release
 - Client SDK: check, download, install, and apply updates on device with rollback when something goes wrong
@@ -47,7 +46,7 @@ The headline difference is build vs buy.
 | Local evaluation | Against EAS | Full stack on localhost |
 | Source | Client SDK open source; update server is proprietary | SDK, CLI, and server are source-available |
 
-Expo Updates is a strong default if you already use EAS Build and EAS Update together; fingerprinting and channel wiring are largely handled inside that ecosystem with minimal setup.
+Expo Updates is a strong default if you already use EAS Build and EAS Update together; channel wiring is largely handled inside that ecosystem with minimal setup.
 
 Costs can climb quickly past free limits if you ship often or have a large install base. That is the main trade-off against running Patch yourself.
 

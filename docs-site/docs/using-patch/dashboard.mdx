@@ -1,9 +1,8 @@
 ---
 title: Web dashboard
 description: >-
-  Use the Patch web dashboard to manage releases, metrics, teams, and GitHub
-  Actions workflows.
-llmsDescription: 'Web UI — releases, metrics, team IAM, GitHub Actions dispatch, uploads.'
+  Use the Patch web dashboard to manage releases, metrics, and teams.
+llmsDescription: 'Web UI — releases, metrics, team IAM, bundle uploads.'
 ---
 
 # Web dashboard
@@ -60,10 +59,6 @@ Upload a pre-built `.cmpatch` artifact (from `cmpatch bundle`) directly in the b
 3. Submit; the server queues the release worker job
 
 Use this when CI already produced the bundle, or you built offline and only need to publish.
-
-### GitHub Actions
-
-If GitHub Actions is configured for the deployment, a third path triggers your linked `workflow_dispatch` workflow with platform, branch, target binary, and release notes. Use GitHub Actions on the deployment page to link a repository and workflow.
 
 ## Managing existing releases
 

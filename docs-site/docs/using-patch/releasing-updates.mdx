@@ -17,7 +17,6 @@ If you use the CLI and do not have `cmpatch` yet, install it with `npm install -
 | [Dashboard → New release](/docs/using-patch/dashboard#publishing-a-release) | Command builder (copy `release-react`) or `.cmpatch` bundle upload in the browser |
 | CLI | Local dev, scripts, and pipelines (`cmpatch release-react`) |
 | CI | Automated releases after build/test, [CI integration](/docs/using-patch/ci-integration) |
-| GitHub Actions | Trigger a linked workflow from the dashboard, [Dashboard](/docs/using-patch/dashboard#github-actions) |
 
 ### Dashboard: command builder or bundle upload
 
@@ -37,7 +36,7 @@ From your React Native project root:
 cmpatch release-react --platform ios --deployment Staging --release-notes "Fix onboarding crash" --yes
 ```
 
-`release-react` bundles JS, computes fingerprint and target binary version, and uploads in one step.
+`release-react` bundles JS, resolves a target binary version, and uploads in one step.
 
 ## Recommended workflow: Staging → Production
 

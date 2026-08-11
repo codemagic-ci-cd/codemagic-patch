@@ -12,7 +12,7 @@ npm install
 npm start
 ```
 
-Open [http://localhost:3002](http://localhost:3002). Port **3002** avoids clashing with the API dev server on 3000.
+Open [http://localhost:3002/docs/](http://localhost:3002/docs/). Port **3002** avoids clashing with the API dev server on 3000. `/` redirects to `/docs/`.
 
 ## Build
 

@@ -82,7 +82,7 @@ const config: Config = {
       logo: {
         alt: 'Codemagic Patch',
         src: 'img/logo.svg',
-        href: '/',
+        href: '/docs/',
       },
       items: [
         {
@@ -90,18 +90,6 @@ const config: Config = {
           docId: 'intro',
           position: 'left',
           label: 'Docs',
-        },
-        {
-          type: 'doc',
-          docId: 'roadmap',
-          position: 'left',
-          label: 'Roadmap',
-        },
-        {
-          type: 'doc',
-          docId: 'changelog',
-          position: 'left',
-          label: 'Changelog',
         },
       ],
     },

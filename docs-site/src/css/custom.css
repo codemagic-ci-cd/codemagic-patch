@@ -4,7 +4,7 @@
  * work well for content-centric websites.
  *
  * Token layers:
- * - brand.css → marketing / homepage (landing_pages)
+ * - brand.css → shared Codemagic marketing tokens (navbar/footer surfaces)
  * - docs-brand.css → docs chrome (codemagic-docs)
  * This file maps those tokens onto Infima and Docusaurus selectors.
  */
@@ -139,7 +139,7 @@ html[data-theme='dark'] {
 /* ——— Docs navbar (codemagic-docs .page--article #header) ——— */
 
 body:has(.theme-doc-sidebar-container) {
-  /* Less than homepage (3.125rem), aligned with sidebar menu padding */
+  /* Aligned with sidebar menu padding */
   --ifm-navbar-padding-horizontal: 1.75rem;
 }
 
@@ -843,60 +843,7 @@ article mark {
   height: auto;
 }
 
-/* Changelog: tight entry blocks, clear separation between entries */
-.patch-changelog .theme-doc-markdown header h1,
-.patch-changelog .markdown > h1:first-child {
-  margin-bottom: 1.25rem;
-}
-
-.patch-changelog .markdown > h2 {
-  margin-top: 3rem;
-  margin-bottom: 0.2rem;
-}
-
-.patch-changelog .markdown > h2:first-of-type {
-  margin-top: 1.5rem;
-}
-
-.patch-changelog .markdown > h2 + p {
-  margin-top: 0;
-  margin-bottom: 0.5rem;
-  color: var(--ifm-font-color-secondary);
-  font-size: 0.9375rem;
-}
-
-.patch-changelog .markdown > h2 + p + p {
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
-.patch-changelog .markdown > h2 + p + ul,
-.patch-changelog .markdown > h2 + p + p + ul {
-  margin-top: 0.5rem;
-  margin-bottom: 0;
-}
-
-.patch-changelog .markdown > h2 + p + ul li,
-.patch-changelog .markdown > h2 + p + p + ul li {
-  margin-bottom: 0.35rem;
-}
-
-.patch-changelog .markdown > h2 + p + ul li:last-child,
-.patch-changelog .markdown > h2 + p + p + ul li:last-child {
-  margin-bottom: 0;
-}
-
-/* Homepage: full-bleed dark navy behind main + footer */
-html[data-theme='dark'] body:has(main .page) {
-  background: var(--cm-bg-dark);
-}
-
-html[data-theme='dark'] body:has(main .page) .navbar {
-  background-color: var(--cm-bg-dark);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-/* Minimal marketing footer */
+/* Footer */
 .footer {
   font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
   background-color: var(--cm-bg-soft);

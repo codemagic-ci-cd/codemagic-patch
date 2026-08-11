@@ -9,13 +9,10 @@ import SendToAI from '@site/src/components/SendToAI';
 
 import styles from './styles.module.css';
 
-const MINIMAL_DOC_PAGE_IDS = new Set(['changelog', 'roadmap']);
-
 export default function DocItemContent({children}: Props): ReactNode {
   const {metadata, frontMatter} = useDoc();
   const hideTitle = frontMatter.hide_title === true;
   const hideSendToAI =
-    MINIMAL_DOC_PAGE_IDS.has(metadata.id) ||
     (frontMatter as {hide_send_to_ai?: boolean}).hide_send_to_ai === true;
   const showTitleRow = !hideTitle;
 

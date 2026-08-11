@@ -44,7 +44,7 @@ export default function DocItemLayout({children}: Props): ReactNode {
         <ContentVisibility metadata={metadata} />
         <DocVersionBanner />
         <div className={styles.docItemContainer}>
-          <article className={metadata.id === 'changelog' ? 'patch-changelog' : undefined}>
+          <article>
             <DocVersionBadge />
             {docTOC.mobile}
             <DocItemContent>{children}</DocItemContent>

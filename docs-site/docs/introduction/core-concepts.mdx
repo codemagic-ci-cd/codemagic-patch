@@ -1,9 +1,9 @@
 ---
 title: Core concepts
 description: >-
-  Apps, deployments, binary versions, fingerprints, and what can ship over the
-  air versus in a store build.
-llmsDescription: 'OTA concepts — apps, deployments, binary version, fingerprint, JS vs native.'
+  Apps, deployments, binary versions, and what can ship over the air versus in a
+  store build.
+llmsDescription: 'OTA concepts — apps, deployments, binary version, JS vs native.'
 ---
 
 # Core concepts
@@ -84,7 +84,7 @@ Patch organizes updates using apps and deployments.
 | Deployment key | The public identifier the SDK uses to fetch updates. Found via `cmpatch deployment list`. Not a secret, it's baked into the app binary. |
 | Release | A published bundle targeting one deployment + binary version. Identified by a label like `v1`. Supports gradual rollout, mandatory updates, and rollback. |
 | Binary version | The native app version a release targets (e.g. `1.2.3`). The SDK only installs releases that match the running binary version. |
-| Fingerprint | A hash of the native project. Guards against shipping a JS bundle to an incompatible native binary. |
+| Fingerprint | A hash of the native project recorded with releases. Treat it as informational; binary version is what gates which devices see an update. |
 
 Recommended workflow:
 

@@ -51,29 +51,18 @@ Also wire foreground re-checks if updates should download while the app is open.
 
 Reserve server-side `--mandatory` for fixes that truly cannot wait. Immediate mandatory reloads can flash a white screen mid-session, see [Troubleshooting. White flash](/docs/troubleshooting#white-flash-when-applying-an-update).
 
-## 4. Snapshot fingerprints in CI
-
-After each **native store build**, record the fingerprint before shipping JS-only OTAs:
-
-```bash
-cmpatch release-react --platform ios --deployment Production \
-  --disabled --target-binary-version "$APP_VERSION" --yes
-```
-
-Without this, later OTA releases can fail fingerprint checks for that binary version. See [CI integration](/docs/using-patch/ci-integration#native-fingerprint-snapshot-disabled).
-
-## 5. Check delivery and URLs
+## 4. Check delivery and URLs
 
 Production phones must reach your Patch API and storage domains over **public HTTPS**, not `localhost` or a dev machine LAN IP.
 
 - Confirm `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`
 - Put a CDN in front of the storage domain if you expect large install bases, see [Delivery](/docs/using-patch/delivery) and [Cloudflare setup](/docs/setup/cloudflare)
 
-## 6. Optional: bundle signing
+## 5. Optional: bundle signing
 
 If your app requires signed releases, configure keys before the first Production publish. See [Code signing](/docs/using-patch/security#code-signing-update-integrity).
 
-## 7. Plan the first Production release
+## 6. Plan the first Production release
 
 Do not jump straight to 100% of users:
 
@@ -84,13 +73,13 @@ Do not jump straight to 100% of users:
 
 Day-to-day release controls: [Production control](/docs/using-patch/production-control).
 
-## 8. Harden the server
+## 7. Harden the server
 
 Before opening the dashboard to a wider team, review [Security](/docs/using-patch/security) and [Ongoing maintenance](/docs/setup/ongoing-maintenance) (backups, upgrades, health).
 
 ## Related
 
 - [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
-- [Troubleshooting](/docs/troubleshooting): version targeting, fingerprint mismatch, pending restart
+- [Troubleshooting](/docs/troubleshooting): version targeting, pending restart
 - [Pricing](/docs/introduction/pricing): free MAU threshold and commercial rates
 - [FAQ](/docs/faq): compatibility, self-hosting

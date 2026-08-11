@@ -22,7 +22,7 @@ The app on device must already satisfy:
 | --- | --- |
 | Patch SDK in the **native binary** | OTA cannot add the SDK after install, [Core concepts](/docs/introduction/core-concepts#prerequisite-a-native-build-with-the-sdk) |
 | `CodemagicPatchDeploymentKey` matches the deployment you publish to | Wrong key → manifest 404 or wrong channel |
-| `CodemagicPatchApiUrl` and `CodemagicPatchDownloadBaseUrl` reachable from the device | Simulator can use `localhost`; phones and TestFlight builds need LAN or public HTTPS URLs |
+| `CodemagicPatchApiUrl` and `CodemagicPatchDownloadBaseUrl` reachable from the device | Simulator can use `localhost`; phone and test-track builds need your [Install](/docs/install) HTTPS domains |
 | Running **binary version** matches the release's `targetBinaryVersion` | Mismatch → server offers no update |
 | `sync()` (or manual check/download/install) runs on launch or resume | No check → no download, [Checking for updates](/docs/setup/checking-for-updates) |
 
@@ -30,13 +30,12 @@ If you have not published yet, start with [First release](/docs/setup/first-rele
 
 ## Choose how the test app is installed
 
-Where the app runs determines which server URLs work.
+Where the app runs determines which server URLs work. Two common setups:
 
-| How you install | Typical use | Server URLs |
+| Setup | Typical use | Server URLs |
 | --- | --- | --- |
-| **iOS Simulator / same-machine dev build** | Local evaluation stack on your Mac | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Local quickstart](/docs/#5-try-it-with-your-own-app) |
-| **Physical device (USB / local debug build)** | Dev phone on your desk | Your machine's LAN IP (not `localhost`), or an [Install](/docs/install) domain |
-| **TestFlight, Play internal testing, or other test track** | QA validates Staging like real users | Public HTTPS API + storage domains from [Install](/docs/install) |
+| **Local + simulator** | Local evaluation stack on your Mac, app in iOS Simulator or a same-machine Android emulator | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Local quickstart](/docs/#5-try-it-with-your-own-app) |
+| **Server + phone** | Phone or test-track build (TestFlight, Play internal testing) talking to a real Patch install | Public HTTPS API + storage domains from [Install](/docs/install) |
 
 You do not need separate guides for each path; the test loop is the same. Only the URLs and how you install the binary differ.
 
@@ -93,13 +92,13 @@ void sync({ installMode: "IMMEDIATE" });
 
 Repeat on Android if you ship both platforms, separate apps and deployment keys per platform.
 
-## Quick checks when nothing updates
+## Quick checks if nothing updates
 
 | Symptom | Likely cause |
 | --- | --- |
 | Release **Published** but device unchanged | Install mode needs a second launch; or `sync()` not called |
 | No update offered | Binary version mismatch, compare app version to `--target-binary-version` on the release |
-| Network errors in logs | Device cannot reach API or storage URL (common with `localhost` on a physical phone) |
+| Network errors in logs | Device cannot reach API or storage URL (common when a phone still points at `localhost`) |
 | Wrong bundle | Deployment key in the binary does not match the deployment you published to |
 
 Full list: [Troubleshooting](/docs/troubleshooting). CLI sanity check before publishing:

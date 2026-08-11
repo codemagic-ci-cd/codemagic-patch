@@ -16,10 +16,6 @@ Typical flow:
 commit → CI build → tests pass → cmpatch release-react → update deployed
 ```
 
-## Native fingerprint snapshot (`--disabled`)
-
-After a **native store or internal build**, run `release-react` once with **`--disabled`** and **`--target-binary-version`** matching that build. Patch records the native fingerprint for that binary version without serving the bundle to devices, later OTA releases for the same version are checked against it.
-
 ## Prerequisites
 
 Your pipeline needs:
@@ -73,8 +69,6 @@ scripts:
         --yes
 ```
 
-Add `--disabled --target-binary-version "$APP_VERSION"` on the step that runs right after a native build (omit both for JS-only OTA publishes).
-
 Store `CODEMAGIC_PATCH_TOKEN` and `CODEMAGIC_PATCH_SERVER_URL` as secure environment variables.
 
 If the project has `codemagic-patch.config.json` from `cmpatch init`, you can omit `--server-url` and app flags when defaults are set.
@@ -97,10 +91,6 @@ If the project has `codemagic-patch.config.json` from `cmpatch init`, you can om
       --deployment Staging \
       --yes
 ```
-
-Same as Codemagic: add `--disabled --target-binary-version "$APP_VERSION"` after a native build step when you need a fingerprint snapshot.
-
-You can also trigger releases from the Patch dashboard via GitHub Actions (`workflow_dispatch`) when GitHub Actions integration is configured for a deployment.
 
 ## Release strategies
 

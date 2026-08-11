@@ -31,7 +31,7 @@ const LLMS_PREAMBLE = [
   '- SDK reference → `/docs/reference/sdk-reference.md`',
   '- Debugging OTA issues → `/docs/troubleshooting.md`',
   '',
-  'Sections below mirror the docs sidebar. **Optional** lists secondary pages (FAQ, changelog)—skip when you need a shorter context.',
+  'Sections below mirror the docs sidebar. **Optional** lists secondary pages (FAQ, troubleshooting)—skip when you need a shorter context.',
 ];
 
 function toSitePath(url) {

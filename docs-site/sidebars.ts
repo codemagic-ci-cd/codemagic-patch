@@ -101,11 +101,7 @@ const sidebars: SidebarsConfig = {
     },
     'troubleshooting',
     'faq',
-    'roadmap',
   ],
-
-  /** Changelog nav item only — keeps the left column without doc links */
-  changelogSidebar: [],
 };
 
 export default sidebars;

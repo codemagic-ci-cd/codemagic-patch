@@ -38,7 +38,7 @@ cmpatch release-react --platform ios     --deployment Staging --release-notes "F
 cmpatch release-react --platform android --deployment Staging --release-notes "Fix onboarding crash" --yes
 ```
 
-`release-react` analyzes the project, auto-detects the bundler (Metro or Expo), computes the target binary version + native fingerprint, builds the bundle, and uploads it. If auto-detection can't determine a value, pass it explicitly:
+`release-react` analyzes the project, auto-detects the bundler (Metro or Expo), resolves the target binary version, builds the bundle, and uploads it. If auto-detection can't determine a value, pass it explicitly:
 
 ```bash
 cmpatch release-react \
