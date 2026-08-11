@@ -159,17 +159,18 @@ The default self-host stack runs four services on a single Docker host:
 
 ### 1.1 Prepare a GitHub OAuth App
 
-Sign-in (both the CLI device flow and the dashboard) is backed by GitHub OAuth. Create **one** OAuth App and collect:
+Sign-in (both `cmpatch login` and the dashboard) is backed by GitHub OAuth through the browser. Create **one** OAuth App and collect:
 
 | Setting                       | Value                                       |
 | ----------------------------- | ------------------------------------------- |
 | Homepage URL                  | `https://updates.example.com`               |
 | Authorization callback URL    | `https://updates.example.com/auth/callback` |
-| **Enable Device Flow**        | ✅ required for `cmpatch login`             |
-| Client ID                     | e.g. `Iv1.xxxxxxxxxxxxxxxx`                  |
+| Client ID                     | copied from the OAuth App settings page     |
 | Client Secret                 | generated on the same app                   |
 
 > The first admin's email (`--email` below) **must exactly match the verified primary email** on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+
+Bitbucket Cloud is also supported as a sign-in provider, instead of or alongside GitHub — see [Bitbucket sign-in](docs/self-hosting-compose.md#bitbucket-sign-in) in the full guide.
 
 ### 1.2 (Optional but recommended) Prepare Cloudflare in front of storage
 
@@ -194,7 +195,7 @@ scripts/selfhost/install.sh \
   --api-domain updates.example.com \
   --storage-domain storage.updates.example.com \
   --email admin@example.com \
-  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
+  --github-oauth-client-id <github_client_id> \
   --github-oauth-client-secret <github_client_secret>
 ```
 
@@ -311,7 +312,7 @@ cmpatch config set server-url https://updates.example.com
 cmpatch config set team default-team
 ```
 
-Sign in as the admin (completes a GitHub device-code approval in your browser):
+Sign in as the admin (pick **Sign in with your browser** when prompted — GitHub sign-in and approval complete in the browser):
 
 ```bash
 cmpatch login --server-url https://updates.example.com
@@ -855,7 +856,7 @@ scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:
 **First admin sign-in rejected**
 
 - `INITIAL_ADMIN_EMAILS` matches the GitHub account's **verified primary** email.
-- The OAuth App callback URL is `https://<api-domain>/auth/callback` and **Device Flow** is enabled.
+- The OAuth App callback URL is `https://<api-domain>/auth/callback`.
 
 **Caddy certificate issuance is slow**
 
@@ -950,7 +951,7 @@ Run `cmpatch help` for grouped topics, or `cmpatch <command> --help` for full fl
 
 | Command                                    | Description                                   |
 | ------------------------------------------ | --------------------------------------------- |
-| `cmpatch login` / `logout` / `whoami`      | GitHub device-flow sign-in / out / identity   |
+| `cmpatch login` / `logout` / `whoami`      | Browser or token sign-in / out / identity     |
 | `cmpatch token create \| list \| revoke`   | Manage personal access tokens (`cm_pat_…`)    |
 | `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
 | `cmpatch init`                             | Write `codemagic-patch.config.json` for a project |

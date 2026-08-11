@@ -116,7 +116,7 @@ Non-interactive form:
   --api-domain updates.example.com \
   --storage-domain storage.updates.example.com \
   --email admin@example.com \
-  --github-oauth-client-id Iv1.0123456789abcdef \
+  --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret>
 ```
 
@@ -171,7 +171,7 @@ One OAuth App (or consumer) serves both sign-in paths:
   --api-domain updates.example.com \
   --storage-domain storage.updates.example.com \
   --email admin@example.com \
-  --github-oauth-client-id Iv1.0123456789abcdef \
+  --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret>
 ```
 
@@ -736,7 +736,7 @@ storage domain. Pass them to the installer:
   --api-domain updates.example.com \
   --storage-domain storage.updates.example.com \
   --email admin@example.com \
-  --github-oauth-client-id Iv1.0123456789abcdef \
+  --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret> \
   --cloudflare \
   --cloudflare-api-token <cf-token> \

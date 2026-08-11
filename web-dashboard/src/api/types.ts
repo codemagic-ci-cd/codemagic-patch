@@ -335,7 +335,7 @@ export interface SessionUser {
   id: string;
 }
 
-/** `POST /v1/auth/oauth/callback` (200) — also emitted by the CLI device-poll flow. */
+/** `POST /v1/auth/oauth/callback` (200) — also emitted by `POST /v1/auth/oauth/cli/exchange` (CLI browser login). */
 export interface SessionResponse {
   accessToken: string;
   accessTokenExpiresAt: string;
