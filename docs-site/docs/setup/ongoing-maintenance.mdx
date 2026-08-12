@@ -22,7 +22,7 @@ Before you treat the stack as production, take one backup and confirm you can fi
 
 ## Upgrades
 
-When you want a newer server build:
+When a newer server release is out:
 
 ```bash
 scripts/selfhost/upgrade.sh
@@ -41,13 +41,13 @@ Pass `--i-have-a-backup` only if you already took an external backup for this up
 
 ## Health and monitoring
 
-Point your existing uptime monitor at the ready endpoint (it checks the server process and its Postgres connection; storage is not covered):
+Set up a free uptime check against the ready endpoint (it checks the server process and its Postgres connection; storage is not covered). Without one, you may only notice downtime when OTA or the dashboard fails:
 
 ```bash
 curl -fsS https://updates.example.com/health/ready
 ```
 
-Also alert on host disk filling up. Monitor storage health separately (`https://storage.updates.example.com/minio/health/ready`) — the ready endpoint does not detect storage failures.
+Also alert on host disk filling up. Monitor storage health separately (`https://storage.updates.example.com/minio/health/ready`). The ready endpoint does not detect storage failures.
 
 Use Compose status and logs when something is already wrong, not as the primary check:
 
