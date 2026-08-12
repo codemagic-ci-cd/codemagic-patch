@@ -71,7 +71,7 @@ After App Center CodePush, a family of compatible forks and hosted successors re
 | Bundle download | Storage behind the service or your configured CDN | Storage or CDN URLs from the manifest |
 | Web console | Varies (hosted dashboard or limited tooling) | Dashboard with release management, metrics, and IAM |
 | Team access | Access keys / org settings on the fork | RBAC managed in the dashboard |
-| Audit trail | Varies | CLI identity tied to GitHub OAuth |
+| Audit trail | Varies | CLI identity tied to your OAuth provider (GitHub or Bitbucket) |
 | Backups and DR | Build your own if self-hosting; hosted forks handle theirs | Built-in `backup.sh`, `restore.sh`, and `upgrade.sh` |
 | Stewardship | Community forks or third-party hosts | Built and maintained by [Codemagic](https://codemagic.io) |
 | License / terms | Varies by fork | [Codemagic Server License](/docs/introduction/pricing) |
@@ -96,7 +96,7 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 | Web console | Local console for editing releases | Cloud dashboard with release management, metrics and IAM |
 | Adoption metrics | Not built in | Dashboard and CLI (downloads, installs, success / failure) |
 | Team access | Share backend credentials | RBAC with management in the dashboard |
-| Audit trail | No built in audit logging | CLI identity is tied to GitHub OAuth |
+| Audit trail | No built in audit logging | CLI identity is tied to your OAuth provider (GitHub or Bitbucket) |
 | Backups and DR | Build your own backup/restore process | Built-in `backup.sh`, `restore.sh`, and `upgrade.sh` |
 | Migrations | Required for new major features | Only for management changes |
 | Stewardship | Community open source | Built and maintained by [Codemagic](https://codemagic.io) |

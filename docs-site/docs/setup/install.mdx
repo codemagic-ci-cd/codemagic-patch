@@ -32,18 +32,21 @@ The default Compose install runs Caddy, the API and release worker, Postgres, an
 
 ## GitHub OAuth App
 
-Dashboard and CLI sign-in use a GitHub OAuth App. [Register a new OAuth App](https://github.com/settings/applications/new) (or manage existing ones under [OAuth Apps](https://github.com/settings/developers)), enable Device Flow, and use:
+Dashboard and CLI sign-in use a GitHub OAuth App (`cmpatch login` signs in through the browser via the dashboard, so no extra app settings are needed for the CLI). [Register a new OAuth App](https://github.com/settings/applications/new) (or manage existing ones under [OAuth Apps](https://github.com/settings/developers)) and use:
 
 | Setting | Value |
 | --- | --- |
 | Homepage URL | `https://updates.example.com` |
 | Authorization callback URL | `https://updates.example.com/auth/callback` |
-| Enable Device Flow | Required for `cmpatch login` (checkbox on the same form) |
 | Client ID | e.g. `Iv1.xxxxxxxxxxxxxxxx` |
 | Client Secret | generated on the same app |
 
+:::info Bitbucket instead of GitHub
+GitHub is not mandatory — Bitbucket Cloud OAuth is a fully supported alternative. Register an OAuth consumer in Bitbucket and pass `--bitbucket-oauth-client-id` / `--bitbucket-oauth-client-secret` to the installer (with or without the GitHub flags). At least one provider is required.
+:::
+
 :::info
-The first admin's email (`--email` below) must exactly match the verified primary email on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+The first admin's email (`--email` below) must exactly match the verified primary email on their GitHub (or Bitbucket) account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
 :::
 
 ## Run the installer

@@ -22,13 +22,12 @@ llmsDescription: 'Server env vars — DATABASE_URL, S3, OAuth, MODE, .env.selfho
 | `POSTGRES_DB` / `_USER` / `_PASSWORD` | PostgreSQL credentials |
 | `MINIO_ROOT_USER` / `_PASSWORD` | MinIO credentials |
 | `WORKER_SHARED_SECRET` | Protects worker routes (>= 32 chars) |
-| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth App client ID |
-| `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth App client secret |
-| `OAUTH_DEVICE_POLL_TOKEN_SECRET` | Local random secret (>= 32 chars) |
+| `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | GitHub OAuth App credentials. At least one OAuth provider is required — GitHub and/or Bitbucket (`BITBUCKET_OAUTH_CLIENT_ID` / `_SECRET`) |
+| `OAUTH_CLI_AUTH_SECRET` | Local random secret (>= 32 chars); signs CLI browser-login authorization codes. The legacy name `OAUTH_DEVICE_POLL_TOKEN_SECRET` is still accepted |
 | `INITIAL_ADMIN_EMAILS` | Allowlist for the first invite-only admin sign-in |
 
 :::info
-The server refuses to boot while `WORKER_SHARED_SECRET` or `OAUTH_DEVICE_POLL_TOKEN_SECRET` are shorter than 32 chars, or if GitHub OAuth is unset, so a verbatim copy of the example file fails fast instead of running with known secrets.
+The server refuses to boot while `WORKER_SHARED_SECRET` or `OAUTH_CLI_AUTH_SECRET` are shorter than 32 chars, or if an OAuth provider's client ID is set without its secret, so a verbatim copy of the example file fails fast instead of running with known secrets.
 :::
 
 ## Common optional

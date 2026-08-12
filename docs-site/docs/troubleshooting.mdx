@@ -182,14 +182,14 @@ GitHub Actions and remote CI runners cannot call `http://127.0.0.1` or `localhos
 
 ### Server won't boot / OAuth errors
 
-- `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` are set
-- `OAUTH_DEVICE_POLL_TOKEN_SECRET` and `WORKER_SHARED_SECRET` are each ≥ 32 chars
+- At least one OAuth provider is configured: `GITHUB_OAUTH_CLIENT_ID` + `_SECRET` and/or `BITBUCKET_OAUTH_CLIENT_ID` + `_SECRET`
+- `OAUTH_CLI_AUTH_SECRET` (legacy name: `OAUTH_DEVICE_POLL_TOKEN_SECRET`) and `WORKER_SHARED_SECRET` are each ≥ 32 chars
 - Under `REGISTRATION_MODE=invite_only`, `INITIAL_ADMIN_EMAILS` is non-empty
 
 ### First admin sign-in rejected
 
-- `INITIAL_ADMIN_EMAILS` matches the GitHub account's verified primary email
-- OAuth callback URL is `https://<api-domain>/auth/callback` and Device Flow is enabled on the app ([OAuth Apps](https://github.com/settings/developers))
+- `INITIAL_ADMIN_EMAILS` matches the GitHub (or Bitbucket) account's verified primary email
+- OAuth callback URL is `https://<api-domain>/auth/callback` ([OAuth Apps](https://github.com/settings/developers))
 
 ### Caddy certificate issuance is slow
 
