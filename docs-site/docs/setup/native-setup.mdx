@@ -18,6 +18,14 @@ You need:
 
 ## Create apps and deployments
 
+Set your server URL as a CLI default once, so the commands below (and later pages) can omit `--server-url`:
+
+```bash
+cmpatch config set server-url https://updates.example.com
+```
+
+This is a per-user default; [`cmpatch init`](/docs/setup/first-release) later writes a per-project config that takes precedence, and `cmpatch context` shows where each value comes from.
+
 Keep iOS and Android in separate apps:
 
 ```bash
