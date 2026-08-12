@@ -43,11 +43,15 @@ Does not change behavior for `ON_NEXT_RESTART` or `IMMEDIATE`.
 
 Sync and apply behavior is client-side. The server does not push different `sync()` rules per deployment.
 
-Teams can map Staging and Production to different app builds (different deployment keys), then branch `sync()` options by build flavor or environment:
+Teams can map Staging and Production to different app builds (different deployment keys baked into native config), then branch `sync()` options on the same build-time signal that selects the deployment key:
 
 ```ts
+// Wire this to whatever selects your Staging deployment key at build time:
+// a build flavor / scheme, or a build-time env flag (e.g. react-native-config).
+declare function isStagingBuild(): boolean;
+
 void sync(
-  __DEV__
+  isStagingBuild()
     ? { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" }
     : {
         installMode: "ON_NEXT_SUSPEND",
