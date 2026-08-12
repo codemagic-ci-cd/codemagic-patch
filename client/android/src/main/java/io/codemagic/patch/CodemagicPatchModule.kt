@@ -842,7 +842,7 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
 
   private fun e2eLaunchArg(key: String): String? {
     if (!e2eOverridesEnabled()) return null
-    return currentActivity?.intent?.extras?.getString(key)
+    return reactContext.currentActivity?.intent?.extras?.getString(key)
   }
 
   private fun e2eOverridesEnabled(): Boolean {
