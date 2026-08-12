@@ -55,11 +55,11 @@ Evaluation only, not a production install. Authentication is disabled and all po
 cmpatch login --server-url http://localhost:3000
 ```
 
-The local stack approves the device flow instantly.
+`cmpatch login` opens the dashboard in your browser and finishes over a localhost redirect; the local stack approves the sign-in automatically.
 
 ## 3. Watch an update apply (on-device demo)
 
-[`examples/on-device-demo`](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) is a minimal React Native app preconfigured against this stack. It shows a blue **v1** banner. You change one line, publish, relaunch, and the banner flips to green **v2**. That flip is Patch replacing the JS bundle.
+[`examples/on-device-demo`](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) is a React Native demo storefront preconfigured against this stack. Checkout starts broken on purpose: you flip one line, publish a release, and watch the running app install the fix over the air. That fix arriving is Patch replacing the JS bundle.
 
 One-time setup and install (from the demo directory):
 
@@ -73,12 +73,12 @@ yarn demo:ios         # iOS Simulator
 yarn demo:android     # Android emulator (also sets up adb reverse for localhost)
 ```
 
-Both commands build **Release** with `--no-packager`, so the app boots from its embedded bundle (the one OTA replaces). On launch you should see the blue **v1** banner and *"Up to date — you are running v1."*
+Both commands build **Release** with `--no-packager`, so the app boots from its embedded bundle (the one OTA replaces). On launch you see a mock storefront. Tap **Add to cart** on any product: checkout fails with *"Payment failed"* / *"Error 418: intentional bug"*.
 
 Edit `App.tsx` and change the marked line:
 
 ```ts
-const APP_VERSION = 'v1';   // change to 'v2'
+const CHECKOUT_BROKEN = true;   // change to false
 ```
 
 Publish from the same directory:
@@ -97,7 +97,7 @@ cmpatch release-react \
   --platform android
 ```
 
-In the app, tap **Check again**. It finds the release, shows download progress, then **Update installed — Relaunch**. Tap that: the banner flips to green **v2**.
+Background the app and bring it back (or relaunch). The demo checks for updates on resume, downloads the release, and shows an **Update Available** alert. Tap **Install Now**: the app reloads into the new bundle, and **Add to cart** now confirms the order.
 
 Full detail and troubleshooting: [on-device demo README](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo).
 
