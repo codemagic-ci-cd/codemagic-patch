@@ -84,7 +84,7 @@ Patch organizes updates using apps and deployments.
 | Deployment key | The public identifier the SDK uses to fetch updates. Found via `cmpatch deployment list`. Not a secret, it's baked into the app binary. |
 | Release | A published bundle targeting one deployment + binary version. Identified by a label like `v1`. Supports gradual rollout, mandatory updates, and rollback. |
 | Binary version | The native app version a release targets (e.g. `1.2.3`). The SDK only installs releases that match the running binary version. |
-| Fingerprint | A hash of the native project recorded with releases. Treat it as informational; binary version is what gates which devices see an update. |
+| Fingerprint | A hash of the native project recorded with releases. It actively widens delivery: the worker also publishes a release to other binary versions whose recorded fingerprint matches (fingerprint expansion), so store builds with identical native code receive the same update, while incompatible binaries stay excluded. |
 
 Recommended workflow:
 

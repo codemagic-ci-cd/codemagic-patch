@@ -123,9 +123,9 @@ cmpatch release-react \
   --yes
 ```
 
-Semantic ranges are supported (e.g. `^1.2.0`, `~1.2.0`) so patch-level store builds can receive the same OTA channel.
+`--target-binary-version` must be an exact version. Semantic ranges and wildcards (e.g. `^1.2.0`, `~1.2.0`) are rejected by both the CLI and the server.
 
-Only apps whose running binary version matches the release's target receive the update.
+Only apps whose running binary version matches the release's target receive the update. One exception widens delivery automatically: the release is also published to other binary versions whose recorded native fingerprint matches, so store builds with identical native code receive the same update (see [Core concepts](/docs/introduction/core-concepts)).
 
 ## Dry runs and inspection
 
