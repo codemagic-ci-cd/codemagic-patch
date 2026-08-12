@@ -41,13 +41,13 @@ Pass `--i-have-a-backup` only if you already took an external backup for this up
 
 ## Health and monitoring
 
-Point your existing uptime monitor at the ready endpoint (it checks Postgres and storage, not only the process):
+Point your existing uptime monitor at the ready endpoint (it checks the server process and its Postgres connection; storage is not covered):
 
 ```bash
 curl -fsS https://updates.example.com/health/ready
 ```
 
-Also alert on host disk filling up. Storage health (`https://storage.updates.example.com/minio/health/ready`) is useful if your monitor can hit a second URL.
+Also alert on host disk filling up. Monitor storage health separately (`https://storage.updates.example.com/minio/health/ready`) — the ready endpoint does not detect storage failures.
 
 Use Compose status and logs when something is already wrong, not as the primary check:
 
