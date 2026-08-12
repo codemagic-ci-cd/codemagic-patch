@@ -378,7 +378,12 @@ export async function restartApp(onlyIfUpdateIsPending = false): Promise<void> {
     return;
   }
 
-  if (state.pendingPackage && !state.restartSuppressed) {
+  if (state.pendingPackage) {
+    if (state.restartSuppressed) {
+      state.blockedActivation = true;
+      return;
+    }
+
     await activatePendingPackageOrReload();
     return;
   }
