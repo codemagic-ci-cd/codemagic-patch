@@ -78,7 +78,6 @@ const config: Config = {
       },
     },
     navbar: {
-      title: 'Patch',
       logo: {
         alt: 'Codemagic Patch',
         src: 'img/logo.svg',
