@@ -9,44 +9,44 @@
  * This file maps those tokens onto Infima and Docusaurus selectors.
  */
 
-@import './brand.css';
-@import './docs-brand.css';
+@import "./brand.css";
+@import "./docs-brand.css";
 
 @font-face {
-  font-family: 'Metropolis';
-  src: url('/fonts/Metropolis-Regular.woff2') format('woff2');
+  font-family: "Metropolis";
+  src: url("/fonts/Metropolis-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'Metropolis';
-  src: url('/fonts/Metropolis-Medium.woff2') format('woff2');
+  font-family: "Metropolis";
+  src: url("/fonts/Metropolis-Medium.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'Metropolis';
-  src: url('/fonts/Metropolis-SemiBold.woff2') format('woff2');
+  font-family: "Metropolis";
+  src: url("/fonts/Metropolis-SemiBold.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'Metropolis';
-  src: url('/fonts/Metropolis-Bold.woff2') format('woff2');
+  font-family: "Metropolis";
+  src: url("/fonts/Metropolis-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'Metropolis';
-  src: url('/fonts/Metropolis-ExtraBold.woff2') format('woff2');
+  font-family: "Metropolis";
+  src: url("/fonts/Metropolis-ExtraBold.woff2") format("woff2");
   font-weight: 800;
   font-style: normal;
   font-display: swap;
@@ -70,8 +70,9 @@
   --ifm-background-color: #ffffff;
   --ifm-font-family-base: var(--cm-font-docs);
   --ifm-heading-font-family: var(--cm-font-docs);
-  --ifm-font-family-monospace: SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
+  --ifm-font-family-monospace:
+    SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
   --ifm-code-font-size: 80%;
   --docusaurus-highlighted-code-line-bg: rgba(9, 87, 255, 0.08);
   --patch-table-header-bg: var(--cm-grey-xl);
@@ -114,7 +115,7 @@
   --ifm-navbar-background-color: #ffffff;
 }
 
-html[data-theme='dark'] {
+html[data-theme="dark"] {
   --ifm-color-primary: var(--cm-blue);
   --ifm-color-primary-dark: #0957ff;
   --ifm-color-primary-darker: #0944c1;
@@ -164,7 +165,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
   border-right: none !important;
 }
 
-[class*='sidebarViewport'] {
+[class*="sidebarViewport"] {
   background-color: var(--cm-blue-xl);
 }
 
@@ -210,7 +211,7 @@ body:has(.theme-doc-sidebar-container) .navbar {
 }
 
 .theme-doc-sidebar-menu .menu__link--active:not(.menu__link--sublist)::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 0.3rem;
@@ -219,8 +220,14 @@ body:has(.theme-doc-sidebar-container) .navbar {
 }
 
 /* Section titles never get the active page accent */
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link--active:not(.menu__link--sublist)::before,
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link::before {
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link--active:not(.menu__link--sublist)::before,
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link::before {
   content: none;
 }
 
@@ -241,14 +248,28 @@ body:has(.theme-doc-sidebar-container) .navbar {
   margin-top: 0.35rem;
 }
 
-.theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible {
+.theme-doc-sidebar-menu
+  > .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible {
   border-bottom: 1px solid var(--cm-blue-xl-border);
 }
 
-.theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link,
-.theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link.menu__link--active,
-.theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link:hover,
-.theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link.menu__link--active:hover {
+.theme-doc-sidebar-menu
+  > .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link,
+.theme-doc-sidebar-menu
+  > .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link.menu__link--active,
+.theme-doc-sidebar-menu
+  > .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link:hover,
+.theme-doc-sidebar-menu
+  > .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link.menu__link--active:hover {
   font-size: 16px;
   font-weight: 600;
   color: var(--cm-navy);
@@ -259,7 +280,10 @@ body:has(.theme-doc-sidebar-container) .navbar {
   cursor: default;
 }
 
-.theme-doc-sidebar-menu > .theme-doc-sidebar-item-category > .menu__list-item-collapsible > .menu__link:hover {
+.theme-doc-sidebar-menu
+  > .theme-doc-sidebar-item-category
+  > .menu__list-item-collapsible
+  > .menu__link:hover {
   color: var(--cm-navy);
 }
 
@@ -290,10 +314,22 @@ body:has(.theme-doc-sidebar-container) .navbar {
 }
 
 /* Nested category labels */
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link,
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link.menu__link--active,
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link:hover,
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link.menu__link--active:hover {
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link,
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link.menu__link--active,
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link:hover,
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link.menu__link--active:hover {
   font-size: 14px;
   font-weight: 600;
   color: var(--cm-black);
@@ -303,17 +339,26 @@ body:has(.theme-doc-sidebar-container) .navbar {
   cursor: pointer;
 }
 
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link:hover {
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link:hover {
   color: var(--cm-blue-hover);
 }
 
 /* Top-level carets hidden (codemagic-docs); keep nested carets */
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link--sublist-caret:after {
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-1
+  > .menu__list-item-collapsible
+  > .menu__link--sublist-caret:after {
   display: none !important;
 }
 
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link--sublist-caret:after {
-  content: '';
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link--sublist-caret:after {
+  content: "";
   background: none !important;
   filter: none !important;
   display: inline-block;
@@ -331,11 +376,17 @@ body:has(.theme-doc-sidebar-container) .navbar {
     border-color 0.15s linear;
 }
 
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2.menu__list-item--collapsed > .menu__list-item-collapsible > .menu__link--sublist-caret:after {
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2.menu__list-item--collapsed
+  > .menu__list-item-collapsible
+  > .menu__link--sublist-caret:after {
   transform: rotate(-45deg) !important;
 }
 
-.theme-doc-sidebar-menu .theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link--sublist-caret:hover:after {
+.theme-doc-sidebar-menu
+  .theme-doc-sidebar-item-category-level-2
+  > .menu__list-item-collapsible
+  > .menu__link--sublist-caret:hover:after {
   opacity: 0.8;
   border-color: var(--cm-blue-hover);
 }
@@ -343,12 +394,12 @@ body:has(.theme-doc-sidebar-container) .navbar {
 /* ——— Article content ——— */
 
 /* Match codemagic-docs main { padding: 50px 0 ... } above the H1 */
-.docs-doc-page main[class*='docMainContainer'] .container.padding-top--md {
+.docs-doc-page main[class*="docMainContainer"] .container.padding-top--md {
   padding-top: 50px !important;
 }
 
 @media (min-width: 997px) {
-  main[class*='docMainContainer'] {
+  main[class*="docMainContainer"] {
     --ifm-spacing-horizontal: 2.5rem;
   }
 }
@@ -534,12 +585,12 @@ body:has(.theme-doc-sidebar-container) .navbar {
   word-break: keep-all;
 }
 
-[data-theme='dark'] .markdown table {
+[data-theme="dark"] .markdown table {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-[data-theme='dark'] .markdown table td code,
-[data-theme='dark'] .markdown table th code {
+[data-theme="dark"] .markdown table td code,
+[data-theme="dark"] .markdown table th code {
   background: var(--cm-grey-bg);
 }
 
@@ -549,10 +600,6 @@ body:has(.theme-doc-sidebar-container) .navbar {
   border: 1px solid var(--cm-grey-l);
   border-radius: var(--cm-docs-radius);
   box-shadow: none;
-}
-
-.theme-admonition .admonition-heading {
-  color: var(--cm-navy);
 }
 
 .theme-admonition p {
@@ -663,7 +710,7 @@ blockquote {
 }
 
 .table-of-contents__link--active::before {
-  content: '';
+  content: "";
   position: absolute;
   left: -10px;
   top: 0;
@@ -671,10 +718,20 @@ blockquote {
   border-left: 2px solid var(--cm-blue);
 }
 
+/* ——— Pagination ——— */
+
+.pagination-nav__sublabel {
+  font-size: 14px;
+}
+
+.pagination-nav__label {
+  font-size: 18px;
+}
+
 /* ——— Navbar (marketing-aligned, keep as-is) ——— */
 
 .navbar {
-  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-family: "Metropolis", var(--ifm-font-family-base), sans-serif;
 }
 
 .navbar__inner {
@@ -753,13 +810,13 @@ blockquote {
     0 0 0 5px rgba(9, 87, 255, 0.1);
 }
 
-html[data-theme='dark'] .navbar__search-input {
+html[data-theme="dark"] .navbar__search-input {
   border-color: var(--cm-blue-xl-border);
   background-color: #121826;
   color: #ffffff;
 }
 
-html[data-theme='dark'] .navbar__search-input:focus {
+html[data-theme="dark"] .navbar__search-input:focus {
   border-color: transparent;
   background-color: #0d121f;
   box-shadow:
@@ -772,7 +829,7 @@ html[data-theme='dark'] .navbar__search-input:focus {
 }
 
 .navbar-sidebar {
-  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-family: "Metropolis", var(--ifm-font-family-base), sans-serif;
 }
 
 .navbar-sidebar .menu__link {
@@ -788,7 +845,7 @@ html[data-theme='dark'] .navbar__search-input:focus {
 }
 
 .navbar__brand .navbar__title {
-  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-family: "Metropolis", var(--ifm-font-family-base), sans-serif;
   font-size: 1.375rem;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -799,8 +856,8 @@ html[data-theme='dark'] .navbar__search-input:focus {
   color: var(--cm-neverblue);
 }
 
-html[data-theme='dark'] .navbar__brand .navbar__title,
-html[data-theme='dark'] .navbar__brand:hover .navbar__title {
+html[data-theme="dark"] .navbar__brand .navbar__title,
+html[data-theme="dark"] .navbar__brand:hover .navbar__title {
   color: #fff;
 }
 
@@ -846,7 +903,7 @@ article mark {
 
 /* Footer */
 .footer {
-  font-family: 'Metropolis', var(--ifm-font-family-base), sans-serif;
+  font-family: "Metropolis", var(--ifm-font-family-base), sans-serif;
   background-color: var(--cm-bg-soft);
   border-top: 1px solid var(--cm-bg-level-5);
   padding: 2.5rem 0 2rem;
@@ -857,8 +914,8 @@ article mark {
   color: var(--cm-text-1);
 }
 
-html[data-theme='dark'] .footer,
-html[data-theme='dark'] .footer--dark {
+html[data-theme="dark"] .footer,
+html[data-theme="dark"] .footer--dark {
   background-color: var(--cm-bg-dark);
   border-top-color: rgba(255, 255, 255, 0.08);
   color: var(--cm-text-1);

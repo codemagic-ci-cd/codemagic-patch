@@ -86,34 +86,6 @@ const config: Config = {
     },
     footer: {
       style: "light",
-      links: [
-        {
-          title: "Docs",
-          items: [
-            {
-              label: "Local quickstart",
-              to: "/docs/",
-            },
-            {
-              label: "Install guide",
-              to: "/docs/install",
-            },
-          ],
-        },
-        {
-          title: "Codemagic",
-          items: [
-            {
-              label: "Codemagic.io",
-              href: "https://codemagic.io",
-            },
-            {
-              label: "CodePush",
-              href: "https://codemagic.io/codepush",
-            },
-          ],
-        },
-      ],
       copyright: `Built by Codemagic. © ${new Date().getFullYear()} Nevercode Ltd.`,
     },
     prism: {
