@@ -1,0 +1,8 @@
+{
+  "label": "Using Patch",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Publish updates, control rollouts, integrate CI, and monitor releases."
+  }
+}

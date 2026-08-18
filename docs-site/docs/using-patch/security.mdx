@@ -1,0 +1,96 @@
+---
+title: Security and access
+description: >-
+  How Patch handles authentication, team access, API tokens, and optional code
+  signing.
+llmsDescription: 'Auth — GitHub OAuth, API tokens, team roles, optional code signing.'
+---
+
+# Security and access
+
+Patch separates who can publish updates (CLI and dashboard auth) from whether clients trust updates (optional code signing).
+
+## Authentication
+
+### Dashboard sign-in
+
+The dashboard uses GitHub or Bitbucket Cloud OAuth. Installs with domains require at least one OAuth provider (a GitHub OAuth App and/or a Bitbucket OAuth consumer); the first admin email must match the verified primary address on that account when `REGISTRATION_MODE=invite_only`.
+
+See [Install](/docs/install#github-oauth-app) for OAuth App setup ([register an OAuth App](https://github.com/settings/applications/new)).
+
+### CLI sign-in
+
+Developers sign in through the browser — `cmpatch login` opens the dashboard and completes over a localhost redirect (pass `--token` to sign in with a personal access token instead):
+
+```bash
+cmpatch login --server-url https://updates.example.com
+```
+
+Credentials are stored locally in `~/.codemagic-patch/`.
+
+### API tokens (CI and automation)
+
+For CI and scripting, create personal access tokens:
+
+```bash
+cmpatch token create --name ci
+```
+
+- Prefix: `cm_pat_…`
+- Shown once at creation: store in your secret manager
+- Supply via `CODEMAGIC_PATCH_TOKEN` or `--token`
+- Revoke from the dashboard API tokens page when compromised
+
+:::warning
+Treat `cm_pat_…` tokens like production credentials. Scope pipeline access and rotate on schedule.
+:::
+
+### Auth precedence
+
+`--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`
+
+## Code signing (update integrity)
+
+Beyond server authentication, Patch supports cryptographic signing of release manifests so clients only install packages signed with your private key.
+
+Enable at app creation or later:
+
+```bash
+cmpatch app create --name MySignedApp-iOS --require-code-signing
+cmpatch app setting --app MyApp-iOS --require-code-signing=true
+```
+
+Create a private and public key pair with OpenSSL:
+
+```bash
+# generate private RSA key
+openssl genrsa -out patch-private-key.pem 2048
+
+# export public key
+openssl rsa -in patch-private-key.pem -pubout -out patch-public-key.pem
+```
+
+Copy the public key (`cat patch-public-key.pem`, including the `BEGIN` / `END` lines) into native config as `CodemagicPatchPublicKey`. See [Native setup](/docs/setup/native-setup) for `Info.plist`, `strings.xml`, or Expo plugin wiring.
+
+Publish signed releases with the private key:
+
+```bash
+cmpatch release-react --platform ios --deployment Staging \
+  --private-key-path ./patch-private-key.pem --yes
+```
+
+When building a `.cmpatch` artifact with code signing enabled, pass `--private-key-path` to `cmpatch bundle` as well.
+
+The SDK reads the public key from the binary at launch, so ship a new native build (and reinstall on devices) before clients can verify signed OTAs. OTA updates cannot add or change the public key.
+
+With the key in the binary, the client rejects releases with missing or invalid signatures.
+
+## Server secrets
+
+`.env.selfhost` contains production secrets (Postgres, MinIO, OAuth, worker keys). Back it up and never commit it. See [Configuration reference](/docs/reference/configuration).
+
+## CI hygiene
+
+- Store `CODEMAGIC_PATCH_TOKEN` in CI secret stores only
+- Use separate tokens per pipeline or environment where possible
+- Release to Staging before Production ([CI integration](/docs/using-patch/ci-integration))

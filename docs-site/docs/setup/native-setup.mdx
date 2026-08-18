@@ -1,0 +1,220 @@
+---
+title: Native setup
+description: Integrate the Patch SDK in bare React Native or Expo prebuild projects.
+llmsDescription: >-
+  Create apps and deployments, then install the SDK with native config keys for
+  bare RN or Expo.
+---
+
+# Native setup
+
+Wire `@codemagic/react-native-patch` into a bare React Native or Expo prebuild app so release builds can check, download, and apply OTAs.
+
+You need:
+
+- A running Patch server ([local quickstart](/docs/) or [Install](/docs/install))
+- The `cmpatch` CLI signed in (`cmpatch login`)
+- A native project you can rebuild (Expo Go is not supported)
+
+## Create apps and deployments
+
+Set your server URL as a CLI default once, so the commands below (and later pages) can omit `--server-url`:
+
+```bash
+cmpatch config set server-url https://updates.example.com
+```
+
+This is a per-user default; [`cmpatch init`](/docs/setup/first-release) later writes a per-project config that takes precedence, and `cmpatch context` shows where each value comes from.
+
+Keep iOS and Android in separate apps:
+
+```bash
+cmpatch app create --name MyApp-iOS
+cmpatch app create --name MyApp-Android
+
+cmpatch deployment list --app MyApp-iOS --format table
+cmpatch deployment list --app MyApp-Android --format table
+```
+
+`app create` automatically creates the `Staging` and `Production` deployments. The `DEPLOYMENT_KEY` column from `deployment list` is the value your app embeds (`CodemagicPatchDeploymentKey`).
+
+The same operations are available in the [web dashboard](/docs/using-patch/dashboard): open your app, open a deployment, and copy the deployment key plus SDK URLs from the SDK configuration panel.
+
+## Install the SDK
+
+Add the package:
+
+```bash
+yarn add @codemagic/react-native-patch
+```
+
+The SDK is configured through four native values (injected at build time):
+
+| App config key | Value |
+| --- | --- |
+| `CodemagicPatchDeploymentKey` | the deployment key from `cmpatch deployment list` |
+| `CodemagicPatchDownloadBaseUrl` | your download base URL (ends with `/codemagic-patch`) |
+| `CodemagicPatchApiUrl` | your API URL |
+| `CodemagicPatchPublicKey` | *(optional)* PEM public key for code-signing enforcement |
+
+The snippets below use placeholder values. Substitute your deployment keys from above and your API / download URLs from [Install](/docs/install) (or [local quickstart](/docs/#5-try-it-with-your-own-app) for localhost).
+
+## Option A. Bare React Native
+
+Wire the config and native bundle selection manually.
+
+### iOS
+
+Install the native pod:
+
+```bash
+cd ios && pod install && cd ..
+```
+
+Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, and `CodemagicPatchApiUrl` to `ios/<YourApp>/Info.plist`:
+
+```xml
+<key>CodemagicPatchDeploymentKey</key>
+<string>ios-staging-deployment-key</string>
+<key>CodemagicPatchDownloadBaseUrl</key>
+<string>https://storage.updates.example.com/codemagic-patch</string>
+<key>CodemagicPatchApiUrl</key>
+<string>https://updates.example.com</string>
+<!-- optional, only when enforcing code signing -->
+<key>CodemagicPatchPublicKey</key>
+<string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+```
+
+In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working.
+
+On the Swift AppDelegate (RN 0.77+ template):
+
+```swift
+import CodemagicPatchClient
+
+class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
+  override func sourceURL(for bridge: RCTBridge) -> URL? {
+    self.bundleURL()
+  }
+
+  override func bundleURL() -> URL? {
+#if DEBUG
+    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+#else
+    CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+#endif
+  }
+}
+```
+
+On RN ≤ 0.76, where the app template still ships an Objective-C++ `AppDelegate.mm`, override `sourceURLForBridge:` with the same selection. Forward-declare the Swift surface (the generated `-Swift.h` is not on the host target's search paths):
+
+```objc
+@interface CodemagicPatch : NSObject
++ (NSURL *_Nullable)bundleURL;
+@end
+
+- (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
+{
+#if DEBUG
+  return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
+#else
+  return [CodemagicPatch bundleURL] ?: [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
+#endif
+}
+```
+
+Reference: `client/plugin/src/withIosBundleURL.ts`
+
+### Android
+
+Add the same keys to `android/app/src/main/res/values/strings.xml`:
+
+```xml
+<resources>
+  <string name="CodemagicPatchDeploymentKey" translatable="false">android-staging-deployment-key</string>
+  <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage.updates.example.com/codemagic-patch</string>
+  <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
+  <!-- optional, only when enforcing code signing -->
+  <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+</resources>
+```
+
+In `MainApplication.kt`, feed the SDK's bundle path into React Native.
+
+On RN ≤ 0.81 (`ReactNativeHost`), override `getJSBundleFile()` inside the host object:
+
+```kotlin
+import io.codemagic.patch.CodemagicPatch
+// ...
+override val reactNativeHost: ReactNativeHost =
+    object : DefaultReactNativeHost(this) {
+      // ...existing overrides...
+      override fun getJSBundleFile(): String? =
+          CodemagicPatch.getJSBundleFile(applicationContext)
+    }
+```
+
+On RN ≥ 0.82 (`reactHost` via `getDefaultReactHost`), pass it as `jsBundleFilePath`:
+
+```kotlin
+import io.codemagic.patch.CodemagicPatch
+// ...
+override val reactHost: ReactHost by lazy {
+  getDefaultReactHost(
+    context = applicationContext,
+    packageList = PackageList(this).packages,
+    jsBundleFilePath = CodemagicPatch.getJSBundleFile(applicationContext),
+  )
+}
+```
+
+Reference: `client/plugin/src/withAndroidBundleFile.ts`
+
+:::note
+Debug builds load JS from Metro, so OTA updates are not picked up there. That is expected, not a wiring problem. To see an update apply, run a release-style build (`npx react-native run-ios --mode Release` / `npx react-native run-android --mode release`).
+:::
+
+## Option B. Expo (prebuild)
+
+Requires Expo SDK 52+ and a prebuild / development-build workflow. Expo Go is not supported.
+
+Add the config plugin to `app.json` / `app.config.js`:
+
+```json
+{
+  "expo": {
+    "plugins": [
+      [
+        "@codemagic/react-native-patch",
+        {
+          "ios": {
+            "deploymentKey": "ios-staging-deployment-key",
+            "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+            "apiUrl": "https://updates.example.com"
+          },
+          "android": {
+            "deploymentKey": "android-staging-deployment-key",
+            "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+            "apiUrl": "https://updates.example.com"
+          }
+        }
+      ]
+    ]
+  }
+}
+```
+
+Then regenerate native projects:
+
+```bash
+npx expo prebuild
+cd ios && pod install && cd ..
+```
+
+The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) and wires native bundle selection for you, with the same wiring shown in Option A:
+
+- iOS AppDelegate → prefers `CodemagicPatch.bundleURL()`, falling back to the embedded bundle. The `DEBUG` / Metro branch is left untouched.
+- Android MainApplication → prefers `CodemagicPatch.getJSBundleFile(applicationContext)` (both the RN ≤ 0.81 `getJSBundleFile()` and RN ≥ 0.82 `jsBundleFilePath` host shapes are handled).
+
+Next: [Checking for updates](/docs/setup/checking-for-updates). API details: [SDK reference](/docs/reference/sdk-reference).

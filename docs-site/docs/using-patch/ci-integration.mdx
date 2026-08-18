@@ -1,0 +1,121 @@
+---
+title: CI integration
+description: >-
+  Publish OTA updates automatically from GitHub Actions, Codemagic, or other CI
+  systems.
+llmsDescription: 'Automate cmpatch release-react in GitHub Actions, Codemagic, other CI.'
+---
+
+# CI integration
+
+Patch updates can be published from a developer machine or automated in CI. Releasing from CI keeps OTA delivery aligned with your build and test pipeline.
+
+Typical flow:
+
+```text
+commit → CI build → tests pass → cmpatch release-react → update deployed
+```
+
+## Prerequisites
+
+Your pipeline needs:
+
+1. Node.js `>=20` and the `cmpatch` CLI installed (see below)
+2. A Patch API token (`cm_pat_…`) with permission to publish
+3. Your server URL reachable from the CI runner (not `localhost` unless the runner is on the same host)
+
+### Install cmpatch in CI
+
+Install from npm:
+
+```bash
+npm install -g @codemagic/patch-cli
+```
+
+Create a token:
+
+```bash
+cmpatch token create --name ci
+```
+
+Store the `cm_pat_…` value as a secret. It is shown only once.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `CODEMAGIC_PATCH_TOKEN` | API token for `cmpatch` (or pass `--token`) |
+| `CODEMAGIC_PATCH_SERVER_URL` | Your Patch API URL, e.g. `https://updates.example.com` |
+
+Auth precedence: `--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`.
+
+## Codemagic
+
+Run the same commands you would locally after a successful build:
+
+```yaml
+scripts:
+  - name: Install cmpatch
+    script: |
+      npm install -g @codemagic/patch-cli
+
+  - name: Release OTA update
+    script: |
+      cmpatch release-react \
+        --server-url "$CODEMAGIC_PATCH_SERVER_URL" \
+        --token "$CODEMAGIC_PATCH_TOKEN" \
+        --platform android \
+        --deployment Staging \
+        --yes
+```
+
+Store `CODEMAGIC_PATCH_TOKEN` and `CODEMAGIC_PATCH_SERVER_URL` as secure environment variables.
+
+If the project has `codemagic-patch.config.json` from `cmpatch init`, you can omit `--server-url` and app flags when defaults are set.
+
+## GitHub Actions
+
+```yaml
+- name: Install cmpatch
+  run: npm install -g @codemagic/patch-cli
+
+- name: Release OTA update
+  env:
+    CODEMAGIC_PATCH_TOKEN: ${{ secrets.CODEMAGIC_PATCH_TOKEN }}
+    CODEMAGIC_PATCH_SERVER_URL: ${{ secrets.CODEMAGIC_PATCH_SERVER_URL }}
+  run: |
+    cmpatch release-react \
+      --server-url "$CODEMAGIC_PATCH_SERVER_URL" \
+      --token "$CODEMAGIC_PATCH_TOKEN" \
+      --platform ios \
+      --deployment Staging \
+      --yes
+```
+
+## Release strategies
+
+On every merge to main
+
+```text
+merge → CI build → tests pass → release to Staging (or Production)
+```
+
+On tags only
+
+```text
+tag v1.2.0 → CI build → release with --target-binary-version 1.2.0
+```
+
+Manual pipeline trigger
+
+Developer runs the workflow when ready to ship an OTA update.
+
+## Best practices
+
+- Store tokens as CI secrets; never commit them
+- Restrict who can trigger release pipelines
+- Release to `Staging` first; [promote to Production](/docs/using-patch/releasing-updates) after validation
+- Run `cmpatch doctor` in CI before publishing when debugging integration issues
+- [Monitor metrics](/docs/using-patch/analytics) after deployment
+
+See also: [CLI reference](/docs/reference/cli-reference) · [Security](/docs/using-patch/security)

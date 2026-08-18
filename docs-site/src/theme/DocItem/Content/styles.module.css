@@ -1,0 +1,30 @@
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 10px;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/*
+ * MDX emits the page title as <header><h1>, so it sits as a second <header>
+ * after our title row. Hide that duplicate (and a bare follow-on h1).
+ */
+.hasPageTitle > :global(header + header),
+.hasPageTitle > :global(header + h1) {
+  display: none !important;
+}
+
+@media (max-width: 576px) {
+  .titleRow {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+}

@@ -1,0 +1,141 @@
+---
+title: Cloudflare setup
+description: >-
+  Optional but recommended: front the storage domain with Cloudflare CDN and
+  purge manifests after each release.
+llmsDescription: >-
+  Cloudflare CDN for Patch storage — prepare zone and token, install flags,
+  DNS proxy, two Cache Rules, verify purge.
+---
+
+# Cloudflare setup
+
+:::info
+The default [install](/docs/install) works without Cloudflare (`DELIVERY_ADAPTER=base-url`). For production, we recommend fronting the **storage domain only** (the API domain stays direct) so artifacts and manifests are served from the edge, and Patch can purge stale `meta.json` / `manifest.json` URLs after releases.
+:::
+
+Front the storage domain with Cloudflare when you want edge caching and automatic cache purge. After every release, promotion, rollback, and deployment clear, the server purges the affected manifest URLs so clients do not keep stale manifests. Deleting a deployment also purges its public artifact URLs.
+
+You can also use Cloudflare **R2** as S3-compatible object storage (`STORAGE_ADAPTER=s3`). That is separate from the delivery adapter; see [Infrastructure adapters](/docs/setup/infrastructure#s3-compatible-storage).
+
+Follow this page in order: prepare credentials → install with flags → finish DNS and Cache Rules after the stack is up.
+
+## 1. Prepare Cloudflare (before install)
+
+Collect the Zone ID and a Cache Purge API token (below). Pass both to the installer in the next step, then finish DNS proxying and Cache Rules after the stack is healthy.
+
+### Zone ID
+
+The storage domain must live in a Cloudflare zone. On the zone [Overview](https://dash.cloudflare.com/) page, copy **Zone ID** from the API section on the right. This becomes `CLOUDFLARE_ZONE_ID`. [See Cloudflare's docs on finding your Zone ID.](https://developers.cloudflare.com/fundamentals/settings/account-and-zone-ids/)
+
+### Cache-purge API token
+
+Create a token at [My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens) (not the account Global API Key). Account-owned tokens (`cfat_…`) live under **\<account\> → Manage Account → API Tokens**.
+
+Use **Create Token** → **Create Custom Token** with a single permission:
+
+| Field | Value |
+| --- | --- |
+| Permissions | Zone → **Cache Purge** → Purge |
+| Zone Resources | Include → the zone that contains your storage domain |
+
+Copy the token once. This becomes `CLOUDFLARE_API_TOKEN`.
+
+The installer verifies the token by calling Cloudflare's `purge_cache` API for the zone (requires Zone → Cache Purge). Pass `--skip-cloudflare-check` only if you need to bypass verification temporarily.
+
+:::info Free Cloudflare plans and nested subdomains
+Nested storage names such as `storage.updates.example.com` are fine and common. On Cloudflare Free, Universal SSL covers `example.com` and `*.example.com` only, so a third-level name needs [Advanced Certificate Manager](https://developers.cloudflare.com/ssl/edge-certificates/advanced-certificate-manager/) (or a hostname Universal SSL already covers, such as `updates-cdn.example.com`).
+:::
+
+## 2. Install with Cloudflare flags
+
+Run the [installer](/docs/install#run-the-installer) and add these flags on **first install** (delivery config is written into `.env.selfhost` only when that file is created):
+
+```bash
+scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --storage-domain storage.updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
+  --github-oauth-client-secret <github_client_secret> \
+  --cloudflare \
+  --cloudflare-api-token <cf_cache_purge_token> \
+  --cloudflare-zone-id <cf_zone_id>
+```
+
+The installer sets `DELIVERY_ADAPTER=cloudflare` plus your token and zone ID. Leave `MANIFEST_CACHE_CONTROL` at its default (`no-cache, must-revalidate`). That header governs **client** revalidation; edge caching for manifests is controlled by the Cache Rules below.
+
+:::warning Certificate order matters
+Caddy obtains Let's Encrypt certificates over HTTP on port 80 during install. Keep the **storage** DNS record **DNS only** (grey cloud) until the installer reports storage HTTPS as ready. Proxying too early can break the HTTP-01 challenge.
+:::
+
+## 3. Finish the Cloudflare setup
+
+After install with the Cloudflare flags, the server side is already active: releases request edge purges. Complete the Cloudflare-side steps next.
+
+### Switch the DNS record to proxied
+
+1. Keep the storage domain **DNS only** until storage HTTPS is ready ([DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records)).
+2. Switch the storage record to **Proxied** (orange cloud). Leave the API domain direct unless you have a separate reason to proxy it.
+3. Set **SSL/TLS → Overview** to **Full (strict)** ([SSL/TLS](https://dash.cloudflare.com/?to=/:account/:zone/ssl-tls)). The origin serves a valid Let's Encrypt certificate, so strict validation works. **Flexible** would connect to the origin over HTTP, which Caddy redirects to HTTPS and can cause a redirect loop.
+
+If a later certificate renewal fails while proxied, temporarily switch the record back to DNS only, let Caddy renew, then re-enable the proxy.
+
+### Add Cache Rules
+
+Create **two** rules on [Cache Rules](https://dash.cloudflare.com/?to=/:account/:zone/caching/cache-rules) (**\<zone\> → Caching → Cache Rules** → **Create rule**), in this order (when several rules match, the later one wins):
+
+| # | Rule expression | Cache eligibility | Edge TTL |
+| - | --- | --- | --- |
+| 1 | `http.host eq "storage.updates.example.com"` | Eligible for cache | Use cache-control header if present, bypass cache if not |
+| 2 | `http.host eq "storage.updates.example.com" and ends_with(http.request.uri.path, ".json")` | Eligible for cache | Ignore cache-control header and use this TTL: **2 hours** |
+
+Rule 1 lets Cloudflare honor artifact origin headers. Bundles and patches are content-addressed and served with `Cache-Control: public, max-age=31536000, immutable`, so they can stay fresh for up to a year (Cloudflare may still evict inactive objects earlier).
+
+Rule 2 overrides the manifests' `no-cache` so `meta.json` / `manifest.json` are cached at the edge. The server requests a purge for those URLs after releases. The 2-hour TTL bounds staleness if a purge attempt fails. Two hours is the minimum Edge TTL on Cloudflare Free; Pro and higher plans may use 1 hour instead.
+
+### Verify
+
+```bash
+# Second request should return cf-cache-status: HIT
+DEPLOYMENT_KEY=your-deployment-key
+URL="https://storage.updates.example.com/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
+
+curl -sI "$URL" | grep -i cf-cache-status
+curl -sI "$URL" | grep -i cf-cache-status
+```
+
+After publishing a release, a successful purge makes the same URL briefly report `MISS` again. Purging is best-effort: a failed purge never fails the release. It is logged as a `delivery cache purge completed with failures` warning in the server logs. Watch for that warning if clients report stale updates.
+
+Also confirm basic health:
+
+```bash
+curl -fsS https://updates.example.com/health
+curl -fsS https://storage.updates.example.com/minio/health/ready
+```
+
+## Enable Cloudflare on an existing install
+
+Rerunning the installer with `--cloudflare` flags does **not** change an existing install. Delivery configuration is only written on initial install, and the rerun prints a warning instead. To enable it later, edit `.env.selfhost`:
+
+```bash
+DELIVERY_ADAPTER=cloudflare
+CLOUDFLARE_API_TOKEN=<cf_cache_purge_token>
+CLOUDFLARE_ZONE_ID=<cf_zone_id>
+```
+
+Then rerun `scripts/selfhost/install.sh`. It re-reads the file, verifies the credentials, and restarts the stack. Finish with [Switch the DNS record to proxied](#switch-the-dns-record-to-proxied) and [Add Cache Rules](#add-cache-rules).
+
+## Cloudflare R2 (optional storage)
+
+R2 is S3-compatible. To use it instead of bundled MinIO, set `STORAGE_ADAPTER=s3` and point the S3 variables at your R2 bucket and endpoint. Full variable list: [Configuration reference](/docs/reference/configuration). R2 does not replace the delivery adapter: you can still front public downloads with Cloudflare CDN (`DELIVERY_ADAPTER=cloudflare`) while objects live in R2.
+
+That path is manual (not generated by `install.sh`). See [Infrastructure adapters](/docs/setup/infrastructure).
+
+## Related
+
+- [Install](/docs/install): default Compose install
+- [Infrastructure adapters](/docs/setup/infrastructure): storage backends, delivery adapter reference
+- [Configuration reference](/docs/reference/configuration): all env vars
+- [Troubleshooting: Caddy certificate issuance](/docs/troubleshooting#caddy-certificate-issuance-is-slow): DNS and Cloudflare timing
+- Cloudflare dashboard: [API Tokens](https://dash.cloudflare.com/profile/api-tokens), [DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records), [Cache Rules](https://dash.cloudflare.com/?to=/:account/:zone/caching/cache-rules), [SSL/TLS](https://dash.cloudflare.com/?to=/:account/:zone/ssl-tls)

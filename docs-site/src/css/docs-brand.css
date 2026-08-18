@@ -1,0 +1,69 @@
+/**
+ * Codemagic docs brand tokens
+ * Mirrors codemagic-docs/assets/scss/_variables.scss
+ * Distinct from marketing neverblue / sunrise in brand.css.
+ */
+
+html {
+  /* Brand (docs) */
+  --cm-blue: #0957ff;
+  --cm-blue-hover: #0944c1;
+  --cm-red: #ec0c43;
+  --cm-yellow: #fbb03b;
+  --cm-magenta: #e944ff;
+  --cm-cyan: #33ccff;
+  --cm-black: #151515;
+  --cm-navy: #06225d; /* $black-l */
+
+  --cm-blue-gradient: linear-gradient(20deg, #0944c1 0%, #0957ff 100%);
+
+  /* Supporting */
+  --cm-grey-text: #666666;
+  --cm-grey-text-light: #999999;
+  --cm-grey-bg-light: #f6f6f6;
+  --cm-grey-bg: #eaeaea;
+  --cm-grey-l: #eeeeee;
+  --cm-grey-xl: #f8f8f8;
+  --cm-grey-m: #cccccc;
+  --cm-shadow-blue: #e4e8f7;
+  --cm-blue-xl: #f5f8ff;
+  --cm-blue-xl-border: #e8ecf8;
+  --cm-blue-bg-l: #d0daf0;
+  --cm-blue-edit: #33a1cb;
+  --cm-breadcrumb: #97a5c5;
+
+  /* Layout */
+  --doc-sidebar-width: 300px;
+  /* Use px: --ifm-font-size-base is 14px, so rem ≠ 16px-root math */
+  --cm-docs-header-height: 76px;
+  --cm-docs-radius: 10px;
+  --cm-docs-code-radius: 2px;
+  --cm-font-docs: 'Metropolis', sans-serif;
+
+  /* Article type scale (codemagic-docs _article.scss) — px, not rem */
+  --cm-docs-h1: 36px;
+  --cm-docs-h2: 30px;
+  --cm-docs-h3: 26px;
+  --cm-docs-h4: 22px;
+  --cm-docs-h5: 20px;
+  --cm-docs-h6: 18px;
+}
+
+/* Dark theme is Patch-owned (codemagic-docs SCSS is light-only) */
+html[data-theme='dark'] {
+  --cm-blue: #3b79ff;
+  --cm-blue-hover: #6b9aff;
+  --cm-black: #e8eaed;
+  --cm-navy: #ffffff;
+  --cm-blue-xl: #13161d;
+  --cm-blue-xl-border: #232a3f;
+  --cm-grey-bg-light: #1a1f28;
+  --cm-grey-bg: #2a313f;
+  --cm-grey-l: #2a313f;
+  --cm-grey-xl: #1a1f28;
+  --cm-grey-text: #9da4af;
+  --cm-grey-text-light: #7e95b9;
+  --cm-breadcrumb: #7e95b9;
+  --cm-shadow-blue: #232a3f;
+  --cm-blue-bg-l: #2a313f;
+}
