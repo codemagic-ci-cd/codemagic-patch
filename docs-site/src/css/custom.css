@@ -52,8 +52,9 @@
   font-display: swap;
 }
 
-/* Override Infima/Docusaurus defaults — html beats :root specificity */
-html {
+/* Override Infima/Docusaurus defaults — :root beats html specificity (pseudo-class > type),
+   so this must also use :root, not html, or it silently loses regardless of source order */
+:root {
   --ifm-color-primary: var(--cm-blue);
   --ifm-color-primary-dark: var(--cm-blue-hover);
   --ifm-color-primary-darker: #0839a3;

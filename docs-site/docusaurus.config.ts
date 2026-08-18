@@ -1,38 +1,38 @@
-import {themes as prismThemes} from 'prism-react-renderer';
-import type {Config} from '@docusaurus/types';
-import type * as Preset from '@docusaurus/preset-classic';
+import { themes as prismThemes } from "prism-react-renderer";
+import type { Config } from "@docusaurus/types";
+import type * as Preset from "@docusaurus/preset-classic";
 
 const config: Config = {
-  title: 'Codemagic Patch',
-  tagline: 'Self-hosted OTA updates for React Native',
-  favicon: 'img/favicon.svg',
+  title: "Codemagic Patch",
+  tagline: "Self-hosted OTA updates for React Native",
+  favicon: "img/favicon.svg",
 
-  url: 'http://localhost:3002',
-  baseUrl: '/',
+  url: "http://localhost:3002",
+  baseUrl: "/",
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: "throw",
 
   markdown: {
     mermaid: true,
   },
 
   i18n: {
-    defaultLocale: 'en',
-    locales: ['en'],
+    defaultLocale: "en",
+    locales: ["en"],
   },
 
   presets: [
     [
-      'classic',
+      "classic",
       {
         docs: {
-          sidebarPath: './sidebars.ts',
+          sidebarPath: "./sidebars.ts",
           sidebarCollapsed: false,
           breadcrumbs: false,
         },
         blog: false,
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: "./src/css/custom.css",
         },
       } satisfies Preset.Options,
     ],
@@ -40,14 +40,14 @@ const config: Config = {
 
   plugins: [
     [
-      'docusaurus-plugin-llms',
+      "docusaurus-plugin-llms",
       {
         generateLLMsTxt: true,
         generateLLMsFullTxt: true,
         generateMarkdownFiles: true,
-        title: 'Codemagic Patch documentation',
+        title: "Codemagic Patch documentation",
         description:
-          'Self-hosted OTA updates for React Native: setup, SDK, cmpatch CLI, and operations.',
+          "Self-hosted OTA updates for React Native: setup, SDK, cmpatch CLI, and operations.",
         excludeImports: true,
         removeDuplicateHeadings: true,
       },
@@ -55,13 +55,13 @@ const config: Config = {
   ],
 
   themes: [
-    require.resolve('@docusaurus/theme-mermaid'),
+    require.resolve("@docusaurus/theme-mermaid"),
     [
-      require.resolve('@easyops-cn/docusaurus-search-local'),
+      require.resolve("@easyops-cn/docusaurus-search-local"),
       {
         hashed: true,
-        language: ['en'],
-        docsRouteBasePath: '/docs',
+        language: ["en"],
+        docsRouteBasePath: "/docs",
         indexBlog: false,
         highlightSearchTermsOnTargetPage: true,
       },
@@ -79,45 +79,37 @@ const config: Config = {
     },
     navbar: {
       logo: {
-        alt: 'Codemagic Patch',
-        src: 'img/logo.svg',
-        href: '/docs/',
+        alt: "Codemagic Patch",
+        src: "img/logo.svg",
+        href: "/docs/",
       },
-      items: [
-        {
-          type: 'doc',
-          docId: 'intro',
-          position: 'left',
-          label: 'Docs',
-        },
-      ],
     },
     footer: {
-      style: 'light',
+      style: "light",
       links: [
         {
-          title: 'Docs',
+          title: "Docs",
           items: [
             {
-              label: 'Local quickstart',
-              to: '/docs/',
+              label: "Local quickstart",
+              to: "/docs/",
             },
             {
-              label: 'Install guide',
-              to: '/docs/install',
+              label: "Install guide",
+              to: "/docs/install",
             },
           ],
         },
         {
-          title: 'Codemagic',
+          title: "Codemagic",
           items: [
             {
-              label: 'Codemagic.io',
-              href: 'https://codemagic.io',
+              label: "Codemagic.io",
+              href: "https://codemagic.io",
             },
             {
-              label: 'CodePush',
-              href: 'https://codemagic.io/codepush',
+              label: "CodePush",
+              href: "https://codemagic.io/codepush",
             },
           ],
         },
@@ -129,7 +121,7 @@ const config: Config = {
       darkTheme: prismThemes.dracula,
     },
     mermaid: {
-      theme: {light: 'neutral', dark: 'dark'},
+      theme: { light: "neutral", dark: "dark" },
     },
   } satisfies Preset.ThemeConfig,
 };
