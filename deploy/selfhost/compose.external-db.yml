@@ -1,8 +1,0 @@
-# External Postgres overlay — merged after docker-compose.selfhost.yml when
-# SELFHOST_DATABASE_MODE=external. No postgres service, no data volume: the
-# server connects to the operator-managed database via DATABASE_URL from
-# .env.selfhost.
-services:
-  server:
-    environment:
-      DATABASE_URL: ${DATABASE_URL}

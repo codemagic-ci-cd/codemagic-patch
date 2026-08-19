@@ -9,25 +9,6 @@ SELFHOST_COMPOSE_FILE="${SELFHOST_COMPOSE_FILE:-${SELFHOST_REPO_ROOT}/docker-com
 # (install/backup/restore/upgrade) then honors consistently. Ignored when the
 # file does not exist.
 SELFHOST_COMPOSE_OVERRIDE_FILE="${SELFHOST_COMPOSE_OVERRIDE_FILE:-${SELFHOST_REPO_ROOT}/docker-compose.selfhost.override.yml}"
-# Mode overlays, selected per compose invocation by the SELFHOST_DATABASE_MODE /
-# SELFHOST_STORAGE_MODE flags in the env file (see selfhost_mode_from_env_file).
-# The base file carries neither the database nor the bundled MinIO: overlays
-# can add keys but never remove them, so the bundled pieces live in
-# compose.bundled-db.yml / compose.bundled-storage.yml.
-SELFHOST_COMPOSE_BUNDLED_DB_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.bundled-db.yml"
-SELFHOST_COMPOSE_EXTERNAL_DB_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-db.yml"
-SELFHOST_COMPOSE_BUNDLED_STORAGE_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.bundled-storage.yml"
-SELFHOST_COMPOSE_STORAGE_S3_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-storage-s3.yml"
-SELFHOST_COMPOSE_STORAGE_GCS_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-storage-gcs.yml"
-# GCS service-account key the gcs storage overlay bind-mounts into the server
-# container (gitignored). The overlay references the fixed repo-root path, so
-# like the operator override the file's presence is part of the deployment's
-# identity: backup/restore carry it alongside the env file. The environment
-# override exists for test harnesses that must not read or leak a real
-# checkout's key; deployments keep the default — the overlay's bind mount
-# does not follow the override.
-# shellcheck disable=SC2034  # consumed by the sourcing scripts (install/backup/restore/upgrade)
-SELFHOST_GCS_KEY_FILE="${SELFHOST_GCS_KEY_FILE:-${SELFHOST_REPO_ROOT}/gcs-service-account.json}"
 SELFHOST_ENV_FILE="${SELFHOST_ENV_FILE:-${SELFHOST_REPO_ROOT}/.env.selfhost}"
 SELFHOST_PROJECT_NAME="${SELFHOST_PROJECT_NAME:-codemagic-patch-selfhost}"
 SELFHOST_DEFAULT_TIMEOUT_SECONDS="${SELFHOST_TIMEOUT_SECONDS:-300}"
@@ -139,41 +120,8 @@ selfhost_compose_override_required() {
     *) return 1 ;;
   esac
   [ -f "$SELFHOST_ENV_FILE" ] &&
-    grep -Eq '^[[:space:]]*(export[[:space:]]+)?SELFHOST_REQUIRE_COMPOSE_OVERRIDE[[:space:]]*=[[:space:]]*["'\'']?(true|1)' \
+    grep -Eq '^[[:space:]]*(export[[:space:]]+)?SELFHOST_REQUIRE_COMPOSE_OVERRIDE=["'\'']?(true|1)' \
       "$SELFHOST_ENV_FILE"
-}
-
-# Read a SELFHOST_*_MODE flag straight out of the env file (last assignment
-# wins, optional `export ` prefix, one layer of matching quotes stripped, same
-# as selfhost_compose_override_required). The env file is the SOLE authority —
-# never read the modes from exported shell variables: restore.sh calls
-# compose_selfhost before load_selfhost_env has run, and an ambient-environment
-# override would assemble the wrong stack against live data. Missing file or
-# missing flag prints nothing (callers default to bundled).
-selfhost_mode_from_env_file() {
-  local flag="$1"
-  local line value
-  [ -f "$SELFHOST_ENV_FILE" ] || return 0
-  # Whitespace around `=` must parse the same way load_selfhost_env and
-  # compose's dotenv parse it: a line those two accept but this grep misses
-  # would silently fall back to bundled — the exact wrong-stack assembly the
-  # fail-hard rule exists to prevent.
-  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${flag}[[:space:]]*=" "$SELFHOST_ENV_FILE" | tail -n 1)" || return 0
-  value="${line#*=}"
-  case "$value" in
-    [[:space:]]*) value="${value#"${value%%[![:space:]]*}"}" ;;
-  esac
-  case "$value" in
-    '"'*) value="${value#\"}"; value="${value%%\"*}" ;;
-    "'"*) value="${value#\'}"; value="${value%%\'*}" ;;
-    *)
-      case "$value" in
-        *[[:space:]]'#'*) value="${value%%[[:space:]]'#'*}" ;;
-      esac
-      value="${value%"${value##*[![:space:]]}"}"
-      ;;
-  esac
-  printf '%s' "$value"
 }
 
 compose_selfhost() {
@@ -181,34 +129,20 @@ compose_selfhost() {
     fail_selfhost "this deployment requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true in ${SELFHOST_ENV_FILE}), but the file is missing — running compose without it would silently revert the stack to the base configuration. Restore the override (re-run the installer that wrote it), or set SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false to proceed without it."
   fi
 
-  local db_mode storage_mode
-  db_mode="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
-  storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
-
-  # An unrecognized mode must fail hard, never fall back to bundled: on an
-  # external-DB deployment a typo'd flag would assemble the bundled stack,
-  # start a fresh empty Postgres, and come up healthy while looking empty.
-  local -a compose_files=(-f "$SELFHOST_COMPOSE_FILE")
-  case "${db_mode:-bundled}" in
-    bundled) compose_files+=(-f "$SELFHOST_COMPOSE_BUNDLED_DB_FILE") ;;
-    external) compose_files+=(-f "$SELFHOST_COMPOSE_EXTERNAL_DB_FILE") ;;
-    *) fail_selfhost "SELFHOST_DATABASE_MODE=${db_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, external. Fix the flag — falling back to the bundled database here could start an empty Postgres instead of your external one." ;;
-  esac
-  case "${storage_mode:-bundled}" in
-    bundled) compose_files+=(-f "$SELFHOST_COMPOSE_BUNDLED_STORAGE_FILE") ;;
-    s3) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_S3_FILE") ;;
-    gcs) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_GCS_FILE") ;;
-    *) fail_selfhost "SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag — falling back to bundled storage here could point the stack at an empty MinIO instead of your external bucket." ;;
-  esac
-  # Operator overlay stays last so it can tweak whatever the mode overlays set.
   if [ -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ]; then
-    compose_files+=(-f "$SELFHOST_COMPOSE_OVERRIDE_FILE")
+    docker compose \
+      --project-name "$SELFHOST_PROJECT_NAME" \
+      --env-file "$SELFHOST_ENV_FILE" \
+      -f "$SELFHOST_COMPOSE_FILE" \
+      -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" \
+      "$@"
+    return
   fi
 
   docker compose \
     --project-name "$SELFHOST_PROJECT_NAME" \
     --env-file "$SELFHOST_ENV_FILE" \
-    "${compose_files[@]}" \
+    -f "$SELFHOST_COMPOSE_FILE" \
     "$@"
 }
 
@@ -231,7 +165,7 @@ selfhost_health_status() {
 require_selfhost_service_running() {
   local service="$1"
   if [ -z "$(compose_selfhost ps --status running -q "$service" 2>/dev/null)" ]; then
-    fail_selfhost "the self-host stack is not running (${service} is down); start it before continuing — e.g. scripts/selfhost/install.sh, or: docker compose --project-name ${SELFHOST_PROJECT_NAME} --env-file ${SELFHOST_ENV_FILE} -f ${SELFHOST_COMPOSE_FILE} -f <mode overlays> up -d (the -f list depends on the SELFHOST_DATABASE_MODE/SELFHOST_STORAGE_MODE flags in the env file; the overlays live in ${SELFHOST_REPO_ROOT}/deploy/selfhost/, e.g. compose.bundled-db.yml for the default bundled database)"
+    fail_selfhost "the self-host stack is not running (${service} is down); start it before continuing — e.g. scripts/selfhost/install.sh, or: docker compose --project-name ${SELFHOST_PROJECT_NAME} --env-file ${SELFHOST_ENV_FILE} -f ${SELFHOST_COMPOSE_FILE} up -d"
   fi
 }
 

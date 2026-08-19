@@ -57,16 +57,6 @@ load_selfhost_env
 # server refuse to boot over missing OAuth env.
 ensure_selfhost_oauth_env
 
-# The gcs storage overlay bind-mounts the service-account key into the server
-# container; with the file missing, `compose up` puts an empty docker-created
-# directory in its place and the server crash-loops on unusable credentials —
-# and --i-have-a-backup skips the backup.sh run whose own guard would have
-# caught it. Preflight it here like install.sh, backup.sh, and restore.sh do.
-upgrade_storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
-if [ "${upgrade_storage_mode:-bundled}" = "gcs" ] && [ ! -f "$SELFHOST_GCS_KEY_FILE" ]; then
-  fail_selfhost "missing ${SELFHOST_GCS_KEY_FILE} — this deployment records SELFHOST_STORAGE_MODE=gcs and the stack cannot run without the service-account key. Restore it from a backup (scripts/selfhost/restore.sh reinstalls it) or copy it from your secret store, then rerun."
-fi
-
 SMOKE_UNAUTHENTICATED=0
 if [ "$SKIP_SMOKE" -eq 0 ] && [ -z "${CODEMAGIC_PATCH_TOKEN:-}" ]; then
   SMOKE_UNAUTHENTICATED=1
@@ -112,19 +102,7 @@ upgrade_failed() {
 
   if [ "$STACK_RECREATE_ATTEMPTED" -eq 1 ]; then
     warn_selfhost "upgrade did not complete; the stack may be left running the new image, which may already have migrated the database (re-pinning the image alone is not a safe rollback)."
-    # Read the mode from the env file (same authority compose_selfhost used to
-    # assemble the stack): with an external database restore.sh cannot undo a
-    # migration, so the operator's own database rollback is the only fix.
-    local db_mode
-    db_mode="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
-    if [ "${db_mode:-bundled}" = "external" ]; then
-      warn_selfhost "this deployment uses an external database (SELFHOST_DATABASE_MODE=external); restore.sh does NOT restore it. Roll the database back to just before the upgrade with your provider's mechanism (e.g. RDS point-in-time recovery)."
-      if [ -n "$PRE_UPGRADE_BACKUP_DIR" ]; then
-        warn_selfhost "then restore the remaining bundled components with: scripts/selfhost/restore.sh --restore-env ${PRE_UPGRADE_BACKUP_DIR}"
-      else
-        warn_selfhost "no pre-upgrade backup was taken (--i-have-a-backup); then restore the remaining bundled components from your external backup with: scripts/selfhost/restore.sh --restore-env <backup-dir>"
-      fi
-    elif [ -n "$PRE_UPGRADE_BACKUP_DIR" ]; then
+    if [ -n "$PRE_UPGRADE_BACKUP_DIR" ]; then
       warn_selfhost "roll back to the pre-upgrade state with: scripts/selfhost/restore.sh --restore-env ${PRE_UPGRADE_BACKUP_DIR}"
     else
       warn_selfhost "no pre-upgrade backup was taken (--i-have-a-backup); roll back from your external backup with: scripts/selfhost/restore.sh --restore-env <backup-dir>"
@@ -180,18 +158,8 @@ log_selfhost "recreating stack"
 # leaving the stack partially upgraded — the rollback guidance must still fire.
 STACK_RECREATE_ATTEMPTED=1
 compose_selfhost up -d --remove-orphans
-# The waits must match the stack compose_selfhost assembled from the mode flags:
-# an external database has no postgres service and external storage (s3/gcs)
-# has no minio service, so waiting on them would time out against nothing.
-db_mode="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
-storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
-if [ "${db_mode:-bundled}" != "external" ]; then
-  wait_for_selfhost_service postgres
-fi
-case "${storage_mode:-bundled}" in
-  s3 | gcs) ;;
-  *) wait_for_selfhost_service minio ;;
-esac
+wait_for_selfhost_service postgres
+wait_for_selfhost_service minio
 wait_for_selfhost_service server
 wait_for_selfhost_http "${SERVER_URL%/}/health" "API health" 120
 
