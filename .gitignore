@@ -47,6 +47,10 @@ tools/
 # are deployment-specific and may reference secrets, so never track it.
 docker-compose.selfhost.override.yml
 backups/
+# GCS service-account key for SELFHOST_STORAGE_MODE=gcs — the installer copies
+# the operator's key here so compose can bind-mount it into the server. Real
+# credentials: never track it.
+/gcs-service-account.json
 
 .playwright-mcp
 

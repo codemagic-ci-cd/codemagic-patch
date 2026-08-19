@@ -1,0 +1,36 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$CODEMAGIC_PATCH_API_DOMAIN} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy server:3000
+	}
+
+	# /health* covers both /health and /health/ready
+	handle /health* {
+		reverse_proxy server:3000
+	}
+
+	# /worker/* is intentionally NOT exposed publicly. In MODE=all (the only
+	# self-host topology) release reconciliation runs in-process; the HTTP
+	# /worker/reconcile route is only used by the distributed worker topology.
+	# Exposing it here would put the worker endpoint on the public internet for
+	# no functional gain. Do not add a `handle /worker/*` block.
+
+	handle {
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
+		header {
+			# style-src 'unsafe-inline': the SPA uses React inline style=
+			# attributes; img-src data:: app.css embeds data:image/svg+xml
+			# backgrounds (modal icons, select chevrons).
+			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			-Server
+		}
+	}
+}

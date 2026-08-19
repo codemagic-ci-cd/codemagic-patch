@@ -8,9 +8,12 @@
 
 This is the supported deployment path for Codemagic Patch — and in the initial
 open-source release, the only one. It runs the Codemagic Patch server as a single
-process in `MODE=all` on one Docker host with bundled PostgreSQL, bundled
-MinIO, and Caddy for HTTPS. Split deployments with separate API and worker
-services are a work in progress.
+process in `MODE=all` on one Docker host with Caddy for HTTPS. By default the
+stack bundles PostgreSQL and MinIO; either can instead be a service you
+operate — your own PostgreSQL, and object storage on S3 or GCS — see
+[External database and external storage](#external-database-and-external-storage).
+Split deployments with separate API and worker services are a work in
+progress.
 
 Related material:
 
@@ -34,8 +37,9 @@ differ.
   obtains Let's Encrypt certificates over HTTP, so the host must be reachable from
   the internet on ports 80/443. A laptop behind NAT or a home router will fail at
   the certificate step.
-- Sizing: at runtime the stack (PostgreSQL, MinIO, the server, and Caddy in one
-  Compose project) fits in roughly **2 GB RAM** plus a few GB of disk that grows
+- Sizing: at runtime the stack (the server, Caddy, and — with the default
+  bundled modes — PostgreSQL and MinIO in one Compose project) fits in roughly
+  **2 GB RAM** plus a few GB of disk that grows
   with the OTA artifacts you store. The memory peak is the **first install**,
   which builds the server and dashboard images on the host. The build itself
   fits within 2 GiB (measured peak ~1.6 GiB with both images building in
@@ -77,6 +81,12 @@ plane, while the storage domain serves OTA artifacts from MinIO under
 record **DNS-only** during install and switch it to proxied afterward — see
 [Optional: front storage with Cloudflare CDN](#optional-front-storage-with-cloudflare-cdn).)
 
+The storage record applies to the default **bundled** storage only. With
+external object storage (`--storage-mode s3`/`gcs`) there is no storage domain
+— devices download from the bucket, or the CDN in front of it — so only the
+API record is needed; see
+[External database and external storage](#external-database-and-external-storage).
+
 ### OAuth sign-in provider — required
 
 The server refuses to boot without at least one OAuth sign-in provider —
@@ -98,7 +108,8 @@ machine; the server-host install itself does not need Node.
 
 To serve artifacts through Cloudflare with automatic cache purge on release, also
 prepare a Cloudflare **API token** scoped to *Zone → Cache Purge* and the
-**Zone ID** of the zone holding your storage domain — see
+**Zone ID** of the zone holding your storage domain (with external storage:
+the `PUBLIC_BASE_URL` host) — see
 [Optional: front storage with Cloudflare CDN](#optional-front-storage-with-cloudflare-cdn).
 
 ## Install
@@ -290,6 +301,313 @@ after the browser sign-in. The user's
 Bitbucket primary email must be **confirmed**; sign-in fails otherwise with a
 "confirm the primary email" error.
 
+## External database and external storage
+
+The Compose stack runs in one of four shapes, selected by two flags in
+`.env.selfhost`:
+
+| `SELFHOST_DATABASE_MODE` \ `SELFHOST_STORAGE_MODE` | `bundled` (MinIO in the stack) | `s3` / `gcs` (external bucket) |
+| --- | --- | --- |
+| `bundled` (Postgres in the stack) | **Default** | Supported |
+| `external` (your PostgreSQL) | Supported | Supported |
+
+The two choices are independent. An env file without the flags runs
+`bundled` × `bundled`, the shape the rest of this document describes unless
+stated otherwise.
+
+Both modes are fixed at install time: re-running the installer with mode flags
+against an existing `.env.selfhost` ignores them with a warning, and moving a
+live deployment between modes is a manual data migration — see
+[Switching modes](#switching-modes).
+
+### Mode flags and compose overlays
+
+The maintenance scripts (`install.sh`, `backup.sh`, `restore.sh`,
+`upgrade.sh`) read the flags from `.env.selfhost` and assemble the
+`docker compose -f` file list from them. An unrecognized value fails hard
+rather than falling back to bundled, since a typo'd flag would otherwise start
+an empty bundled Postgres or MinIO alongside an external deployment.
+
+`docker-compose.selfhost.yml` is the base file; the database and the object
+storage each ship as a mode overlay in `deploy/selfhost/`:
+
+| Flag value | Overlay merged after the base file |
+| --- | --- |
+| `SELFHOST_DATABASE_MODE=bundled` (or absent) | `deploy/selfhost/compose.bundled-db.yml` |
+| `SELFHOST_DATABASE_MODE=external` | `deploy/selfhost/compose.external-db.yml` |
+| `SELFHOST_STORAGE_MODE=bundled` (or absent) | `deploy/selfhost/compose.bundled-storage.yml` |
+| `SELFHOST_STORAGE_MODE=s3` | `deploy/selfhost/compose.external-storage-s3.yml` |
+| `SELFHOST_STORAGE_MODE=gcs` | `deploy/selfhost/compose.external-storage-gcs.yml` |
+
+Compose commands run by hand need the overlays matching the env file's flags,
+with `docker-compose.selfhost.override.yml` last when the deployment uses one.
+For the default bundled stack:
+
+```bash
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml -f deploy/selfhost/compose.bundled-db.yml \
+  -f deploy/selfhost/compose.bundled-storage.yml up -d
+```
+
+Omitting the overlays does not fail. The base file alone is a valid Compose
+file describing only Caddy and the server, so it starts with no database and
+no object storage: the server crash-loops without `DATABASE_URL`, and Caddy —
+which waits on the server's health — follows it down. The data volumes are
+untouched; rerunning with the overlays recovers the stack. Every command
+naming `docker-compose.selfhost.yml` needs one database overlay and one
+storage overlay.
+
+### External database
+
+`--database-mode external` connects the server to a PostgreSQL you operate
+(for example RDS or Cloud SQL) instead of running one inside the stack.
+`--database-url` is required with it and is recorded as `DATABASE_URL` in
+`.env.selfhost`; the `POSTGRES_*` variables are then unused and not written.
+Migrations run at server boot against that database, so the connecting role
+must be allowed to create and alter tables.
+
+```bash
+./scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --storage-domain storage.updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id <client-id> \
+  --github-oauth-client-secret <client-secret> \
+  --database-mode external \
+  --database-url postgresql://user:password@db.example.com:5432/codemagic_patch
+```
+
+This example keeps the default bundled storage, so the storage domain still
+applies. `--database-mode external` combines with `--storage-mode s3`/`gcs`.
+
+### External object storage
+
+`--storage-mode s3` or `--storage-mode gcs` connects the server to an
+object-storage bucket you operate instead of running MinIO inside the stack.
+Two things change compared to bundled storage:
+
+- **There is no storage domain.** Caddy serves only the API domain
+  (`deploy/selfhost/Caddyfile.api-only`), so the DNS prerequisite shrinks to
+  the single API record — devices download artifacts from the bucket (or the
+  CDN in front of it), never from this host. `--storage-domain` is rejected
+  in these modes.
+- **`--public-base-url` is required.** With bundled storage `PUBLIC_BASE_URL`
+  is derived from the storage domain; with external storage you set it
+  explicitly to the public **https** URL clients download release artifacts
+  from — the bucket itself, or the CDN in front of it (see
+  [CDN in front of external storage](#cdn-in-front-of-external-storage)). The
+  installer rejects non-https values. This URL is embedded into shipped app
+  binaries as `CodemagicPatchDownloadBaseUrl` (see
+  [App configuration](#app-configuration)); apps already in the field keep
+  downloading from the URL they were built with.
+
+#### S3 (`--storage-mode s3`)
+
+`--s3-bucket` is required. The rest is optional: `--s3-region` (the server
+defaults to `us-east-1`), `--s3-endpoint` for S3-compatible providers such as
+MinIO or R2 (empty means AWS), `--s3-force-path-style true|false` (the server
+defaults to `false`), and `--s3-access-key-id` / `--s3-secret-access-key` —
+set both, or neither to use the SDK's default credential chain (for example
+EC2/ECS instance roles).
+
+```bash
+./scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id <client-id> \
+  --github-oauth-client-secret <client-secret> \
+  --storage-mode s3 \
+  --s3-bucket my-ota-bucket \
+  --s3-region eu-central-1 \
+  --s3-access-key-id <access-key-id> \
+  --s3-secret-access-key <secret-access-key> \
+  --public-base-url https://my-ota-bucket.s3.eu-central-1.amazonaws.com
+```
+
+**Bucket policy.** The bucket serves public OTA artifacts anonymously and
+keeps the `_internal/*` staging prefix private.
+[`deploy/selfhost/aws-s3-bucket-policy.example.json`](../deploy/selfhost/aws-s3-bucket-policy.example.json)
+is an AWS bucket policy with the same semantics as the bundled MinIO policy
+([`deploy/selfhost/minio-bucket-policy.json`](../deploy/selfhost/minio-bucket-policy.json)):
+anonymous `s3:GetObject` on the bucket's artifact keys, an explicit `Deny`
+for everything under `_internal/*`, and no `s3:ListBucket` grant — a listable
+bucket exposes every deployment key. Replace `YOUR_BUCKET_NAME` with the
+bucket name and `YOUR_AWS_ACCOUNT_ID` with the AWS account the server's
+credentials belong to. The `aws:PrincipalAccount` condition on the `Deny` is
+required because an AWS bucket-policy `Deny` applies to every principal, not
+only anonymous ones; without it the server is denied its own `_internal/*`
+staging reads.
+
+**Block Public Access.** For this bucket, turn off `BlockPublicPolicy` (S3
+otherwise rejects the policy) and `RestrictPublicBuckets` (S3 otherwise
+ignores the public grant, and anonymous downloads fail), and keep
+`BlockPublicAcls` and `IgnorePublicAcls` on — the policy grants no ACL-based
+access. Account-level settings override bucket-level ones, so both levels must
+permit the policy.
+
+**Verify the policy** after applying it and after any later storage change:
+anonymous reads under `_internal/*` must be denied, and anonymous bucket
+listing must fail.
+
+```bash
+# Must print 403 — never 200, and never an object body:
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://YOUR_BUCKET_NAME.s3.<region>.amazonaws.com/_internal/probe"
+
+# Must return AccessDenied — never an XML document listing keys:
+curl -s "https://YOUR_BUCKET_NAME.s3.<region>.amazonaws.com/"
+```
+
+`scripts/selfhost/smoke.sh` performs the same two checks against the bucket
+endpoint directly (the S3 REST endpoint, or `S3_ENDPOINT` when set), and
+passes only on an explicit `401`/`403` denial. A `404` fails the check: it
+means the probed object merely does not exist in a bucket anonymous readers
+can see. The `PUBLIC_BASE_URL` probes run as well, as delivery-path checks
+(see [Smoke](#smoke)).
+
+#### GCS (`--storage-mode gcs`)
+
+GCS uses two buckets instead of one bucket with a private prefix:
+`--gcs-public-bucket` holds the public OTA artifacts, `--gcs-internal-bucket`
+holds internal staging data. Both are required and must differ, since the
+public bucket is world-readable and the internal one is not.
+`--gcs-credentials-file` (also required) points at a service-account JSON key:
+the installer copies it to `<repo root>/gcs-service-account.json`
+(gitignored), and the gcs overlay bind-mounts that fixed path into the server
+container. The Compose path does not support GCE metadata-server ADC; the
+server always authenticates with the mounted key. Other credential mechanisms
+require a `docker-compose.selfhost.override.yml`.
+
+```bash
+./scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id <client-id> \
+  --github-oauth-client-secret <client-secret> \
+  --storage-mode gcs \
+  --gcs-public-bucket my-ota-public \
+  --gcs-internal-bucket my-ota-internal \
+  --gcs-credentials-file /path/to/service-account.json \
+  --public-base-url https://storage.googleapis.com/my-ota-public
+```
+
+**Bucket IAM.** Grant the service account object read/write on both buckets
+(for example `roles/storage.objectAdmin` per bucket). Make the public bucket
+anonymously readable by granting `allUsers` the
+**`roles/storage.legacyObjectReader`** role, which carries object reads
+(`storage.objects.get`) only:
+
+```bash
+gcloud storage buckets add-iam-policy-binding gs://my-ota-public \
+  --member=allUsers --role=roles/storage.legacyObjectReader
+```
+
+Do not grant `roles/storage.objectViewer` to `allUsers`: it also includes
+`storage.objects.list`, which makes the bucket anonymously listable and
+exposes every deployment key. The internal bucket takes no `allUsers` binding
+of any kind and is reached only through the mounted service-account key.
+Verify the split as with S3: an anonymous read from the internal bucket must
+be denied, and anonymous listing of the public bucket
+(`curl -s "https://my-ota-public.storage.googleapis.com/"`) must return
+`AccessDenied` rather than a key listing. `scripts/selfhost/smoke.sh` probes
+both buckets on `storage.googleapis.com` directly and requires an explicit
+`401`/`403`; a `404` fails the check, since it means the bucket itself is
+anonymously readable.
+
+#### CDN in front of external storage
+
+`--cloudflare` works in every storage mode. With external storage the CDN
+fronts the **`PUBLIC_BASE_URL` host** rather than a storage domain on this
+host: the installer verifies the purge credentials against that host, and on
+every release the server purges the changed manifest/meta paths in the zone
+named by `--cloudflare-zone-id`. Pass
+`--public-base-url https://<cdn-domain>` — the CDN domain, not the raw bucket
+endpoint — and set up the origin per adapter:
+
+- **S3:** name the bucket exactly after the CDN domain (for example a bucket
+  named `cdn.example.com`) and create a **proxied** CNAME from
+  `cdn.example.com` to the bucket's virtual-hosted-style REST endpoint,
+  `cdn.example.com.s3.<region>.amazonaws.com`. Set the zone's SSL/TLS mode to
+  **Full**, not Full (strict): the REST endpoint serves a certificate for
+  `*.s3.<region>.amazonaws.com`, which does not match a dotted bucket name,
+  so strict validation fails. Do not use the S3 *website* endpoint as the
+  origin either — it is HTTP-only.
+- **GCS:** name the **public** bucket after the CDN domain (domain-named
+  buckets require verifying domain ownership with Google) and create a
+  **proxied** CNAME from `cdn.example.com` to `c.storage.googleapis.com`.
+  SSL/TLS mode **Full** applies for the same certificate-mismatch reason. The
+  internal bucket is never fronted.
+
+Caching and purge then behave exactly as in the bundled setup — see
+[Optional: front storage with Cloudflare CDN](#optional-front-storage-with-cloudflare-cdn)
+for what gets purged, and add the Cache Rule from
+[Add a Cache Rule](#add-a-cache-rule) so the `manifest.json` / `meta.json`
+paths are actually cached; bundle and patch artifacts are content-addressed
+and need no invalidation.
+
+### Backups with external components
+
+`backup.sh` records the deployment's modes in the backup's `backup-manifest`
+and dumps **only the bundled components**: `postgres.dump` is written only in
+the bundled database mode, `minio-codemagic-patch.tar.gz` only in the bundled
+storage mode. External components are covered by your provider's tooling
+instead (for example RDS snapshots or point-in-time recovery, bucket
+versioning or replication). A coherent restore pairs `restore.sh` (bundled
+components) with restoring each external component to the backup's
+`created_at` timestamp, recorded in `versions.txt` and named in the backup's
+skip warnings. With both components external the backup is configuration-only
+— the env file, `backup-manifest`, and `versions.txt`, plus the compose
+override and `gcs-service-account.json` when present — and the server keeps
+running, since there is nothing to quiesce.
+
+`restore.sh` refuses a backup whose `backup-manifest` modes differ from the
+current deployment's flags (see [Switching modes](#switching-modes)). It also
+cannot undo a database migration the new server image has already run against
+an external database: after a failed upgrade, roll that database back with
+your provider's mechanism (for example RDS point-in-time recovery), then
+restore the remaining bundled components from the pre-upgrade backup.
+
+The `gcs-service-account.json` key travels with the env file: `backup.sh`
+copies it into the backup, and `restore.sh` reinstalls it whenever the
+current one is missing (or always, with `--restore-env`).
+
+### Switching modes
+
+The scripts do not switch a deployment between modes: installer reruns ignore
+mode flags with a warning, and `restore.sh` refuses cross-mode restores.
+Moving an existing deployment onto (or off) an external component is a manual
+migration:
+
+1. Take a final backup (`backup.sh`), then stop the stack.
+2. **Database:** dump the source database and import it into the target —
+   for example `pg_dump -Fc` from the bundled Postgres, `pg_restore` into the
+   external server (or the reverse direction).
+3. **Storage:** mirror the bucket contents to the target — for example
+   `mc mirror`, `aws s3 sync`, or `gcloud storage rsync` — and apply the
+   target's bucket policy / IAM described above.
+4. Edit `.env.selfhost`: change `SELFHOST_DATABASE_MODE` /
+   `SELFHOST_STORAGE_MODE`, and add or remove the variables each mode uses
+   (`DATABASE_URL` vs `POSTGRES_*`; `S3_*`/`GCS_*` plus an operator-set
+   `PUBLIC_BASE_URL` vs `CODEMAGIC_PATCH_STORAGE_DOMAIN` plus
+   `MINIO_ROOT_*`).
+5. Restart the stack (`upgrade.sh`, or `docker compose up -d` with the
+   matching overlay list).
+6. Take a fresh backup immediately (`backup.sh`), so the deployment has a
+   restorable backup in its new modes.
+
+Step 6 matters because `restore.sh` refuses any backup whose
+`backup-manifest` modes differ from the current flags, with no override flag.
+Once step 4 lands, every backup taken before the switch — including backups
+with no `backup-manifest`, which count as `bundled` × `bundled` — is no longer
+restorable by `restore.sh`. Their `postgres.dump` and
+`minio-codemagic-patch.tar.gz` remain ordinary `pg_restore` / `tar` artifacts
+for manual recovery.
+
+A storage-mode change also changes `PUBLIC_BASE_URL`. Shipped app binaries
+embed it as `CodemagicPatchDownloadBaseUrl`, so apps in the field keep
+requesting the old URL; keep that URL serving artifacts until the binaries
+built against it are retired.
+
 ## Web Dashboard
 
 The stack serves a web dashboard **same-origin on the API domain**, for example
@@ -460,7 +778,7 @@ above.
 | App resource | Value | Where it comes from |
 | --- | --- | --- |
 | `CodemagicPatchApiUrl` | the API origin (`SERVER_URL`) | installer **Server URL** |
-| `CodemagicPatchDownloadBaseUrl` | the artifact origin (`PUBLIC_BASE_URL`, which includes the `/codemagic-patch` prefix) | installer **Public base URL** |
+| `CodemagicPatchDownloadBaseUrl` | the artifact origin (`PUBLIC_BASE_URL`; with bundled storage it ends in `/codemagic-patch`) | installer **Public base URL** |
 | `CodemagicPatchDeploymentKey` | the deployment key that tells the app which deployment to check for updates | `cmpatch deployment list` — see [Create your first app and deployment](#create-your-first-app-and-deployment) |
 
 Use each value exactly as printed — `CodemagicPatchDownloadBaseUrl` must match
@@ -601,31 +919,36 @@ Create a manual backup before upgrades or risky changes:
 Note that the backup stops the server container while the dump runs to
 quiesce writes and restarts it when done — expect a short API outage. The
 upgrade script runs a backup first, so the same applies at the start of every
-upgrade.
+upgrade. (With both the database and storage external there is nothing to
+dump: the backup is configuration-only and the server keeps running.)
 
 The backup directory contains:
 
 ```text
 env.selfhost
-postgres.dump
-minio-codemagic-patch.tar.gz
-versions.txt
+backup-manifest               (records the deployment's database/storage modes)
+versions.txt                  (its created_at= line is the point-in-time anchor)
+postgres.dump                 (bundled database mode only)
+minio-codemagic-patch.tar.gz  (bundled storage mode only)
 ```
 
 Deployments that use a `docker-compose.selfhost.override.yml` get that file
-copied into the backup as well. Backups are written under `backups/` by default
-and are ignored by git.
+copied into the backup as well, as is `gcs-service-account.json` when present.
+External components are never dumped — see
+[Backups with external components](#backups-with-external-components).
+Backups are written under `backups/` by default and are ignored by git.
 
 ## Restore
 
-Restore PostgreSQL and MinIO together from one backup:
+Restore the bundled components of one backup together:
 
 ```bash
 CODEMAGIC_PATCH_TOKEN=cm_pat_... ./scripts/selfhost/restore.sh backups/codemagic-patch-selfhost-<timestamp>
 ```
 
 The restore command validates the backup shape, asks for explicit confirmation,
-replaces the local PostgreSQL and MinIO volumes, starts the stack, checks health,
+replaces the local data volumes the backup's `backup-manifest` covers (both
+PostgreSQL and MinIO in the default bundled modes), starts the stack, checks health,
 and runs smoke — the full publish smoke when `CODEMAGIC_PATCH_TOKEN` is provided,
 unauthenticated checks only otherwise. A smoke failure at this point means
 post-restore validation failed; the volume restore itself has already
@@ -634,7 +957,22 @@ completed.
 Use `--restore-env` only when you also want to replace the current
 `.env.selfhost` with the copy from the backup.
 
+A backup taken from a deployment with different mode flags is refused — see
+[Switching modes](#switching-modes) — and external components are not
+restored by this script: bring each one back to the backup's `created_at`
+timestamp with your provider's tooling, as described in
+[Backups with external components](#backups-with-external-components).
+
 ## Upgrade
+
+> **Check your own compose invocations first.** The upgrade command assembles
+> the compose file list itself, and an `.env.selfhost` without the
+> `SELFHOST_*_MODE` flags keeps running the default bundled stack. Runbooks,
+> monitoring checks, and automation that call
+> `docker compose ... -f docker-compose.selfhost.yml` directly must pass the
+> mode overlays themselves, or they bring up a stack with no database and no
+> object storage. See
+> [Mode flags and compose overlays](#mode-flags-and-compose-overlays).
 
 > **Migrating from a pre-OAuth install:** OAuth sign-in is mandatory — a
 > stack that ran with neither `GITHUB_OAUTH_CLIENT_ID` nor
@@ -691,31 +1029,43 @@ set `CODEMAGIC_PATCH_CADDY_IMAGE` to a previously built image and recreate the s
 
 ## Reset
 
-The durable self-host state lives in two Compose volumes:
+With the default bundled modes, the durable self-host state lives in two
+Compose volumes:
 
 - PostgreSQL data.
 - MinIO data.
 
-Do not reset only one of them. The database and object storage represent one
-logical deployment state.
+An external database or external storage keeps the corresponding state with
+your provider instead; reset it there. Do not reset only one of the two
+components. The database and object storage represent one logical deployment
+state.
 
 ## Storage Policy
 
-MinIO is exposed on the storage domain so mobile devices can fetch OTA
-artifacts directly. The Compose stack fixes the bucket name to `codemagic-patch`.
-The bucket policy allows anonymous `GetObject` for public OTA artifact keys and
-denies anonymous reads under `_internal/*`. Bucket listing is not public.
+With the bundled storage, MinIO is exposed on the storage domain so mobile
+devices can fetch OTA artifacts directly. The Compose stack fixes the bucket
+name to `codemagic-patch`. The bucket policy allows anonymous `GetObject` for
+public OTA artifact keys and denies anonymous reads under `_internal/*`.
+Bucket listing is not public.
+
+External storage modes must uphold the same policy on the operator's bucket —
+see the bucket policy and IAM guidance in
+[External database and external storage](#external-database-and-external-storage).
 
 The self-host smoke test treats unsafe `_internal/*` exposure as a failure.
 
 ## Optional: front storage with Cloudflare CDN
 
-By default clients fetch artifacts straight from MinIO on the storage domain
-(`DELIVERY_ADAPTER=base-url`). You can instead put **Cloudflare CDN** in front of
-the storage origin: you proxy the *same* storage domain through Cloudflare, so
-`PUBLIC_BASE_URL` is unchanged. On every release the server then purges the edge
-cache for the paths that changed, reducing stale-edge risk while preserving the
-release worker's best-effort purge semantics.
+With the bundled storage, clients by default fetch artifacts straight from
+MinIO on the storage domain (`DELIVERY_ADAPTER=base-url`). You can instead put
+**Cloudflare CDN** in front of the storage origin: you proxy the *same*
+storage domain through Cloudflare, so `PUBLIC_BASE_URL` is unchanged. On every
+release the server then purges the edge cache for the paths that changed,
+reducing stale-edge risk while preserving the release worker's best-effort
+purge semantics. (For a CDN over **external** storage — where there is no
+storage domain — see
+[CDN in front of external storage](#cdn-in-front-of-external-storage); the
+Cache Rule guidance below applies to both.)
 
 Only the JSON delivery files need purging — per-hash and fallback
 `manifest.json` plus `meta.json`, all served `no-cache, must-revalidate`. Bundle
