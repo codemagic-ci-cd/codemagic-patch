@@ -807,22 +807,27 @@ With a `publicKey` configured, the client **rejects** any release whose manifest
 
 All maintenance commands run against the `codemagic-patch-selfhost` Compose project.
 
-**Status & logs**
+**Status & logs** (compose commands run by hand take the overlays matching the
+`SELFHOST_*_MODE` flags in `.env.selfhost`; below is the default bundled stack)
 
 ```bash
 docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
-  -f docker-compose.selfhost.yml ps
+  -f docker-compose.selfhost.yml -f deploy/selfhost/compose.bundled-db.yml \
+  -f deploy/selfhost/compose.bundled-storage.yml ps
 
 docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
-  -f docker-compose.selfhost.yml logs -f server
+  -f docker-compose.selfhost.yml -f deploy/selfhost/compose.bundled-db.yml \
+  -f deploy/selfhost/compose.bundled-storage.yml logs -f server
 ```
 
-**Backup** (quiesces the server, dumps Postgres, mirrors the MinIO bucket)
+**Backup** (quiesces the server, dumps the bundled Postgres, mirrors the
+bundled MinIO bucket; external components are skipped — see
+[`docs/self-hosting-compose.md`](docs/self-hosting-compose.md))
 
 ```bash
 scripts/selfhost/backup.sh
-# → backups/codemagic-patch-selfhost-<timestamp>/ : env.selfhost, postgres.dump,
-#   minio-codemagic-patch.tar.gz, versions.txt
+# → backups/codemagic-patch-selfhost-<timestamp>/ : env.selfhost, backup-manifest,
+#   versions.txt, postgres.dump + minio-codemagic-patch.tar.gz (bundled modes)
 ```
 
 **Restore**
@@ -875,7 +880,8 @@ scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:
 ```bash
 cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
 docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
-  -f docker-compose.selfhost.yml logs --tail=200 server
+  -f docker-compose.selfhost.yml -f deploy/selfhost/compose.bundled-db.yml \
+  -f deploy/selfhost/compose.bundled-storage.yml logs --tail=200 server
 ```
 
 **Check local readiness before publishing**
@@ -911,12 +917,15 @@ The SDK reads these objects under your **Download base** URL:
 | Variable                          | Description                                                              |
 | --------------------------------- | ------------------------------------------------------------------------ |
 | `CODEMAGIC_PATCH_API_DOMAIN`      | API/dashboard domain (no scheme/path)                                    |
-| `CODEMAGIC_PATCH_STORAGE_DOMAIN`  | Storage domain (must differ from the API domain)                         |
+| `CODEMAGIC_PATCH_STORAGE_DOMAIN`  | Storage domain (bundled storage only; must differ from the API domain)   |
 | `ACME_EMAIL`                      | Email for Let's Encrypt certificates                                     |
 | `SERVER_URL`                      | Public API URL, e.g. `https://updates.example.com`                       |
-| `PUBLIC_BASE_URL`                 | Public artifact base, default `https://<storage-domain>/codemagic-patch` |
-| `POSTGRES_DB` / `_USER` / `_PASSWORD` | PostgreSQL credentials                                              |
-| `MINIO_ROOT_USER` / `_PASSWORD`   | MinIO credentials                                                        |
+| `PUBLIC_BASE_URL`                 | Public artifact base — `https://<storage-domain>/codemagic-patch` with bundled storage, operator-set (the bucket or CDN URL) with external storage |
+| `POSTGRES_DB` / `_USER` / `_PASSWORD` | PostgreSQL credentials (bundled database only)                       |
+| `DATABASE_URL`                    | External PostgreSQL URL (`SELFHOST_DATABASE_MODE=external` only)         |
+| `MINIO_ROOT_USER` / `_PASSWORD`   | MinIO credentials (bundled storage only)                                 |
+| `S3_BUCKET`                       | External S3 bucket (`SELFHOST_STORAGE_MODE=s3` only; optional alongside it: `S3_REGION`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`, `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`) |
+| `GCS_PUBLIC_BUCKET` / `GCS_INTERNAL_BUCKET` | External GCS buckets (`SELFHOST_STORAGE_MODE=gcs` only; must differ) |
 | `WORKER_SHARED_SECRET`            | Protects worker routes (**≥ 32 chars**)                                  |
 | `GITHUB_OAUTH_CLIENT_ID`          | GitHub OAuth App client ID                                               |
 | `GITHUB_OAUTH_CLIENT_SECRET`      | GitHub OAuth App client secret                                           |
@@ -930,6 +939,8 @@ The SDK reads these objects under your **Download base** URL:
 | Variable                  | Default                          | Description                                       |
 | ------------------------- | -------------------------------- | ------------------------------------------------- |
 | `MODE`                    | `all`                            | `all` · `api` · `worker`                          |
+| `SELFHOST_DATABASE_MODE`  | `bundled`                        | `bundled` or `external` — selects the database compose overlay; fixed at install time |
+| `SELFHOST_STORAGE_MODE`   | `bundled`                        | `bundled` · `s3` · `gcs` — selects the storage compose overlay; fixed at install time |
 | `REGISTRATION_MODE`       | `invite_only`                    | `invite_only` or `open`                           |
 | `STORAGE_ADAPTER`         | `s3` (self-host)                 | `s3` · `gcs` · `memory`                           |
 | `DELIVERY_ADAPTER`        | `base-url`                       | `base-url` or `cloudflare` (see §1.2 and §1.5)    |

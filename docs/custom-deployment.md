@@ -2,13 +2,16 @@
 
 > **Status: reference material — not supported in the initial open-source
 > release.** The only supported deployment path is
-> [`docs/self-hosting-compose.md`](self-hosting-compose.md).
+> [`docs/self-hosting-compose.md`](self-hosting-compose.md). That path is not
+> limited to the bundled stack: it also connects to an external PostgreSQL
+> and/or external object storage (S3 or GCS) — see
+> [External database and external storage](self-hosting-compose.md#external-database-and-external-storage).
 
-This guide is for operators who want to run Codemagic Patch on their own
-platform anyway. It is not a turnkey deployment path; it documents what the
-server requires from its runtime so you can operate it yourself: you provide
-the platform, reverse proxy, database, object storage, backups, upgrades, and
-monitoring.
+This guide is for operators running Codemagic Patch entirely outside the
+Compose stack, on their own platform and reverse proxy. It is not a turnkey
+deployment path; it documents what the server requires from its runtime. You
+provide the platform, reverse proxy, database, object storage, backups,
+upgrades, and monitoring.
 
 ## Runtime Shape
 

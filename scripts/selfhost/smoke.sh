@@ -61,6 +61,33 @@ fi
 [[ "$SMOKE_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] && [ "$SMOKE_TIMEOUT_SECONDS" -gt 0 ] ||
   fail_selfhost "--smoke-timeout must be a positive integer"
 
+# The PUBLIC_BASE_URL negative checks in the node script verify the DELIVERY
+# path hides internal keys, but in the external storage modes they cannot see
+# the real policy surface: in gcs mode `_internal/*` lives in the separate
+# internal bucket (never reachable through PUBLIC_BASE_URL), and behind a CDN
+# the listing probe can degrade into a plain object GET. Probe the bucket
+# endpoints directly, requiring an explicit anonymous-access DENIAL (401/403):
+# a 404 would mean "not found in a bucket anonymous readers CAN see" — the
+# public-read misconfiguration these checks exist to catch.
+SMOKE_STORAGE_MODE="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
+EXT_INTERNAL_PROBE_URL=""
+EXT_LIST_PROBE_URLS=""
+case "${SMOKE_STORAGE_MODE:-bundled}" in
+  s3)
+    if [ -z "${S3_BUCKET:-}" ]; then
+      warn_selfhost "SELFHOST_STORAGE_MODE=s3 but S3_BUCKET is empty; skipping the direct bucket-policy probes"
+    fi
+    ;;
+  gcs)
+    if [ -n "${GCS_PUBLIC_BUCKET:-}" ] && [ -n "${GCS_INTERNAL_BUCKET:-}" ]; then
+      EXT_INTERNAL_PROBE_URL="https://storage.googleapis.com/${GCS_INTERNAL_BUCKET}/_internal/releases/does-not-exist/bundle.tar.zst"
+      EXT_LIST_PROBE_URLS="https://storage.googleapis.com/storage/v1/b/${GCS_PUBLIC_BUCKET}/o?maxResults=1 https://storage.googleapis.com/storage/v1/b/${GCS_INTERNAL_BUCKET}/o?maxResults=1"
+    else
+      warn_selfhost "SELFHOST_STORAGE_MODE=gcs but GCS_PUBLIC_BUCKET/GCS_INTERNAL_BUCKET are empty; skipping the direct bucket-policy probes"
+    fi
+    ;;
+esac
+
 wait_for_selfhost_http "${SERVER_URL}/health" "API health" 60
 
 # The bundle is only published in authenticated mode; unauthenticated checks
@@ -80,6 +107,14 @@ compose_selfhost run --rm --no-deps \
   -e SMOKE_TOKEN="$CODEMAGIC_PATCH_TOKEN" \
   -e SMOKE_TIMEOUT_SECONDS="$SMOKE_TIMEOUT_SECONDS" \
   -e SMOKE_TARGET_BINARY_VERSION="$TARGET_BINARY_VERSION" \
+  -e SMOKE_STORAGE_MODE="$SMOKE_STORAGE_MODE" \
+  -e SMOKE_S3_BUCKET="${S3_BUCKET:-}" \
+  -e SMOKE_S3_REGION="${S3_REGION:-us-east-1}" \
+  -e SMOKE_S3_ENDPOINT="${S3_ENDPOINT:-}" \
+  -e SMOKE_S3_FORCE_PATH_STYLE="${S3_FORCE_PATH_STYLE:-false}" \
+  -e SMOKE_EXT_INTERNAL_PROBE_URL="$EXT_INTERNAL_PROBE_URL" \
+  -e SMOKE_EXT_LIST_PROBE_URLS="$EXT_LIST_PROBE_URLS" \
+  -v "${SELFHOST_SCRIPT_DIR}/lib/resolve-s3-probe-urls.cjs:/app/resolve-s3-probe-urls.cjs:ro" \
   ${BUNDLE_MOUNT_ARGS[@]+"${BUNDLE_MOUNT_ARGS[@]}"} \
   --entrypoint node \
   server - <<'NODE'
@@ -252,6 +287,39 @@ async function pollRelease(releaseId) {
   const staticCheckDeadline = Math.min(deadline, Date.now() + 30 * 1000);
   await expectStatus(`${publicBaseUrl}/_internal/releases/does-not-exist/bundle.tar.zst`, (status) => status >= 400 && status < 500, "_internal synthetic object", staticCheckDeadline);
   await expectStatus(`${publicBaseUrl}?list-type=2`, (status) => status >= 400 && status < 500, "bucket listing", staticCheckDeadline);
+
+  // External storage modes: the two checks above only prove the delivery path
+  // hides internal keys. Probe the bucket endpoints directly and require an
+  // explicit anonymous-access denial — a 404 means the object merely does not
+  // exist in a bucket anonymous readers CAN see, which is the public-read
+  // misconfiguration these checks exist to catch.
+  const denied = (status) => status === 401 || status === 403;
+  let extInternalProbeUrl = process.env.SMOKE_EXT_INTERNAL_PROBE_URL || "";
+  let extListProbeUrls = (process.env.SMOKE_EXT_LIST_PROBE_URLS || "")
+    .split(" ")
+    .filter(Boolean);
+  if ((process.env.SMOKE_STORAGE_MODE || "bundled") === "s3" && process.env.SMOKE_S3_BUCKET) {
+    // Resolve through the same AWS SDK used by the server. Besides honoring
+    // S3_FORCE_PATH_STYLE, this preserves SDK behavior for IP endpoints,
+    // dotted bucket names, custom ports, and endpoint path prefixes.
+    const { resolveS3ProbeUrls } = require("/app/resolve-s3-probe-urls.cjs");
+    const resolved = await resolveS3ProbeUrls({
+      bucket: process.env.SMOKE_S3_BUCKET,
+      endpoint: process.env.SMOKE_S3_ENDPOINT || undefined,
+      forcePathStyle: process.env.SMOKE_S3_FORCE_PATH_STYLE,
+      region: process.env.SMOKE_S3_REGION || "us-east-1",
+    });
+    extInternalProbeUrl = resolved.internalUrl;
+    extListProbeUrls = resolved.listUrls;
+  }
+  if (extInternalProbeUrl) {
+    log(`checking anonymous _internal access is denied at ${extInternalProbeUrl}`);
+    await expectStatus(extInternalProbeUrl, denied, "external storage anonymous _internal access (must be denied with 401/403; 404 means the bucket is publicly readable)", staticCheckDeadline);
+  }
+  for (const listProbeUrl of extListProbeUrls) {
+    log(`checking anonymous listing is denied at ${listProbeUrl}`);
+    await expectStatus(listProbeUrl, denied, `external storage anonymous listing (must be denied with 401/403): ${listProbeUrl}`, staticCheckDeadline);
+  }
 
   if (!token) {
     log("OK (unauthenticated checks only; publish smoke skipped — no API token)");
