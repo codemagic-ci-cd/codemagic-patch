@@ -50,32 +50,33 @@ docker compose -f docker-compose.dev.yml down -v
 2. [How it works](#how-it-works)
 3. [Core concepts](#core-concepts)
 4. [Requirements](#requirements)
+5. [Support](#support)
 
 **Production setup**
 
-5. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
-6. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
-7. [Part 3 — Create apps & deployments](#part-3--create-apps--deployments)
-8. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
-9. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
+6. [Part 1 — Run the server (self-host)](#part-1--run-the-server-self-host)
+7. [Part 2 — Install the CLI and sign in](#part-2--install-the-cli-and-sign-in)
+8. [Part 3 — Create apps & deployments](#part-3--create-apps--deployments)
+9. [Part 4 — Connect your React Native app](#part-4--connect-your-react-native-app)
+10. [Part 5 — Publish your first release](#part-5--publish-your-first-release)
 
 **Release management & operations**
 
-10. [Managing releases](#managing-releases)
-11. [Code signing (optional)](#code-signing-optional)
-12. [Operations](#operations)
-13. [Troubleshooting](#troubleshooting)
+11. [Managing releases](#managing-releases)
+12. [Code signing (optional)](#code-signing-optional)
+13. [Operations](#operations)
+14. [Troubleshooting](#troubleshooting)
 
 **Reference**
 
-14. [How delivery works](#how-delivery-works)
-15. [Configuration reference](#configuration-reference)
-16. [CLI command reference](#cli-command-reference)
-17. [Repository layout](#repository-layout)
+15. [How delivery works](#how-delivery-works)
+16. [Configuration reference](#configuration-reference)
+17. [CLI command reference](#cli-command-reference)
+18. [Repository layout](#repository-layout)
 
 **Guides**
 
-18. [Migrating from CodePush](docs/migrate-from-codepush.md)
+19. [Migrating from CodePush](docs/migrate-from-codepush.md)
 
 ---
 
@@ -148,6 +149,12 @@ The default self-host stack runs four services on a single Docker host:
 - React Native `>=0.73`, React `>=18` — New Architecture support starts at RN 0.76; RN 0.73–0.75 are supported on the Old (Paper) Architecture only
 - Android `minSdkVersion` 23+
 - Expo: SDK 52+ via the bundled config plugin (prebuild / development builds). **Expo Go is not supported** — the native module is not part of the Expo Go runtime.
+
+---
+
+## Support
+
+If you have any questions or need help with Patch, join the [Codemagic Discord](https://codemagic.io/discord/). Our developers will be available to help out or take feature requests.
 
 ---
 
