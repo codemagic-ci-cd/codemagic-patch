@@ -24,8 +24,8 @@ dist/
 coverage/
 .omx/
 .pnp.*
-.yarn/cache/
-.yarn/install-state.gz
+**/.yarn/cache/
+**/.yarn/install-state.gz
 tools/hdiffpatch/vendor/*/downloads/
 tools/
 
