@@ -162,6 +162,26 @@ allowRestart();
 
 ---
 
+### `getRunningBundleUpdateMetadata()`
+
+Identify which bundle is running: the OTA release label, package hash, and release notes, or `null` for the embedded binary bundle.
+
+```ts
+import { getRunningBundleUpdateMetadata } from "@codemagic/react-native-patch";
+
+const running = await getRunningBundleUpdateMetadata();
+// { label: "v3", packageHash: "…", releaseNotes: "…" } for an OTA bundle, null for the embedded bundle
+```
+
+| | |
+| --- | --- |
+| **Returns** | `Promise<RunningBundleUpdateMetadata \| null>`, see [`RunningBundleUpdateMetadata`](#runningbundleupdatemetadata) |
+| **Throws** | Does not throw |
+
+The result describes the bundle loaded for this process and does not change until the next reload — installing an update or calling `notifyAppReady()` leaves it as is. Use `packageHash` to compare bundles; `label` is display-oriented and unique only within a deployment.
+
+---
+
 ### `hydrate()`
 
 Ensure the SDK has loaded on-disk state before other calls. Called automatically by all public async APIs; export alias for `ensureHydrated()`.
@@ -246,6 +266,16 @@ Extends `RemotePackage` with:
 | --- | --- | --- |
 | `installedAt` | `string` | ISO timestamp when downloaded |
 | `source` | `"patch" \| "full_bundle"` | Which artifact type was used |
+
+### `RunningBundleUpdateMetadata`
+
+Running OTA package identity (from `getRunningBundleUpdateMetadata()`; `null` when the embedded bundle is running):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `label` | `string` | Release label (e.g. `v3`) captured when the package was installed |
+| `packageHash` | `string` | Content hash of the running package |
+| `releaseNotes` | `string \| null` | Release notes captured when the package was installed; `null` when the release was published without notes |
 
 ### `DownloadProgress`
 

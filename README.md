@@ -656,6 +656,7 @@ allowRestart();
 | `downloadUpdate(remotePackage, onProgress?)` | Downloads (patch or full bundle) and returns a `LocalPackage`. |
 | `installUpdate(target, options?)` | Stages/applies a downloaded package using an `installMode`. |
 | `notifyAppReady()` | Confirms the running bundle as good (rollback protection). |
+| `getRunningBundleUpdateMetadata()` | Returns `{ label, packageHash, releaseNotes }` for the running OTA bundle, or `null` for the embedded bundle. |
 | `restartApp(onlyIfUpdateIsPending?)` | Reloads the JS bundle to apply a pending update. |
 | `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
 

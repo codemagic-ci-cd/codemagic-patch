@@ -79,6 +79,20 @@ export type SyncStatus =
   | "sync-in-progress"
   | "error";
 
+/**
+ * Identity of the OTA package whose JS bundle is executing in this process.
+ * Returned by `getRunningBundleUpdateMetadata()`; callers receive `null`
+ * instead when the embedded binary bundle is running.
+ */
+export interface RunningBundleUpdateMetadata {
+  /** Release label of the running OTA package as published by the server (e.g. "v3"). */
+  label: string;
+  /** Package hash of the running OTA package. */
+  packageHash: string;
+  /** Release notes captured at install time; `null` when the release was published without notes. */
+  releaseNotes: string | null;
+}
+
 export interface UpdateMetadata {
   packageHash: string;
   /**

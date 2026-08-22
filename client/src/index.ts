@@ -1,5 +1,6 @@
 export { checkForUpdate } from "./checkForUpdate";
 export { downloadUpdate } from "./downloadUpdate";
+export { getRunningBundleUpdateMetadata } from "./getRunningBundleUpdateMetadata";
 export { installUpdate } from "./installUpdate";
 export { notifyAppReady } from "./notifyAppReady";
 export { sync } from "./sync";
@@ -14,6 +15,7 @@ export {
   CodemagicPatchError,
   CodemagicPatchErrorCode,
   type CodemagicPatchErrorCodeType,
+  type RunningBundleUpdateMetadata,
   type DownloadProgress,
   type EmbeddedRevertUpdate,
   type InstallTarget,

@@ -89,7 +89,7 @@ const status = await sync();
 
 `sync()` never throws. It checks for an update, downloads and installs when appropriate, and reports app readiness so a bad package can roll back.
 
-For check / download / install as separate steps, or restart timing helpers (`restartApp`, `allowRestart` / `disallowRestart`), see the [SDK types](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/client/src/types.ts).
+For check / download / install as separate steps, restart timing helpers (`restartApp`, `allowRestart` / `disallowRestart`), or `getRunningBundleUpdateMetadata()` to read which OTA release is running, see the [SDK types](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/client/src/types.ts).
 
 ## Configuration
 
@@ -242,7 +242,7 @@ import {
 } from "@codemagic/react-native-patch";
 ```
 
-`restartApp`, `allowRestart` / `disallowRestart`, and `hydrate` are also exported for controlling reload timing. See the [type definitions](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client/src/types.ts) for the full API surface.
+`restartApp`, `allowRestart` / `disallowRestart`, and `hydrate` are also exported for controlling reload timing, and `getRunningBundleUpdateMetadata()` reports the running OTA release (`{ label, packageHash, releaseNotes }`, or `null` on the embedded bundle). See the [type definitions](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client/src/types.ts) for the full API surface.
 
 ## Documentation
 
