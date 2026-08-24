@@ -12,7 +12,9 @@
 
 import {
   artifactToReleaseForm,
+  releaseFormPoliciesFromUploadPolicy,
   type Artifact,
+  type ReleaseSafetyPolicy,
   type UploadPolicy,
 } from "@codemagic/patch-shared";
 import {
@@ -213,6 +215,7 @@ export interface CreateReleaseFromArtifactVariables {
   artifact: Artifact;
   /** Upload policy, seeded from the artifact's defaults and edited in the form. */
   policy: UploadPolicy;
+  safetyPolicy: ReleaseSafetyPolicy;
 }
 
 /**
@@ -228,13 +231,16 @@ export function useCreateReleaseFromArtifact() {
       deploymentId,
       artifact,
       policy,
-    }: CreateReleaseFromArtifactVariables) =>
-      authenticatedMultipartRequest<ReleaseLifecycleWireResponse>({
+      safetyPolicy,
+    }: CreateReleaseFromArtifactVariables) => {
+      const { uploadSettings } = releaseFormPoliciesFromUploadPolicy(policy);
+      return authenticatedMultipartRequest<ReleaseLifecycleWireResponse>({
         method: "POST",
         path: `/deployments/${encodeURIComponent(deploymentId)}/releases`,
-        body: artifactToReleaseForm(artifact, policy),
+        body: artifactToReleaseForm(artifact, uploadSettings, safetyPolicy),
         idempotencyKey: createIdempotencyKey(),
-      }).then(fromReleaseLifecycleWireResponse),
+      }).then(fromReleaseLifecycleWireResponse);
+    },
     onSuccess: async (_data, { deploymentId }) => {
       await queryClient.invalidateQueries({
         queryKey: releaseKeys.deploymentList(deploymentId),

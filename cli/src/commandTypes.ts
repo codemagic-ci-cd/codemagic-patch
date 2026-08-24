@@ -57,6 +57,7 @@ export type ReleaseSelector =
     };
 
 export type ReleaseCreateCommand = {
+  allowFingerprintMismatch?: true;
   /**
    * Set when `--bundle-path` points at a `.cmpatch` artifact. Build identity
    * (fingerprint, target binary version, signature, sourcemap) is then read from
@@ -73,6 +74,12 @@ export type ReleaseCreateCommand = {
   fingerprint?: string;
   isMandatory: boolean;
   kind: "release-create";
+  /**
+   * Set by runCli when the effective stdout is machine-parsed JSON (explicit
+   * --format json or the piped-stdout default): publication prompts are
+   * replaced by a hint failure and the response body stays verbatim.
+   */
+  machineOutput?: true;
   nonInteractive?: true;
   noDuplicateReleaseError: boolean;
   platform?: "android" | "ios";
@@ -115,6 +122,7 @@ export type ReactBuildOptions = {
 };
 
 export type ReleaseReactCommand = {
+  allowFingerprintMismatch?: true;
   baseBytecode: "auto" | "off";
   bundlerArgs?: string[];
   buildConfigurationName?: string;
@@ -128,6 +136,8 @@ export type ReleaseReactCommand = {
   hermes: "auto" | "false" | "true";
   isMandatory: boolean;
   kind: "release-react";
+  /** See {@link ReleaseCreateCommand.machineOutput}. */
+  machineOutput?: true;
   nonInteractive?: true;
   noDuplicateReleaseError: boolean;
   platform: "android" | "ios";

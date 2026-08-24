@@ -66,6 +66,12 @@ artifact is tamper-evident from this point on.
 
 If the deployment already contains this exact content, the server flags a
 duplicate; an **Upload anyway** button re-submits and records it deliberately.
+If the artifact fingerprint differs from the fingerprint recorded for its
+target binary version, the first upload is blocked before any release or job is
+created. The dashboard shows the binary version and both complete fingerprints;
+verify them, then choose **Upload anyway** to approve that mismatch and retry the
+same artifact. Each retry uses a new idempotency key, and approvals are cleared
+when you choose another artifact or leave the flow.
 
 ## Step 2b — Upload from the CLI
 
@@ -92,6 +98,14 @@ authoritative). You can still set upload-time policy:
 `--no-duplicate-release-error`; anything you omit falls back to the artifact's
 baked-in defaults. Add `--dry-run` to preview without uploading.
 
+The CLI also blocks a fingerprint mismatch by default. In an interactive run
+without `--yes`, it prints the binary version plus both full fingerprints and
+asks once whether to retry. `--yes`, `--non-interactive`, and JSON output never
+approve the mismatch; they fail with a hint instead. After independently
+checking the native compatibility, pass `--allow-fingerprint-mismatch` to make
+that approval explicit in automation. This override omits the opt-in blocking
+field, so uploading to an older server remains backward-compatible.
+
 Before anything is sent, the CLI recomputes the bundle's package hash and checks
 it against the descriptor, failing fast if the artifact was corrupted.
 
@@ -105,5 +119,6 @@ it against the descriptor, failing fast if the artifact was corrupted.
   dashboard only parses the descriptor; a corrupted artifact dropped in the
   browser is caught by the server's authoritative re-hash instead.
 
-Because both upload paths build the identical multipart request the CLI has
-always sent, no server-side change is involved in any of this.
+Both upload paths use the same multipart contract and opt into the same
+server-enforced fingerprint safety check. Older clients that do not send the
+new opt-in field retain the previous warning-only behavior.

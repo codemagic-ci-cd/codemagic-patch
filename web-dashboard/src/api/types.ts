@@ -417,6 +417,7 @@ export type ProblemTypeSuffix =
   | "authentication-required"
   | "app-conflict"
   | "duplicate-release"
+  | "fingerprint-disagreement"
   | "forbidden"
   | "idempotency-in-progress"
   | "idempotency-mismatch"

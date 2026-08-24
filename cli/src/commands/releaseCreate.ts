@@ -6,9 +6,11 @@ import {
   artifactToReleaseForm,
   parseArtifact,
   releaseFormFromParts,
+  releaseFormPoliciesFromUploadPolicy,
   resolveUploadPolicy,
   type Artifact,
   type ReleaseDescriptor,
+  type ReleaseSafetyPolicy,
 } from "@codemagic/patch-shared";
 
 import type { ReleaseCreateCommand } from "../commandTypes";
@@ -31,6 +33,11 @@ import {
   toPayloadPaths,
 } from "../zip";
 import { enforceMutationSafety } from "./mutationSafety";
+import {
+  interactionContextFromCommand,
+  type ReleaseExecutionContext,
+} from "./releaseExecution";
+import { executeReleasePublication } from "./releasePublication";
 import { resolveDeploymentId } from "./resolveNames";
 import {
   buildApiUrl,
@@ -51,6 +58,10 @@ type ReleaseDryRunResult = {
   dryRun: true;
   fingerprint: string;
   platform?: "android" | "ios";
+  publicationSafety: {
+    duplicateRelease: "allow" | "block";
+    fingerprintMismatch: "allow" | "block";
+  };
   serverUrl: string;
   signing: {
     enabled: boolean;
@@ -68,10 +79,15 @@ export async function executeReleaseCreate(
   // stderr; reporting onto it (and leaving its lifecycle to the owner) is what
   // keeps one run from animating two spinners over one stream.
   sharedProgress?: Progress,
+  executionContext: ReleaseExecutionContext = {
+    mutationSafety: "required",
+  },
 ): Promise<unknown> {
   if (command.artifactUpload === true) {
-    return executeArtifactReleaseCreate(command, deps);
+    return executeArtifactReleaseCreate(command, deps, executionContext);
   }
+
+  const interactionContext = interactionContextFromCommand(command);
 
   if (command.targetBinaryVersion === undefined) {
     throw new UsageError("Missing required flag --target-binary-version");
@@ -92,7 +108,7 @@ export async function executeReleaseCreate(
   const zipPath = path.join(tempRoot, "bundle.zip");
   // Opened only after the mutation guard: a spinner animating over the
   // interactive confirm prompt would corrupt both. A borrowed tree is safe
-  // here — its owner has already run its own guard and passed `yes`.
+  // here because its owner passes an already-satisfied execution context.
   const ownsProgress = sharedProgress === undefined;
   const progress =
     sharedProgress ??
@@ -119,7 +135,9 @@ export async function executeReleaseCreate(
       deps,
       {
         nonInteractive:
-          command.nonInteractive === true || command.yes === true,
+          interactionContext.mode !== "interactive" ||
+          interactionContext.explicitYes ||
+          executionContext.mutationSafety === "already-satisfied",
       },
     );
 
@@ -129,22 +147,24 @@ export async function executeReleaseCreate(
     // first: a borrowed tree may still have a step in flight, and the guard's
     // note and confirm must not draw under an animating spinner.
     progress.settle();
-    await enforceMutationSafety(deps, {
-      commandName: "release create",
-      dryRun: command.dryRun,
-      fields: [
-        ["serverUrl", command.serverUrl],
-        ["deploymentId", deploymentId],
-        ["platform", command.platform],
-        ["targetBinaryVersion", targetBinaryVersion],
-        ["rollout", String(command.rolloutPercentage)],
-        ["mandatory", String(command.isMandatory)],
-        ["disabled", String(command.disabled)],
-        ["fingerprint", fingerprint],
-      ],
-      nonInteractive: command.nonInteractive === true,
-      yes: command.yes === true,
-    });
+    if (executionContext.mutationSafety === "required") {
+      await enforceMutationSafety(deps, {
+        commandName: "release create",
+        dryRun: command.dryRun,
+        fields: [
+          ["serverUrl", command.serverUrl],
+          ["deploymentId", deploymentId],
+          ["platform", command.platform],
+          ["targetBinaryVersion", targetBinaryVersion],
+          ["rollout", String(command.rolloutPercentage)],
+          ["mandatory", String(command.isMandatory)],
+          ["disabled", String(command.disabled)],
+          ["fingerprint", fingerprint],
+        ],
+        nonInteractive: interactionContext.mode !== "interactive",
+        yes: interactionContext.explicitYes,
+      });
+    }
 
     progress.write(`Archiving ${command.bundlePath}`);
     const bundleArchivePath = await prepareBundleArchive(
@@ -166,14 +186,19 @@ export async function executeReleaseCreate(
     }
 
     progress.write("Uploading release");
-    return await uploadReleaseArchive(command, deps, {
-      bundleArchivePath,
-      deploymentId,
-      fingerprint,
-      privateKeyPath,
-      sourcemapPath,
-      targetBinaryVersion,
-    });
+    return await uploadReleaseArchive(
+      command,
+      deps,
+      {
+        bundleArchivePath,
+        deploymentId,
+        fingerprint,
+        privateKeyPath,
+        sourcemapPath,
+        targetBinaryVersion,
+      },
+      progress,
+    );
   } catch (error) {
     // Marks the step in flight as failed; the finally below is then a no-op,
     // so the tree is still closed exactly once on every path. A borrowed tree
@@ -199,7 +224,9 @@ export async function executeReleaseCreate(
 async function executeArtifactReleaseCreate(
   command: ReleaseCreateCommand,
   deps: CommandDeps,
+  executionContext: ReleaseExecutionContext,
 ): Promise<unknown> {
+  const interactionContext = interactionContextFromCommand(command);
   const artifactPath = await ensureReadableFile(
     deps,
     command.bundlePath,
@@ -247,29 +274,35 @@ async function executeArtifactReleaseCreate(
     descriptor.defaults,
     command.policyOverrides ?? {},
   );
+  const { uploadSettings, safetyPolicy } = releaseFormPoliciesFromUploadPolicy(
+    policy,
+    command.allowFingerprintMismatch === true ? "allow" : "block",
+  );
 
   if (command.dryRun) {
-    return buildArtifactDryRunResult(command, descriptor, deploymentId);
+    return buildArtifactDryRunResult(command, descriptor, deploymentId, safetyPolicy);
   }
 
-  await enforceMutationSafety(deps, {
-    commandName: "release create",
-    // Unreachable when true (dry-run returned above), but passing it keeps
-    // the missing---yes error suggesting --dry-run, which this path supports.
-    dryRun: command.dryRun,
-    fields: [
-      ["serverUrl", command.serverUrl],
-      ["deploymentId", deploymentId],
-      ["platform", descriptor.platform],
-      ["targetBinaryVersion", descriptor.targetBinaryVersion],
-      ["rollout", String(policy.rolloutPercentage)],
-      ["mandatory", String(policy.isMandatory)],
-      ["disabled", String(policy.disabled)],
-      ["fingerprint", descriptor.fingerprint],
-    ],
-    nonInteractive: command.nonInteractive === true,
-    yes: command.yes === true,
-  });
+  if (executionContext.mutationSafety === "required") {
+    await enforceMutationSafety(deps, {
+      commandName: "release create",
+      // Unreachable when true (dry-run returned above), but passing it keeps
+      // the missing---yes error suggesting --dry-run, which this path supports.
+      dryRun: command.dryRun,
+      fields: [
+        ["serverUrl", command.serverUrl],
+        ["deploymentId", deploymentId],
+        ["platform", descriptor.platform],
+        ["targetBinaryVersion", descriptor.targetBinaryVersion],
+        ["rollout", String(policy.rolloutPercentage)],
+        ["mandatory", String(policy.isMandatory)],
+        ["disabled", String(policy.disabled)],
+        ["fingerprint", descriptor.fingerprint],
+      ],
+      nonInteractive: interactionContext.mode !== "interactive",
+      yes: interactionContext.explicitYes,
+    });
+  }
 
   // Opened only after the mutation guard: a spinner animating over the
   // interactive confirm prompt would corrupt both.
@@ -280,20 +313,33 @@ async function executeArtifactReleaseCreate(
 
   try {
     progress.write("Uploading release");
-    return await authenticatedRequest(deps, {
-      init: {
-        body: artifactToReleaseForm(artifact, policy),
-        headers: {
-          "idempotency-key": deps.randomUUID(),
-        },
-        method: "POST",
+    return await executeReleasePublication(deps, {
+      allowFingerprintMismatch: command.allowFingerprintMismatch === true,
+      duplicateRelease: safetyPolicy.duplicateRelease,
+      interaction: interactionContext,
+      onPrompt: progress.settle,
+      onRetry: () => progress.write("Retrying approved release"),
+      upload: async ({ idempotencyKey, safetyPolicy: attemptSafetyPolicy }) => {
+        return authenticatedRequest(deps, {
+          init: {
+            body: artifactToReleaseForm(
+              artifact,
+              uploadSettings,
+              attemptSafetyPolicy,
+            ),
+            headers: {
+              "idempotency-key": idempotencyKey,
+            },
+            method: "POST",
+          },
+          serverUrl: command.serverUrl,
+          token: command.token,
+          url: buildApiUrl(
+            command.serverUrl,
+            `/v1/deployments/${encodeURIComponent(deploymentId)}/releases`,
+          ),
+        });
       },
-      serverUrl: command.serverUrl,
-      token: command.token,
-      url: buildApiUrl(
-        command.serverUrl,
-        `/v1/deployments/${encodeURIComponent(deploymentId)}/releases`,
-      ),
     });
   } catch (error) {
     progress.fail();
@@ -307,6 +353,9 @@ function buildArtifactDryRunResult(
   command: ReleaseCreateCommand,
   descriptor: ReleaseDescriptor,
   deploymentId: string,
+  // The resolved policy, not the raw flags: the artifact's baked-in defaults
+  // apply when a flag is absent, and dry-run must report what upload sends.
+  safetyPolicy: ReleaseSafetyPolicy,
 ): ReleaseDryRunResult {
   return {
     bundlePath: path.resolve(command.bundlePath),
@@ -314,6 +363,7 @@ function buildArtifactDryRunResult(
     dryRun: true,
     fingerprint: descriptor.fingerprint,
     platform: descriptor.platform,
+    publicationSafety: safetyPolicy,
     serverUrl: command.serverUrl,
     signing:
       descriptor.signature === undefined
@@ -363,6 +413,7 @@ async function buildDryRunResult(
     dryRun: true,
     fingerprint: input.fingerprint,
     ...(command.platform !== undefined ? { platform: command.platform } : {}),
+    publicationSafety: releaseDryRunSafety(command),
     serverUrl: command.serverUrl,
     signing:
       signingMetadata.signatureHashAlgorithm === undefined
@@ -377,6 +428,22 @@ async function buildDryRunResult(
     targetBinaryVersion: input.targetBinaryVersion,
     uploadSkipped: true,
   };
+}
+
+// On the directory/ZIP path the command flags are the effective policy, so the
+// shared derivation over them reports exactly what upload sends.
+function releaseDryRunSafety(
+  command: ReleaseCreateCommand,
+): ReleaseDryRunResult["publicationSafety"] {
+  return releaseFormPoliciesFromUploadPolicy(
+    {
+      rolloutPercentage: command.rolloutPercentage,
+      isMandatory: command.isMandatory,
+      disabled: command.disabled,
+      noDuplicateReleaseError: command.noDuplicateReleaseError,
+    },
+    command.allowFingerprintMismatch === true ? "allow" : "block",
+  ).safetyPolicy;
 }
 
 async function resolveFingerprint(
@@ -526,6 +593,7 @@ async function uploadReleaseArchive(
     sourcemapPath?: string;
     targetBinaryVersion: string;
   },
+  progress: Progress,
 ): Promise<unknown> {
   const signingMetadata: SigningMetadata =
     input.privateKeyPath === undefined
@@ -541,20 +609,7 @@ async function uploadReleaseArchive(
       ? undefined
       : await deps.readFile(input.sourcemapPath);
 
-  const body = releaseFormFromParts(
-    {
-      fingerprint: input.fingerprint,
-      targetBinaryVersion: input.targetBinaryVersion,
-      signature: signingMetadata.signature,
-      signatureHashAlgorithm: signingMetadata.signatureHashAlgorithm,
-      bundleZip,
-      bundleFile: path.basename(input.bundleArchivePath),
-      sourcemap,
-      sourcemapFile:
-        input.sourcemapPath === undefined
-          ? undefined
-          : path.basename(input.sourcemapPath),
-    },
+  const { uploadSettings, safetyPolicy } = releaseFormPoliciesFromUploadPolicy(
     {
       rolloutPercentage: command.rolloutPercentage,
       isMandatory: command.isMandatory,
@@ -562,22 +617,51 @@ async function uploadReleaseArchive(
       noDuplicateReleaseError: command.noDuplicateReleaseError,
       releaseNotes: command.releaseNotes,
     },
+    command.allowFingerprintMismatch === true ? "allow" : "block",
   );
+  const interactionContext = interactionContextFromCommand(command);
 
-  return authenticatedRequest(deps, {
-    init: {
-      body,
-      headers: {
-        "idempotency-key": deps.randomUUID(),
-      },
-      method: "POST",
+  return executeReleasePublication(deps, {
+    allowFingerprintMismatch: command.allowFingerprintMismatch === true,
+    duplicateRelease: safetyPolicy.duplicateRelease,
+    interaction: interactionContext,
+    onPrompt: progress.settle,
+    onRetry: () => progress.write("Retrying approved release"),
+    upload: async ({ idempotencyKey, safetyPolicy: attemptSafetyPolicy }) => {
+      const body = releaseFormFromParts(
+        {
+          fingerprint: input.fingerprint,
+          targetBinaryVersion: input.targetBinaryVersion,
+          signature: signingMetadata.signature,
+          signatureHashAlgorithm: signingMetadata.signatureHashAlgorithm,
+          bundleZip,
+          bundleFile: path.basename(input.bundleArchivePath),
+          sourcemap,
+          sourcemapFile:
+            input.sourcemapPath === undefined
+              ? undefined
+              : path.basename(input.sourcemapPath),
+        },
+        uploadSettings,
+        attemptSafetyPolicy,
+      );
+
+      return authenticatedRequest(deps, {
+        init: {
+          body,
+          headers: {
+            "idempotency-key": idempotencyKey,
+          },
+          method: "POST",
+        },
+        serverUrl: command.serverUrl,
+        token: command.token,
+        url: buildApiUrl(
+          command.serverUrl,
+          `/v1/deployments/${encodeURIComponent(input.deploymentId)}/releases`,
+        ),
+      });
     },
-    serverUrl: command.serverUrl,
-    token: command.token,
-    url: buildApiUrl(
-      command.serverUrl,
-      `/v1/deployments/${encodeURIComponent(input.deploymentId)}/releases`,
-    ),
   });
 }
 

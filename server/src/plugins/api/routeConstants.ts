@@ -12,6 +12,8 @@ export const MISSING_RELEASE_METADATA_FIELDS_ERROR =
   "release metadata fields are required";
 export const INVALID_RELEASE_ROLLOUT_ERROR =
   "rollout_percentage must be an integer between 1 and 100";
+export const INVALID_RELEASE_BLOCK_ON_FINGERPRINT_MISMATCH_ERROR =
+  "block_on_fingerprint_mismatch must be a boolean";
 export const INVALID_RELEASE_SIGNATURE_HASH_ALGORITHM_ERROR =
   "signature_hash_algorithm requires signature to also be provided";
 export const SIGNED_RELEASE_SIGNATURE_HASH_ALGORITHM = "sha256";

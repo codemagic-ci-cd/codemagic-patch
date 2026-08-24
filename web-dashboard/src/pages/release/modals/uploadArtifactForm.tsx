@@ -8,9 +8,8 @@ import { useNavigate } from "react-router";
 import type { Artifact } from "@codemagic/patch-shared";
 
 import { useCreateReleaseFromArtifact } from "../../../api/hooks/releases";
-import { classifyProblem, HttpProblemError } from "../../../api/problem";
+import { HttpProblemError } from "../../../api/problem";
 import { SOURCE_REPO_URL } from "../../../branding";
-import type { ProblemBehavior } from "../../../api/problem";
 import { useToast } from "../../../components/overlay/ToastProvider";
 import { toastReleaseWarnings } from "./releaseWarnings";
 import { buttonVariants } from "../../../components/ui/Button";
@@ -46,6 +45,14 @@ import {
   seedPolicyForm,
   type PolicyForm,
 } from "../../../model/artifactUpload";
+import {
+  createReleasePublicationFlowState,
+  publicationConflictFromError,
+  safetyPolicyForPublicationFlow,
+  transitionReleasePublicationFlow,
+  type ReleasePublicationConflict,
+  type ReleasePublicationFlowState,
+} from "../../../model/releasePublicationFlow";
 
 const README_CODE_SIGNING_URL = `${SOURCE_REPO_URL}#code-signing-optional`;
 
@@ -71,6 +78,8 @@ export function useUploadArtifactForm({
   const [parseError, setParseError] = useState<string | null>(null);
   const [form, setForm] = useState<PolicyForm | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [publicationFlow, setPublicationFlow] =
+    useState<ReleasePublicationFlowState>(createReleasePublicationFlowState);
 
   const busy = createMutation.isPending;
 
@@ -81,10 +90,16 @@ export function useUploadArtifactForm({
       setArtifact(parsed);
       setFileName(file.name);
       setForm(seedPolicyForm(parsed.descriptor.defaults));
+      setPublicationFlow((previous) =>
+        transitionReleasePublicationFlow(previous, { type: "artifactChanged" }),
+      );
     } catch (error) {
       setArtifact(null);
       setFileName(null);
       setForm(null);
+      setPublicationFlow((previous) =>
+        transitionReleasePublicationFlow(previous, { type: "artifactChanged" }),
+      );
       setParseError(
         error instanceof Error
           ? error.message
@@ -104,6 +119,9 @@ export function useUploadArtifactForm({
     setFileName(null);
     setParseError(null);
     setForm(null);
+    setPublicationFlow((previous) =>
+      transitionReleasePublicationFlow(previous, { type: "reset" }),
+    );
     createMutation.reset();
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -115,17 +133,28 @@ export function useUploadArtifactForm({
   const policy = form === null ? null : policyFromForm(form);
   const canSubmit = artifact !== null && policy !== null && !busy;
 
-  const submit = (uploadAnyway = false) => {
+  const submit = (flowState = publicationFlow) => {
     if (artifact === null || policy === null || busy) {
       return;
     }
-    const effectivePolicy = uploadAnyway
-      ? { ...policy, noDuplicateReleaseError: true }
-      : policy;
+    const attemptState = transitionReleasePublicationFlow(flowState, {
+      type: "uploadStarted",
+    });
+    setPublicationFlow(attemptState);
     createMutation.mutate(
-      { deploymentId, artifact, policy: effectivePolicy },
+      {
+        deploymentId,
+        artifact,
+        policy,
+        safetyPolicy: safetyPolicyForPublicationFlow(policy, attemptState),
+      },
       {
         onSuccess: (data) => {
+          setPublicationFlow((previous) =>
+            transitionReleasePublicationFlow(previous, {
+              type: "uploadSucceeded",
+            }),
+          );
           const created = data.release;
           toast.success(
             `Uploaded ${created.releaseLabel} to ${deploymentName}`,
@@ -134,14 +163,35 @@ export function useUploadArtifactForm({
                 "Opening the new release — its worker job is queued.",
             },
           );
-          toastReleaseWarnings(toast, data.warnings);
+          toastReleaseWarnings(toast, data.warnings, attemptState.approvals);
           onComplete();
           navigate(
             `/teams/${created.teamId}/apps/${created.appId}/deployments/${created.deploymentId}/releases/${created.id}`,
           );
         },
+        onError: (error) => {
+          const conflict = publicationConflictFromError(error);
+          const action =
+            conflict === null
+              ? { type: "uploadFailed" as const }
+              : {
+                  type: "publicationConflictReceived" as const,
+                  conflict,
+                };
+          setPublicationFlow((previous) =>
+            transitionReleasePublicationFlow(previous, action),
+          );
+        },
       },
     );
+  };
+
+  const approveCurrentConflict = () => {
+    const approved = transitionReleasePublicationFlow(publicationFlow, {
+      type: "publicationConflictApproved",
+    });
+    setPublicationFlow(approved);
+    submit(approved);
   };
 
   const requestClose = () => {
@@ -150,13 +200,12 @@ export function useUploadArtifactForm({
     }
   };
 
-  const behavior = problemBehavior(createMutation.error);
   const notice = createMutation.isError ? (
     <ErrorSlot
-      behavior={behavior}
+      conflict={publicationFlow.conflict}
       error={createMutation.error}
       busy={busy}
-      onUploadAnyway={() => submit(true)}
+      onUploadAnyway={approveCurrentConflict}
     />
   ) : undefined;
 
@@ -445,12 +494,12 @@ function PolicyToggle({
 }
 
 function ErrorSlot({
-  behavior,
+  conflict,
   error,
   busy,
   onUploadAnyway,
 }: {
-  behavior: ProblemBehavior | null;
+  conflict: ReleasePublicationConflict | null;
   error: unknown;
   busy: boolean;
   onUploadAnyway: () => void;
@@ -482,7 +531,7 @@ function ErrorSlot({
       </div>
     );
   }
-  if (behavior === "duplicate-release") {
+  if (conflict?.kind === "duplicate-release") {
     return (
       <div
         className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK}`}
@@ -492,6 +541,37 @@ function ErrorSlot({
         <div>
           <b>This deployment already has this content.</b> Uploading again
           records a duplicate release entry.
+          <div className="mt-2.5">
+            <button
+              type="button"
+              className={buttonVariants({ intent: "primary", size: "sm" })}
+              disabled={busy}
+              onClick={onUploadAnyway}
+            >
+              Upload anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (conflict?.kind === "fingerprint-disagreement") {
+    return (
+      <div
+        className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK}`}
+        role="alert"
+      >
+        <AlertIcon />
+        <div className="min-w-0">
+          <b>The release fingerprint does not match the installed app.</b>
+          <div className="mt-2 grid gap-1 text-[12.5px]">
+            <FingerprintEvidence label="Binary version" value={conflict.binaryVersion} />
+            <FingerprintEvidence label="Installed" value={conflict.storedFingerprint} />
+            <FingerprintEvidence label="Release" value={conflict.releaseFingerprint} />
+          </div>
+          <p className="mt-2">
+            Verify that this bundle was built for the intended native binary before continuing.
+          </p>
           <div className="mt-2.5">
             <button
               type="button"
@@ -517,8 +597,13 @@ function ErrorSlot({
   );
 }
 
-function problemBehavior(error: unknown): ProblemBehavior | null {
-  return error instanceof HttpProblemError ? classifyProblem(error) : null;
+function FingerprintEvidence({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
+      <span className="font-semibold">{label}</span>
+      <code className="break-all">{value}</code>
+    </div>
+  );
 }
 
 function describeProblem(error: unknown): string {

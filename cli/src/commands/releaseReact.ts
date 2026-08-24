@@ -194,6 +194,10 @@ async function runReleaseReact(
     );
 
     const releaseCreateCommand: ReleaseCreateCommand = {
+      ...(command.allowFingerprintMismatch === true
+        ? { allowFingerprintMismatch: true }
+        : {}),
+      ...(command.machineOutput === true ? { machineOutput: true } : {}),
       bundlePath: payloadRoot,
       deployment: command.deployment,
       disabled: command.disabled,
@@ -213,10 +217,9 @@ async function runReleaseReact(
       sourcemapPath,
       targetBinaryVersion,
       token: command.token,
-      // The release-react guard above already enforced mutation safety
-      // (--yes, interactive confirm, or dry-run), so the delegated command
-      // must not prompt a second time.
-      yes: true,
+      // Preserve only an actual user-supplied --yes. Internal delegation is
+      // represented separately by the execution context below.
+      ...(command.yes === true ? { yes: true } : {}),
     };
 
     progress.write(
@@ -226,7 +229,9 @@ async function runReleaseReact(
     );
     // The delegated command reports its steps on this same progress tree; a
     // second tree would animate two spinners over one stream.
-    const result = await executeReleaseCreate(releaseCreateCommand, deps, progress);
+    const result = await executeReleaseCreate(releaseCreateCommand, deps, progress, {
+      mutationSafety: "already-satisfied",
+    });
     progress.write(command.dryRun ? "Dry run complete." : "Release uploaded.");
 
     return result;

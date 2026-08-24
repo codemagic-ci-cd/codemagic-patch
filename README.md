@@ -707,6 +707,14 @@ cmpatch release-react \
   --yes
 ```
 
+`cmpatch release-react` and `cmpatch release create` opt into blocking when that
+fingerprint disagrees with the fingerprint already recorded for the target
+binary version. In an interactive run without `--yes`, review the complete
+stored and release fingerprints and confirm to retry. Automation fails with a
+clear hint; use `--allow-fingerprint-mismatch` only after verifying native
+compatibility. Older clients and direct API requests that omit the opt-in field
+retain the previous warning-only behavior.
+
 Watch processing complete:
 
 ```bash

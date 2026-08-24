@@ -16,6 +16,9 @@ export function releaseCreationIdempotencyFingerprint(
     noDuplicateReleaseError: input.noDuplicateReleaseError,
     releaseNotes: input.releaseNotes,
     rolloutPercentage: input.rolloutPercentage,
+    ...(input.safetyPolicy.fingerprintMismatch === "block"
+      ? { blockOnFingerprintMismatch: true }
+      : {}),
     signature: input.signature,
     signatureHashAlgorithm: input.signatureHashAlgorithm,
     targetBinaryVersion: input.targetBinaryVersion,

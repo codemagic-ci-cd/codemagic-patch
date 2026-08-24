@@ -2035,6 +2035,7 @@ function createReleaseCreationHandler(
       releaseId: input.releaseId as ReleaseId,
       releaseNotes: input.releaseNotes,
       rolloutPercentage: input.rolloutPercentage,
+      safetyPolicy: input.safetyPolicy,
       signature: input.signature,
       signatureHashAlgorithm: input.signatureHashAlgorithm,
       sourceMapStorageKey: input.sourceMapStorageKey,
@@ -2065,7 +2066,10 @@ function createReleaseCreationPreflightHandler(
   return async (input) => {
     const result = await repository.preflightCreateRelease({
       deploymentId: input.deploymentId as DeploymentId,
+      fingerprint: input.fingerprint,
+      safetyPolicy: input.safetyPolicy,
       signature: input.signature,
+      targetBinaryVersion: input.targetBinaryVersion,
     });
 
     if (result.outcome === "not_created") {

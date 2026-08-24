@@ -14,6 +14,53 @@ export interface UploadPolicy {
   releaseNotes?: string;
 }
 
+/** Release fields that affect the published release after it is accepted. */
+export interface ReleaseUploadSettings {
+  rolloutPercentage: number;
+  isMandatory: boolean;
+  disabled: boolean;
+  releaseNotes?: string;
+}
+
+/**
+ * Publication checks that decide whether an upload is accepted.
+ */
+export interface ReleaseSafetyPolicy {
+  fingerprintMismatch: "allow" | "block";
+  duplicateRelease: "allow" | "block";
+}
+
+export interface ReleaseFormPolicies {
+  uploadSettings: ReleaseUploadSettings;
+  safetyPolicy: ReleaseSafetyPolicy;
+}
+
+/**
+ * Split the legacy combined policy. Fingerprint blocking is the safe default;
+ * callers pass "allow" only to carry an explicit approval or override.
+ */
+export function releaseFormPoliciesFromUploadPolicy(
+  policy: UploadPolicy,
+  fingerprintMismatch: ReleaseSafetyPolicy["fingerprintMismatch"] = "block",
+): ReleaseFormPolicies {
+  const uploadSettings: ReleaseUploadSettings = {
+    rolloutPercentage: policy.rolloutPercentage,
+    isMandatory: policy.isMandatory,
+    disabled: policy.disabled,
+  };
+  if (policy.releaseNotes !== undefined) {
+    uploadSettings.releaseNotes = policy.releaseNotes;
+  }
+
+  return {
+    uploadSettings,
+    safetyPolicy: {
+      duplicateRelease: policy.noDuplicateReleaseError ? "allow" : "block",
+      fingerprintMismatch,
+    },
+  };
+}
+
 /** Build an UploadPolicy from descriptor defaults plus optional caller overrides. */
 export function resolveUploadPolicy(
   defaults: ReleasePolicyDefaults,
@@ -56,21 +103,28 @@ export interface ReleaseFormParts {
  * the same `metadata` field set and order (the JSON is byte-sensitive), `metadata`
  * as the FIRST part (the server enforces ordering), and the bundle uploaded verbatim.
  */
-export function releaseFormFromParts(parts: ReleaseFormParts, policy: UploadPolicy): FormData {
+export function releaseFormFromParts(
+  parts: ReleaseFormParts,
+  uploadSettings: ReleaseUploadSettings,
+  safetyPolicy: ReleaseSafetyPolicy,
+): FormData {
   if ((parts.sourcemap !== undefined) !== (parts.sourcemapFile !== undefined)) {
     throw new ArtifactError("sourcemap bytes and sourcemapFile must be provided together");
   }
 
   const metadata: Record<string, unknown> = {
-    disabled: policy.disabled,
+    disabled: uploadSettings.disabled,
     fingerprint: parts.fingerprint,
-    is_mandatory: policy.isMandatory,
-    no_duplicate_release_error: policy.noDuplicateReleaseError,
-    rollout_percentage: policy.rolloutPercentage,
+    is_mandatory: uploadSettings.isMandatory,
+    no_duplicate_release_error: safetyPolicy.duplicateRelease === "allow",
+    rollout_percentage: uploadSettings.rolloutPercentage,
     target_binary_version: parts.targetBinaryVersion,
   };
-  if (policy.releaseNotes !== undefined) {
-    metadata.release_notes = policy.releaseNotes;
+  if (safetyPolicy.fingerprintMismatch === "block") {
+    metadata.block_on_fingerprint_mismatch = true;
+  }
+  if (uploadSettings.releaseNotes !== undefined) {
+    metadata.release_notes = uploadSettings.releaseNotes;
   }
   if (parts.signature !== undefined) {
     metadata.signature = parts.signature;
@@ -101,7 +155,11 @@ export function releaseFormFromParts(parts: ReleaseFormParts, policy: UploadPoli
  * Artifact (the web after `parseArtifact`, or a `.cmpatch` re-upload). The CLI upload
  * path uses `releaseFormFromParts` directly.
  */
-export function artifactToReleaseForm(artifact: Artifact, policy: UploadPolicy): FormData {
+export function artifactToReleaseForm(
+  artifact: Artifact,
+  uploadSettings: ReleaseUploadSettings,
+  safetyPolicy: ReleaseSafetyPolicy,
+): FormData {
   assertArtifactConsistency(artifact);
   const { descriptor } = artifact;
   return releaseFormFromParts(
@@ -115,6 +173,7 @@ export function artifactToReleaseForm(artifact: Artifact, policy: UploadPolicy):
       sourcemap: artifact.sourcemap,
       sourcemapFile: descriptor.sourcemapFile,
     },
-    policy,
+    uploadSettings,
+    safetyPolicy,
   );
 }

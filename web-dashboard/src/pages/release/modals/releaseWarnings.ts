@@ -5,8 +5,12 @@ import type { ToastApi } from "../../../components/overlay/ToastProvider";
 export function toastReleaseWarnings(
   toast: ToastApi,
   warnings: ReleaseCreationWarning[] | undefined,
+  approvedWarnings: ReadonlySet<string> = new Set(),
 ): void {
   for (const warning of warnings ?? []) {
+    if (approvedWarnings.has(warning.code)) {
+      continue;
+    }
     toast.warning(
       warning.code === "fingerprint-disagreement"
         ? "Fingerprint disagreement"

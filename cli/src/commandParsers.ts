@@ -86,6 +86,7 @@ const contextSchema: Record<string, FlagSchema> = {
 };
 
 const releaseCreateSchema: Record<string, FlagSchema> = {
+  allowFingerprintMismatch: BOOLEAN_FLAG,
   app: STRING_FLAG,
   appId: STRING_FLAG,
   bundlePath: STRING_FLAG,
@@ -112,6 +113,7 @@ const releaseCreateSchema: Record<string, FlagSchema> = {
 };
 
 const releaseReactSchema: Record<string, FlagSchema> = {
+  allowFingerprintMismatch: BOOLEAN_FLAG,
   app: STRING_FLAG,
   appId: STRING_FLAG,
   baseBytecode: STRING_FLAG,
@@ -1573,6 +1575,9 @@ export function parseReleaseCreate(
 
   return {
     command: {
+      ...(parsedFlags.flags.allowFingerprintMismatch === true
+        ? { allowFingerprintMismatch: true }
+        : {}),
       ...(isArtifactUpload ? { artifactUpload: true } : {}),
       bundlePath,
       deployment,
@@ -2100,6 +2105,9 @@ export function parseReleaseReact(
 
   return {
     command: {
+      ...(parsedFlags.flags.allowFingerprintMismatch === true
+        ? { allowFingerprintMismatch: true }
+        : {}),
       ...(bundlerArgs.length > 0 ? { bundlerArgs } : {}),
       ...(buildConfigurationName !== undefined
         ? { buildConfigurationName }

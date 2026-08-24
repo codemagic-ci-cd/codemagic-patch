@@ -194,8 +194,12 @@ export function renderProblemDetails(
     lines.push(palette.dim(`type: ${problem.type}`));
   }
 
+  if (typeof problem.hint === "string" && problem.hint.length > 0) {
+    lines.push(palette.dim(`Hint: ${problem.hint}`));
+  }
+
   const extraEntries = Object.entries(problem).filter(
-    ([key]) => !["detail", "status", "title", "type"].includes(key),
+    ([key]) => !["detail", "hint", "status", "title", "type"].includes(key),
   );
 
   if (extraEntries.length > 0) {

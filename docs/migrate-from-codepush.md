@@ -245,6 +245,7 @@ does not set a default server URL — store it once with
 | `--sourcemapOutput` | `--sourcemap-output` | `release create` names the same thing `--sourcemap` |
 | `--privateKeyPath` | `--private-key-path` | Code signing parity |
 | `--noDuplicateReleaseError` | `--no-duplicate-release-error` | Byte-identical duplicates are rejected by default, as before |
+| — | `--allow-fingerprint-mismatch` | New safety override: use only after verifying that the OTA bundle is compatible with the recorded native binary fingerprint |
 | `--useHermes` | `--hermes auto\|true\|false` | `auto` reads the project config |
 | `--extraHermesFlags` | `--extra-hermes-flag` | Repeatable |
 | `--extraBundlerOption` | `--bundler-args` | Repeatable; use `--bundler-args=--reset-cache` for values starting with a dash |
@@ -264,9 +265,16 @@ does not set a default server URL — store it once with
   same way, or accepts a precomputed value via `--fingerprint`. The
   fingerprint drives compatibility-based delivery across binary versions, a
   concept CodePush did not have.
-- **Interactive confirmation.** In a terminal, release-producing commands
-  print their mutation context and require user confirmation; CI passes
-  `--yes`.
+- **Fingerprint disagreements require a separate decision.** The current CLI
+  blocks an upload when its fingerprint differs from the value recorded for the
+  target binary version. An interactive run can review both full fingerprints
+  and approve a retry. CI, JSON output, `--non-interactive`, and `--yes` do not
+  approve the disagreement; after verifying native compatibility, automation
+  must pass `--allow-fingerprint-mismatch` explicitly.
+- **Interactive mutation confirmation.** In a terminal, release-producing
+  commands print their mutation context and require user confirmation; CI
+  passes `--yes` to satisfy this general mutation check. It does not bypass the
+  fingerprint-specific decision above.
 - **Project defaults.** `cmpatch init` writes
   `codemagic-patch.config.json` (app, deployment, platform overrides), so CI
   invocations need fewer flags; explicit flags always win. `cmpatch context`

@@ -46,6 +46,7 @@ export function exitCodeForProblemDetails(
     case "account-disabled":
       return 4;
     case "duplicate-release":
+    case "fingerprint-disagreement":
     case "forbidden":
     case "idempotency-mismatch":
     case "last-owner":

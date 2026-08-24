@@ -57,6 +57,7 @@ const KNOWN_TYPE_SUFFIXES: Record<ProblemTypeSuffix, true> = {
   "authentication-required": true,
   "app-conflict": true,
   "duplicate-release": true,
+  "fingerprint-disagreement": true,
   "forbidden": true,
   "idempotency-in-progress": true,
   "idempotency-mismatch": true,
@@ -240,6 +241,8 @@ function behaviorForTypeSuffix(typeSuffix: ProblemTypeSuffix): ProblemBehavior {
       return "release-conflict";
     case "duplicate-release":
       return "duplicate-release";
+    case "fingerprint-disagreement":
+      return "generic";
     case "rollback-no-op":
       return "rollback-no-op";
     case "team-conflict":

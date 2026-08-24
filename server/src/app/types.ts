@@ -949,11 +949,16 @@ export interface ReleaseCreationHandlerInput {
   releaseId: string;
   releaseNotes: string | null;
   rolloutPercentage: number;
+  safetyPolicy: ReleaseCreationSafetyPolicy;
   sourceMapStorageKey: string | null;
   signature: string | null;
   signatureHashAlgorithm: string | null;
   targetBinaryVersion: string;
   targetPackageHash: string | null;
+}
+
+export interface ReleaseCreationSafetyPolicy {
+  fingerprintMismatch: "block" | "warn";
 }
 
 export type ReleaseCreationWarning =
@@ -999,6 +1004,13 @@ export type ReleaseCreationHandlerResult =
       reason: "duplicate_release";
     }
   | {
+      binaryVersion: string;
+      outcome: "conflict";
+      reason: "fingerprint_disagreement";
+      releaseFingerprint: string;
+      storedFingerprint: string;
+    }
+  | {
       outcome: "invalid";
       reason: "signature_required";
     }
@@ -1009,7 +1021,10 @@ export type ReleaseCreationHandlerResult =
 
 export interface ReleaseCreationPreflightHandlerInput {
   deploymentId: string;
+  fingerprint: string | null;
+  safetyPolicy: ReleaseCreationSafetyPolicy;
   signature: string | null;
+  targetBinaryVersion: string;
 }
 
 export type ReleaseCreationPreflightHandlerResult =

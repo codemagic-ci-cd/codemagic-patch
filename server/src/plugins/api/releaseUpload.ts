@@ -12,6 +12,7 @@ import {
 } from "../../app/problemDetails";
 import type {
   ReleaseCreationHandlerInput,
+  ReleaseCreationPreflightHandlerResult,
   ReleaseCreationPreflightRouteHandler,
 } from "../../app/types";
 import { MAX_UPLOAD_SIZE_EXCEEDED_DETAIL } from "../../app/upload-size";
@@ -60,6 +61,44 @@ export function missingReleaseMultipartFieldsProblem(
   return createValidationProblem(MISSING_RELEASE_MULTIPART_FIELDS_ERROR, errors);
 }
 
+type ReleaseCreationPreflightFailure = Exclude<
+  ReleaseCreationPreflightHandlerResult,
+  { outcome: "accepted" }
+>;
+
+/**
+ * Most preflight failures predate fingerprint blocking and must keep returning
+ * immediately. Fingerprint disagreement is the one verified exception: drain
+ * the remaining multipart body so Node fetch/undici receives its 409 reliably.
+ * Keep this exhaustive so every future preflight failure chooses deliberately.
+ */
+function multipartFailureMode(
+  failure: ReleaseCreationPreflightFailure,
+): "drain" | "immediate" {
+  switch (failure.outcome) {
+    case "conflict":
+      switch (failure.reason) {
+        case "fingerprint_disagreement":
+          return "drain";
+        case "active_release_job_exists":
+        case "active_rollout_exists":
+        case "duplicate_release":
+          return "immediate";
+        default:
+          return assertNever(failure);
+      }
+    case "invalid":
+    case "not_found":
+      return "immediate";
+    default:
+      return assertNever(failure);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unhandled release creation preflight failure: ${JSON.stringify(value)}`);
+}
+
 export async function parseReleaseCreationMultipartInput(
   request: FastifyRequest,
   deploymentId: string,
@@ -92,6 +131,7 @@ export async function parseReleaseCreationMultipartInput(
   let metadata: ReleaseCreationMetadata | null = null;
   let stagedBundleStorageKey: string | null = null;
   let stagedSourceMapStorageKey: string | null = null;
+  let pendingProblem: ProblemDetails | null = null;
   let partIndex = 0;
   const uploadSizeState = {
     maxBytes: maxUploadSizeBytes,
@@ -115,6 +155,11 @@ export async function parseReleaseCreationMultipartInput(
             "invalid_multipart_order",
           ),
         };
+      }
+
+      if (pendingProblem !== null) {
+        await drainMultipartPart(part, uploadSizeState);
+        continue;
       }
 
       if (part.fieldname === "metadata") {
@@ -171,12 +216,23 @@ export async function parseReleaseCreationMultipartInput(
         if (preflightHandler) {
           const preflight = await preflightHandler({
             deploymentId,
+            fingerprint: metadata.fingerprint,
+            safetyPolicy: metadata.safetyPolicy,
             signature: metadata.signature,
+            targetBinaryVersion: metadata.targetBinaryVersion,
           });
 
           if (preflight.outcome !== "accepted") {
             const problem = problemForReleaseCreationFailure(preflight);
-            if (problem) {
+            if (!problem) {
+              throw new Error(
+                `unmapped release creation preflight failure: ${JSON.stringify(preflight)}`,
+              );
+            }
+
+            if (multipartFailureMode(preflight) === "drain") {
+              pendingProblem = problem;
+            } else {
               return {
                 kind: "error",
                 problem,
@@ -246,6 +302,13 @@ export async function parseReleaseCreationMultipartInput(
     }
 
     throw error;
+  }
+
+  if (pendingProblem !== null) {
+    return {
+      kind: "error",
+      problem: pendingProblem,
+    };
   }
 
   if (!metadata || !stagedBundleStorageKey) {
@@ -423,12 +486,19 @@ export async function cleanupReleaseUploadArtifacts(
   ]);
 }
 
-export async function drainMultipartPart(part: Multipart): Promise<void> {
+export async function drainMultipartPart(
+  part: Multipart,
+  uploadSizeState?: ReleaseUploadSizeState,
+): Promise<void> {
   if (part.type !== "file") {
     return;
   }
 
-  for await (const chunk of part.file) {
+  const stream =
+    uploadSizeState === undefined
+      ? part.file
+      : limitAggregateUploadSize(part.file, uploadSizeState);
+  for await (const chunk of stream) {
     void chunk;
     // Drain discarded file streams so Fastify can continue parsing.
   }

@@ -9,6 +9,7 @@ import type {
   ReleasePatchHandlerInput,
 } from "../../app/types";
 import { DUPLICATE_RELEASE_DETAIL } from "./routeConstants";
+import { fingerprintDisagreementDetail } from "../../fingerprintDisagreement";
 import {
   createDeploymentNotFoundProblem,
   createReleaseNotFoundProblem,
@@ -253,6 +254,24 @@ export function problemForReleaseCreationFailure(
       detail: DUPLICATE_RELEASE_DETAIL,
       status: 409,
       typeSuffix: "duplicate-release",
+    });
+  }
+
+  if (
+    result.outcome === "conflict" &&
+    result.reason === "fingerprint_disagreement"
+  ) {
+    return createProblem({
+      detail: fingerprintDisagreementDetail(result),
+      extensions: {
+        binary_version: result.binaryVersion,
+        stored_fingerprint: result.storedFingerprint,
+        release_fingerprint: result.releaseFingerprint,
+        outcome: result.outcome,
+        reason: result.reason,
+      },
+      status: 409,
+      typeSuffix: "fingerprint-disagreement",
     });
   }
 

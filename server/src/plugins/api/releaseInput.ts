@@ -14,6 +14,7 @@ import {
   INVALID_BINARY_VERSION_ERROR,
   INVALID_RELEASE_LIST_LIMIT_ERROR,
   INVALID_RELEASE_LIST_OFFSET_ERROR,
+  INVALID_RELEASE_BLOCK_ON_FINGERPRINT_MISMATCH_ERROR,
   INVALID_RELEASE_PATCH_MANDATORY_ERROR,
   INVALID_RELEASE_PATCH_NOTES_ERROR,
   INVALID_RELEASE_PATCH_STATUS_COMBINATION_ERROR,
@@ -51,6 +52,9 @@ export interface ReleaseCreationMetadata {
   noDuplicateReleaseError: boolean;
   releaseNotes: string | null;
   rolloutPercentage: number;
+  safetyPolicy: {
+    fingerprintMismatch: "block" | "warn";
+  };
   signature: string | null;
   signatureHashAlgorithm: string | null;
   targetBinaryVersion: string;
@@ -146,6 +150,20 @@ export function parseReleaseCreationMetadata(
       ? metadataBody.signature
       : null;
 
+  if (
+    metadataBody.block_on_fingerprint_mismatch !== undefined &&
+    typeof metadataBody.block_on_fingerprint_mismatch !== "boolean"
+  ) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        INVALID_RELEASE_BLOCK_ON_FINGERPRINT_MISMATCH_ERROR,
+        "metadata.block_on_fingerprint_mismatch",
+        "invalid_type",
+      ),
+    };
+  }
+
   return {
     kind: "success",
     value: {
@@ -159,6 +177,10 @@ export function parseReleaseCreationMetadata(
           ? metadataBody.release_notes
           : null,
       rolloutPercentage,
+      safetyPolicy: {
+        fingerprintMismatch:
+          metadataBody.block_on_fingerprint_mismatch === true ? "block" : "warn",
+      },
       signature,
       signatureHashAlgorithm:
         signature === null ? null : SIGNED_RELEASE_SIGNATURE_HASH_ALGORITHM,
@@ -189,6 +211,7 @@ export function buildReleaseCreationInput(
     releaseId,
     releaseNotes: metadata.releaseNotes,
     rolloutPercentage: metadata.rolloutPercentage,
+    safetyPolicy: metadata.safetyPolicy,
     sourceMapStorageKey,
     signature: metadata.signature,
     signatureHashAlgorithm: metadata.signatureHashAlgorithm,

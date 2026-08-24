@@ -313,6 +313,10 @@ type RunnableCommandSpec<K extends CommandKind = CommandKind> = {
 
 // One definition per recurring flag so it reads the same on every help page.
 const flagHelp = {
+  allowFingerprintMismatch: {
+    flag: "--allow-fingerprint-mismatch",
+    summary: "Publish after verifying a fingerprint mismatch",
+  },
   app: { flag: "--app <name>", summary: "App name" },
   appId: { flag: "--app-id <id>", summary: "App id (alternative to --app)" },
   deployment: { flag: "--deployment <name>", summary: "Deployment name" },
@@ -1431,6 +1435,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               flagHelp.disabled,
               flagHelp.dryRun,
               flagHelp.noDuplicateReleaseError,
+              flagHelp.allowFingerprintMismatch,
               flagHelp.yes,
               flagHelp.nonInteractive,
             ],
@@ -1898,6 +1903,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               flagHelp.privateKeyPath,
               flagHelp.dryRun,
               flagHelp.noDuplicateReleaseError,
+              flagHelp.allowFingerprintMismatch,
               flagHelp.yes,
               flagHelp.nonInteractive,
             ],

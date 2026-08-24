@@ -13,6 +13,10 @@ import type {
 import type { DatabasePool } from "../db";
 import { withTransaction } from "../db";
 import {
+  fingerprintDisagreementDetail,
+  type FingerprintDisagreement,
+} from "../fingerprintDisagreement";
+import {
   mapReleaseJobRow,
   mapReleaseRow,
   type DeploymentRow,
@@ -32,6 +36,11 @@ export interface CreateReleaseInput {
   noDuplicateReleaseError: boolean;
   releaseNotes: string | null;
   rolloutPercentage: number;
+  // Required so a caller cannot silently fall into the unsafe warning-only
+  // branch by omission; "warn" must be an explicit choice.
+  safetyPolicy: {
+    fingerprintMismatch: "block" | "warn";
+  };
   signature: string | null;
   signatureHashAlgorithm: string | null;
   sourceMapStorageKey: string | null;
@@ -61,7 +70,14 @@ export interface LatestReleasePackageHash {
 
 export interface PreflightCreateReleaseInput {
   deploymentId: DeploymentId;
+  fingerprint: string | null;
+  // Required (like CreateReleaseInput.safetyPolicy) so a blocking caller
+  // cannot silently skip the fingerprint check by omitting a field.
+  safetyPolicy: {
+    fingerprintMismatch: "block" | "warn";
+  };
   signature: string | null;
+  targetBinaryVersion: string;
 }
 
 export type CreateReleaseResult =
@@ -89,6 +105,10 @@ export type CreateReleaseResult =
       outcome: "conflict";
       reason: "duplicate_release";
     }
+  | (FingerprintDisagreement & {
+      outcome: "conflict";
+      reason: "fingerprint_disagreement";
+    })
   | {
       outcome: "invalid";
       reason: "signature_required";
@@ -324,7 +344,13 @@ type ReleaseCreatePreconditionResult =
       deploymentRow: DeploymentRow;
       outcome: "accepted";
     }
-  | Exclude<CreateReleaseResult, { outcome: "created" }>;
+  | Extract<
+      CreateReleaseResult,
+      | { reason: "active_release_job_exists" }
+      | { reason: "active_rollout_exists" }
+      | { reason: "signature_required" }
+      | { reason: "deployment_not_found" }
+    >;
 
 type ReleaseLifecyclePreconditionResult =
   | {
@@ -375,6 +401,26 @@ export function createPostgresReleaseRepository(
         }
 
         const { deploymentRow } = preconditions;
+        // Spec order (server-tech-spec.md, release creation steps): the
+        // fingerprint decision precedes the duplicate check, so a request that
+        // trips both conflicts surfaces the fingerprint evidence first.
+        const fingerprintDisagreement = await findFingerprintDisagreement(
+          client,
+          input.deploymentId,
+          input.targetBinaryVersion,
+          input.fingerprint,
+        );
+        if (
+          fingerprintDisagreement &&
+          input.safetyPolicy.fingerprintMismatch === "block"
+        ) {
+          return {
+            ...fingerprintDisagreement,
+            outcome: "conflict",
+            reason: "fingerprint_disagreement",
+          };
+        }
+
         const duplicateRelease = input.targetPackageHash
           ? await findLatestPublishedReleaseWithPackageHash(
               client,
@@ -399,15 +445,10 @@ export function createPostgresReleaseRepository(
               },
             ]
           : [];
-
-        const fingerprintWarning = await detectFingerprintDisagreementWarning(
-          client,
-          input.deploymentId,
-          input.targetBinaryVersion,
-          input.fingerprint,
-        );
-        if (fingerprintWarning) {
-          warnings.push(fingerprintWarning);
+        if (fingerprintDisagreement) {
+          warnings.push(
+            fingerprintWarningFromDisagreement(fingerprintDisagreement),
+          );
         }
 
         const nextReleaseLabel = await computeNextReleaseLabel(client, input.deploymentId);
@@ -531,6 +572,22 @@ export function createPostgresReleaseRepository(
 
         if (preconditions.outcome !== "accepted") {
           return preconditions;
+        }
+
+        if (input.safetyPolicy.fingerprintMismatch === "block") {
+          const disagreement = await findFingerprintDisagreement(
+            client,
+            input.deploymentId,
+            input.targetBinaryVersion,
+            input.fingerprint,
+          );
+          if (disagreement) {
+            return {
+              ...disagreement,
+              outcome: "conflict",
+              reason: "fingerprint_disagreement",
+            };
+          }
         }
 
         return {
@@ -887,11 +944,15 @@ export function createPostgresReleaseRepository(
         // binary version was already checked when the release was created.
         const fingerprintWarning =
           nextReleaseValues.targetBinaryVersion !== currentRelease.targetBinaryVersion
-            ? await detectFingerprintDisagreementWarning(
+            ? await findFingerprintDisagreement(
                 client,
                 currentRelease.deploymentId,
                 nextReleaseValues.targetBinaryVersion,
                 currentRelease.fingerprint,
+              ).then((disagreement) =>
+                disagreement
+                  ? fingerprintWarningFromDisagreement(disagreement)
+                  : null,
               )
             : null;
 
@@ -959,14 +1020,16 @@ export function createPostgresReleaseRepository(
 
         const targetBinaryVersion =
           input.targetBinaryVersion ?? source.target_binary_version;
-        const fingerprintWarning = await detectFingerprintDisagreementWarning(
+        const fingerprintDisagreement = await findFingerprintDisagreement(
           client,
           input.destinationDeploymentId,
           targetBinaryVersion,
           source.fingerprint,
         );
-        if (fingerprintWarning) {
-          warnings.push(fingerprintWarning);
+        if (fingerprintDisagreement) {
+          warnings.push(
+            fingerprintWarningFromDisagreement(fingerprintDisagreement),
+          );
         }
 
         return insertSourcedRelease(client, {
@@ -1246,32 +1309,24 @@ async function findStoredBinaryVersionFingerprint(
   return result.rows[0]?.fingerprint ?? null;
 }
 
-function fingerprintDisagreementWarning(
-  binaryVersion: string,
-  storedFingerprint: string,
-  releaseFingerprint: string,
+function fingerprintWarningFromDisagreement(
+  disagreement: FingerprintDisagreement,
 ): ReleaseCreationWarning {
-  const truncate = (value: string): string =>
-    value.length > 12 ? `${value.slice(0, 12)}…` : value;
-
   return {
-    binaryVersion,
+    binaryVersion: disagreement.binaryVersion,
     code: "fingerprint-disagreement",
-    detail:
-      `release fingerprint ${truncate(releaseFingerprint)} differs from the fingerprint ` +
-      `${truncate(storedFingerprint)} recorded for binary version ${binaryVersion} in this ` +
-      `deployment; devices on this binary version may be native-incompatible with this update`,
-    releaseFingerprint,
-    storedFingerprint,
+    detail: fingerprintDisagreementDetail(disagreement),
+    releaseFingerprint: disagreement.releaseFingerprint,
+    storedFingerprint: disagreement.storedFingerprint,
   };
 }
 
-async function detectFingerprintDisagreementWarning(
+async function findFingerprintDisagreement(
   client: Queryable,
   deploymentId: DeploymentId,
   binaryVersion: string,
   releaseFingerprint: string | null,
-): Promise<ReleaseCreationWarning | null> {
+): Promise<FingerprintDisagreement | null> {
   if (releaseFingerprint === null) {
     return null;
   }
@@ -1285,16 +1340,12 @@ async function detectFingerprintDisagreementWarning(
     return null;
   }
 
-  return fingerprintDisagreementWarning(
-    binaryVersion,
-    storedFingerprint,
-    releaseFingerprint,
-  );
+  return { binaryVersion, storedFingerprint, releaseFingerprint };
 }
 
 async function checkReleaseCreatePreconditions(
   client: Queryable,
-  input: PreflightCreateReleaseInput,
+  input: Pick<PreflightCreateReleaseInput, "deploymentId" | "signature">,
 ): Promise<ReleaseCreatePreconditionResult> {
   const deploymentResult = await client.query<DeploymentRow>(
     "SELECT * FROM deployment WHERE id = $1 FOR UPDATE",
@@ -1358,7 +1409,7 @@ async function checkReleaseCreatePreconditions(
 
 async function checkLifecycleCreatePreconditions(
   client: Queryable,
-  input: PreflightCreateReleaseInput,
+  input: Pick<PreflightCreateReleaseInput, "deploymentId" | "signature">,
 ): Promise<ReleaseLifecyclePreconditionResult> {
   const releasePreconditions = await checkReleaseCreatePreconditions(client, input);
 

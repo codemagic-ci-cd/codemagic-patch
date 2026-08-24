@@ -22,6 +22,7 @@ export type ProblemTypeSuffix =
   | "authentication-required"
   | "app-conflict"
   | "duplicate-release"
+  | "fingerprint-disagreement"
   | "forbidden"
   | "github-handle-lookup-failed"
   | "github-handle-not-found"
@@ -105,6 +106,10 @@ function problemTitleForType(
 
   if (typeSuffix === "duplicate-release") {
     return "Duplicate release";
+  }
+
+  if (typeSuffix === "fingerprint-disagreement") {
+    return "Fingerprint disagreement";
   }
 
   if (typeSuffix === "forbidden") {

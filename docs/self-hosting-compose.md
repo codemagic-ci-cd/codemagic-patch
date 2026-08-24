@@ -819,19 +819,30 @@ cmpatch release inspect \
   --app MyApp --deployment Staging --label <label> --wait
 ```
 
-A device picks up the update only when its installed binary matches the release's
-target version **and** fingerprint; a mismatch is a silent no-op rather than an
-error. If an update never arrives, `cmpatch doctor --app MyApp --deployment Staging`
-diagnoses the mismatch, and `cmpatch fingerprint --platform <ios|android>` prints
-the fingerprint the CLI computes for that build. In **CI**, authenticate with a
-token instead of interactive login (see
+A device looks up updates by deployment key and binary version; it does not send
+its native fingerprint during an update check. The fingerprint is a
+publication-time safety signal and an input to compatible binary-version
+auto-expansion. The CLI blocks publication by default when its computed
+fingerprint disagrees with the value already recorded for the explicit target
+binary version. If a developer approves that disagreement, the release still
+targets that binary version and can be delivered to its devices.
+
+If an update never arrives, `cmpatch doctor --app MyApp --deployment Staging`
+checks the local and deployment configuration, and
+`cmpatch fingerprint --platform <ios|android>` prints the fingerprint the CLI
+computes for the project. In **CI**, authenticate with a token instead of
+interactive login (see
 [Machine & CI access](#machine--ci-access)):
 
 ```bash
 CODEMAGIC_PATCH_TOKEN=cm_pat_... cmpatch release-react \
   --server-url https://updates.example.com \
-  --app MyApp --deployment Production --platform android
+  --app MyApp --deployment Production --platform android --yes
 ```
+
+CI, JSON output, `--non-interactive`, and `--yes` never approve a fingerprint
+disagreement automatically. After independently verifying native compatibility,
+pass `--allow-fingerprint-mismatch` to make that override explicit.
 
 Publishing requires the `release.deploy` permission — the `developer` role or
 higher (a `viewer` cannot publish).

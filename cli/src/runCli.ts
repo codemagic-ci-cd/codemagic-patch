@@ -372,6 +372,12 @@ export async function runCli(
     requestedFormat,
     deps.stdout,
   );
+  // Publication prompts must never stop a run whose stdout is machine-parsed
+  // JSON — including the piped-stdout default, which withJsonNonInteractiveMode
+  // deliberately leaves interactive so mutation confirms stay available.
+  if (effectiveOutput.format === "json" && supportsMachineOutputMode(commandToRun)) {
+    commandToRun = { ...commandToRun, machineOutput: true };
+  }
   // Execution-stage resource pickers (the team/app selects inside resolvers)
   // live behind deps.prompt. A JSON run — explicit or defaulted by a piped
   // stdout — must never stop on a question, and neither may a run that passed
@@ -870,6 +876,12 @@ function supportsNonInteractive(
   command: CliCommand,
 ): command is Extract<CliCommand, { nonInteractive?: true }> {
   return command.kind in JSON_NON_INTERACTIVE_KINDS;
+}
+
+function supportsMachineOutputMode(
+  command: CliCommand,
+): command is Extract<CliCommand, { machineOutput?: true }> {
+  return command.kind === "release-create" || command.kind === "release-react";
 }
 
 function withJsonNonInteractiveMode(
