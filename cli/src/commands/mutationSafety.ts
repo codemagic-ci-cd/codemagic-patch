@@ -1,7 +1,8 @@
 import { PRODUCT_NAME } from "../branding";
-import { isInteractiveOutput, writeLine } from "../output";
+import { isInteractiveOutput } from "../output";
+import { writeNote } from "../notice";
 import {
-  canPromptInteractively,
+  canPromptOnStderr,
   type CommandDeps,
   DeclinedError,
   UsageError,
@@ -24,13 +25,11 @@ export async function enforceMutationSafety(
   }
 
   if (deps.stderr !== undefined && isInteractiveOutput(deps.stderr)) {
-    writeLine(
+    writeNote(
       deps.stderr,
       `${input.commandName} will mutate ${PRODUCT_NAME} state:`,
+      input.fields.map(([key, value]) => `${key}: ${value ?? "-"}`),
     );
-    for (const [key, value] of input.fields) {
-      writeLine(deps.stderr, `  ${key}: ${value ?? "-"}`);
-    }
   }
 
   // Interactive fallback: in a real TTY (and not forced non-interactive — JSON
@@ -39,10 +38,7 @@ export async function enforceMutationSafety(
   // so with `2>file` we fail fast instead of blocking on an invisible prompt.
   // Explicit decline → DeclinedError (exit 1); Ctrl-C during the prompt still
   // raises PromptAbortError → "Aborted." with exit 130.
-  const canPrompt =
-    canPromptInteractively(deps, input.nonInteractive) &&
-    deps.stderr !== undefined &&
-    isInteractiveOutput(deps.stderr);
+  const canPrompt = canPromptOnStderr(deps, input.nonInteractive);
 
   if (canPrompt && deps.confirm !== undefined) {
     const confirmed = await deps.confirm({

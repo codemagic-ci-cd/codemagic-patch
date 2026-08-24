@@ -5,10 +5,12 @@ import type {
   TeamSelector,
 } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
+import { promptResource } from "../flagPrompts";
 import { isRecord } from "../output";
 import {
   buildApiUrl,
   buildApiUrlWithQuery,
+  canPromptOnStderr,
   type CommandDeps,
   UsageError,
 } from "./shared";
@@ -62,6 +64,7 @@ export async function resolveDeploymentId(
   serverUrl: string,
   token: string | undefined,
   deps: CommandDeps,
+  options: ResolveOptions = {},
 ): Promise<string> {
   if (deployment.deploymentId !== undefined) {
     return deployment.deploymentId;
@@ -78,6 +81,7 @@ export async function resolveDeploymentId(
     serverUrl,
     token,
     deps,
+    options,
   );
 
   const deployments = await requestNamedResourceList(
@@ -107,11 +111,71 @@ export async function resolveDeploymentId(
   return resolvedDeployment.id;
 }
 
+/** Options threaded down the resolver chain to the team prompt gate. */
+export type ResolveOptions = {
+  /**
+   * True when the command was told not to ask (--non-interactive, or --yes,
+   * which promises a run with no interactive stops). Resolution then falls
+   * back to the flag-spelling error instead of a select prompt.
+   */
+  nonInteractive?: boolean;
+};
+
+export function noTeamsAvailableError(serverUrl: string): UsageError {
+  return new UsageError(
+    [
+      "No teams are available.",
+      `Context: server ${serverUrl}.`,
+      "Next: ask an admin to confirm the server provisioned its default team (default-team).",
+    ].join("\n"),
+  );
+}
+
+/**
+ * The team this run operates on when none was named. A sole team is taken
+ * silently — it is not a choice. Several teams are a real choice: ask when
+ * there is a person on the other end, otherwise spell out the flags that make
+ * the run unambiguous. Shared with the interactive picker so both paths agree
+ * on what a multi-team server means.
+ */
+export async function resolveDefaultTeam(
+  teams: NamedResource[],
+  serverUrl: string,
+  deps: CommandDeps,
+  options: ResolveOptions = {},
+): Promise<NamedResource> {
+  const [only] = teams;
+
+  if (teams.length === 1 && only !== undefined) {
+    return only;
+  }
+
+  if (teams.length === 0) {
+    throw noTeamsAvailableError(serverUrl);
+  }
+
+  if (
+    deps.prompt !== undefined &&
+    canPromptOnStderr(deps, options.nonInteractive === true)
+  ) {
+    return promptResource(deps.prompt, "Select team", teams, "team");
+  }
+
+  throw new UsageError(
+    [
+      `The server has ${teams.length} teams and no team was selected. Available teams: ${formatNamedResources(teams)}`,
+      `Context: server ${serverUrl}.`,
+      "Next: pass --team <name> or --team-id <id>, or run `cmpatch config set team <name>` to store a default.",
+    ].join("\n"),
+  );
+}
+
 export async function resolveTeamId(
   team: TeamSelector,
   serverUrl: string,
   token: string | undefined,
   deps: CommandDeps,
+  options: ResolveOptions = {},
 ): Promise<string> {
   if (team.teamId !== undefined) {
     return team.teamId;
@@ -126,37 +190,23 @@ export async function resolveTeamId(
   );
 
   if (team.teamName === undefined) {
-    if (teams.length === 1) {
-      return teams[0].id;
-    }
-
-    if (teams.length === 0) {
-      throw new UsageError(
-        [
-          "No teams are available.",
-          `Context: server ${serverUrl}.`,
-          "Next: ask an admin to confirm the server provisioned its default team (default-team).",
-        ].join("\n"),
-      );
-    }
-
-    throw new UsageError(
-      [
-        `Expected a single team but the server returned ${teams.length}. This build resolves the default team automatically and does not support manual team selection. Available teams: ${formatNamedResources(teams)}`,
-        `Context: server ${serverUrl}.`,
-        "Next: ask an admin to verify the server is provisioned with a single team (default-team).",
-      ].join("\n"),
-    );
+    const resolved = await resolveDefaultTeam(teams, serverUrl, deps, options);
+    return resolved.id;
   }
 
-  const resolvedTeam = matchNamedResource(teams, team.teamName, "Team");
+  // A team id in the name slot is accepted: ids are prefixed and unambiguous,
+  // and stored configs from the single-team era hold the id under `team`.
+  const resolvedTeam =
+    matchNamedResource(teams, team.teamName, "Team") ??
+    teams.find((candidate) => candidate.id === team.teamName) ??
+    null;
 
   if (!resolvedTeam) {
     throw new UsageError(
       [
-        `Team "${team.teamName}" not found.`,
+        `Team "${team.teamName}" not found. Available teams: ${formatNamedResources(teams)}`,
         `Context: server ${serverUrl}; team source: --team/config value "${team.teamName}".`,
-        "Next: this build uses the server's single default team; run `cmpatch config unset team` to clear the override.",
+        "Next: pass --team with one of the teams above, or run `cmpatch config unset team` to clear a stored override.",
       ].join("\n"),
     );
   }
@@ -169,6 +219,7 @@ export async function resolveAppId(
   serverUrl: string,
   token: string | undefined,
   deps: CommandDeps,
+  options: ResolveOptions = {},
 ): Promise<string> {
   if (app.appId !== undefined) {
     return app.appId;
@@ -182,6 +233,7 @@ export async function resolveAppId(
           serverUrl,
           token,
           deps,
+          options,
         );
   const apps = await requestNamedResourceList(
     deps,
@@ -216,6 +268,7 @@ export async function resolveReleaseId(
   serverUrl: string,
   token: string | undefined,
   deps: CommandDeps,
+  options: ResolveOptions = {},
 ): Promise<string> {
   if (release.releaseId !== undefined) {
     return release.releaseId;
@@ -226,6 +279,7 @@ export async function resolveReleaseId(
     serverUrl,
     token,
     deps,
+    options,
   );
   let offset = 0;
 

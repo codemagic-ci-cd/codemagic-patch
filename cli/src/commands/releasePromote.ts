@@ -13,17 +13,22 @@ export async function executeReleasePromote(
     assertExplicitBinaryVersion(command.targetBinaryVersion);
   }
 
+  const resolveOptions = {
+    nonInteractive: command.nonInteractive === true || command.yes === true,
+  };
   const sourceReleaseId = await resolveReleaseId(
     command.sourceRelease,
     command.serverUrl,
     command.token,
     deps,
+    resolveOptions,
   );
   const destinationDeploymentId = await resolveDeploymentId(
     command.destinationDeployment,
     command.serverUrl,
     command.token,
     deps,
+    resolveOptions,
   );
   const body: Record<string, boolean | number | string> = {
     destination_deployment_id: destinationDeploymentId,

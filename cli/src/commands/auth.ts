@@ -12,6 +12,7 @@ import { startLoopbackLoginServer } from "../loopbackLoginServer";
 import { request } from "../http";
 import { isRecord } from "../output";
 import { HttpProblemError } from "../problem-details";
+import { createProgress } from "../progress";
 import type { PromptFn } from "../prompt";
 import {
   assertHttpUrl,
@@ -104,6 +105,9 @@ async function executeBrowserLogin(
     startLoopbackLoginServer)({
     expectedState: pkce.state,
   });
+  // Opened lazily on the first step, so the probe-unsupported fallback to the
+  // token prompt never leaves a stray progress tree behind.
+  const progress = createProgress({ label: "login", stderr: deps.stderr });
 
   try {
     const authorizeUrl = buildApiUrlWithQuery(
@@ -133,6 +137,11 @@ async function executeBrowserLogin(
       renderAuthorizationInstructions(opened, authorizeUrl),
     );
 
+    // The instructions above must land before the spinner starts: an
+    // animating spinner and a raw write on the same terminal interleave.
+    progress.write(
+      `Waiting for browser sign-in (times out after ${timeoutSeconds}s)`,
+    );
     const callback = await callbackPromise;
 
     if (callback.kind === "timeout") {
@@ -145,6 +154,7 @@ async function executeBrowserLogin(
       throw new ValidationError("Browser sign-in was denied.");
     }
 
+    progress.write("Completing sign-in");
     const session = parseSessionResponse(
       await request(
         deps.fetch,
@@ -163,7 +173,13 @@ async function executeBrowserLogin(
     );
     await saveStoredCredential(command.serverUrl, session, { env: deps.env });
     return renderLoginSuccess(session);
+  } catch (error) {
+    // Marks the step in flight as failed; the finally below is then a no-op,
+    // so the tree is still closed exactly once on every path.
+    progress.fail();
+    throw error;
   } finally {
+    progress.stop();
     await server.close();
   }
 }

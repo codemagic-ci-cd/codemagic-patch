@@ -1,6 +1,7 @@
 import type { ReleaseInspectCommand } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
 import { isRecord, readCell } from "../output";
+import { createProgress } from "../progress";
 import { buildApiUrl, type CommandDeps, UsageError, ValidationError } from "./shared";
 import { resolveReleaseId } from "./resolveNames";
 
@@ -41,29 +42,54 @@ export async function executeReleaseInspect(
     deps,
   );
   const deadline = deps.now() + command.timeoutSeconds * 1000;
+  // Only opened by --wait: a spinner step per status change keeps the wait
+  // visible without a scrollback line per 2-second poll.
+  const progress = createProgress({
+    label: "release inspect",
+    stderr: deps.stderr,
+  });
+  let lastReportedStatus: string | null = null;
 
-  while (true) {
-    const result = await readReleaseInspection(command, deps, releaseId);
-    const failure = describeFailure(result);
-    if (!command.wait) {
-      return result;
-    }
+  try {
+    while (true) {
+      const result = await readReleaseInspection(command, deps, releaseId);
+      const failure = describeFailure(result);
+      if (!command.wait) {
+        return result;
+      }
 
-    if (failure !== null) {
-      throw new ValidationError(failure);
-    }
+      if (failure !== null) {
+        throw new ValidationError(failure);
+      }
 
-    if (result.inspection.terminal) {
-      return result;
-    }
+      if (result.inspection.terminal) {
+        return result;
+      }
 
-    if (deps.now() >= deadline) {
-      throw new ValidationError(
-        `Timed out waiting for release ${releaseId}. Latest status: ${result.inspection.status}.`,
+      if (deps.now() >= deadline) {
+        throw new ValidationError(
+          `Timed out waiting for release ${releaseId}. Latest status: ${result.inspection.status}.`,
+        );
+      }
+
+      if (result.inspection.status !== lastReportedStatus) {
+        lastReportedStatus = result.inspection.status;
+        progress.write(
+          `Waiting for release ${releaseId} — status: ${result.inspection.status}`,
+        );
+      }
+
+      await deps.sleep(
+        Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - deps.now())),
       );
     }
-
-    await deps.sleep(Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - deps.now())));
+  } catch (error) {
+    // Marks the step in flight as failed; the finally below is then a no-op,
+    // so the tree is still closed exactly once on every path.
+    progress.fail();
+    throw error;
+  } finally {
+    progress.stop();
   }
 }
 

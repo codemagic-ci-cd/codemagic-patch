@@ -19,7 +19,7 @@
     "deployment"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "publishConfig": {
     "access": "public"
@@ -31,19 +31,19 @@
     "dist"
   ],
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "@expo/fingerprint": "^0.16.7",
     "fast-xml-parser": "^5.0.0",
     "fflate": "^0.8.2",
     "fzstd": "^0.1.1",
     "gradle-to-js": "2.0.1",
+    "picocolors": "^1.1.1",
     "plist": "^3.0.6",
-    "prompts": "^2.4.2",
     "xcode": "^3.0.1"
   },
   "devDependencies": {
     "@codemagic/patch-server": "workspace:*",
     "@codemagic/patch-shared": "workspace:*",
-    "@types/prompts": "^2.4.9",
     "esbuild": "^0.25.0",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",

@@ -28,6 +28,7 @@ export async function executeDeploymentRemove(
     command.serverUrl,
     command.token,
     deps,
+    { nonInteractive: command.nonInteractive === true || command.yes === true },
   );
 
   await authenticatedRequest(deps, {

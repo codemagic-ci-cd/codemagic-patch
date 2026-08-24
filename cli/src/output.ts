@@ -1,3 +1,7 @@
+import { Writable } from "node:stream";
+
+import pc from "picocolors";
+
 import type { ProblemDetails } from "./problem-details";
 
 export type WritableStream = {
@@ -65,6 +69,17 @@ export function isInteractiveOutput(stream: WritableStream): boolean {
   return stream.isTTY === true;
 }
 
+/**
+ * A terminal AND a real Node stream. clack draws through a Writable, so an
+ * injected plain-object writer — tests, embedders — has to fall back to plain
+ * lines even when it claims to be a tty.
+ */
+export function isInteractiveWritable(
+  stream: WritableStream,
+): stream is Writable & WritableStream {
+  return isInteractiveOutput(stream) && stream instanceof Writable;
+}
+
 function renderArrayTable(values: unknown[]): string {
   if (values.length === 0) {
     return renderTable(["value"], [["-"]]);
@@ -124,7 +139,6 @@ function renderTable(headers: string[], rows: string[][]): string {
 
   return `${[
     renderRow(headers.map((header) => header.toUpperCase())),
-    renderRow(widths.map((width) => "-".repeat(width))),
     ...normalizedRows.map(renderRow),
   ].join("\n")}\n`;
 }
@@ -162,19 +176,22 @@ export function readCell(
   return String(value);
 }
 
-export function renderProblemDetails(problem: ProblemDetails): string {
+export function renderProblemDetails(
+  problem: ProblemDetails,
+  palette: Palette = PLAIN_PALETTE,
+): string {
   const lines: string[] = [];
   const title = typeof problem.title === "string" ? problem.title : "Request failed";
   const status = typeof problem.status === "number" ? ` (${problem.status})` : "";
 
-  lines.push(`${title}${status}`);
+  lines.push(palette.err(`${title}${status}`));
 
   if (typeof problem.detail === "string" && problem.detail.length > 0) {
     lines.push(problem.detail);
   }
 
   if (typeof problem.type === "string" && problem.type.length > 0) {
-    lines.push(`type: ${problem.type}`);
+    lines.push(palette.dim(`type: ${problem.type}`));
   }
 
   const extraEntries = Object.entries(problem).filter(
@@ -186,4 +203,88 @@ export function renderProblemDetails(problem: ProblemDetails): string {
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The semantic colour vocabulary. Call sites ask for meaning ("this is an
+ * error"), never for a colour, so the palette stays the single place that can
+ * change how the CLI looks.
+ */
+export type Palette = {
+  bold: (value: string) => string;
+  dim: (value: string) => string;
+  err: (value: string) => string;
+  heading: (value: string) => string;
+  ok: (value: string) => string;
+  warn: (value: string) => string;
+};
+
+/** A palette that renders everything unstyled; the default everywhere. */
+export const PLAIN_PALETTE: Palette = buildPalette(false);
+
+/**
+ * Colour is decided per-stream and never from the ambient process. Every
+ * writer in this CLI is injected (see CommandDeps), so picocolors' own
+ * process.stdout sniffing would colour output that is really being piped —
+ * in tests, in embedders, and in `cmpatch ... | jq`. NO_COLOR and FORCE_COLOR
+ * win over the TTY check, per https://no-color.org.
+ */
+export function createPalette(
+  stream: WritableStream,
+  env: Record<string, string | undefined> = {},
+): Palette {
+  return buildPalette(isColorEnabled(stream, env));
+}
+
+/**
+ * Colours an already-rendered table instead of threading a palette through the
+ * ten per-command `renderTable` implementations.
+ */
+export function colorizeTable(table: string, palette: Palette): string {
+  const lines = table.split("\n");
+  const header = lines[0];
+
+  // Not everything routed through a table renderer is a table: some commands
+  // hand back a key/value listing, and an empty result is a line of prose. A
+  // header row is upper-case by construction — either written that way in the
+  // command spec or upper-cased by renderTable — and nothing else here is, so
+  // that is the test. Emphasising a data row would be worse than emphasising
+  // nothing.
+  if (header === undefined || header.length === 0 || /[a-z]/.test(header)) {
+    return table;
+  }
+
+  return [palette.heading(header), ...lines.slice(1)].join("\n");
+}
+
+function isColorEnabled(
+  stream: WritableStream,
+  env: Record<string, string | undefined>,
+): boolean {
+  if (typeof env.NO_COLOR === "string" && env.NO_COLOR.length > 0) {
+    return false;
+  }
+
+  if (typeof env.FORCE_COLOR === "string" && env.FORCE_COLOR.length > 0) {
+    return env.FORCE_COLOR !== "0";
+  }
+
+  if (env.TERM === "dumb") {
+    return false;
+  }
+
+  return isInteractiveOutput(stream);
+}
+
+function buildPalette(enabled: boolean): Palette {
+  const colors = pc.createColors(enabled);
+
+  return {
+    bold: colors.bold,
+    dim: colors.dim,
+    err: colors.red,
+    heading: colors.bold,
+    ok: colors.green,
+    warn: colors.yellow,
+  };
 }

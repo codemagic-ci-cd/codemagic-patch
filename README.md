@@ -16,7 +16,7 @@ This monorepo contains everything you need to run the service yourself and wire 
 
 ## Quickstart — try it locally
 
-Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. The only prerequisites are **Docker (with Compose v2)** and **Node.js ≥ 22** (for the CLI).
+Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. The only prerequisites are **Docker (with Compose v2)** and **Node.js `20.19+` or `22.12+`** (for the CLI).
 
 ```bash
 git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
@@ -141,7 +141,7 @@ The default self-host stack runs four services on a single Docker host:
 
 **Using the CLI**
 
-- Node.js `>=20` (installed from npm: `npm install -g @codemagic/patch-cli`)
+- Node.js `20.19+` or `22.12+`
 - Building from this repo instead requires Node.js `>=22.20.0` and Yarn `4.12.0` (via Corepack)
 
 **React Native app**
@@ -297,7 +297,7 @@ Then rerun `scripts/selfhost/install.sh` — it re-reads the file, verifies the 
 
 ## Part 2 — Install the CLI and sign in
 
-You can do everything from the dashboard, but CI and scripting use the CLI. Install it globally from npm (requires Node.js `>=20`):
+You can do everything from the dashboard, but CI and scripting use the CLI. Install it globally from npm (requires Node.js `20.19+` or `22.12+`):
 
 ```bash
 npm install -g @codemagic/patch-cli
@@ -311,13 +311,15 @@ yarn install
 yarn cli:install-global   # builds and installs the `cmpatch` binary globally
 ```
 
-Store defaults so you can omit `--server-url`/`--team` on every command:
+Store the server URL once so you can omit `--server-url` on every command:
 
 ```bash
 cmpatch --version
 cmpatch config set server-url https://updates.example.com
-cmpatch config set team default-team
 ```
+
+There is no team to configure: the CLI resolves the server's single default
+team automatically.
 
 Sign in as the admin (pick **Sign in with your browser** when prompted — GitHub sign-in and approval complete in the browser):
 
@@ -718,7 +720,7 @@ cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
 
 ## Managing releases
 
-> The examples below run from a project root where `cmpatch init` has written `codemagic-patch.config.json`. Name-based commands (like `promote`) also need a default team — set it once with `cmpatch config set team default-team` or pass `--team default-team`.
+> The examples below run from a project root where `cmpatch init` has written `codemagic-patch.config.json`. The team never needs to be named: every command resolves the server's single default team automatically.
 
 **Gradual rollout**
 
@@ -972,7 +974,7 @@ Run `cmpatch help` for grouped topics, or `cmpatch <command> --help` for full fl
 | ------------------------------------------ | --------------------------------------------- |
 | `cmpatch login` / `logout` / `whoami`      | Browser or token sign-in / out / identity     |
 | `cmpatch token create \| list \| revoke`   | Manage personal access tokens (`cm_pat_…`)    |
-| `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
+| `cmpatch config list \| get \| set \| unset` | Store defaults such as `server-url` (the team is resolved automatically) |
 | `cmpatch init`                             | Write `codemagic-patch.config.json` for a project |
 | `cmpatch context`                          | Show the effective resolved context           |
 

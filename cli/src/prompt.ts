@@ -1,4 +1,11 @@
-import prompts from "prompts";
+import {
+  confirm as clackConfirm,
+  isCancel,
+  multiselect as clackMultiselect,
+  password as clackPassword,
+  select as clackSelect,
+  text as clackText,
+} from "@clack/prompts";
 
 export type SelectChoice = {
   title: string;
@@ -39,34 +46,82 @@ export class PromptAbortError extends Error {
   }
 }
 
-// Single owner of the prompts() cancel/abort protocol so Ctrl-C handling
-// cannot drift between the text/select prompts and the confirm prompt.
-async function askQuestion(
-  question: prompts.PromptObject<"value">,
-): Promise<unknown> {
-  let aborted = false;
-  const answer = await prompts(question, {
-    onCancel: () => {
-      aborted = true;
-      return false;
-    },
-  });
-
-  if (aborted || answer.value === undefined) {
+/**
+ * Single owner of the clack cancel protocol. Every prompt resolves to either a
+ * value or the cancel symbol, so Ctrl-C handling cannot drift between the
+ * text/select prompts and the confirm prompt.
+ */
+function unwrap<Value>(answer: Value | symbol): Value {
+  if (isCancel(answer)) {
     throw new PromptAbortError();
   }
 
-  return answer.value;
+  return answer as Value;
+}
+
+function requireNonEmpty(value: string | undefined): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? undefined
+    : "Value cannot be empty";
 }
 
 export function createInteractivePrompt(
   stdin: typeof process.stdin,
   stderr: typeof process.stderr,
 ): PromptFn {
-  return async (request) =>
-    (await askQuestion(buildQuestion(request, stdin, stderr))) as
-      | string
-      | string[];
+  // The prompt UI is written to stderr on purpose: stdout carries the
+  // machine-readable command result (`--format json`), and must stay clean
+  // even while the CLI is asking the user a question.
+  const streams = { input: stdin, output: stderr };
+
+  return async (request) => {
+    switch (request.type) {
+      case "text":
+        return unwrap(
+          await clackText({
+            ...streams,
+            initialValue: request.initial,
+            message: request.message,
+            validate: requireNonEmpty,
+          }),
+        );
+      case "password":
+        return unwrap(
+          await clackPassword({
+            ...streams,
+            message: request.message,
+            validate: requireNonEmpty,
+          }),
+        );
+      case "select":
+        return unwrap(
+          await clackSelect({
+            ...streams,
+            initialValue: request.choices[request.initial ?? 0]?.value,
+            message: request.message,
+            options: request.choices.map((choice) => ({
+              label: choice.title,
+              value: choice.value,
+            })),
+          }),
+        );
+      case "multiselect":
+        return unwrap(
+          await clackMultiselect({
+            ...streams,
+            initialValues: request.choices
+              .filter((choice) => choice.selected === true)
+              .map((choice) => choice.value),
+            message: request.message,
+            options: request.choices.map((choice) => ({
+              label: choice.title,
+              value: choice.value,
+            })),
+            required: (request.min ?? 0) > 0,
+          }),
+        );
+    }
+  };
 }
 
 export function createInteractiveConfirm(
@@ -74,61 +129,12 @@ export function createInteractiveConfirm(
   stderr: typeof process.stderr,
 ): ConfirmFn {
   return async ({ initial, message }) =>
-    (await askQuestion({
-      initial: initial ?? false,
-      message,
-      name: "value",
-      stdin,
-      stdout: stderr,
-      type: "confirm",
-    })) === true;
-}
-
-function buildQuestion(
-  request: PromptRequest,
-  stdin: typeof process.stdin,
-  stdout: typeof process.stderr,
-): prompts.PromptObject<"value"> {
-  const base = { name: "value" as const, stdin, stdout };
-
-  switch (request.type) {
-    case "text":
-      return {
-        ...base,
-        initial: request.initial,
-        message: request.message,
-        type: "text",
-        validate: (value: string) =>
-          typeof value === "string" && value.trim().length > 0
-            ? true
-            : "Value cannot be empty",
-      };
-    case "password":
-      return {
-        ...base,
-        message: request.message,
-        type: "password",
-        validate: (value: string) =>
-          typeof value === "string" && value.trim().length > 0
-            ? true
-            : "Value cannot be empty",
-      };
-    case "select":
-      return {
-        ...base,
-        choices: request.choices,
-        initial: request.initial ?? 0,
-        message: request.message,
-        type: "select",
-      };
-    case "multiselect":
-      return {
-        ...base,
-        choices: request.choices,
-        instructions: false,
-        message: request.message,
-        min: request.min,
-        type: "multiselect",
-      };
-  }
+    unwrap(
+      await clackConfirm({
+        initialValue: initial ?? false,
+        input: stdin,
+        message,
+        output: stderr,
+      }),
+    );
 }

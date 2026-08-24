@@ -13,6 +13,7 @@ export async function executeReleaseRollback(
     command.serverUrl,
     command.token,
     deps,
+    { nonInteractive: command.nonInteractive === true || command.yes === true },
   );
   const body =
     command.targetReleaseLabel === undefined

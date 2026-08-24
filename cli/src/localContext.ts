@@ -3,6 +3,7 @@ import type {
   ProjectConfig,
   ProjectPlatformConfig,
 } from "./configStore";
+import { readOptionValue } from "./argv";
 
 type ConfigSource = "env" | "project" | "user";
 
@@ -73,7 +74,7 @@ export function resolveEffectiveContext(
 }
 
 export function resolveProjectRoot(argv: string[]): string {
-  const projectRoot = optionValue(argv, "--project-root");
+  const projectRoot = readOptionValue(argv, "--project-root");
   return projectRoot ?? process.cwd();
 }
 
@@ -167,22 +168,6 @@ function firstEffectiveValue(
   }
 
   return undefined;
-}
-
-function optionValue(argv: string[], option: string): string | undefined {
-  const equalsPrefix = `${option}=`;
-  const equalsMatch = argv.find((arg) => arg.startsWith(equalsPrefix));
-  if (equalsMatch !== undefined) {
-    return equalsMatch.slice(equalsPrefix.length);
-  }
-
-  const index = argv.indexOf(option);
-  if (index === -1) {
-    return undefined;
-  }
-
-  const value = argv[index + 1];
-  return value !== undefined && !value.startsWith("--") ? value : undefined;
 }
 
 function resolveOptionalString(value: string | undefined): string | undefined {

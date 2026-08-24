@@ -643,12 +643,45 @@ export type CliCommand =
   | { kind: "version" }
   | { argv: string[]; kind: "not-implemented" };
 
+/**
+ * The flags the CLI can obtain by asking. Most are also the key set of
+ * CommandDefaultPolicy — values it already knows how to source from stored
+ * configuration. `name` is the exception and the reason this union is about
+ * asking rather than about config: a name for something being created cannot be
+ * defaulted from anywhere, but it is still a perfectly good question.
+ */
+export type PromptableFlag =
+  | "app"
+  | "bundlePath"
+  | "bundler"
+  | "deployment"
+  | "destDeployment"
+  | "email"
+  | "fromRole"
+  | "githubHandle"
+  | "label"
+  | "name"
+  | "newName"
+  | "platform"
+  | "requireCodeSigning"
+  | "role"
+  | "serverUrl"
+  | "sourceDeployment"
+  | "team";
+
 export type ParseCliResult =
   | { command: CliCommand; ok: true }
   | {
       error: string;
       examples?: string[];
       helpTopic?: string;
+      /**
+       * Which resolvable flags were absent, for the interactive resolution
+       * stage in runCli. Absent means "neither on argv nor in config"; a flag
+       * that was supplied but malformed is NOT missing, because re-asking would
+       * not be the right remedy.
+       */
+      missing?: PromptableFlag[];
       ok: false;
       showHelp: boolean;
       suggestion?: string;
@@ -656,16 +689,12 @@ export type ParseCliResult =
 
 export type ParseCliError = Extract<ParseCliResult, { ok: false }>;
 
+/**
+ * Values that can be fed back into a re-parse as if they had been typed. Every
+ * promptable flag qualifies by definition; the id-shaped aliases are here
+ * because stored configuration can supply them, even though a prompt never
+ * yields an id.
+ */
 export type CommandDefaultFlagValues = Partial<
-  Record<
-    | "app"
-    | "appId"
-    | "bundler"
-    | "deployment"
-    | "platform"
-    | "serverUrl"
-    | "team"
-    | "teamId",
-    string
-  >
+  Record<PromptableFlag | "appId" | "teamId", string>
 >;

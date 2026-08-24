@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { StartLoopbackLoginServer } from "../loopbackLoginServer";
-import type { WritableStream } from "../output";
+import { isInteractiveOutput, type WritableStream } from "../output";
 import type { ConfirmFn, PromptFn } from "../prompt";
 
 export class UsageError extends Error {
@@ -112,15 +112,53 @@ export type CommandDeps = {
 };
 
 /**
- * Shared kernel of every "may we prompt?" decision: not forced non-interactive
- * and stdin is a real TTY. Call sites layer their own extras on top (which
- * prompt/confirm dep must exist, stderr visibility, --yes semantics).
+ * Shared kernel of every "may we prompt?" decision: not forced non-interactive,
+ * not a CI job, and stdin is a real TTY. Call sites layer their own extras on
+ * top (which prompt/confirm dep must exist, --yes semantics).
  */
 export function canPromptInteractively(
-  deps: Pick<CommandDeps, "stdin">,
+  deps: Pick<CommandDeps, "env" | "stdin">,
   nonInteractive: boolean,
 ): boolean {
-  return nonInteractive !== true && deps.stdin?.isTTY === true;
+  return (
+    nonInteractive !== true &&
+    !isContinuousIntegration(deps.env) &&
+    deps.stdin?.isTTY === true
+  );
+}
+
+/**
+ * The kernel plus the stream the question is drawn on. Every prompt in this CLI
+ * renders to stderr, so `2>file` with a tty stdin would otherwise block on a
+ * question nobody can see.
+ */
+export function canPromptOnStderr(
+  deps: Pick<CommandDeps, "env" | "stderr" | "stdin">,
+  nonInteractive: boolean,
+): boolean {
+  return (
+    canPromptInteractively(deps, nonInteractive) &&
+    deps.stderr !== undefined &&
+    isInteractiveOutput(deps.stderr)
+  );
+}
+
+/**
+ * Checked alongside the tty gates because plenty of runners allocate a
+ * terminal: GitHub Actions, GitLab, and CircleCI all set CI, and a job that
+ * stops to ask a question hangs until it times out.
+ */
+function isContinuousIntegration(
+  env: Record<string, string | undefined>,
+): boolean {
+  const value = env.CI;
+
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value !== "0" &&
+    value !== "false"
+  );
 }
 
 export function buildApiUrl(serverUrl: string, pathname: string): string {

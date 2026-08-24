@@ -20,8 +20,9 @@ import {
 } from "../delivery";
 import { request } from "../http";
 import { resolveEffectiveContext, type EffectiveContext } from "../localContext";
-import { isRecord } from "../output";
+import { isRecord, PLAIN_PALETTE, type Palette } from "../output";
 import { HttpProblemError } from "../problem-details";
+import { createProgress, type Progress } from "../progress";
 import {
   detectNativePlatforms,
   detectProjectBundler,
@@ -112,11 +113,36 @@ type DoctorPlatformPlan = {
   platform: NativePlatform;
 };
 
+/**
+ * Bounds every remote probe doctor makes. A hung server or delivery origin is
+ * itself a finding — it must surface as a failed check within seconds, not
+ * stall the whole run.
+ */
+const DOCTOR_REQUEST_TIMEOUT_MS = 10_000;
+
 export async function executeDoctor(
   command: DoctorCommand,
   deps: CommandDeps,
 ): Promise<DoctorResult> {
+  const progress = createProgress({ label: "doctor", stderr: deps.stderr });
+
+  try {
+    const result = await runDoctorChecks(command, deps, progress);
+    progress.stop();
+    return result;
+  } catch (error) {
+    progress.fail();
+    throw error;
+  }
+}
+
+async function runDoctorChecks(
+  command: DoctorCommand,
+  deps: CommandDeps,
+  progress: Progress,
+): Promise<DoctorResult> {
   const projectRoot = resolve(command.projectRoot);
+  progress.write("Checking local configuration");
   const projectRootCheck = await checkProjectRoot(deps, command.projectRoot);
   const userConfig = await loadUserConfigForDoctor(deps);
   const projectConfig = await loadProjectConfigForDoctor(projectRoot);
@@ -147,17 +173,20 @@ export async function executeDoctor(
     title: "Context",
   };
   const platformPlans = resolveDoctorPlatformPlans(command, projectConfig.config);
+  const projectContext = {
+    projectRoot,
+    projectRootExists: projectRootCheck.status === "pass",
+  };
+
   if (platformPlans.length > 0) {
     const commonState: DoctorExecutionState = {};
-    const controlPlaneChecks = await runControlPlaneBaseChecks(
-      deps,
-      command,
-      commonState,
-    );
-    const bundlerCheck = await checkBundler(deps, command, {
-      projectRoot,
-      projectRootExists: projectRootCheck.status === "pass",
-    });
+    progress.write("Checking control plane and project");
+    // The control-plane probes touch the network while the bundler probe only
+    // reads the project tree; they share no execution state, so they overlap.
+    const [controlPlaneChecks, bundlerCheck] = await Promise.all([
+      runControlPlaneBaseChecks(deps, command, commonState),
+      checkBundler(deps, command, projectContext),
+    ]);
     const commonGroups: DoctorCheckGroup[] = [
       contextGroup,
       {
@@ -171,63 +200,75 @@ export async function executeDoctor(
         title: "Bundler",
       },
     ];
-    const groups: DoctorCheckGroup[] = [...commonGroups];
 
-    for (const plan of platformPlans) {
-      const state = cloneDoctorExecutionState(commonState);
-      const targetChecks = await runControlPlaneTargetChecks(
-        deps,
-        plan.command,
-        state,
-      );
-      const nativeChecks = await runNativeChecks(deps, plan.command, {
-        projectRoot,
-        projectRootExists: projectRootCheck.status === "pass",
-        state,
-      });
-      const downloadChecks = await runDownloadChecks(deps, plan.command, state);
-      const platformGroups: DoctorCheckGroup[] = [
-        {
-          checks: targetChecks,
-          id: `control-plane-${plan.platform}`,
-          title: `Control Plane (${plan.platform})`,
-        },
-        {
-          checks: nativeChecks,
-          id: `native-${plan.platform}`,
-          title: `Native Project (${plan.platform})`,
-        },
-        {
-          checks: downloadChecks,
-          id: `download-${plan.platform}`,
-          title: `Manifest And Download (${plan.platform})`,
-        },
-      ];
+    progress.write(
+      `Checking ${platformPlans.map((plan) => plan.platform).join(" and ")} delivery`,
+    );
+    // Each platform plan works on its own cloned state, so the plans are
+    // independent and run concurrently.
+    const planGroups = await Promise.all(
+      platformPlans.map(async (plan): Promise<DoctorCheckGroup[]> => {
+        const state = cloneDoctorExecutionState(commonState);
+        // Target resolution (network) and native inspection (filesystem)
+        // write to disjoint state fields; only the download probes need both.
+        const [targetChecks, nativeChecks] = await Promise.all([
+          runControlPlaneTargetChecks(deps, plan.command, state),
+          runNativeChecks(deps, plan.command, {
+            ...projectContext,
+            state,
+          }),
+        ]);
+        const downloadChecks = await runDownloadChecks(deps, plan.command, state);
+        const platformGroups: DoctorCheckGroup[] = [
+          {
+            checks: targetChecks,
+            id: `control-plane-${plan.platform}`,
+            title: `Control Plane (${plan.platform})`,
+          },
+          {
+            checks: nativeChecks,
+            id: `native-${plan.platform}`,
+            title: `Native Project (${plan.platform})`,
+          },
+          {
+            checks: downloadChecks,
+            id: `download-${plan.platform}`,
+            title: `Manifest And Download (${plan.platform})`,
+          },
+        ];
 
-      groups.push(...platformGroups, {
-        checks: runDeviceDebugHandoffChecks(plan.command, state, [
-          ...commonGroups,
+        return [
           ...platformGroups,
-        ]),
-        id: `device-${plan.platform}`,
-        title: `Device Debugging (${plan.platform})`,
-      });
-    }
+          {
+            checks: runDeviceDebugHandoffChecks(plan.command, state, [
+              ...commonGroups,
+              ...platformGroups,
+            ]),
+            id: `device-${plan.platform}`,
+            title: `Device Debugging (${plan.platform})`,
+          },
+        ];
+      }),
+    );
 
-    return createDoctorResult(groups);
+    return createDoctorResult([...commonGroups, ...planGroups.flat()]);
   }
 
   const state: DoctorExecutionState = {};
-  const controlPlaneChecks = await runControlPlaneChecks(deps, command, state);
-  const nativeChecks = await runNativeChecks(deps, command, {
-    projectRoot,
-    projectRootExists: projectRootCheck.status === "pass",
-    state,
-  });
-  const bundlerCheck = await checkBundler(deps, command, {
-    projectRoot,
-    projectRootExists: projectRootCheck.status === "pass",
-  });
+  progress.write("Checking control plane and project");
+  // Control-plane resolution writes server/auth/app state, the native checks
+  // write platform/version state, and the bundler check writes none: disjoint
+  // fields, so all three pipelines overlap. Only the download probes read from
+  // both sides and have to wait.
+  const [controlPlaneChecks, nativeChecks, bundlerCheck] = await Promise.all([
+    runControlPlaneChecks(deps, command, state),
+    runNativeChecks(deps, command, {
+      ...projectContext,
+      state,
+    }),
+    checkBundler(deps, command, projectContext),
+  ]);
+  progress.write("Checking manifest delivery");
   const downloadChecks = await runDownloadChecks(deps, command, state);
   const groups: DoctorCheckGroup[] = [
     contextGroup,
@@ -359,6 +400,9 @@ function runDeviceDebugHandoffChecks(
     ];
   }
 
+  // A clean run passes: a healthy setup must end all-green, not with a
+  // standing warning. The device-log pointer stays on the check so the JSON
+  // shape and the renderer's closing hint still carry it.
   return [
     {
       detail: "No setup issue was found before the device-side boundary. If updates still do not appear, collect device logs next.",
@@ -367,7 +411,7 @@ function runDeviceDebugHandoffChecks(
         "Run the debug command while reproducing an update check on the device or simulator.",
       ],
       nextCommands: [`cmpatch debug ${platform}`],
-      status: "warn",
+      status: "pass",
       title: "Device debug handoff",
     },
   ];
@@ -679,16 +723,18 @@ async function runControlPlaneBaseChecks(
   state: DoctorExecutionState,
 ): Promise<DoctorCheckResult[]> {
   const serverUrlCheck = checkServerUrl(command.serverUrl, state);
-  const healthCheck = await checkServerHealth(deps, state);
-  const authCheck = await checkControlPlaneAuth(deps, command, state);
-  const teamCheck = await checkTeamResolution(command, state);
+  // The readiness probe is unauthenticated and independent of the auth->team
+  // chain; both only need the validated server URL, so they overlap.
+  const [healthCheck, authAndTeamChecks] = await Promise.all([
+    checkServerHealth(deps, state),
+    (async () => {
+      const authCheck = await checkControlPlaneAuth(deps, command, state);
+      const teamCheck = await checkTeamResolution(command, state);
+      return [authCheck, teamCheck];
+    })(),
+  ]);
 
-  return [
-    serverUrlCheck,
-    healthCheck,
-    authCheck,
-    teamCheck,
-  ];
+  return [serverUrlCheck, healthCheck, ...authAndTeamChecks];
 }
 
 async function runControlPlaneTargetChecks(
@@ -779,7 +825,10 @@ async function checkServerHealth(
 
   let response: Response;
   try {
-    response = await deps.fetch(url, { method: "GET" });
+    response = await deps.fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(DOCTOR_REQUEST_TIMEOUT_MS),
+    });
   } catch (error) {
     return {
       detail: formatRequestError(error),
@@ -991,16 +1040,17 @@ async function checkTeamResolution(
   }
 
   return {
-    detail: "Multiple teams are visible; this build expects a single default team.",
+    detail:
+      "Multiple teams are visible; doctor cannot pick one on its own, so team-scoped checks are skipped.",
     evidence: {
       teams: state.teams.map((team) => ({ id: team.id, name: team.name })),
     },
     id: "team",
-    issues: ["Team resolution is ambiguous."],
+    issues: ["No team was selected among several visible teams."],
     advice: [
-      "Ask an admin to verify the server is provisioned with a single team (default-team).",
+      "Pass --team <name> or --team-id <id>, or run `cmpatch config set team <name>` to store a default.",
     ],
-    status: "fail",
+    status: "warn",
     title: "Team",
   };
 }
@@ -1303,6 +1353,7 @@ async function doctorGet(
         ? { authorization: `Bearer ${normalizeBearerToken(token)}` }
         : {},
     method: "GET",
+    signal: AbortSignal.timeout(DOCTOR_REQUEST_TIMEOUT_MS),
   });
 }
 
@@ -1449,6 +1500,10 @@ function summarizeHealthResponse(response: unknown): Record<string, unknown> {
 }
 
 function formatRequestError(error: unknown): string {
+  if (isTimeoutError(error)) {
+    return `The request did not respond within ${DOCTOR_REQUEST_TIMEOUT_MS / 1000} seconds.`;
+  }
+
   if (error instanceof HttpProblemError) {
     const title =
       typeof error.problem.title === "string" ? error.problem.title : "Request failed";
@@ -1515,9 +1570,13 @@ async function runDownloadChecks(
   state: DoctorExecutionState,
 ): Promise<DoctorCheckResult[]> {
   const downloadBaseUrlCheck = checkDownloadBaseUrl(command.downloadBaseUrl, state);
-  const deploymentMetaCheck = await checkDeploymentMeta(deps, command, state);
-  const fallbackManifestCheck = await checkFallbackManifest(deps, command, state);
-  const primaryManifestCheck = await checkPrimaryManifest(deps, command, state);
+  // The three delivery probes only read the resolved state, so they overlap.
+  const [deploymentMetaCheck, fallbackManifestCheck, primaryManifestCheck] =
+    await Promise.all([
+      checkDeploymentMeta(deps, command, state),
+      checkFallbackManifest(deps, command, state),
+      checkPrimaryManifest(deps, command, state),
+    ]);
 
   return [
     downloadBaseUrlCheck,
@@ -1603,7 +1662,9 @@ async function checkDeploymentMeta(
   ]);
 
   try {
-    const response = await fetchDeliveryJson(deps.fetch, url);
+    const response = await fetchDeliveryJson(deps.fetch, url, {
+      timeoutMs: DOCTOR_REQUEST_TIMEOUT_MS,
+    });
     if (!response.ok) {
       return deliveryHttpFailure(
         "deployment-meta",
@@ -1762,7 +1823,9 @@ async function checkManifestUrl(
   },
 ): Promise<DoctorCheckResult> {
   try {
-    const response = await fetchDeliveryJson(fetchImpl, input.url);
+    const response = await fetchDeliveryJson(fetchImpl, input.url, {
+      timeoutMs: DOCTOR_REQUEST_TIMEOUT_MS,
+    });
     if (!response.ok) {
       return deliveryHttpFailure(
         input.id,
@@ -1927,6 +1990,10 @@ function deliveryHttpFailure(
   };
 }
 
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
 function deliveryNetworkFailure(
   id: "deployment-meta" | "fallback-manifest" | "primary-manifest",
   title: string,
@@ -1934,7 +2001,11 @@ function deliveryNetworkFailure(
   error: unknown,
 ): DoctorCheckResult {
   return {
-    detail: error instanceof Error ? error.message : String(error),
+    detail: isTimeoutError(error)
+      ? `The request did not respond within ${DOCTOR_REQUEST_TIMEOUT_MS / 1000} seconds.`
+      : error instanceof Error
+        ? error.message
+        : String(error),
     evidence: { url },
     id,
     issues: ["Download request failed before a usable response was received."],
@@ -2604,47 +2675,205 @@ function redactFingerprint(value: string): string {
 export function renderDoctorTable(
   result: unknown,
   command: DoctorCommand,
+  palette: Palette = PLAIN_PALETTE,
 ): string {
   if (!isDoctorResult(result)) {
     throw new UsageError("Cannot render doctor output: invalid doctor result");
   }
 
-  const lines = ["Codemagic Patch doctor", "", renderSummary(result.summary)];
+  const lines = [palette.heading(`${PRODUCT_NAME} doctor`), ""];
 
-  if (command.verbose) {
-    lines.push("", ...renderVerboseGroups(result.groups));
-    return `${lines.join("\n")}\n`;
+  for (const group of result.groups) {
+    lines.push(renderGroupLine(group, palette));
+    const visibleChecks = command.verbose
+      ? group.checks
+      : group.checks.filter(isProblemCheck);
+    for (const check of visibleChecks) {
+      lines.push(...renderCheckLines(check, palette, command.verbose === true));
+    }
   }
 
-  const failedChecks = result.groups.flatMap((group) =>
-    group.checks.filter((check) => check.status === "fail"),
-  );
-  const warningChecks = result.groups.flatMap((group) =>
-    group.checks.filter(
-      (check) => check.status === "warn" || isActionableSkip(check),
-    ),
-  );
-  const hiddenCount = result.groups
-    .flatMap((group) => group.checks)
-    .filter(
-      (check) =>
-        check.status === "pass" ||
-        (check.status === "skip" && !isActionableSkip(check)),
-    ).length;
+  lines.push("", renderVerdict(result, palette));
 
-  if (failedChecks.length > 0) {
-    lines.push("", "Possible issues detected:", "", ...renderChecks(failedChecks));
+  const handoffHint = renderHandoffHint(result);
+  if (handoffHint !== null) {
+    lines.push(palette.dim(handoffHint));
   }
 
-  if (warningChecks.length > 0) {
-    lines.push("", "Warnings:", "", ...renderChecks(warningChecks));
-  }
-
-  if (hiddenCount > 0) {
-    lines.push("", "Use `--verbose` to see all passed and skipped checks.");
+  if (command.verbose !== true && countHiddenChecks(result) > 0) {
+    lines.push(
+      palette.dim("Run `cmpatch doctor --verbose` to see all checks."),
+    );
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+const STATUS_SYMBOLS: Record<DoctorCheckStatus, string> = {
+  fail: "✗",
+  pass: "✓",
+  skip: "○",
+  warn: "!",
+};
+
+function paintStatus(status: DoctorCheckStatus, palette: Palette): string {
+  const symbol = STATUS_SYMBOLS[status];
+  switch (status) {
+    case "fail":
+      return palette.err(symbol);
+    case "pass":
+      return palette.ok(symbol);
+    case "skip":
+      return palette.dim(symbol);
+    case "warn":
+      return palette.warn(symbol);
+  }
+}
+
+/**
+ * A group inherits the worst status of its checks: any failure taints the
+ * group, an actionable skip counts as a warning (the user can unblock it),
+ * and a group whose checks were all skipped is reported as skipped rather
+ * than passed.
+ */
+function rollupGroupStatus(group: DoctorCheckGroup): DoctorCheckStatus {
+  if (group.checks.some((check) => check.status === "fail")) {
+    return "fail";
+  }
+
+  if (
+    group.checks.some(
+      (check) => check.status === "warn" || isActionableSkip(check),
+    )
+  ) {
+    return "warn";
+  }
+
+  if (group.checks.every((check) => check.status === "skip")) {
+    return "skip";
+  }
+
+  return "pass";
+}
+
+function renderGroupLine(group: DoctorCheckGroup, palette: Palette): string {
+  const status = rollupGroupStatus(group);
+
+  if (status === "skip") {
+    return `${paintStatus(status, palette)} ${palette.dim(`${group.title} — skipped`)}`;
+  }
+
+  return `${paintStatus(status, palette)} ${group.title}`;
+}
+
+function isProblemCheck(check: DoctorCheckResult): boolean {
+  return (
+    check.status === "fail" ||
+    check.status === "warn" ||
+    isActionableSkip(check)
+  );
+}
+
+function renderCheckLines(
+  check: DoctorCheckResult,
+  palette: Palette,
+  includeEvidence: boolean,
+): string[] {
+  const [firstIssue, ...remainingIssues] = check.issues ?? [];
+  const lines = [
+    `  ${paintStatus(check.status, palette)} ${check.title}${
+      firstIssue !== undefined ? ` — ${firstIssue}` : ""
+    }`,
+  ];
+
+  for (const issue of remainingIssues) {
+    lines.push(`      ${issue}`);
+  }
+
+  if (check.detail !== undefined && check.detail.length > 0) {
+    for (const line of check.detail.split("\n")) {
+      lines.push(palette.dim(`      ${line}`));
+    }
+  }
+
+  for (const advice of check.advice ?? []) {
+    lines.push(`      → ${advice}`);
+  }
+
+  for (const nextCommand of nextCommandsNotInAdvice(check)) {
+    lines.push(palette.dim(`      $ ${nextCommand}`));
+  }
+
+  if (includeEvidence && check.evidence !== undefined) {
+    lines.push(palette.dim(`      Evidence: ${JSON.stringify(check.evidence)}`));
+  }
+
+  return lines;
+}
+
+/** Advice lines often spell out the next command verbatim; print it once. */
+function nextCommandsNotInAdvice(check: DoctorCheckResult): string[] {
+  const advice = check.advice ?? [];
+
+  return (check.nextCommands ?? []).filter(
+    (nextCommand) => !advice.some((entry) => entry.includes(nextCommand)),
+  );
+}
+
+function renderVerdict(result: DoctorResult, palette: Palette): string {
+  const counts = palette.dim(`(${renderSummaryCounts(result.summary)})`);
+  const failedAreas = result.groups.filter((group) =>
+    group.checks.some((check) => check.status === "fail"),
+  ).length;
+
+  if (failedAreas > 0) {
+    return `${palette.err(
+      `✗ Doctor found issues in ${failedAreas} ${failedAreas === 1 ? "area" : "areas"}.`,
+    )} ${counts}`;
+  }
+
+  const warningAreas = result.groups.filter(
+    (group) => rollupGroupStatus(group) === "warn",
+  ).length;
+
+  if (warningAreas > 0) {
+    return `${palette.warn(
+      `! Doctor found warnings in ${warningAreas} ${warningAreas === 1 ? "area" : "areas"}.`,
+    )} ${counts}`;
+  }
+
+  return `${palette.ok(
+    "✓ No issues found. Your setup is ready for OTA updates.",
+  )} ${counts}`;
+}
+
+/**
+ * The clean-run handoff pointer: passed setup checks cannot prove the device
+ * side, so the closing hint tells the user where to look if updates still do
+ * not arrive. Rendered as a footer so a healthy run stays all-green.
+ */
+function renderHandoffHint(result: DoctorResult): string | null {
+  const commands = result.groups
+    .flatMap((group) => group.checks)
+    .filter(
+      (check) =>
+        check.id === "device-debug-handoff" && check.status === "pass",
+    )
+    .flatMap((check) => check.nextCommands ?? []);
+
+  if (commands.length === 0) {
+    return null;
+  }
+
+  return `If updates still do not appear on a device, run ${commands
+    .map((command) => `\`${command}\``)
+    .join(" or ")} while reproducing an update check.`;
+}
+
+function countHiddenChecks(result: DoctorResult): number {
+  return result.groups
+    .flatMap((group) => group.checks)
+    .filter((check) => !isProblemCheck(check)).length;
 }
 
 function createDoctorResult(groups: DoctorCheckGroup[]): DoctorResult {
@@ -2712,9 +2941,9 @@ function countChecks(
   return checks.filter((check) => check.status === status).length;
 }
 
-function renderSummary(summary: DoctorResult["summary"]): string {
+function renderSummaryCounts(summary: DoctorResult["summary"]): string {
   if (summary.total === 0) {
-    return "No checks ran.";
+    return "no checks ran";
   }
 
   return [
@@ -2724,8 +2953,7 @@ function renderSummary(summary: DoctorResult["summary"]): string {
     formatCount(summary.skip, "skipped", "skipped"),
   ]
     .filter((part) => part !== null)
-    .join(". ")
-    .concat(".");
+    .join(", ");
 }
 
 function formatCount(
@@ -2738,71 +2966,6 @@ function formatCount(
   }
 
   return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function renderVerboseGroups(groups: DoctorCheckGroup[]): string[] {
-  const lines: string[] = [];
-
-  for (const group of groups) {
-    if (lines.length > 0) {
-      lines.push("");
-    }
-    lines.push(`${group.title}:`, "", ...renderChecks(group.checks, true));
-  }
-
-  return lines;
-}
-
-function renderChecks(
-  checks: DoctorCheckResult[],
-  includeEvidence = false,
-): string[] {
-  return checks.flatMap((check, index) => [
-    ...(index > 0 ? [""] : []),
-    ...renderCheck(check, includeEvidence),
-  ]);
-}
-
-function renderCheck(
-  check: DoctorCheckResult,
-  includeEvidence: boolean,
-): string[] {
-  const lines = [`${check.status.toUpperCase().padEnd(5)} ${check.id}`];
-  appendIndentedText(lines, check.detail);
-  appendList(lines, "Issues", check.issues);
-  appendList(lines, "Advice", check.advice);
-  appendList(lines, "Next commands", check.nextCommands);
-
-  if (includeEvidence && check.evidence !== undefined) {
-    appendIndentedText(lines, `Evidence: ${JSON.stringify(check.evidence)}`);
-  }
-
-  return lines;
-}
-
-function appendIndentedText(lines: string[], text: string | undefined): void {
-  if (text === undefined || text.length === 0) {
-    return;
-  }
-
-  for (const line of text.split("\n")) {
-    lines.push(`      ${line}`);
-  }
-}
-
-function appendList(
-  lines: string[],
-  title: string,
-  values: string[] | undefined,
-): void {
-  if (values === undefined || values.length === 0) {
-    return;
-  }
-
-  lines.push(`      ${title}:`);
-  for (const value of values) {
-    lines.push(`        ${value}`);
-  }
 }
 
 function isActionableSkip(check: DoctorCheckResult): boolean {

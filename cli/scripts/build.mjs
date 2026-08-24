@@ -30,7 +30,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "cjs",
-  // Must not exceed the package.json engines floor (node >=20).
+  // Must not exceed the package.json engines floor (node ^20.19.0 || >=22.12.0).
   target: "node20",
   sourcemap: true,
   // Keep published runtime deps external; bundle only first-party code.

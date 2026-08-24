@@ -21,11 +21,8 @@ import type {
   ReleaseReactCommand,
 } from "../commandTypes";
 import { readSdkDeliveryConfig } from "../sdkConfig";
-import {
-  isInteractiveOutput,
-  writeLine,
-  type WritableStream,
-} from "../output";
+import type { WritableStream } from "../output";
+import { createProgress, type Progress } from "../progress";
 import {
   assertExplicitBinaryVersion,
   resolveTargetBinaryVersion,
@@ -51,10 +48,7 @@ type ReleaseReactDeps = CommandDeps & {
   stderr?: WritableStream;
 };
 
-type ReleaseReactProgress = {
-  warn: (message: string) => void;
-  write: (message: string) => void;
-};
+type ReleaseReactProgress = Pick<Progress, "warn" | "write">;
 
 const PLATFORM_BUNDLE_FILENAMES: Record<
   ReleaseReactCommand["platform"],
@@ -130,7 +124,25 @@ export async function executeReleaseReact(
   command: ReleaseReactCommand,
   deps: ReleaseReactDeps,
 ): Promise<unknown> {
-  const progress = createReleaseReactProgress(deps);
+  const progress = createProgress({ label: "release-react", stderr: deps.stderr });
+
+  try {
+    return await runReleaseReact(command, deps, progress);
+  } catch (error) {
+    // Marks the step in flight as failed; the finally below is then a no-op,
+    // so the tree is still closed exactly once on every path.
+    progress.fail();
+    throw error;
+  } finally {
+    progress.stop();
+  }
+}
+
+async function runReleaseReact(
+  command: ReleaseReactCommand,
+  deps: ReleaseReactDeps,
+  progress: Progress,
+): Promise<unknown> {
   progress.write("Resolving project and bundler configuration...");
   const context = await resolveReleaseReactContext(command, deps);
   const { projectRoot } = context;
@@ -148,6 +160,9 @@ export async function executeReleaseReact(
     projectRoot,
   });
 
+  // The guard draws a note and a confirm on the same stream the spinner
+  // animates on; the step in flight has to land before either appears.
+  progress.settle();
   await enforceMutationSafety(deps, {
     commandName: "release-react",
     dryRun: command.dryRun,
@@ -209,7 +224,9 @@ export async function executeReleaseReact(
         ? "Packaging release for dry run..."
         : "Packaging and uploading release...",
     );
-    const result = await executeReleaseCreate(releaseCreateCommand, deps);
+    // The delegated command reports its steps on this same progress tree; a
+    // second tree would animate two spinners over one stream.
+    const result = await executeReleaseCreate(releaseCreateCommand, deps, progress);
     progress.write(command.dryRun ? "Dry run complete." : "Release uploaded.");
 
     return result;
@@ -230,7 +247,25 @@ export async function executeBundle(
   command: BundleCommand,
   deps: ReleaseReactDeps,
 ): Promise<unknown> {
-  const progress = createReleaseReactProgress(deps);
+  const progress = createProgress({ label: "bundle", stderr: deps.stderr });
+
+  try {
+    return await runBundle(command, deps, progress);
+  } catch (error) {
+    // Marks the step in flight as failed; the finally below is then a no-op,
+    // so the tree is still closed exactly once on every path.
+    progress.fail();
+    throw error;
+  } finally {
+    progress.stop();
+  }
+}
+
+async function runBundle(
+  command: BundleCommand,
+  deps: ReleaseReactDeps,
+  progress: ReleaseReactProgress,
+): Promise<unknown> {
   progress.write("Resolving project and bundler configuration...");
   const context = await resolveReleaseReactContext(command, deps);
   const { projectRoot } = context;
@@ -439,27 +474,6 @@ async function resolveBaseBytecodeForBuild(
 
   progress.write("Aligning Hermes bytecode to the previous release...");
   return resolution.path;
-}
-
-function createReleaseReactProgress(
-  deps: Pick<ReleaseReactDeps, "stderr">,
-): ReleaseReactProgress {
-  const interactive =
-    deps.stderr !== undefined && isInteractiveOutput(deps.stderr);
-
-  return {
-    // Warnings are not gated on interactivity: they matter most in CI logs.
-    warn(message) {
-      if (deps.stderr !== undefined) {
-        writeLine(deps.stderr, `release-react: warning: ${message}`);
-      }
-    },
-    write(message) {
-      if (interactive) {
-        writeLine(deps.stderr!, `release-react: ${message}`);
-      }
-    },
-  };
 }
 
 async function resolveReleaseReactContext(

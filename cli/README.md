@@ -4,7 +4,7 @@ Command-line interface for releasing and managing over-the-air (OTA) React Nativ
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js `20.19+` or `22.12+`
 
 ## Install
 
@@ -62,7 +62,7 @@ cmpatch app list --format json | jq '.apps[].name'
 
 ## Configuration
 
-- **User config:** `~/.codemagic-patch/config.json` — CLI-wide defaults such as `serverUrl` and `team`. Credentials are stored per server in `~/.codemagic-patch/credentials.json`. Set the `CODEMAGIC_PATCH_HOME` environment variable to relocate this directory.
+- **User config:** `~/.codemagic-patch/config.json` — CLI-wide defaults such as `serverUrl`. Credentials are stored per server in `~/.codemagic-patch/credentials.json`. Set the `CODEMAGIC_PATCH_HOME` environment variable to relocate this directory.
 - **Project config:** `codemagic-patch.config.json` at your project root (or a `codemagicPatch` key in `package.json`) — per-project defaults such as `app`, `deployment`, and platform-specific overrides. Created by `cmpatch init`.
 
 Explicit flags always take precedence over configured defaults. Run `cmpatch context` to inspect the effective configuration, and `cmpatch doctor` to diagnose setup issues.

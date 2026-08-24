@@ -14,7 +14,15 @@ import {
   resolveEffectiveContext,
   resolveProjectRoot,
 } from "../localContext";
+import { writeClosing } from "../notice";
 import { isRecord, writeLine } from "../output";
+import {
+  listNamedResources,
+  promptBundler,
+  promptResource,
+  promptServerUrl,
+  type NamedResource,
+} from "../flagPrompts";
 import {
   detectNativePlatforms,
   detectProjectBundler,
@@ -182,10 +190,6 @@ function normalizeConfigKey(key: string): string {
   return key;
 }
 
-type NamedResource = {
-  id: string;
-  name: string;
-};
 
 type LinkFlags = {
   androidApp?: string;
@@ -327,7 +331,8 @@ async function linkProject(
   await saveProjectConfig(projectRoot, nextConfig);
 
   if (interactive && deps.stderr !== undefined) {
-    writeLine(deps.stderr, "Wrote codemagic-patch.config.json");
+    // Closes the prompt tree the interactive init flow opened.
+    writeClosing(deps.stderr, "Wrote codemagic-patch.config.json");
   }
 
   return {
@@ -694,40 +699,7 @@ async function selectBundler(
   return detected.kind;
 }
 
-async function promptServerUrl(
-  prompt: PromptFn,
-  initial: string | undefined,
-): Promise<string> {
-  const value = await prompt({ initial, message: "Server URL", type: "text" });
-  return String(value).trim();
-}
 
-async function promptResource(
-  prompt: PromptFn,
-  message: string,
-  resources: NamedResource[],
-  label: "app" | "deployment" | "team",
-): Promise<NamedResource> {
-  if (resources.length === 0) {
-    throw new UsageError(`No ${label}s are available. Create one first.`);
-  }
-
-  const value = await prompt({
-    choices: resources.map((resource) => ({
-      title: resource.name,
-      value: resource.id,
-    })),
-    message,
-    type: "select",
-  });
-  const selectedId = Array.isArray(value) ? value[0] : value;
-  const chosen = resources.find((resource) => resource.id === selectedId);
-  if (chosen === undefined) {
-    throw new UsageError(`Invalid ${label} selection.`);
-  }
-
-  return chosen;
-}
 
 async function promptPlatforms(
   prompt: PromptFn,
@@ -755,53 +727,7 @@ async function promptPlatforms(
   return platforms;
 }
 
-async function promptBundler(
-  prompt: PromptFn,
-  detected: "expo" | "metro",
-): Promise<"expo" | "metro"> {
-  const value = await prompt({
-    choices: [
-      { title: "metro", value: "metro" },
-      { title: "expo", value: "expo" },
-    ],
-    initial: detected === "expo" ? 1 : 0,
-    message: "Select bundler",
-    type: "select",
-  });
 
-  return value === "expo" ? "expo" : "metro";
-}
-
-async function listNamedResources(
-  deps: CommandDeps,
-  serverUrl: string,
-  pathname: string,
-  token: string | undefined,
-  wrapperKey: "apps" | "deployments" | "teams",
-): Promise<NamedResource[]> {
-  const response = await authenticatedRequest(deps, {
-    init: { method: "GET" },
-    serverUrl,
-    token,
-    url: buildApiUrl(serverUrl, pathname),
-  });
-
-  if (!isRecord(response) || !Array.isArray(response[wrapperKey])) {
-    throw new UsageError(`Malformed ${wrapperKey} response`);
-  }
-
-  return response[wrapperKey].map((resource) => {
-    if (
-      !isRecord(resource) ||
-      typeof resource.id !== "string" ||
-      typeof resource.name !== "string"
-    ) {
-      throw new UsageError(`Malformed ${wrapperKey} response`);
-    }
-
-    return { id: resource.id, name: resource.name };
-  });
-}
 
 function selectSingle(
   resources: NamedResource[],

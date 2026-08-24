@@ -14,6 +14,7 @@ import {
 import type { ReleaseCreateCommand } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
 import { computePackageHashFromZipBuffer } from "../packageHash";
+import { createProgress, type Progress } from "../progress";
 import { signContentHashJwt, SIGNATURE_HASH_ALGORITHM } from "../signing";
 import { writeLine } from "../output";
 import { assertExplicitBinaryVersion } from "../targetBinaryVersion";
@@ -63,6 +64,10 @@ type ReleaseDryRunResult = {
 export async function executeReleaseCreate(
   command: ReleaseCreateCommand,
   deps: CommandDeps,
+  // release-react delegates here with its own progress tree already open on
+  // stderr; reporting onto it (and leaving its lifecycle to the owner) is what
+  // keeps one run from animating two spinners over one stream.
+  sharedProgress?: Progress,
 ): Promise<unknown> {
   if (command.artifactUpload === true) {
     return executeArtifactReleaseCreate(command, deps);
@@ -85,6 +90,16 @@ export async function executeReleaseCreate(
 
   const tempRoot = await fs.mkdtemp(path.join(tmpdir(), "codemagic-patch-release-"));
   const zipPath = path.join(tempRoot, "bundle.zip");
+  // Opened only after the mutation guard: a spinner animating over the
+  // interactive confirm prompt would corrupt both. A borrowed tree is safe
+  // here — its owner has already run its own guard and passed `yes`.
+  const ownsProgress = sharedProgress === undefined;
+  const progress =
+    sharedProgress ??
+    createProgress({
+      label: "release create",
+      stderr: deps.stderr,
+    });
 
   try {
     // Validate the bundle path before any network work or the confirm prompt
@@ -102,11 +117,18 @@ export async function executeReleaseCreate(
       command.serverUrl,
       command.token,
       deps,
+      {
+        nonInteractive:
+          command.nonInteractive === true || command.yes === true,
+      },
     );
 
     // Guard before the expensive bundle zip so a declined confirmation (or a
     // missing --yes) doesn't waste the archive build. Dry-run skips the guard
-    // and still archives below to report what would be uploaded.
+    // and still archives below to report what would be uploaded. Settled
+    // first: a borrowed tree may still have a step in flight, and the guard's
+    // note and confirm must not draw under an animating spinner.
+    progress.settle();
     await enforceMutationSafety(deps, {
       commandName: "release create",
       dryRun: command.dryRun,
@@ -124,10 +146,12 @@ export async function executeReleaseCreate(
       yes: command.yes === true,
     });
 
+    progress.write(`Archiving ${command.bundlePath}`);
     const bundleArchivePath = await prepareBundleArchive(
       deps,
       command.bundlePath,
       zipPath,
+      progress.warn,
     );
 
     if (command.dryRun) {
@@ -141,6 +165,7 @@ export async function executeReleaseCreate(
       });
     }
 
+    progress.write("Uploading release");
     return await uploadReleaseArchive(command, deps, {
       bundleArchivePath,
       deploymentId,
@@ -149,7 +174,18 @@ export async function executeReleaseCreate(
       sourcemapPath,
       targetBinaryVersion,
     });
+  } catch (error) {
+    // Marks the step in flight as failed; the finally below is then a no-op,
+    // so the tree is still closed exactly once on every path. A borrowed tree
+    // is left alone — its owner closes it, and closes it exactly once.
+    if (ownsProgress) {
+      progress.fail();
+    }
+    throw error;
   } finally {
+    if (ownsProgress) {
+      progress.stop();
+    }
     await fs.rm(tempRoot, { force: true, recursive: true });
   }
 }
@@ -205,6 +241,7 @@ async function executeArtifactReleaseCreate(
     command.serverUrl,
     command.token,
     deps,
+    { nonInteractive: command.nonInteractive === true || command.yes === true },
   );
   const policy = resolveUploadPolicy(
     descriptor.defaults,
@@ -234,21 +271,36 @@ async function executeArtifactReleaseCreate(
     yes: command.yes === true,
   });
 
-  return authenticatedRequest(deps, {
-    init: {
-      body: artifactToReleaseForm(artifact, policy),
-      headers: {
-        "idempotency-key": deps.randomUUID(),
-      },
-      method: "POST",
-    },
-    serverUrl: command.serverUrl,
-    token: command.token,
-    url: buildApiUrl(
-      command.serverUrl,
-      `/v1/deployments/${encodeURIComponent(deploymentId)}/releases`,
-    ),
+  // Opened only after the mutation guard: a spinner animating over the
+  // interactive confirm prompt would corrupt both.
+  const progress = createProgress({
+    label: "release create",
+    stderr: deps.stderr,
   });
+
+  try {
+    progress.write("Uploading release");
+    return await authenticatedRequest(deps, {
+      init: {
+        body: artifactToReleaseForm(artifact, policy),
+        headers: {
+          "idempotency-key": deps.randomUUID(),
+        },
+        method: "POST",
+      },
+      serverUrl: command.serverUrl,
+      token: command.token,
+      url: buildApiUrl(
+        command.serverUrl,
+        `/v1/deployments/${encodeURIComponent(deploymentId)}/releases`,
+      ),
+    });
+  } catch (error) {
+    progress.fail();
+    throw error;
+  } finally {
+    progress.stop();
+  }
 }
 
 function buildArtifactDryRunResult(
@@ -369,6 +421,9 @@ async function prepareBundleArchive(
   deps: CommandDeps,
   inputPath: string,
   zipPath: string,
+  // The archive spinner is in flight here, so the warning must go through the
+  // progress reporter rather than a raw stderr write.
+  warn: Progress["warn"],
 ): Promise<string> {
   const { resolvedPath, stats } = await statBundlePath(deps, inputPath);
 
@@ -379,10 +434,9 @@ async function prepareBundleArchive(
         `bundle directory contains no files: ${resolvedPath}`,
       );
     }
-    if (!files.some(isJsBundleFile) && deps.stderr !== undefined) {
-      writeLine(
-        deps.stderr,
-        `Warning: no recognizable JS bundle (e.g. index.android.bundle, main.jsbundle, *.hbc) found in ${resolvedPath}; uploading anyway.`,
+    if (!files.some(isJsBundleFile)) {
+      warn(
+        `no recognizable JS bundle (e.g. index.android.bundle, main.jsbundle, *.hbc) found in ${resolvedPath}; uploading anyway.`,
       );
     }
     await createZipFromDirectory(resolvedPath, zipPath);

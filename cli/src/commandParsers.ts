@@ -9,10 +9,12 @@ import type {
   OutputFormat,
   ParseCliError,
   ParseCliResult,
+  PromptableFlag,
   ReleasePatchCommand,
   ReleaseSelector,
   TeamSelector,
 } from "./commandTypes";
+import { promptableFlagForLabel } from "./promptableFlags";
 
 /** Build-identity flags that a `.cmpatch` artifact supplies from its descriptor. */
 const ARTIFACT_FORBIDDEN_FLAGS: ReadonlyArray<
@@ -69,6 +71,12 @@ const STRING_FLAG: StringFlagSchema = { kind: "string" };
 const STRING_LIST_FLAG: StringListFlagSchema = { kind: "stringList" };
 const globalFlagSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
+  // Accepted everywhere so any invocation — including read-only commands like
+  // `whoami` — can opt out of prompts (the 401 sign-in offer, execution-stage
+  // pickers) without resorting to CI=1 or stream redirection. The interactivity
+  // gates read it off raw argv; commands that declare their own nonInteractive
+  // flag keep their schema entry and typed field.
+  nonInteractive: BOOLEAN_FLAG,
 };
 
 const contextSchema: Record<string, FlagSchema> = {
@@ -97,6 +105,8 @@ const releaseCreateSchema: Record<string, FlagSchema> = {
   serverUrl: STRING_FLAG,
   sourcemap: STRING_FLAG,
   targetBinaryVersion: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -129,6 +139,8 @@ const releaseReactSchema: Record<string, FlagSchema> = {
   serverUrl: STRING_FLAG,
   sourcemapOutput: STRING_FLAG,
   targetBinaryVersion: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   xcodeProjectFile: STRING_FLAG,
   xcodeTargetName: STRING_FLAG,
@@ -169,6 +181,8 @@ const releaseShowSchema: Record<string, FlagSchema> = {
   label: STRING_FLAG,
   releaseId: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -181,6 +195,8 @@ const releaseMetricsSchema: Record<string, FlagSchema> = {
   label: STRING_FLAG,
   releaseId: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -194,6 +210,8 @@ const releaseInspectSchema: Record<string, FlagSchema> = {
   logs: BOOLEAN_FLAG,
   releaseId: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   timeout: INTEGER_FLAG,
   timeoutSeconds: INTEGER_FLAG,
   token: STRING_FLAG,
@@ -210,6 +228,8 @@ const releaseListSchema: Record<string, FlagSchema> = {
   limit: INTEGER_FLAG,
   offset: INTEGER_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -228,6 +248,8 @@ const releasePatchSchema: Record<string, FlagSchema> = {
   serverUrl: STRING_FLAG,
   status: STRING_FLAG,
   targetBinaryVersion: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -241,6 +263,8 @@ const releaseStatusSchema: Record<string, FlagSchema> = {
   nonInteractive: BOOLEAN_FLAG,
   releaseId: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -263,6 +287,8 @@ const releasePromoteSchema: Record<string, FlagSchema> = {
   sourceDeployment: STRING_FLAG,
   sourceDeploymentId: STRING_FLAG,
   targetBinaryVersion: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -275,6 +301,8 @@ const releaseRollbackSchema: Record<string, FlagSchema> = {
   label: STRING_FLAG,
   nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -283,6 +311,8 @@ const appCreateSchema: Record<string, FlagSchema> = {
   name: STRING_FLAG,
   requireCodeSigning: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -324,6 +354,8 @@ const logoutSchema: Record<string, FlagSchema> = {
 const memberListSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -331,6 +363,8 @@ const memberAddSchema: Record<string, FlagSchema> = {
   email: STRING_FLAG,
   role: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   userId: STRING_FLAG,
 };
@@ -341,6 +375,8 @@ const memberInviteSchema: Record<string, FlagSchema> = {
   githubHandle: STRING_FLAG,
   role: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -350,6 +386,8 @@ const memberProvisionSchema: Record<string, FlagSchema> = {
   expiresInDays: INTEGER_FLAG,
   role: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   tokenDisplayName: STRING_FLAG,
 };
@@ -358,6 +396,8 @@ const memberInviteListSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
   serverUrl: STRING_FLAG,
   status: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -372,6 +412,8 @@ const memberRemoveSchema: Record<string, FlagSchema> = {
   email: STRING_FLAG,
   role: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   userId: STRING_FLAG,
 };
@@ -382,6 +424,8 @@ const memberUpdateSchema: Record<string, FlagSchema> = {
   fromRole: STRING_FLAG,
   role: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   userId: STRING_FLAG,
 };
@@ -389,6 +433,8 @@ const memberUpdateSchema: Record<string, FlagSchema> = {
 const appListSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -396,6 +442,8 @@ const appShowSchema: Record<string, FlagSchema> = {
   app: STRING_FLAG,
   appId: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -404,6 +452,8 @@ const appRenameSchema: Record<string, FlagSchema> = {
   appId: STRING_FLAG,
   newName: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -412,6 +462,8 @@ const appSettingSchema: Record<string, FlagSchema> = {
   appId: STRING_FLAG,
   requireCodeSigning: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -420,6 +472,8 @@ const appRemoveSchema: Record<string, FlagSchema> = {
   appId: STRING_FLAG,
   nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -431,6 +485,8 @@ const deploymentListSchema: Record<string, FlagSchema> = {
   appId: STRING_FLAG,
   format: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -439,6 +495,8 @@ const deploymentCreateSchema: Record<string, FlagSchema> = {
   appId: STRING_FLAG,
   name: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -449,6 +507,8 @@ const deploymentRenameSchema: Record<string, FlagSchema> = {
   deploymentId: STRING_FLAG,
   newName: STRING_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -459,6 +519,8 @@ const deploymentRemoveSchema: Record<string, FlagSchema> = {
   deploymentId: STRING_FLAG,
   nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -470,6 +532,8 @@ const deploymentClearSchema: Record<string, FlagSchema> = {
   deploymentId: STRING_FLAG,
   nonInteractive: BOOLEAN_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -482,6 +546,8 @@ const deploymentHistorySchema: Record<string, FlagSchema> = {
   limit: INTEGER_FLAG,
   offset: INTEGER_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
   yes: BOOLEAN_FLAG,
 };
@@ -495,6 +561,8 @@ const deploymentMetricsSchema: Record<string, FlagSchema> = {
   limit: INTEGER_FLAG,
   offset: INTEGER_FLAG,
   serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
   token: STRING_FLAG,
 };
 
@@ -554,6 +622,18 @@ function flagSchemaDefinition(
   return definition;
 }
 
+/**
+ * Lets a missing required flag name itself for the interactive resolution stage,
+ * so nobody has to parse the English message. Only flags the CLI can also take
+ * from stored configuration are named; `--app-id` and friends are deliberately
+ * absent because a prompt yields a name, never an id.
+ */
+function missingPromptable(label: string): PromptableFlag[] | undefined {
+  const flag = promptableFlagForLabel(label);
+
+  return flag === undefined ? undefined : [flag];
+}
+
 function ensureString(
   flags: Record<string, FlagValue>,
   key: string,
@@ -564,6 +644,7 @@ function ensureString(
   if (typeof value !== "string" || value.length === 0) {
     return {
       error: `Missing required flag --${label}`,
+      missing: missingPromptable(label),
       ok: false,
       showHelp: true,
     };
@@ -586,6 +667,7 @@ function ensureNonBlankString(
   if (value.trim().length === 0) {
     return {
       error: `Missing required flag --${label}`,
+      missing: missingPromptable(label),
       ok: false,
       showHelp: true,
     };
@@ -698,6 +780,7 @@ function parseBundlePath(
 
   return {
     error: "Missing required flag --bundle-path",
+    missing: ["bundlePath"],
     ok: false,
     showHelp: true,
   };
@@ -713,11 +796,23 @@ function parseFlags(
   const commandSchema = flagSchemaDefinition(schema);
   const globalSchema = flagSchemaDefinition(globalFlagSchema);
   const flags: Record<string, FlagValue> = Object.fromEntries(
-    Object.entries(defaults).filter(
-      ([key]) =>
-        commandSchema.byInternalKey[key] !== undefined ||
-        globalSchema.byInternalKey[key] !== undefined,
-    ),
+    Object.entries(defaults)
+      .filter(
+        ([key]) =>
+          commandSchema.byInternalKey[key] !== undefined ||
+          globalSchema.byInternalKey[key] !== undefined,
+      )
+      // Defaults arrive as strings — from config files, and from prompts. A
+      // boolean flag compares against `true`, so a "true" left as text would
+      // read as unset and the flag would be silently ignored.
+      .map(([key, value]) => {
+        const descriptor =
+          commandSchema.byInternalKey[key] ?? globalSchema.byInternalKey[key];
+
+        return descriptor?.kind === "boolean"
+          ? [key, value === "true"]
+          : [key, value];
+      }),
   );
 
   for (let index = 0; index < args.length; index += 1) {
@@ -900,6 +995,7 @@ function parseDeploymentSelector(
   if (appId !== undefined) {
     return {
       error: "--deployment must be provided with --app-id",
+      missing: ["deployment"],
       ok: false,
       showHelp: true,
     };
@@ -931,8 +1027,16 @@ function parseDeploymentSelector(
   }
 
   if (nameFlagCount > 0) {
+    // Name what is absent, not just that the pair is incomplete: with
+    // "--deployment Staging" given, the app is a question the CLI can ask.
+    const absent: PromptableFlag[] = [
+      ...(appName === undefined ? (["app"] as const) : []),
+      ...(deploymentName === undefined ? (["deployment"] as const) : []),
+    ];
+
     return {
       error: "--app and --deployment must be provided together",
+      ...(absent.length === 0 ? {} : { missing: absent }),
       ok: false,
       showHelp: true,
     };
@@ -940,6 +1044,7 @@ function parseDeploymentSelector(
 
   return {
     error: "Missing required flag --deployment-id or --app/--deployment",
+    missing: ["app", "deployment"],
     ok: false,
     showHelp: true,
   };
@@ -1042,6 +1147,7 @@ function parseReleaseSelector(
   const hasDeploymentSelectorFlag =
     flags.appId !== undefined ||
     flags.deploymentId !== undefined ||
+    flags.teamId !== undefined ||
     flags.team !== undefined ||
     flags.app !== undefined ||
     flags.deployment !== undefined;
@@ -1081,6 +1187,7 @@ function parseReleaseSelector(
     if (releaseLabel === undefined) {
       return {
         error: "Missing required flag --label",
+        missing: ["label"],
         ok: false,
         showHelp: true,
       };
@@ -1095,6 +1202,7 @@ function parseReleaseSelector(
   if (releaseLabel !== undefined) {
     return {
       error: "Missing required flag --deployment-id or --app/--deployment",
+      missing: ["app", "deployment"],
       ok: false,
       showHelp: true,
     };
@@ -1103,6 +1211,9 @@ function parseReleaseSelector(
   return {
     error:
       "Missing required flag --release-id or --deployment-id/--label or --app/--deployment/--label",
+    // Every part of the name-shaped alternative can be asked for, so the whole
+    // selector is answerable: app, then its deployment, then a release in it.
+    missing: ["app", "deployment", "label"],
     ok: false,
     showHelp: true,
   };
@@ -1115,6 +1226,7 @@ function emptyStringFlagError(
   if (value !== undefined && value.trim().length === 0) {
     return {
       error: `Missing required flag --${label}`,
+      missing: missingPromptable(label),
       ok: false,
       showHelp: true,
     };
@@ -1186,6 +1298,7 @@ function parseMemberUserSelector(
 
   return {
     error: "Missing required flag --user-id or --email",
+    missing: ["email"],
     ok: false,
     showHelp: true,
   };
@@ -1223,6 +1336,7 @@ function parseMemberInviteTarget(
 
   return {
     error: "Missing required flag --email or --github-handle",
+    missing: ["email"],
     ok: false,
     showHelp: true,
   };
@@ -1315,6 +1429,9 @@ function parseAppSelector(
   if (nameFlagCount > 0) {
     return {
       error: "--app must be provided with exactly one of --team-id or --team",
+      // The team WAS supplied on this branch — the flag that is absent, and
+      // the one the resolver can usefully ask for, is the app.
+      missing: ["app"],
       ok: false,
       showHelp: true,
     };
@@ -1322,6 +1439,7 @@ function parseAppSelector(
 
   return {
     error: "Missing required flag --app-id or --app",
+    missing: ["app"],
     ok: false,
     showHelp: true,
   };
@@ -1426,6 +1544,7 @@ export function parseReleaseCreate(
   if (!isArtifactUpload && fingerprint === undefined && platform === undefined) {
     return {
       error: "Missing required flag --platform",
+      missing: ["platform"],
       ok: false,
       showHelp: true,
     };
@@ -1805,6 +1924,7 @@ export function parseReleaseReact(
   if (bundler.trim().length === 0) {
     return {
       error: "Missing required flag --bundler",
+      missing: ["bundler"],
       ok: false,
       showHelp: true,
     };
@@ -2819,6 +2939,22 @@ function parsePromoteAppSelector(
     };
   }
 
+  if (appId !== undefined && typeof flags.teamId === "string") {
+    return {
+      error: "--app-id cannot be combined with --team-id",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  if (typeof flags.teamId === "string" && typeof flags.team === "string") {
+    return {
+      error: "--team-id cannot be combined with --team",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
   if (appId !== undefined) {
     return { appId };
   }
@@ -2836,6 +2972,7 @@ function parsePromoteSourceReleaseSelector(
     typeof flags.sourceDeploymentId === "string"
       ? flags.sourceDeploymentId
       : undefined;
+  const teamId = typeof flags.teamId === "string" ? flags.teamId : undefined;
   const teamName = typeof flags.team === "string" ? flags.team : undefined;
   const sourceDeploymentName =
     typeof flags.sourceDeployment === "string"
@@ -2846,6 +2983,7 @@ function parsePromoteSourceReleaseSelector(
   const blankSelectorError =
     emptyStringFlagError(releaseId, "release-id") ??
     emptyStringFlagError(sourceDeploymentId, "source-deployment-id") ??
+    emptyStringFlagError(teamId, "team-id") ??
     emptyStringFlagError(teamName, "team") ??
     emptyStringFlagError(sourceDeploymentName, "source-deployment") ??
     emptyStringFlagError(releaseLabel, "label");
@@ -2887,6 +3025,7 @@ function parsePromoteSourceReleaseSelector(
     if (releaseLabel === undefined) {
       return {
         error: "Missing required flag --label",
+        missing: ["label"],
         ok: false,
         showHelp: true,
       };
@@ -2908,6 +3047,8 @@ function parsePromoteSourceReleaseSelector(
         app === undefined
           ? "--app or --app-id must be provided with --source-deployment"
           : "--source-deployment must be provided with --app or --app-id",
+      missing:
+        app === undefined ? ["app" as const] : ["sourceDeployment" as const],
       ok: false,
       showHelp: true,
     };
@@ -2917,6 +3058,7 @@ function parsePromoteSourceReleaseSelector(
     if (releaseLabel === undefined) {
       return {
         error: "Missing required flag --label",
+        missing: ["label"],
         ok: false,
         showHelp: true,
       };
@@ -2926,16 +3068,22 @@ function parsePromoteSourceReleaseSelector(
       deployment:
         app.appId !== undefined
           ? { appId: app.appId, deploymentName: sourceDeploymentName }
-          : teamName !== undefined
+          : teamId !== undefined
             ? {
                 appName: app.appName,
                 deploymentName: sourceDeploymentName,
-                teamName,
+                teamId,
               }
-            : {
-                appName: app.appName,
-                deploymentName: sourceDeploymentName,
-              },
+            : teamName !== undefined
+              ? {
+                  appName: app.appName,
+                  deploymentName: sourceDeploymentName,
+                  teamName,
+                }
+              : {
+                  appName: app.appName,
+                  deploymentName: sourceDeploymentName,
+                },
       releaseLabel,
     };
   }
@@ -2943,6 +3091,7 @@ function parsePromoteSourceReleaseSelector(
   return {
     error:
       "Missing required flag --release-id or --source-deployment-id/--label or (--app-id or --app)/--source-deployment/--label",
+    missing: ["app", "sourceDeployment", "label"],
     ok: false,
     showHelp: true,
   };
@@ -2956,6 +3105,7 @@ function parsePromoteDestinationDeploymentSelector(
     typeof flags.destDeploymentId === "string"
       ? flags.destDeploymentId
       : undefined;
+  const teamId = typeof flags.teamId === "string" ? flags.teamId : undefined;
   const teamName = typeof flags.team === "string" ? flags.team : undefined;
   const destDeploymentName =
     typeof flags.destDeployment === "string"
@@ -2963,6 +3113,7 @@ function parsePromoteDestinationDeploymentSelector(
       : undefined;
   const blankSelectorError =
     emptyStringFlagError(destDeploymentId, "dest-deployment-id") ??
+    emptyStringFlagError(teamId, "team-id") ??
     emptyStringFlagError(teamName, "team") ??
     emptyStringFlagError(destDeploymentName, "dest-deployment");
 
@@ -2991,9 +3142,11 @@ function parsePromoteDestinationDeploymentSelector(
       return { appId: app.appId, deploymentName: destDeploymentName };
     }
 
-    return teamName !== undefined
-      ? { appName: app.appName, deploymentName: destDeploymentName, teamName }
-      : { appName: app.appName, deploymentName: destDeploymentName };
+    return teamId !== undefined
+      ? { appName: app.appName, deploymentName: destDeploymentName, teamId }
+      : teamName !== undefined
+        ? { appName: app.appName, deploymentName: destDeploymentName, teamName }
+        : { appName: app.appName, deploymentName: destDeploymentName };
   }
 
   if (nameFlagCount > 0) {
@@ -3002,6 +3155,8 @@ function parsePromoteDestinationDeploymentSelector(
         app === undefined
           ? "--app or --app-id must be provided with --dest-deployment"
           : "--dest-deployment must be provided with --app or --app-id",
+      missing:
+        app === undefined ? ["app" as const] : ["destDeployment" as const],
       ok: false,
       showHelp: true,
     };
@@ -3010,6 +3165,7 @@ function parsePromoteDestinationDeploymentSelector(
   return {
     error:
       "Missing required flag --dest-deployment-id or (--app-id or --app)/--dest-deployment",
+    missing: ["app", "destDeployment"],
     ok: false,
     showHelp: true,
   };
@@ -4003,6 +4159,7 @@ export function parseAppSetting(
   if (!hasFlag(parsedFlags.flags, "requireCodeSigning")) {
     return {
       error: "Missing required flag --require-code-signing",
+      missing: ["requireCodeSigning"],
       ok: false,
       showHelp: true,
     };
