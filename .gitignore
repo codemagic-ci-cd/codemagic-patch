@@ -61,3 +61,4 @@ web-dashboard/src/styles/app.local.css
 
 # CLI global-install packing dir
 .tmp-pack/
+.gstack

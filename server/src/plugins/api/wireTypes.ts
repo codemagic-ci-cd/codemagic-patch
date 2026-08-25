@@ -225,6 +225,8 @@ export interface ReleaseMetricsWire {
   active: number;
   downloaded: number;
   failed: number;
+  /** Failed counts keyed by client-reported reason; unreported → "unknown". */
+  failure_reasons: Record<string, number>;
   installed: number;
   success: number;
 }

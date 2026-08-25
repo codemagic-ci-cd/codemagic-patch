@@ -309,6 +309,7 @@ export function toReleaseMetricsWire(metrics: {
   active: number;
   downloaded: number;
   failed: number;
+  failureReasons: Record<string, number>;
   installed: number;
   success: number;
 }): ReleaseMetricsWire {
@@ -316,6 +317,7 @@ export function toReleaseMetricsWire(metrics: {
     active: metrics.active,
     downloaded: metrics.downloaded,
     failed: metrics.failed,
+    failure_reasons: { ...metrics.failureReasons },
     installed: metrics.installed,
     success: metrics.success,
   };
@@ -326,6 +328,7 @@ export function toReleaseMetricsRowWire(row: {
     active: number;
     downloaded: number;
     failed: number;
+    failureReasons: Record<string, number>;
     installed: number;
     success: number;
   };

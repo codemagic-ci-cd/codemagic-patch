@@ -6,6 +6,8 @@ export interface ReleaseMetrics {
   active: number;
   downloaded: number;
   failed: number;
+  /** Failed counts keyed by client-reported reason; unreported → "unknown". Values sum to `failed`. */
+  failureReasons: Record<string, number>;
   installed: number;
   success: number;
 }
@@ -26,6 +28,7 @@ export function aggregateMetrics(list: ReleaseMetrics[]): ReleaseMetrics {
     active: 0,
     downloaded: 0,
     failed: 0,
+    failureReasons: {},
     installed: 0,
     success: 0,
   };
@@ -36,9 +39,60 @@ export function aggregateMetrics(list: ReleaseMetrics[]): ReleaseMetrics {
     total.failed += metrics.failed;
     total.installed += metrics.installed;
     total.success += metrics.success;
+    for (const [reason, count] of Object.entries(metrics.failureReasons)) {
+      total.failureReasons[reason] = (total.failureReasons[reason] ?? 0) + count;
+    }
   }
 
   return total;
+}
+
+export interface FailureReasonShare {
+  reason: string;
+  /** Human-readable label for the known reason taxonomy; raw reason otherwise. */
+  label: string;
+  count: number;
+  /** This reason's share of all failures as a 0..1 fraction. */
+  share: number;
+}
+
+// Reason taxonomy from client/specs/metrics/Spec.md §`Failed` Event Reason
+// Values; "unknown" is the server-side bucket for events without a reason.
+const FAILURE_REASON_LABELS: Record<string, string> = {
+  install_fail: "Install failed (crash rollback)",
+  integrity: "Integrity check failed",
+  invalid_manifest: "Invalid manifest",
+  missing_binary_version: "Missing binary version",
+  network: "Network error",
+  signature_verification: "Signature verification failed",
+  unknown: "Unknown reason",
+};
+
+/**
+ * Failure breakdown sorted by count (desc), ties by reason for a stable
+ * order. Empty when no failures were reported.
+ */
+export function failureReasonShares(
+  metrics: ReleaseMetrics,
+): FailureReasonShare[] {
+  const entries = Object.entries(metrics.failureReasons).filter(
+    ([, count]) => count > 0,
+  );
+  let totalCount = 0;
+  for (const [, count] of entries) {
+    totalCount += count;
+  }
+
+  return entries
+    .sort(([reasonA, countA], [reasonB, countB]) =>
+      countB !== countA ? countB - countA : reasonA.localeCompare(reasonB),
+    )
+    .map(([reason, count]) => ({
+      reason,
+      label: FAILURE_REASON_LABELS[reason] ?? reason,
+      count,
+      share: totalCount === 0 ? 0 : count / totalCount,
+    }));
 }
 
 export interface ActiveVersionEntry {

@@ -84,6 +84,7 @@ export const ZERO_RELEASE_METRICS: ReleaseMetrics = {
   active: 0,
   downloaded: 0,
   failed: 0,
+  failureReasons: {},
   installed: 0,
   success: 0,
 };
@@ -275,7 +276,9 @@ export function createPostgresMetricsRepository(
       const metrics = new Map<string, ReleaseMetrics>();
 
       for (const hash of uniqueHashes) {
-        metrics.set(hash, { ...ZERO_RELEASE_METRICS });
+        // Fresh failureReasons per entry — the shared constant's empty object
+        // must not be mutated through one deployment's breakdown.
+        metrics.set(hash, { ...ZERO_RELEASE_METRICS, failureReasons: {} });
       }
 
       if (uniqueHashes.length === 0) {
@@ -311,9 +314,36 @@ export function createPostgresMetricsRepository(
           active: row.active,
           downloaded: row.downloaded,
           failed: row.failed,
+          failureReasons: {},
           installed: row.installed,
           success: row.success,
         });
+      }
+
+      const reasons = await pool.query<{
+        count: number;
+        reason: string;
+        target_package_hash: string;
+      }>(
+        `
+          SELECT
+            target_package_hash,
+            COALESCE(NULLIF(attributes ->> 'reason', ''), 'unknown') AS reason,
+            COUNT(*)::integer AS count
+          FROM metric_event
+          WHERE deployment_id = $1
+            AND target_package_hash = ANY($2::text[])
+            AND event_name = 'Failed'
+          GROUP BY target_package_hash, reason
+        `,
+        [deploymentId, uniqueHashes],
+      );
+
+      for (const row of reasons.rows) {
+        const entry = metrics.get(row.target_package_hash);
+        if (entry) {
+          entry.failureReasons[row.reason] = row.count;
+        }
       }
 
       return metrics;

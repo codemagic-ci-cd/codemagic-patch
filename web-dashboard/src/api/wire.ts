@@ -222,8 +222,17 @@ export interface InvitationWire {
   team_id: string;
 }
 
+export interface ReleaseMetricsWire {
+  active: number;
+  downloaded: number;
+  failed: number;
+  failure_reasons: Record<string, number>;
+  installed: number;
+  success: number;
+}
+
 export interface ReleaseMetricsRowWire {
-  metrics: ReleaseMetrics;
+  metrics: ReleaseMetricsWire;
   release_id: string;
   release_label: string;
   target_binary_version: string;
@@ -266,7 +275,7 @@ export interface DeploymentClearWireResponse {
 
 export interface ReleaseListItemWire {
   job: ReleaseJobWire | null;
-  metrics?: ReleaseMetrics;
+  metrics?: ReleaseMetricsWire;
   release: ReleaseWire;
 }
 
@@ -593,11 +602,24 @@ export function fromInvitationWire(invitation: InvitationWire): TeamInvitation {
   };
 }
 
+export function fromReleaseMetricsWire(
+  metrics: ReleaseMetricsWire,
+): ReleaseMetrics {
+  return {
+    active: metrics.active,
+    downloaded: metrics.downloaded,
+    failed: metrics.failed,
+    failureReasons: metrics.failure_reasons,
+    installed: metrics.installed,
+    success: metrics.success,
+  };
+}
+
 export function fromReleaseMetricsRowWire(
   row: ReleaseMetricsRowWire,
 ): ReleaseMetricsEntry {
   return {
-    metrics: row.metrics,
+    metrics: fromReleaseMetricsWire(row.metrics),
     releaseId: row.release_id,
     releaseLabel: row.release_label,
     targetBinaryVersion: row.target_binary_version,
@@ -657,7 +679,7 @@ export function fromReleaseListItemWire(
 ): ReleaseListItem {
   return {
     job: item.job ? fromReleaseJobWire(item.job) : null,
-    ...(item.metrics ? { metrics: item.metrics } : {}),
+    ...(item.metrics ? { metrics: fromReleaseMetricsWire(item.metrics) } : {}),
     release: fromReleaseWire(item.release),
   };
 }

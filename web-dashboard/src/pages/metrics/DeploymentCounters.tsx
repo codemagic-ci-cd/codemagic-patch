@@ -28,6 +28,7 @@ import { latestCompleteDayActive } from "../../model/timeseries";
 import type { Deployment } from "../../model/deployment";
 import { AdoptionChart } from "../../components/ui/AdoptionChart";
 import { buttonVariants } from "../../components/ui/Button";
+import { FailureReasonList } from "../../components/ui/FailureReasonList";
 import { CARD, CARD_PAD } from "../../components/ui/card";
 import { CHIP, CHIP_TONE } from "../../components/ui/chip";
 import { DL, DL_DD, DL_DT } from "../../components/ui/dl";
@@ -300,6 +301,15 @@ export function DeploymentCounters({
                     Failed <b>{formatCount(totals.failed)}</b>
                   </span>
                 </div>
+                {totals.failed > 0 ? (
+                  <>
+                    <div className="my-5 h-px bg-border" />
+                    <div className="mb-[14px] text-[13px] font-semibold">
+                      Failure reasons
+                    </div>
+                    <FailureReasonList metrics={totals} />
+                  </>
+                ) : null}
               </>
             )}
             <div className="my-5 h-px bg-border" />

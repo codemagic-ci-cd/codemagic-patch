@@ -321,6 +321,13 @@ export interface ReleaseMetrics {
   active: number;
   downloaded: number;
   failed: number;
+  /**
+   * Failed-event counts keyed by the client-reported `attributes.reason`
+   * (client/specs/metrics/Spec.md §`Failed` Event Reason Values). Events
+   * missing a reason land in the `"unknown"` bucket, so values sum to
+   * `failed`.
+   */
+  failureReasons: Record<string, number>;
   installed: number;
   success: number;
 }

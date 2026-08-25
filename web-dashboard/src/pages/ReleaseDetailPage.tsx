@@ -35,6 +35,7 @@ import { useUserLabel } from "../api/hooks/userLabels";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
+import { FailureReasonList } from "../components/ui/FailureReasonList";
 import { JobBadge } from "../components/ui/JobBadge";
 import {
   ROLLOUT,
@@ -684,6 +685,15 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
                 />
               </div>
             </div>
+          ) : null}
+          {metrics.failed > 0 ? (
+            <>
+              <div className="my-5 h-px bg-border" />
+              <div className="mb-[14px] text-[13px] font-semibold">
+                Failure reasons
+              </div>
+              <FailureReasonList metrics={metrics} />
+            </>
           ) : null}
         </>
       );
