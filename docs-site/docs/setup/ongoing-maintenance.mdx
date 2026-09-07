@@ -4,8 +4,8 @@ description: >-
   Day-2 care for a self-hosted Patch server: backups, upgrades, health checks,
   and disk growth.
 llmsDescription: >-
-  Self-host maintenance cadence: scheduled backups, upgrade.sh, health, disk,
-  link to Operations reference.
+  Self-host maintenance cadence: scheduled backups, cmpatch selfhost upgrade,
+  health, disk, link to Operations reference.
 ---
 
 # Ongoing maintenance
@@ -14,9 +14,28 @@ Self-hosting means you own the box. Patch automates as much of install, backup, 
 
 ## Backups
 
-Run `scripts/selfhost/backup.sh` on a schedule you trust, and copy each backup off the host. On-box copies help with a bad upgrade; they do not help if the droplet or disk is gone.
+Run backups on a schedule you trust, and keep each one off the host. On-box copies help with a bad upgrade; they do not help if the droplet or disk is gone.
 
-A backup quiesces the server, dumps Postgres, and mirrors the MinIO bucket (plus a copy of `.env.selfhost`). Restore with `scripts/selfhost/restore.sh`.
+```bash
+cmpatch selfhost backup --download
+```
+
+Every backup copies the settings, deployment-mode manifest, and version
+metadata. When either data component is bundled, it pauses publishing briefly
+while it dumps Postgres and/or mirrors the MinIO bucket. With both components
+external, it creates a configuration-only backup without stopping the server.
+An external database or S3/GCS bucket is **not** included: the command names the
+omitted components before continuing, and you must back them up with your
+provider's snapshot, PITR, or object-storage tooling. Use `created_at` in the
+backup's `versions.txt` as the point-in-time anchor for those provider restores.
+`--download` copies only the components that the server-side backup contains to
+your own machine.
+
+Restore with `cmpatch selfhost restore`, which lists what is on the server and
+takes a safety backup of the current data first. That safety backup has the same
+mode-specific exclusions, and restore does not recover external provider data.
+
+Both are thin wrappers over `scripts/selfhost/backup.sh` and `scripts/selfhost/restore.sh`, which you can still run on the host directly.
 
 Before you treat the stack as production, take one backup and confirm you can find it somewhere other than the server.
 
@@ -25,21 +44,23 @@ Before you treat the stack as production, take one backup and confirm you can fi
 When a newer server release is out:
 
 ```bash
-scripts/selfhost/upgrade.sh
+cmpatch selfhost upgrade
 # or pin a registry image:
-scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
+cmpatch selfhost upgrade --image registry.example.com/codemagic-patch-server:tag
 ```
 
-By default the script:
+The command first fast-forwards the server's copy of the source (and refuses to touch a checkout with local edits or commits of its own), then runs `scripts/selfhost/upgrade.sh` over SSH. By default that script:
 
-1. Creates a pre-upgrade backup under `backups/pre-upgrade/`
+1. Creates a pre-upgrade backup (under `~/codemagic-patch-backups/pre-upgrade/` when run through the CLI, so `cmpatch selfhost restore` can find it)
 2. Pulls or rebuilds the server image, and rebuilds the Caddy (dashboard) image from source
 3. Recreates the Compose stack and waits for health
 4. Runs `scripts/selfhost/smoke.sh` (full publish smoke needs `CODEMAGIC_PATCH_TOKEN`)
 
-Pass `--i-have-a-backup` only if you already took an external backup for this upgrade. If the upgrade fails after the stack is recreated, use `restore.sh --restore-env` on the pre-upgrade backup. Re-pinning the old image alone is not a safe rollback once migrations may have run.
+Pass `--i-have-a-backup` only if you already took an external backup for this upgrade. If the upgrade fails after the stack is recreated, run `cmpatch selfhost restore` and pick the pre-upgrade backup — the picker labels it as one. Re-pinning the old image alone is not a safe rollback once migrations may have run.
 
 ## Health and monitoring
+
+Open **Status** in the [dashboard](/docs/using-patch/dashboard) sidebar to confirm this install is fully running and up to date. It shows database, storage, and disk health, and whether a newer Patch server release is available.
 
 Set up a free uptime check against the ready endpoint (it checks the server process and its Postgres connection; storage is not covered). Without one, you may only notice downtime when OTA or the dashboard fails:
 
@@ -47,7 +68,7 @@ Set up a free uptime check against the ready endpoint (it checks the server proc
 curl -fsS https://updates.example.com/health/ready
 ```
 
-Also alert on host disk filling up. Monitor storage health separately (`https://storage.updates.example.com/minio/health/ready`). The ready endpoint does not detect storage failures.
+Also alert on host disk filling up. Monitor storage health separately (`https://storage-updates.example.com/minio/health/ready`). The ready endpoint does not detect storage failures.
 
 Use Compose status and logs when something is already wrong, not as the primary check:
 
@@ -59,7 +80,7 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
   -f docker-compose.selfhost.yml logs -f server
 ```
 
-If you use [Cloudflare CDN](/docs/setup/cloudflare) and clients report stale updates, look in server logs for `delivery cache purge completed with failures`.
+If you use [Cloudflare](/docs/setup/cloudflare) or [CloudFront](/docs/setup/cloudfront) and clients report stale updates, look in server logs for `delivery cache purge completed with failures`. On Cloudflare, also check that the old two-hour Edge TTL Cache Rule from the previous setup guide has been deleted — it overrides the origin `s-maxage` and stretches the stale window; see [Cloudflare setup](/docs/setup/cloudflare#add-cache-rules).
 
 ## Disk growth
 
@@ -67,7 +88,7 @@ The default single-host stack keeps release artifacts in object storage and devi
 
 ## When the default stack is not enough
 
-Most installs stay on one Docker host. Add [Cloudflare](/docs/setup/cloudflare) when you want edge caching and automatic manifest purge. Move to external object storage or a split API/worker layout only when you outgrow the defaults; see [Infrastructure adapters](/docs/setup/infrastructure).
+Most installs stay on one Docker host. For production, put [Cloudflare](/docs/setup/cloudflare) or [CloudFront](/docs/setup/cloudfront) in front of storage; it is strongly recommended so devices download from the edge rather than the single host, and it gives you automatic manifest purge. Move to external object storage or a split API/worker layout only when you outgrow the defaults; see [Infrastructure adapters](/docs/setup/infrastructure).
 
 ## Related
 

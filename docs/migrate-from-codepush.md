@@ -43,9 +43,7 @@ differences worth knowing before you start:
   ([`cli/README.md`](../cli/README.md)):
 
   ```sh
-  cmpatch login --server-url https://updates.example.com
-  cmpatch config set server-url https://updates.example.com  # remember it for later commands
-  cmpatch app create --name my-app        # creates Staging + Production
+  cmpatch init                            # from the project root: signs in, creates the apps (Staging + Production), links the project
   cmpatch deployment list --app my-app    # note the new deployment keys
   ```
 
@@ -174,7 +172,8 @@ The SDK swap itself cannot be delivered over the air. Plan the cutover as:
 
 Verify the integration end to end before shipping — the fastest loop is the
 [on-device demo](../examples/on-device-demo/README.md), which runs the full
-publish → sync → rollback cycle against the local evaluation stack.
+publish → sync → rollback cycle against the local evaluation stack
+(`cmpatch selfhost local-eval`).
 
 ## 2. CLI usage differences
 

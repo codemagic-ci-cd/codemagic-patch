@@ -5,10 +5,10 @@
 // MembersPage / Tokens / Apps tables.
 export const TBL_WRAP = "overflow-auto";
 
-export const TBL = "w-full border-collapse text-[13.5px]";
+export const TBL = "w-full border-collapse text-[14px]";
 
 export const TBL_TH =
-  "border-b border-border bg-surface-2 px-[18px] py-[13px] text-left text-[11px] font-bold uppercase tracking-[.06em] whitespace-nowrap text-fg-3";
+  "border-b border-border bg-surface-2 px-[18px] py-[13px] text-left text-[12px] font-bold uppercase tracking-[.06em] whitespace-nowrap text-fg-3";
 
 export const TBL_TD = "border-b border-border px-[18px] py-[15px] align-middle";
 
@@ -24,4 +24,4 @@ export const TBL_RIGHT = "text-right";
  * font-size/family it sets are distinct from TBL_TD's (no-merge contract).
  */
 export const TBL_NUM =
-  "text-right font-mono text-[12.5px] tabular-nums";
+  "text-right font-mono text-[13px] tabular-nums";

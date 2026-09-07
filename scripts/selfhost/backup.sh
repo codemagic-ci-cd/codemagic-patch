@@ -5,13 +5,25 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 BACKUP_ROOT="${SELFHOST_BACKUP_ROOT:-${SELFHOST_REPO_ROOT}/backups}"
+BACKUP_ROOT_GIVEN=0
+BACKUP_DIRECTORY=""
 SERVER_WAS_RUNNING=0
 BACKUP_COMPLETE=0
+CLEANUP_DONE=0
 backup_dir_abs=""
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/selfhost/backup.sh [backup-root]
+Usage: scripts/selfhost/backup.sh [options] [backup-root]
+
+Options:
+  --directory <path>   Write the backup into exactly this directory instead of
+                       creating codemagic-patch-selfhost-<utc> under a root.
+                       The directory must not already exist, or must be empty:
+                       an incomplete backup is removed on failure, and that
+                       must never take an operator's data with it. Mutually
+                       exclusive with the backup-root positional.
+  -h, --help           Show this help.
 
 Creates a timestamped backup directory containing:
   env.selfhost
@@ -29,29 +41,68 @@ component to the backup's created_at timestamp.
 USAGE
 }
 
-if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  usage
-  exit 0
-fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h | --help) usage; exit 0 ;;
+    --directory)
+      # Both a missing and an empty value are refused here: `shift 2` past the
+      # end would die under `set -e` with no message at all, and an empty path
+      # would silently fall through to the default timestamped root — a backup
+      # landing somewhere the caller never named.
+      [ "$#" -ge 2 ] && [ -n "${2:-}" ] || fail_selfhost "--directory requires a path"
+      BACKUP_DIRECTORY="$2"
+      shift 2
+      ;;
+    -*) fail_selfhost "unknown option: $1" ;;
+    *)
+      [ "$BACKUP_ROOT_GIVEN" -eq 0 ] || fail_selfhost "only one backup root may be provided"
+      BACKUP_ROOT="$1"
+      BACKUP_ROOT_GIVEN=1
+      shift
+      ;;
+  esac
+done
 
-if [ "${1:-}" != "" ]; then
-  BACKUP_ROOT="$1"
+if [ -n "$BACKUP_DIRECTORY" ] && [ "$BACKUP_ROOT_GIVEN" -eq 1 ]; then
+  fail_selfhost "--directory and a backup-root positional are mutually exclusive: --directory already names the exact output directory"
 fi
 
 backup_cleanup() {
   local exit_code=$?
+  local signal_number="${1:-}"
+
+  if [ -n "$signal_number" ]; then
+    exit_code=$((128 + signal_number))
+  fi
+  if [ "$CLEANUP_DONE" -eq 1 ]; then
+    exit "$exit_code"
+  fi
+  CLEANUP_DONE=1
 
   # A partial dump/archive must never be left behind looking like a finished
-  # backup. If we never reached completion, drop the incomplete directory.
+  # backup. If we never reached completion, drop the incomplete directory. A
+  # cleanup failure must not prevent the stopped server from being restarted.
   if [ "$BACKUP_COMPLETE" -ne 1 ] && [ -n "$backup_dir_abs" ] && [ -d "$backup_dir_abs" ]; then
     warn_selfhost "backup did not complete; removing incomplete ${backup_dir_abs}"
-    rm -rf "$backup_dir_abs"
+    if ! rm -rf "$backup_dir_abs" 2>/dev/null; then
+      warn_selfhost "could not remove ${backup_dir_abs}; remove it by hand"
+    fi
   fi
 
   if [ "$SERVER_WAS_RUNNING" -eq 1 ]; then
     log_selfhost "restarting server after backup"
     if ! compose_selfhost up -d server; then
       exit_code=1
+    else
+      # `up -d` only proves the container was created: a server that
+      # crash-loops right after (an env file drifted into a non-bootable
+      # state) would otherwise be reported as a completed backup over a downed
+      # deployment. Gate the restart on the same health check restore.sh uses,
+      # so a failed restart surfaces as a failed backup with the state named.
+      wait_for_selfhost_service server
+      if [ -n "${SERVER_URL:-}" ]; then
+        wait_for_selfhost_http "${SERVER_URL%/}/health" "API health" 120
+      fi
     fi
   fi
 
@@ -100,6 +151,11 @@ case "$STORAGE_MODE" in
   bundled | s3 | gcs) ;;
   *) fail_selfhost "SELFHOST_STORAGE_MODE=${STORAGE_MODE} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag, then rerun." ;;
 esac
+# compose_selfhost validates the remaining stack-shape flags too, but the first
+# call here is `compose_selfhost ps` inside a `$( ... 2>/dev/null )`, which
+# turns fail_selfhost's message into a bare exit 1. Run it once up front so the
+# operator sees why the backup stopped.
+validate_selfhost_stack_shape
 
 # A gcs backup without the service-account key is not restorable on a fresh
 # host (the storage overlay bind-mounts the key; the stack cannot boot without
@@ -122,11 +178,30 @@ if [ "$STORAGE_MODE" = "bundled" ]; then
 fi
 
 timestamp="$(date -u +%Y-%m-%dT%H%M%SZ)"
-backup_dir="${BACKUP_ROOT%/}/codemagic-patch-selfhost-${timestamp}"
+if [ -n "$BACKUP_DIRECTORY" ]; then
+  # The caller (the CLI) already owns a per-invocation directory name and
+  # needs the backup to land at exactly that path, identified rather than
+  # guessed by newest-directory. Creating our own timestamped child under it
+  # would double-nest and make the reported path wrong.
+  backup_dir="$BACKUP_DIRECTORY"
+  if [ -e "$backup_dir" ]; then
+    [ -d "$backup_dir" ] || fail_selfhost "--directory ${backup_dir} exists and is not a directory"
+    # backup_cleanup removes the directory when the backup does not complete,
+    # so refusing a non-empty one is what keeps that trap from deleting
+    # something this run did not create.
+    if [ -n "$(ls -A "$backup_dir" 2>/dev/null)" ]; then
+      fail_selfhost "--directory ${backup_dir} is not empty; point it at a new or empty directory (an incomplete backup is removed on failure, which must never delete existing files)"
+    fi
+  fi
+else
+  backup_dir="${BACKUP_ROOT%/}/codemagic-patch-selfhost-${timestamp}"
+fi
 mkdir -p "$backup_dir"
 backup_dir_abs="$(cd "$backup_dir" && pwd)"
 chmod 700 "$backup_dir_abs"
-trap backup_cleanup EXIT
+trap 'backup_cleanup' EXIT
+trap 'backup_cleanup 2' INT
+trap 'backup_cleanup 15' TERM
 
 log_selfhost "writing backup to ${backup_dir_abs}"
 install -m 600 "$SELFHOST_ENV_FILE" "${backup_dir_abs}/env.selfhost"
@@ -216,13 +291,26 @@ fi
 if [ "$STORAGE_MODE" = "bundled" ]; then
   log_selfhost "exporting MinIO bucket codemagic-patch"
   mkdir -p "${backup_dir_abs}/minio-codemagic-patch"
+  # The mc container runs as root, so on a Linux host with rootful Docker every
+  # object directory the mirror creates under the bind mount is root-owned —
+  # and the `rm -rf` below then fails for a non-root operator (the wizard's
+  # default install: a docker-group user such as ubuntu/ec2-user), which under
+  # `set -e` trips the cleanup trap and deletes the finished backup. Hand the
+  # mirror output back to the invoking user inside the same container, where
+  # root can chown; a no-op when the operator is root. (macOS Docker Desktop
+  # maps bind-mount ownership to the host user, so it never shows this.)
+  # `--user` on the mc container is not an option: mc needs a writable config
+  # directory that the image only provides for root.
   compose_selfhost run --rm --no-deps \
     -v "${backup_dir_abs}/minio-codemagic-patch:/backup/minio-codemagic-patch" \
+    -e "CMPATCH_BACKUP_UID=$(id -u)" \
+    -e "CMPATCH_BACKUP_GID=$(id -g)" \
     --entrypoint /bin/sh \
     minio-init -c '
       set -eu
       mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
       mc mirror --overwrite --remove local/codemagic-patch /backup/minio-codemagic-patch
+      chown -R "$CMPATCH_BACKUP_UID:$CMPATCH_BACKUP_GID" /backup/minio-codemagic-patch
     '
 
   tar -czf "${backup_dir_abs}/minio-codemagic-patch.tar.gz" -C "$backup_dir_abs" minio-codemagic-patch

@@ -16,7 +16,16 @@ This monorepo contains everything you need to run the service yourself and wire 
 
 ## Quickstart — try it locally
 
-Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. The only prerequisites are **Docker (with Compose v2)** and **Node.js `20.19+` or `22.12+`** (for the CLI).
+Evaluate the full service on your machine before provisioning domains or OAuth: the **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. The prerequisites are **Docker (with Compose v2)**, **Node.js `20.19+` or `22.12+`** (with npm), `git`, and `curl`, on macOS, Linux, or WSL 2.
+
+With the CLI installed, one command does everything — it keeps its own copy of this repository, checks Docker first (and offers to install or start it), brings the stack up, and points `cmpatch` at it:
+
+```bash
+npm install -g @codemagic/patch-cli
+cmpatch selfhost local-eval
+```
+
+Or from a clone of this repository:
 
 ```bash
 git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
@@ -24,15 +33,15 @@ cd codemagic-patch
 ./scripts/local-eval/up.sh
 ```
 
-The script brings up the stack, installs the `cmpatch` CLI globally, seeds a demo app, and prints a ready banner:
+Either way the stack comes up with a seeded demo app:
 
 - **Dashboard** — <http://localhost:8080> (sign in with the prefilled one-click local login)
-- **API** — <http://localhost:3000>
-- A seeded **demo app** and API token
+- **API** — <http://localhost:3000>; the CLI makes it the default when no higher-precedence project or environment setting overrides it, and prints `--server-url` guidance otherwise
+- `cmpatch selfhost local-eval status` shows the rest: services, the MinIO console, the seeded API token, and a sample publish command
 
 To see an update **apply on a running app** (iOS simulator / Android emulator), continue with the [on-device demo](examples/on-device-demo).
 
-The evaluation stack is defined in `docker-compose.dev.yml` (not the self-host compose file). Tear everything down with:
+The evaluation stack is defined in `docker-compose.dev.yml` (not the self-host compose file). Tear everything down with `cmpatch selfhost local-eval down` (data is kept for the next start; add `--delete-data` to drop it too), or from a clone:
 
 ```bash
 docker compose -f docker-compose.dev.yml down -v
@@ -134,9 +143,9 @@ The default self-host stack runs four services on a single Docker host:
 
 - Docker + Docker Compose v2, and `curl`
 - Public inbound access on ports **80** and **443**
-- **Two domains** with DNS A/AAAA records pointing at the host — one for the API/dashboard, one for artifact storage. They must differ:
+- **Two hostnames** with DNS A/AAAA records pointing at the host — one for the API/dashboard, one for artifact storage. Two subdomains of a domain you already own are enough; they just have to differ:
   - API/dashboard — e.g. `updates.example.com`
-  - Storage — e.g. `storage.updates.example.com`
+  - Storage — e.g. `storage-updates.example.com`
 - A **GitHub OAuth App** (see below)
 
 **Using the CLI**
@@ -164,35 +173,36 @@ If you have any questions or need help with Patch, join the [Codemagic Discord](
 > hardening, and operational detail — is
 > [`docs/self-hosting-compose.md`](docs/self-hosting-compose.md).
 
-### 1.1 Prepare a GitHub OAuth App
+Install the CLI on your own machine (Node.js `20.19+` or `22.12+`) and run the guided install:
 
-Sign-in (both `cmpatch login` and the dashboard) is backed by GitHub OAuth through the browser. Create **one** OAuth App and collect:
+```bash
+npm install -g @codemagic/patch-cli
 
-| Setting                       | Value                                       |
-| ----------------------------- | ------------------------------------------- |
-| Homepage URL                  | `https://updates.example.com`               |
-| Authorization callback URL    | `https://updates.example.com/auth/callback` |
-| Client ID                     | copied from the OAuth App settings page     |
-| Client Secret                 | generated on the same app                   |
+cmpatch selfhost install
+```
 
-> The first admin's email (`--email` below) **must exactly match the verified primary email** on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+The command asks for everything it needs — the server to connect to over SSH, the two hostnames, the administrator email, the GitHub OAuth App — and waits at each step until it checks out, so there is nothing to prepare in advance. It offers to install Docker, git, and curl on the server if they are missing, then runs the installer over SSH. Building the images takes around twenty minutes on a cold cache.
 
-Bitbucket Cloud is also supported as a sign-in provider, instead of or alongside GitHub — see [Bitbucket sign-in](docs/self-hosting-compose.md#bitbucket-sign-in) in the full guide.
+### 1.1 GitHub OAuth App
 
-### 1.2 (Optional but recommended) Prepare Cloudflare in front of storage
+Sign-in (both `cmpatch login` and the dashboard) is backed by GitHub OAuth through the browser. You do not need to create the OAuth App in advance: the installer opens a pre-filled registration form at the right moment and checks the credentials with GitHub before it builds anything.
 
-By default clients download directly from the storage domain (`DELIVERY_ADAPTER=base-url`). For production deployments we recommend fronting the **storage domain** (only — the API domain stays direct) with Cloudflare: artifacts and manifests are then served from the edge, and after every release, promotion, rollback, and deployment clear the server purges the affected `meta.json`/`manifest.json` URLs so clients don't see stale manifests. Deleting a deployment also purges its public artifact URLs.
+> The first admin's email **must exactly match the verified primary email** on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
 
-To prepare, collect two values:
+Bitbucket Cloud is also supported as a sign-in provider, instead of or alongside GitHub, through the on-server install path — see [Bitbucket sign-in](docs/self-hosting-compose.md#bitbucket-sign-in) in the full guide.
 
-- The storage domain must live in a Cloudflare zone. Copy the **Zone ID** from the *API* section of the zone's **Overview** page.
-- Create an **API Token** at **My Profile → API Tokens** (user-owned) or **\<account\> → Manage Account → API Tokens** (account-owned, `cfat_…`). Use *Create Custom Token* with the single permission **Zone → Cache Purge → Purge**, and restrict *Zone Resources* to the zone containing the storage domain.
+### 1.2 CDN in front of storage (strongly recommended for production)
 
-You pass both values to the installer in the next step, then finish the Cloudflare-side setup (DNS proxying and Cache Rules) in [§1.5](#15-finish-the-cloudflare-setup) once the stack is up.
+By default clients download directly from the storage domain (`DELIVERY_ADAPTER=base-url`), which is fine for trying Patch. For production deployments we strongly recommend a CDN, since otherwise every device downloads from the single storage host: front the **storage domain** (only — the API domain stays direct) with a CDN: artifacts and manifests are then served from the edge, and after every release, promotion, rollback, and deployment clear the server purges the affected `meta.json`/`manifest.json` URLs so clients don't see stale manifests.
 
-### 1.3 Install
+`cmpatch selfhost install` offers this as a step. It lists Cloudflare when your storage domain is already on a Cloudflare account, and CloudFront always, and walks you through the token, the DNS proxy switch, and the cache rule, checking each one. The by-hand reference for Cloudflare is [§1.5](#15-finish-the-cloudflare-setup); for CloudFront (which needs an ACM certificate in `us-east-1`, a distribution-scoped purge IAM key, and a separate protected origin hostname) follow the [CloudFront setup guide](docs-site/docs/setup/cloudfront.mdx).
 
-Clone the repo onto the server and run the installer:
+### 1.3 Installing on the server instead
+
+<details>
+<summary>Run the install script on the host</summary>
+
+The CLI is a wrapper around a script in the repository. To run it on the host yourself, create the [OAuth App](https://github.com/settings/applications/new) first with Homepage URL `https://updates.example.com` and callback URL `https://updates.example.com/auth/callback`, add the two DNS records, then:
 
 ```bash
 git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
@@ -200,21 +210,17 @@ cd codemagic-patch
 
 scripts/selfhost/install.sh \
   --api-domain updates.example.com \
-  --storage-domain storage.updates.example.com \
+  --storage-domain storage-updates.example.com \
   --email admin@example.com \
   --github-oauth-client-id <github_client_id> \
   --github-oauth-client-secret <github_client_secret>
 ```
 
-If you prepared Cloudflare in §1.2, add these flags to the same command:
+For Cloudflare, add `--cloudflare --cloudflare-api-token <cf_cache_purge_token> --cloudflare-zone-id <cf_zone_id>` (a token with the single permission *Zone → Cache Purge → Purge*, and the zone's ID from its Overview page).
 
-```bash
-  --cloudflare \
-  --cloudflare-api-token <cf_cache_purge_token> \
-  --cloudflare-zone-id <cf_zone_id>
-```
+</details>
 
-The installer:
+Either way, the installer:
 
 - writes `.env.selfhost` with **strong random secrets** for Postgres, MinIO, the worker, and OAuth (it refuses to overwrite an existing file),
 - builds the server and Caddy (dashboard) images,
@@ -227,7 +233,7 @@ When it finishes you'll have:
 ```text
 Dashboard:      https://updates.example.com/
 API URL:        https://updates.example.com           (app config: CodemagicPatchApiUrl)
-Download base:  https://storage.updates.example.com/codemagic-patch   (app config: CodemagicPatchDownloadBaseUrl)
+Download base:  https://storage-updates.example.com/codemagic-patch   (app config: CodemagicPatchDownloadBaseUrl)
 ```
 
 > 🔐 **`.env.selfhost` holds production secrets.** Back it up and never commit or expose it.
@@ -236,7 +242,7 @@ Download base:  https://storage.updates.example.com/codemagic-patch   (app confi
 
 ```bash
 curl -fsS https://updates.example.com/health
-curl -fsS https://storage.updates.example.com/minio/health/ready
+curl -fsS https://storage-updates.example.com/minio/health/ready
 
 # Unauthenticated smoke test
 scripts/selfhost/smoke.sh
@@ -247,7 +253,7 @@ CODEMAGIC_PATCH_TOKEN=cm_pat_xxx scripts/selfhost/smoke.sh
 
 ### 1.5 Finish the Cloudflare setup
 
-If you installed with the Cloudflare flags (§1.2–1.3), the server side is already active — releases request edge purges.
+The guided install walks you through these steps itself. They are here for on-server installs and for adding Cloudflare later. Once the server is installed with the Cloudflare settings, the server side is already active — releases request edge purges.
 
 #### 1. Switch the DNS record to proxied
 
@@ -257,23 +263,35 @@ If you installed with the Cloudflare flags (§1.2–1.3), the server side is alr
 
 If a later certificate renewal fails while proxied, temporarily switch the record back to DNS-only, let Caddy renew, then re-enable the proxy.
 
-#### 2. Add Cache Rules
+#### 2. Add a Cache Rule
 
-Create two rules under **\<zone\> → Caching → Cache Rules** to make the storage-domain policy explicit and cache the manifests, in this order (when several rules match, the later one wins):
+Create one rule under **\<zone\> → Caching → Cache Rules** to make the storage hostname eligible for caching:
 
-| # | Rule expression | Cache eligibility | Edge TTL |
-| - | --------------- | ----------------- | -------- |
-| 1 | `http.host eq "storage.updates.example.com"` | Eligible for cache | *Use cache-control header if present, bypass cache if not* |
-| 2 | `http.host eq "storage.updates.example.com" and ends_with(http.request.uri.path, ".json")` | Eligible for cache | *Ignore cache-control header and use this TTL*: **2 hours** |
+| Rule expression | Cache eligibility | Edge TTL |
+| --------------- | ----------------- | -------- |
+| `http.host eq "storage-updates.example.com"` | Eligible for cache | *Use cache-control header if present, bypass cache if not* |
 
-Rule 1 lets Cloudflare honor the artifacts' origin headers — bundles and patches are content-addressed and served with `Cache-Control: public, max-age=31536000, immutable`, so they remain fresh for up to one year without revalidation (although Cloudflare may evict an inactive object earlier). Rule 2 overrides the manifests' `no-cache` so `meta.json`/`manifest.json` are cached at the edge; the server automatically requests a purge for those URLs after releases, and the 2-hour TTL bounds staleness in the rare case a purge attempt fails. Two hours is the minimum Edge TTL on Cloudflare Free; Pro and higher plans may use 1 hour instead. Leave `MANIFEST_CACHE_CONTROL` at its default — it governs client revalidation, while the Cache Rule governs the edge.
+Cloudflare does not cache JSON by default, so the eligibility rule remains
+necessary. With Origin Cache Control, it honors Patch's origin headers:
+artifacts are content-addressed and immutable for a year, while manifests use
+`public, max-age=0, s-maxage=300, must-revalidate`. Clients revalidate
+immediately and the edge may retain JSON for five minutes. Do not add an Edge
+TTL override: the Free-plan two-hour minimum applies to that override, not to
+the origin `s-maxage` directive.
+
+**Upgrading an existing zone:** earlier versions of this guide had you add a
+second rule matching `.json` paths with *Ignore cache-control header and use
+this TTL*: **2 hours**. Delete that rule — an Edge TTL override takes
+precedence over the origin `s-maxage`, so leaving it in place keeps manifests
+stale at the edge for up to two hours after a failed purge instead of five
+minutes.
 
 #### 3. Verify
 
 ```bash
 # Second request should return "cf-cache-status: HIT"
 DEPLOYMENT_KEY=your-deployment-key
-URL="https://storage.updates.example.com/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
+URL="https://storage-updates.example.com/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
 
 curl -sI "$URL" | grep -i cf-cache-status
 curl -sI "$URL" | grep -i cf-cache-status
@@ -311,21 +329,16 @@ yarn install
 yarn cli:install-global   # builds and installs the `cmpatch` binary globally
 ```
 
-Store the server URL once so you can omit `--server-url` on every command:
-
-```bash
-cmpatch --version
-cmpatch config set server-url https://updates.example.com
-```
-
-There is no team to configure: the CLI resolves the server's single default
-team automatically.
-
-Sign in as the admin (pick **Sign in with your browser** when prompted — GitHub sign-in and approval complete in the browser):
+Sign in as the admin (GitHub sign-in and approval complete in the browser):
 
 ```bash
 cmpatch login --server-url https://updates.example.com
 ```
+
+`cmpatch init` (Part 3) stores the server URL in the project, so later commands
+need no `--server-url`. Outside a project, `cmpatch config set server-url <url>`
+stores it per user. There is no team to configure: the CLI resolves the server's
+single default team automatically.
 
 Create an API token for CI:
 
@@ -341,17 +354,27 @@ The `cm_pat_...` value is shown **once**. Store it as a CI secret and supply it 
 
 ## Part 3 — Create apps & deployments
 
-Keep iOS and Android in **separate apps**:
+From your React Native project root, let the CLI do it:
+
+```bash
+cmpatch init
+```
+
+It connects to the server, signs you in if needed, creates or selects one app per platform — each with **`Staging`** and **`Production`** deployments — and writes `codemagic-patch.config.json` so later commands can omit `--server-url` and `--app`.
+
+To manage apps by hand instead, keep iOS and Android in **separate apps**:
 
 ```bash
 cmpatch app create --name MyApp-iOS
 cmpatch app create --name MyApp-Android
+```
 
+Either way, `deployment list` shows the keys your app embeds (`CodemagicPatchDeploymentKey`); the same operations are available in the dashboard at `https://updates.example.com/`:
+
+```bash
 cmpatch deployment list --app MyApp-iOS --format table
 cmpatch deployment list --app MyApp-Android --format table
 ```
-
-`app create` automatically creates the **`Staging`** and **`Production`** deployments. The `DEPLOYMENT_KEY` column from `deployment list` is the value your app embeds (`CodemagicPatchDeploymentKey`). The same operations are available in the dashboard at `https://updates.example.com/`.
 
 ---
 
@@ -391,7 +414,7 @@ Wire the config and native bundle selection manually.
   <key>CodemagicPatchDeploymentKey</key>
   <string>ios-staging-deployment-key</string>
   <key>CodemagicPatchDownloadBaseUrl</key>
-  <string>https://storage.updates.example.com/codemagic-patch</string>
+  <string>https://storage-updates.example.com/codemagic-patch</string>
   <key>CodemagicPatchApiUrl</key>
   <string>https://updates.example.com</string>
   <!-- optional, only when enforcing code signing -->
@@ -426,7 +449,7 @@ Wire the config and native bundle selection manually.
   ```xml
   <resources>
     <string name="CodemagicPatchDeploymentKey" translatable="false">android-staging-deployment-key</string>
-    <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage.updates.example.com/codemagic-patch</string>
+    <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage-updates.example.com/codemagic-patch</string>
     <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
     <!-- optional, only when enforcing code signing -->
     <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
@@ -474,12 +497,12 @@ Add the config plugin to `app.json` / `app.config.js`:
         {
           "ios": {
             "deploymentKey": "ios-staging-deployment-key",
-            "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+            "downloadBaseUrl": "https://storage-updates.example.com/codemagic-patch",
             "apiUrl": "https://updates.example.com"
           },
           "android": {
             "deploymentKey": "android-staging-deployment-key",
-            "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+            "downloadBaseUrl": "https://storage-updates.example.com/codemagic-patch",
             "apiUrl": "https://updates.example.com"
           }
         }
@@ -666,9 +689,12 @@ allowRestart();
 
 ## Part 5 — Publish your first release
 
-From your React Native project root, create the CLI context once:
+If you skipped `cmpatch init` in Part 3, run it now from your React Native project root; every question also has a flag for scripted setups:
 
 ```bash
+cmpatch init
+
+# scripted
 cmpatch init \
   --server-url https://updates.example.com \
   --ios-app MyApp-iOS \
@@ -677,7 +703,7 @@ cmpatch init \
   --yes
 ```
 
-This writes `codemagic-patch.config.json` so later commands can omit `--server-url`/`--app`. Inspect the resolved context:
+Inspect the resolved context:
 
 ```bash
 cmpatch context
@@ -811,7 +837,7 @@ To enforce verification on-device, embed the matching public key (`CodemagicPatc
 ```json
 {
   "deploymentKey": "ios-staging-deployment-key",
-  "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+  "downloadBaseUrl": "https://storage-updates.example.com/codemagic-patch",
   "apiUrl": "https://updates.example.com",
   "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 }
@@ -823,7 +849,15 @@ With a `publicKey` configured, the client **rejects** any release whose manifest
 
 ## Operations
 
-All maintenance commands run against the `codemagic-patch-selfhost` Compose project.
+From your own machine, `cmpatch` runs the maintenance scripts over SSH — connecting, selecting, and confirming for you:
+
+```bash
+cmpatch selfhost backup --download   # copy the backup to this machine too
+cmpatch selfhost restore             # lists the backups on the server, or uploads one from here
+cmpatch selfhost upgrade             # backs up, updates server + Caddy images, smoke-tests
+```
+
+The commands below are the same scripts run on the host. All of them run against the `codemagic-patch-selfhost` Compose project.
 
 **Status & logs** (compose commands run by hand take the overlays matching the
 `SELFHOST_*_MODE` flags in `.env.selfhost`; below is the default bundled stack)
@@ -838,8 +872,9 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
   -f deploy/selfhost/compose.bundled-storage.yml logs -f server
 ```
 
-**Backup** (quiesces the server, dumps the bundled Postgres, mirrors the
-bundled MinIO bucket; external components are skipped — see
+**Backup** (quiesces the server when at least one data component is bundled,
+dumps bundled Postgres, and mirrors bundled MinIO; with both components external
+it keeps the server running and creates a configuration-only backup — see
 [`docs/self-hosting-compose.md`](docs/self-hosting-compose.md))
 
 ```bash
@@ -959,13 +994,15 @@ The SDK reads these objects under your **Download base** URL:
 | `MODE`                    | `all`                            | `all` · `api` · `worker`                          |
 | `SELFHOST_DATABASE_MODE`  | `bundled`                        | `bundled` or `external` — selects the database compose overlay; fixed at install time |
 | `SELFHOST_STORAGE_MODE`   | `bundled`                        | `bundled` · `s3` · `gcs` — selects the storage compose overlay; fixed at install time |
+| `SELFHOST_STORAGE_ORIGIN_MODE` | `direct`                    | `direct` or bundled-CloudFront `cdn-origin`        |
 | `REGISTRATION_MODE`       | `invite_only`                    | `invite_only` or `open`                           |
 | `STORAGE_ADAPTER`         | `s3` (self-host)                 | `s3` · `gcs` · `memory`                           |
-| `DELIVERY_ADAPTER`        | `base-url`                       | `base-url` or `cloudflare` (see §1.2 and §1.5)    |
+| `DELIVERY_ADAPTER`        | `base-url`                       | `base-url`, `cloudflare`, or `cloudfront`          |
 | `CLOUDFLARE_API_TOKEN`    | —                                | Token scoped to Zone → Cache Purge (required with `cloudflare`) |
 | `CLOUDFLARE_ZONE_ID`      | —                                | Zone containing the storage domain (required with `cloudflare`) |
 | `CLOUDFLARE_API_BASE_URL` | `https://api.cloudflare.com/client/v4` | Cloudflare API endpoint override           |
-| `MANIFEST_CACHE_CONTROL`  | `no-cache, must-revalidate`      | Cache-Control header for manifests                |
+| `CLOUDFRONT_DISTRIBUTION_ID` | —                             | Required with `cloudfront`; access key pair is optional when using an IAM role |
+| `MANIFEST_CACHE_CONTROL`  | derived from `DELIVERY_ADAPTER`  | Cache-Control for manifests: `no-cache, must-revalidate` on `base-url`, `public, max-age=0, s-maxage=300, must-revalidate` behind a purging CDN |
 | `MAX_UPLOAD_SIZE`         | `200mb`                          | Max artifact upload size                          |
 | `RUN_MIGRATIONS`          | `true`                           | Run DB migrations on boot                         |
 | `LOGGER`                  | `true`                           | Set `false` to silence server logs                |
@@ -983,8 +1020,17 @@ Run `cmpatch help` for grouped topics, or `cmpatch <command> --help` for full fl
 | `cmpatch login` / `logout` / `whoami`      | Browser or token sign-in / out / identity     |
 | `cmpatch token create \| list \| revoke`   | Manage personal access tokens (`cm_pat_…`)    |
 | `cmpatch config list \| get \| set \| unset` | Store defaults such as `server-url` (the team is resolved automatically) |
-| `cmpatch init`                             | Write `codemagic-patch.config.json` for a project |
+| `cmpatch init`                             | Link a project; interactively install a server or enter its URL, sign in after a new install, then create or select each platform app |
 | `cmpatch context`                          | Show the effective resolved context           |
+
+**Self-hosting**
+
+| Command                                      | Description                                   |
+| -------------------------------------------- | --------------------------------------------- |
+| `cmpatch selfhost install [user@vps]`        | Prepare a server and run the guided bundled Postgres/MinIO install |
+| `cmpatch selfhost upgrade [user@vps]`        | Fast-forward and run the guarded backup-and-update workflow |
+| `cmpatch selfhost backup [user@vps]`         | Take a mode-aware backup (`--download` copies it locally) |
+| `cmpatch selfhost restore [backup] [user@vps]` | Take a safety backup and restore the selected backup |
 
 **Apps & deployments**
 

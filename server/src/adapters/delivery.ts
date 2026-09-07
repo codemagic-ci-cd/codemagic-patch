@@ -38,8 +38,10 @@ export interface DeliveryAdapter {
    * Returns a result indicating success or partial failure for logging.
    *
    * @param paths - Public storage keys (not full URLs) to purge.
+   * @param options - Why these paths are being purged. Adapters may use the
+   * scope to choose a provider-specific invalidation strategy.
    */
-  purge(paths: string[]): Promise<PurgeResult>;
+  purge(paths: string[], options: PurgeOptions): Promise<PurgeResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,3 +61,9 @@ export interface PurgeFailure {
   path: string;
   reason: string;
 }
+
+export interface PurgeOptions {
+  scope: PurgeScope;
+}
+
+export type PurgeScope = "manifest" | "artifact-delete";

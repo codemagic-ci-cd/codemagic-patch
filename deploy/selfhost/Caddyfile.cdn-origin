@@ -1,0 +1,60 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$CODEMAGIC_PATCH_API_DOMAIN} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy server:3000
+	}
+
+	# /health* covers both /health and /health/ready
+	handle /health* {
+		reverse_proxy server:3000
+	}
+
+	# /worker/* is intentionally NOT exposed publicly. In MODE=all (the only
+	# self-host topology) release reconciliation runs in-process; the HTTP
+	# /worker/reconcile route is only used by the distributed worker topology.
+	# Exposing it here would put the worker endpoint on the public internet for
+	# no functional gain. Do not add a `handle /worker/*` block.
+
+	handle {
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
+		header {
+			# style-src 'unsafe-inline': the SPA uses React inline style=
+			# attributes; img-src data:: app.css embeds data:image/svg+xml
+			# backgrounds (modal icons, select chevrons).
+			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			-Server
+		}
+	}
+}
+
+# Keep the viewer site during and after cutover. It makes a first install and
+# an adoption zero-downtime while DNS moves from this host to CloudFront.
+{$CODEMAGIC_PATCH_STORAGE_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy minio:9000
+}
+
+{$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN} {
+	# Both slots must expand to a non-empty value: a value-less `header` matcher
+	# is a Caddyfile adapt error, which would fail the entire file — API and
+	# dashboard sites included — not just this site. Outside a rotation the
+	# compose overlay points PREVIOUS at the current secret.
+	@unverified {
+		not header X-Codemagic-Patch-Origin-Verify {$CLOUDFRONT_ORIGIN_VERIFY_SECRET}
+		not header X-Codemagic-Patch-Origin-Verify {$CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS}
+	}
+	respond @unverified 403
+
+	# OTA artifacts are already compressed (.zst); do not add an encode layer
+	# on the CloudFront origin path.
+	reverse_proxy minio:9000
+}

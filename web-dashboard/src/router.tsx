@@ -5,7 +5,7 @@
 //
 // AppShell scope: the shell wraps ALL guarded routes, not
 // just /teams/:teamId/*. The navigation is team-scoped, but account pages must
-// keep the topbar/account menu; AppShell already handles team-less
+// keep the sidebar chrome; AppShell already handles team-less
 // routes by falling back to the persisted last team for the sidebar/switcher,
 // so /teams, /account/* and the 404 keep a stable chrome instead of swapping
 // layouts. AppShell reads `:teamId` via useParams param merging, so the param
@@ -37,6 +37,7 @@ import { MetricsDeploymentDetailPage } from "./pages/metrics/MetricsDeploymentDe
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ReleaseDetailPage } from "./pages/ReleaseDetailPage";
+import { ServerStatusPage } from "./pages/ServerStatusPage";
 import { TeamOverviewPage } from "./pages/TeamOverviewPage";
 import { TokensPage } from "./pages/TokensPage";
 
@@ -139,6 +140,7 @@ export const router = createBrowserRouter([
           },
           { path: "account/tokens", element: <TokensPage /> },
           { path: "account/profile", element: <ProfilePage /> },
+          { path: "account/server", element: <ServerStatusPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

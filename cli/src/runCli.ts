@@ -82,6 +82,10 @@ import {
   formatResolvedFlags,
   parseWithInteractiveFlags,
 } from "./interactiveFlags";
+import { runProcessWithSpawn } from "./remoteExec";
+import { createDnsClient } from "./selfhostDns";
+import { createTlsNameProbe } from "./selfhostTls";
+import { connectTcp } from "./selfhostInstall";
 import { getCliVersion } from "./version";
 
 export type CliDeps = CommandDeps & {
@@ -102,6 +106,10 @@ function createDefaultDeps(): CliDeps {
     readFile: (path) => fs.readFile(path),
     readDirectory: (path) => fs.readdir(path, { withFileTypes: true }),
     runCommand,
+    connectTcp,
+    dnsClient: createDnsClient(),
+    probeTlsName: createTlsNameProbe(),
+    runProcess: runProcessWithSpawn,
     sleep: (milliseconds) =>
       new Promise((resolve) => {
         setTimeout(resolve, milliseconds);
@@ -388,7 +396,7 @@ export async function runCli(
   // who is present, and explicit-json runs already force them into the --yes
   // requirement via withJsonNonInteractiveMode. Commands whose whole point is
   // a guided session keep their prompts and their own interactivity gates.
-  const promptDrivenKinds = new Set(["config", "init", "login"]);
+  const promptDrivenKinds = new Set(["config", "init", "login", "selfhost"]);
   const executionDeps =
     !promptDrivenKinds.has(commandForExecution.kind) &&
     (effectiveOutput.format === "json" || declinesInteraction(argv))
@@ -470,7 +478,10 @@ export async function runCli(
           }
 
           if (outcome === "signed-in") {
-            commandToRun = withoutExplicitToken(commandToRun);
+            commandToRun = withServerUrlJustSignedInTo(
+              withoutExplicitToken(commandToRun),
+              error,
+            );
             continue;
           }
         }
@@ -910,6 +921,28 @@ function withoutExplicitToken(
   return "token" in command && command.token !== undefined
     ? { ...command, token: undefined }
     : command;
+}
+
+/**
+ * An `init` refused mid-run learned its server from a prompt, and the replay
+ * would open with that same server menu and ask for the URL a second time —
+ * the sign-in stored a credential, not the address. Carrying the address the
+ * server refused as `--server-url` makes the replay resume at the step that
+ * failed. An init that already named its server is left alone.
+ */
+function withServerUrlJustSignedInTo(
+  command: ExecutableCliCommand,
+  error: HttpProblemError,
+): ExecutableCliCommand {
+  if (
+    command.kind !== "init" ||
+    error.serverUrl === undefined ||
+    readOptionValue(command.argv, "--server-url") !== undefined
+  ) {
+    return command;
+  }
+
+  return { ...command, argv: [...command.argv, "--server-url", error.serverUrl] };
 }
 
 type LoginOfferOutcome = "aborted" | "declined" | "signed-in";

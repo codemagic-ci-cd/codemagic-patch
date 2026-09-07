@@ -44,7 +44,7 @@ export function EmptyState({
           {icon}
         </div>
       ) : null}
-      <h3 className="text-[17px] font-extrabold">{title}</h3>
+      <h3 className="text-[17px] font-semibold text-fg">{title}</h3>
       {description !== undefined ? (
         <p className="mt-[2px] mb-4 max-w-[46ch] text-fg-2">{description}</p>
       ) : null}

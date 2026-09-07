@@ -29,7 +29,7 @@ function useShowAnnouncementBar() {
 
 const sidebarFooterLinks = [
   {label: 'Codemagic.io', href: 'https://codemagic.io'},
-  {label: 'CodePush', href: 'https://codemagic.io/codepush'},
+  {label: 'Discord', href: 'https://codemagic.io/discord/'},
 ];
 
 export default function DocSidebarDesktopContent({

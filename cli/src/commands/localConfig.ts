@@ -1,5 +1,10 @@
+import { basename, isAbsolute, relative } from "node:path";
+
 import type { ConfigCommand, ContextCommand, InitCommand } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
+import { PRODUCT_NAME, SELFHOST_DOCS_URL } from "../branding";
+import { normalizeServerUrl } from "../credentialStore";
+import { RequestNetworkError } from "../http";
 import {
   loadCliConfig,
   loadProjectConfig,
@@ -11,25 +16,34 @@ import {
   type ProjectPlatformConfigMap,
 } from "../configStore";
 import {
+  type ConfigSource,
+  type EffectiveValue,
   resolveEffectiveContext,
   resolveProjectRoot,
 } from "../localContext";
-import { writeClosing } from "../notice";
-import { isRecord, writeLine } from "../output";
+import { writeClosing, writeMessage, writeNote, writeOpening } from "../notice";
+import { createPalette, isRecord, writeLine, type WritableStream } from "../output";
 import {
   listNamedResources,
   promptBundler,
+  promptName,
   promptResource,
+  promptResourceOrCreate,
   promptServerUrl,
   type NamedResource,
 } from "../flagPrompts";
 import {
   detectNativePlatforms,
   detectProjectBundler,
+  detectProjectName,
   formatBundlerName,
   type NativePlatform,
 } from "../projectAnalysis";
 import type { PromptFn } from "../prompt";
+import { onInterruptCleanup } from "../progress";
+import { getCliVersion } from "../version";
+import { executeLogin } from "./auth";
+import { runInstall, type InstallOutcome } from "./selfhostInstall";
 import {
   assertHttpUrl,
   buildApiUrl,
@@ -47,7 +61,7 @@ export async function executeConfigCommand(
   const config = await loadCliConfig({ env: deps.env });
 
   if (subcommand === "list" && key === undefined) {
-    return config;
+    return scalarConfigView(config);
   }
 
   if (subcommand === "get" && key !== undefined && value === undefined) {
@@ -174,8 +188,25 @@ function readSdkDownloadBaseUrl(response: unknown): string {
   return response.download_base_url.trim();
 }
 
-function isConfigKey(key: string): key is keyof CliConfig {
+/**
+ * `config` speaks only for the scalar user defaults. The `selfhost` and
+ * `pendingInstall` sections live in the same file, but they are ssh state the
+ * `selfhost` commands own — not something to get, set, unset, or print here.
+ * Narrowing the key type is also what keeps `config set` from assigning a
+ * string over a section.
+ */
+type ScalarConfigKey = "serverUrl" | "team" | "teamId";
+
+function isConfigKey(key: string): key is ScalarConfigKey {
   return key === "serverUrl" || key === "team" || key === "teamId";
+}
+
+function scalarConfigView(config: CliConfig): CliConfig {
+  return {
+    ...(config.serverUrl !== undefined ? { serverUrl: config.serverUrl } : {}),
+    ...(config.team !== undefined ? { team: config.team } : {}),
+    ...(config.teamId !== undefined ? { teamId: config.teamId } : {}),
+  };
 }
 
 function normalizeConfigKey(key: string): string {
@@ -227,6 +258,79 @@ async function linkProject(
     canPromptInteractively(deps, flags.nonInteractive === true) &&
     !flags.yes &&
     deps.prompt !== undefined;
+
+  // The prompt tree opens before the first question, with the welcome, and
+  // every way out of the flow closes it: `writeClosing` on the two planned
+  // exits below, and here on anything thrown, so the error printed after it
+  // lands under a closed tree rather than inside an open one.
+  if (!interactive || deps.stderr === undefined) {
+    return linkProjectFlow(
+      flags,
+      interactive,
+      deps,
+      projectRoot,
+      existingConfig,
+    );
+  }
+  const stderr = deps.stderr;
+  openInitFlow(stderr, deps.env, projectRoot, existingConfig);
+  try {
+    return await linkProjectFlow(
+      flags,
+      interactive,
+      deps,
+      projectRoot,
+      existingConfig,
+    );
+  } catch (error) {
+    writeClosing(stderr, "");
+    throw error;
+  }
+}
+
+/**
+ * What the user sees before init's first question: which command this is,
+ * and what it is about to do — where the link goes, what will be asked, and
+ * when the file is written — so the questions that follow read as steps of
+ * one thing instead of arriving cold. The version is on the line because a
+ * report of what went wrong starts with which cmpatch it was.
+ */
+function openInitFlow(
+  stderr: WritableStream,
+  env: Record<string, string | undefined>,
+  projectRoot: string,
+  existingConfig: ProjectConfig,
+): void {
+  const palette = createPalette(stderr, env);
+  writeOpening(
+    stderr,
+    `${PRODUCT_NAME} · cmpatch init ${palette.dim(getCliVersion())}`,
+  );
+  const verb = Object.keys(existingConfig).length === 0 ? "links" : "re-links";
+  writeMessage(stderr, [
+    `Welcome! This command ${verb} the app in ${describeProjectRoot(projectRoot)} to a ${PRODUCT_NAME} server and writes codemagic-patch.config.json next to it.`,
+    "It asks which server to use, signs you in, and picks the app and its deployments. The config file is only written after the last answer.",
+  ]);
+}
+
+/** The project root as the user would name it: relative when it is nearby. */
+function describeProjectRoot(projectRoot: string): string {
+  const fromHere = relative(process.cwd(), projectRoot);
+  if (fromHere === "") {
+    return "this directory";
+  }
+  return isAbsolute(fromHere) || fromHere.startsWith("..")
+    ? projectRoot
+    : fromHere;
+}
+
+async function linkProjectFlow(
+  flags: LinkFlags,
+  interactive: boolean,
+  deps: CommandDeps,
+  projectRoot: string,
+  existingConfig: ProjectConfig,
+): Promise<unknown> {
   const userConfig = await loadCliConfig({ env: deps.env });
   const effectiveContext = resolveEffectiveContext(
     deps.env,
@@ -235,10 +339,37 @@ async function linkProject(
     projectRoot,
   );
   let serverUrl: string | undefined;
+  /** Set only by the install handoff, which is the one path that owes a sign-in. */
+  let installed: InstallOutcome | undefined;
   if (flags.serverUrl !== undefined) {
     serverUrl = flags.serverUrl;
   } else if (interactive && deps.prompt) {
-    serverUrl = await promptServerUrl(deps.prompt, effectiveContext.serverUrl?.value);
+    // The branch point, and the only place init knows anything about
+    // self-hosting: the question is where this project's server comes from.
+    // A machine that already knows a server gets it as the first answer, but
+    // the other two stay on the menu — a second project on the same machine
+    // may well need a second server. Installing hands off wholesale to the
+    // wizard and takes back a URL — no install flag, question, or step lives
+    // here.
+    const known = effectiveContext.serverUrl;
+    const source = await chooseServerSource(deps, deps.prompt, known);
+    switch (source) {
+      case "exit":
+        if (deps.stderr !== undefined) {
+          writeClosing(deps.stderr, "Nothing was changed.");
+        }
+        return renderReadTheDocsFirst();
+      case "install":
+        installed = await installServer(deps);
+        serverUrl = installed.serverUrl ?? undefined;
+        break;
+      case "use-known":
+        serverUrl = known?.value;
+        break;
+      case "enter-url":
+        serverUrl = await askReachableServerUrl(deps, deps.prompt);
+        break;
+    }
   } else {
     serverUrl = effectiveContext.serverUrl?.value;
   }
@@ -248,6 +379,10 @@ async function linkProject(
     );
   }
   serverUrl = assertHttpUrl(serverUrl);
+
+  if (installed !== undefined) {
+    await signInToNewServer(deps, serverUrl, installed.adminEmail);
+  }
 
   const autoSelected: string[] = [];
   const team = await selectTeam(deps, serverUrl, flags, autoSelected, interactive);
@@ -266,7 +401,29 @@ async function linkProject(
     flags.token,
     "apps",
   );
+  // Creating an app is part of linking a project, not a separate command the
+  // user has to discover: the picker used to refuse an empty list, and only
+  // list what was already there otherwise, so both a server that has never had
+  // an app and a team holding somebody else's ended the run at
+  // `cmpatch app create`. One app per platform, because a deployment serves
+  // one platform's releases and the documented model is an app per platform.
+  // Nothing here is self-host-specific — it is about what the team holds,
+  // however the project got there.
+  const projectName = await detectProjectName(deps, projectRoot);
+  const createApp =
+    interactive && deps.prompt !== undefined
+      ? (platform: NativePlatform) =>
+          createFirstApp(deps, deps.prompt as PromptFn, {
+            defaultName: `${projectName ?? basename(projectRoot)}-${platform}`,
+            noun: `${platform} app`,
+            serverUrl,
+            teamId: team.id,
+            ...(flags.token !== undefined ? { token: flags.token } : {}),
+          })
+      : null;
+
   const platformConfigs: ProjectPlatformConfigMap = {};
+  const dashboard: Partial<Record<NativePlatform, string>> = {};
   for (const platform of platforms) {
     const app = await selectAppForPlatform(
       deps,
@@ -275,6 +432,7 @@ async function linkProject(
       platform,
       autoSelected,
       interactive,
+      createApp,
     );
     const deployments = await listNamedResources(
       deps,
@@ -295,6 +453,7 @@ async function linkProject(
       app: app.name,
       deployment: deployment.name,
     };
+    dashboard[platform] = deploymentPageUrl(serverUrl, team.id, app.id, deployment.id);
   }
   const bundler = await selectBundler(
     deps,
@@ -335,14 +494,409 @@ async function linkProject(
     writeClosing(deps.stderr, "Wrote codemagic-patch.config.json");
   }
 
+  // What the closing summary needs beyond the config: the team by name, the
+  // dashboard page per deployment, and the server this project was pointed
+  // at before — when that was a local evaluation stack, the SDK in the app
+  // still carries its URL and key.
+  const previousServerUrl = existingConfig.serverUrl;
   return {
     config: nextConfig,
+    dashboard,
     nextActions: [
       "cmpatch context",
       "cmpatch release-react --dry-run",
     ],
+    ...(previousServerUrl !== undefined &&
+    safeNormalize(previousServerUrl) !== safeNormalize(serverUrl)
+      ? { previousServerUrl }
+      : {}),
+    projectName: projectName ?? basename(projectRoot),
     projectRoot,
+    team: { id: team.id, name: team.name },
   };
+}
+
+/** The dashboard page for one deployment — where its releases are listed. */
+function deploymentPageUrl(
+  serverUrl: string,
+  teamId: string,
+  appId: string,
+  deploymentId: string,
+): string {
+  return `${serverUrl.replace(/\/+$/u, "")}/teams/${encodeURIComponent(teamId)}/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}`;
+}
+
+function safeNormalize(serverUrl: string): string {
+  try {
+    return normalizeServerUrl(serverUrl);
+  } catch {
+    return serverUrl;
+  }
+}
+
+type ServerSource = "enter-url" | "exit" | "install" | "use-known";
+
+const SERVER_SOURCE_LABELS: Record<ConfigSource, string> = {
+  env: "the environment",
+  project: "this project",
+  user: "your CLI settings",
+};
+
+/**
+ * Where a project gets its server.
+ *
+ * With nothing known there are three answers and no fourth: a URL the user
+ * already has, an install performed right here, or a way out that is not an
+ * error — someone who wants to read first should not have to type a URL to
+ * escape a prompt.
+ *
+ * With a server already known to this machine the known URL takes the top
+ * slot and the exit goes, but entering another URL and installing stay: a
+ * remembered address is a default, not a decision made for every project on
+ * the machine. The note says where the address came from so a stale user
+ * default or an env override is recognisable before it is accepted.
+ */
+async function chooseServerSource(
+  deps: CommandDeps,
+  prompt: PromptFn,
+  known: EffectiveValue | undefined,
+): Promise<ServerSource> {
+  if (deps.stderr !== undefined) {
+    if (known === undefined) {
+      writeNote(deps.stderr, `No ${PRODUCT_NAME} server found`, [
+        "Checked the environment, this project, and your CLI settings.",
+      ]);
+    } else {
+      writeNote(deps.stderr, `${PRODUCT_NAME} server found`, [
+        `${known.value} (from ${SERVER_SOURCE_LABELS[known.source]})`,
+      ]);
+    }
+  }
+
+  const answer = await prompt({
+    choices:
+      known === undefined
+        ? [
+            { title: "Install a self-hosted server now", value: "install" },
+            { title: "Enter an existing server URL", value: "enter-url" },
+            { title: "Exit — read the self-hosting docs first", value: "exit" },
+          ]
+        : [
+            { title: `Use ${known.value}`, value: "use-known" },
+            { title: "Enter a different server URL", value: "enter-url" },
+            { title: "Install a self-hosted server now", value: "install" },
+          ],
+    message: "How do you want to connect to a server?",
+    type: "select",
+  });
+
+  const value = Array.isArray(answer) ? answer[0] : answer;
+  if (value === "install" || value === "enter-url") {
+    return value;
+  }
+  if (known === undefined) {
+    return value === "exit" ? "exit" : "enter-url";
+  }
+  return value === "use-known" ? "use-known" : "enter-url";
+}
+
+const SERVER_PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * A typed URL, checked against the server behind it before anything is built
+ * on it. The form check inside `promptServerUrl` catches a missing scheme;
+ * this catches the likelier mistake — a host typed wrong, or the address of
+ * something that is not a Patch server — which used to surface as the team
+ * listing failing and the run ending. A mistake found here costs one more
+ * question, with the typed value left in the field to correct.
+ *
+ * The probe is `/health/ready`, which needs no sign-in: whether the user is
+ * signed in to this server is the next step's question, not this one's.
+ */
+async function askReachableServerUrl(
+  deps: CommandDeps,
+  prompt: PromptFn,
+): Promise<string> {
+  let initial: string | undefined;
+  for (;;) {
+    const serverUrl = await promptServerUrl(deps, prompt, initial);
+    if (deps.stderr !== undefined) {
+      writeLine(deps.stderr, `Checking ${serverUrl}…`);
+    }
+
+    const problem = await describeServerProblem(deps, serverUrl);
+    if (problem === null) {
+      return serverUrl;
+    }
+
+    if (deps.stderr !== undefined) {
+      writeLine(deps.stderr, problem);
+    }
+    initial = serverUrl;
+  }
+}
+
+/**
+ * What is wrong with the server at a URL, or null when it answers like a
+ * ready Patch server. Three failures are told apart because each needs a
+ * different fix: nothing answered (the address), something answered that is
+ * not a Patch server (the address, again — a dashboard or an unrelated site),
+ * and a Patch server that is up but not ready (the server).
+ */
+async function describeServerProblem(
+  deps: CommandDeps,
+  serverUrl: string,
+): Promise<string | null> {
+  const url = buildApiUrl(serverUrl, "/health/ready");
+
+  let response: Response;
+  try {
+    response = await deps.fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(SERVER_PROBE_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      return `No answer from ${serverUrl} within ${SERVER_PROBE_TIMEOUT_MS / 1000} seconds. Check the URL and that the server is reachable.`;
+    }
+    return new RequestNetworkError(url, error).message;
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  const answersLikePatch =
+    isRecord(body) && typeof body.ok === "boolean" && Array.isArray(body.checks);
+
+  if (response.ok && answersLikePatch) {
+    return null;
+  }
+
+  if (response.status === 503 && answersLikePatch) {
+    return `The ${PRODUCT_NAME} server at ${serverUrl} is running but not ready: its database check is failing. Check the server, then enter the URL again.`;
+  }
+
+  return `${serverUrl} answered, but not like a ${PRODUCT_NAME} server (HTTP ${response.status} from ${url}). Check that this is the server's address and not another site.`;
+}
+
+/**
+ * The handoff. init hands the whole installation to `selfhost install` and
+ * takes back one thing — the server URL — which is what keeps every install
+ * question, flag, and step out of this command.
+ */
+async function installServer(deps: CommandDeps): Promise<InstallOutcome> {
+  const outcome = await runInstall(deps, [], { handoff: true });
+  writeInstallSummary(deps, outcome.summary);
+
+  if (outcome.serverUrl === null) {
+    // The server is up either way — this is init unable to continue, not an
+    // install that failed, and the message has to say which.
+    throw new UsageError(
+      [
+        "The server is installed, but its address could not be read back, so init cannot continue on its own.",
+        "",
+        "Link the project to it with:",
+        "  cmpatch init --server-url <url>",
+      ].join("\n"),
+    );
+  }
+
+  return outcome;
+}
+
+/** The one prompt with no answer: the install is done, and init carries on. */
+const CONTINUE_TO_SIGN_IN = "Press Enter to open the browser and sign in";
+
+/** What that sign-in is for, printed above the pause so Enter is informed. */
+const SIGN_IN_PREVIEW =
+  "Next, your browser opens the new dashboard. Signing in with GitHub there creates the administrator account and connects cmpatch to the server.";
+
+/**
+ * The first sign-in to a server this run just installed, done here rather than
+ * left as a `cmpatch login` the user runs afterwards.
+ *
+ * It is one browser round-trip because the dashboard's `/cli/authorize` sits
+ * behind its sign-in and preserves the request across it: the GitHub sign-in
+ * that creates the admin account, the approval, and the CLI token all happen
+ * on that one visit. The method question `cmpatch login` asks is skipped —
+ * init is mid-flow, and the browser is the only method that can create the
+ * admin account it needs next.
+ *
+ * An abort here is not a dead end: the server URL was persisted before the
+ * browser ever opened (the wizard commits it the moment the server is
+ * healthy), so the printed recovery command works, and re-running `cmpatch
+ * init` resumes at this sign-in instead of offering a second install.
+ */
+async function signInToNewServer(
+  deps: CommandDeps,
+  serverUrl: string,
+  adminEmail: string | undefined,
+): Promise<void> {
+  // Ctrl-C during the browser wait would otherwise leave an installed server,
+  // a written config, and no idea what to run next. The wait animates a
+  // spinner, under which the press never becomes a signal, so this has to be
+  // a cleanup hook and not a signal listener; the exit itself is left to it.
+  const removeInterruptHook = onInterruptCleanup(async () => {
+    writeSignInRecovery(deps, serverUrl);
+  });
+
+  try {
+    // A pause between the install and the sign-in. The summary just printed
+    // is the only place the dashboard address and anything the CDN step left
+    // over appear, and the browser about to open would push it off the screen
+    // unread. The wait also says what init does next, so the project questions
+    // moments from now do not arrive as a change of subject. A Ctrl-C here is
+    // the same abort as one at the browser: the recovery below still applies.
+    if (deps.prompt !== undefined) {
+      if (deps.stderr !== undefined) {
+        writeLine(deps.stderr, SIGN_IN_PREVIEW);
+      }
+      await deps.prompt({
+        message: CONTINUE_TO_SIGN_IN,
+        optional: true,
+        type: "text",
+      });
+    }
+
+    if (deps.stderr !== undefined) {
+      writeNote(deps.stderr, "Signing you in", [
+        adminEmail === undefined
+          ? "Use the GitHub account for the administrator email you gave the installer."
+          : `Use the GitHub account for ${adminEmail}.`,
+        "This first sign-in creates the admin account.",
+      ]);
+    }
+
+    const message = await executeLogin(
+      { kind: "login", nonInteractive: true, serverUrl },
+      deps,
+      {
+        writeAuthorizationInstructions: (instructions) => {
+          if (deps.stderr !== undefined) {
+            writeLine(deps.stderr, instructions);
+          }
+        },
+      },
+    );
+
+    if (deps.stderr !== undefined) {
+      writeLine(deps.stderr, message);
+    }
+  } catch (error) {
+    writeSignInRecovery(deps, serverUrl);
+    throw error;
+  } finally {
+    removeInterruptHook();
+  }
+}
+
+/**
+ * Fully qualified on purpose: a bare `cmpatch login` depends on this machine's
+ * stored server URL, and the recovery has to work in a fresh project and on a
+ * machine whose config was never written or has since changed.
+ */
+function writeSignInRecovery(deps: CommandDeps, serverUrl: string): void {
+  if (deps.stderr === undefined) {
+    return;
+  }
+
+  writeLine(
+    deps.stderr,
+    `\nThe server is installed and ready. Sign in and finish linking the project with:\n  cmpatch login --server-url ${serverUrl}\n  cmpatch init --server-url ${serverUrl}\n`,
+  );
+}
+
+/**
+ * The wizard's closing summary, relayed into init's own flow: it carries the
+ * dashboard address and anything the CDN step could not finish, and nothing
+ * downstream would ever mention those again.
+ */
+function writeInstallSummary(deps: CommandDeps, summary: string): void {
+  if (deps.stderr === undefined) {
+    return;
+  }
+
+  const [headline = "", ...rest] = summary.split("\n");
+  while (rest[0] === "") {
+    rest.shift();
+  }
+
+  writeNote(deps.stderr, headline, rest);
+}
+
+function renderReadTheDocsFirst(): string {
+  return [
+    `Set up a ${PRODUCT_NAME} server first, then run \`cmpatch init\` again.`,
+    "",
+    "Self-hosting guide:",
+    `  ${SELFHOST_DOCS_URL}`,
+  ].join("\n");
+}
+
+/**
+ * The first app on a server that has none, created from `init` rather than
+ * from a command the user has to go and find.
+ *
+ * It is the same `POST /v1/apps` `cmpatch app create` uses — idempotency key
+ * included — so the server stays the only place app creation is implemented,
+ * and the Staging and Production deployments it returns are what the
+ * deployment picker asks about next.
+ */
+async function createFirstApp(
+  deps: CommandDeps,
+  prompt: PromptFn,
+  input: {
+    defaultName: string;
+    noun: string;
+    serverUrl: string;
+    teamId: string;
+    token?: string;
+  },
+): Promise<NamedResource> {
+  const name = await promptName(prompt, input.noun, input.defaultName);
+  const response = await authenticatedRequest(deps, {
+    init: {
+      body: JSON.stringify({
+        name,
+        require_code_signing: false,
+        team_id: input.teamId,
+      }),
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": deps.randomUUID(),
+      },
+      method: "POST",
+    },
+    serverUrl: input.serverUrl,
+    ...(input.token !== undefined ? { token: input.token } : {}),
+    url: buildApiUrl(input.serverUrl, "/v1/apps"),
+  });
+
+  const created = readCreatedApp(response);
+  if (deps.stderr !== undefined) {
+    writeLine(
+      deps.stderr,
+      `Created app ${created.name} with Staging and Production deployments.`,
+    );
+  }
+
+  return created;
+}
+
+function readCreatedApp(response: unknown): NamedResource {
+  const app = isRecord(response) ? response.app : undefined;
+  if (
+    !isRecord(app) ||
+    typeof app.id !== "string" ||
+    typeof app.name !== "string"
+  ) {
+    throw new Error("App creation returned an invalid response");
+  }
+
+  return { id: app.id, name: app.name };
 }
 
 function parseLinkFlags(args: string[]): LinkFlags {
@@ -515,6 +1069,13 @@ async function selectTeam(
   }
 
   if (interactive && deps.prompt !== undefined) {
+    // A picker with one entry is not a question. Self-hosted servers have
+    // exactly one team by design, so on the fresh-install path this would be
+    // the first thing the user is asked and the only possible answer.
+    if (teams.length === 1) {
+      return teams[0]!;
+    }
+
     return promptResource(deps.prompt, "Select team", teams, "team");
   }
 
@@ -544,6 +1105,12 @@ async function selectLinkPlatforms(
   const platforms = await detectNativePlatforms(deps, projectRoot);
 
   if (interactive && deps.prompt !== undefined) {
+    if (deps.stderr !== undefined) {
+      writeLine(
+        deps.stderr,
+        "Each platform gets its own app on the server; the next questions create or pick one per platform.",
+      );
+    }
     return promptPlatforms(deps.prompt, platforms);
   }
 
@@ -590,6 +1157,8 @@ async function selectAppForPlatform(
   platform: NativePlatform,
   autoSelected: string[],
   interactive: boolean,
+  /** Creates this platform's app when the team has none; null when it cannot. */
+  createApp: ((platform: NativePlatform) => Promise<NamedResource>) | null,
 ): Promise<NamedResource> {
   const appId = platform === "ios" ? flags.iosAppId : flags.androidAppId;
   const app = platform === "ios" ? flags.iosApp : flags.androidApp;
@@ -611,7 +1180,32 @@ async function selectAppForPlatform(
   }
 
   if (interactive && deps.prompt !== undefined) {
-    return promptResource(deps.prompt, `Select app for ${platform}`, apps, "app");
+    // Reached only after the flag branches above: an explicit selector names
+    // an app the user expects to exist, and creating one behind it would hide
+    // a typo.
+    if (createApp === null) {
+      return promptResource(deps.prompt, `Select app for ${platform}`, apps, "app");
+    }
+
+    // A picker with nothing in it is not a question.
+    if (apps.length === 0) {
+      return createApp(platform);
+    }
+
+    // With apps present the list is still offered first — but never as the
+    // only answer. A team can hold another project's apps, and a run stopped
+    // between creating this project's first app and its second leaves exactly
+    // that shape behind: without this, the rerun could only link the second
+    // platform to the first platform's app.
+    const chosen = await promptResourceOrCreate(
+      deps.prompt,
+      `Select app for ${platform}`,
+      apps,
+      "app",
+      `Create a new app for ${platform}`,
+    );
+
+    return chosen === "create" ? createApp(platform) : chosen;
   }
 
   return selectSingleForPlatform(
@@ -654,7 +1248,7 @@ async function selectDeploymentForPlatform(
   if (interactive && deps.prompt !== undefined) {
     return promptResource(
       deps.prompt,
-      `Select deployment for ${platform}`,
+      `Default deployment for ${platform} releases`,
       deployments,
       "deployment",
     );
@@ -711,7 +1305,7 @@ async function promptPlatforms(
       title: platform,
       value: platform,
     })),
-    message: "Select platforms",
+    message: "Which platforms does this project ship?",
     min: 1,
     type: "multiselect",
   });

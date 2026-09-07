@@ -25,6 +25,7 @@ import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
 import { Skeleton } from "../components/ui/Skeleton";
+import { PageHeader } from "../components/ui/PageHeader";
 import { useTeamRole } from "../rbac/useTeamRole";
 import { apiServerUrl } from "../lib/cliSnippet";
 import { formatDate } from "../model/format";
@@ -49,7 +50,7 @@ import {
   TOGGLE_TRACK,
 } from "../components/ui/form";
 import { TBL, TBL_TD, TBL_TH, TBL_TR, TBL_WRAP } from "../components/ui/table";
-import { PAGE_SUB, PAGE_TITLE } from "../components/ui/typography";
+import { clickableRowProps } from "../components/ui/clickableRow";
 
 export function AppsPage() {
   // :teamId is always bound on this route (router.tsx nests the page under
@@ -74,18 +75,11 @@ export function AppsPage() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className={PAGE_TITLE}>
-            Apps
-          </h1>
-          <p className={PAGE_SUB}>
-            React Native OTA targets in this team. Each app auto-creates a
-            Staging and Production deployment.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          {showDeniedTip ? (
+      <PageHeader
+        title="Apps"
+        description="React Native OTA targets in this team. Each app auto-creates a Staging and Production deployment."
+        actions={
+          showDeniedTip ? (
             // RBAC "Disabled" convention: rendered greyed (never hidden) with
             // the `.tip` hover tooltip; `.btn[disabled]` removes
             // pointer events, so the wrapper owns the hover. The sr-only
@@ -105,9 +99,9 @@ export function AppsPage() {
             >
               <PlusIcon /> Create app
             </button>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {appsQuery.isPending ? (
         <div
@@ -184,19 +178,9 @@ function AppTable({ teamId, apps }: { teamId: string; apps: App[] }) {
             return (
               <tr
                 key={app.id}
-                className={`${TBL_TR} cursor-pointer`}
-                onClick={(event) => {
-                  // The name <Link> owns navigation semantics (and keyboard
-                  // access); the row-level click is a pointer convenience —
-                  // skip it when the click already landed on the link.
-                  if (
-                    event.target instanceof Element &&
-                    event.target.closest("a") !== null
-                  ) {
-                    return;
-                  }
+                {...clickableRowProps(TBL_TR, () => {
                   void navigate(detailPath);
-                }}
+                })}
               >
                 <td className={TBL_TD}>
                   <div className={CELL_APP}>

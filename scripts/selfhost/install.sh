@@ -6,6 +6,7 @@ set -euo pipefail
 
 API_DOMAIN="${CODEMAGIC_PATCH_API_DOMAIN:-}"
 STORAGE_DOMAIN="${CODEMAGIC_PATCH_STORAGE_DOMAIN:-}"
+STORAGE_ORIGIN_DOMAIN="${CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN:-}"
 ADMIN_EMAIL="${ACME_EMAIL:-}"
 GITHUB_OAUTH_CLIENT_ID="${GITHUB_OAUTH_CLIENT_ID:-}"
 GITHUB_OAUTH_CLIENT_SECRET="${GITHUB_OAUTH_CLIENT_SECRET:-}"
@@ -15,6 +16,10 @@ BITBUCKET_OAUTH_CLIENT_SECRET="${BITBUCKET_OAUTH_CLIENT_SECRET:-}"
 CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
 CLOUDFLARE_ZONE_ID="${CLOUDFLARE_ZONE_ID:-}"
 CLOUDFLARE_API_BASE_URL="${CLOUDFLARE_API_BASE_URL:-}"
+CLOUDFRONT_DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
+CLOUDFRONT_ACCESS_KEY_ID="${CLOUDFRONT_ACCESS_KEY_ID:-}"
+CLOUDFRONT_SECRET_ACCESS_KEY="${CLOUDFRONT_SECRET_ACCESS_KEY:-}"
+CLOUDFRONT_ORIGIN_VERIFY_SECRET="${CLOUDFRONT_ORIGIN_VERIFY_SECRET:-}"
 # Empty means "not given": prompt_database/prompt_storage resolve the defaults
 # (bundled) after the interactive prompts have had their chance, and the reuse
 # path uses emptiness to detect flags that must be warned about and ignored.
@@ -36,8 +41,14 @@ case "${CLOUDFLARE_ENABLED:-}" in
   1 | true | yes) USE_CLOUDFLARE=1 ;;
 esac
 SKIP_CLOUDFLARE_CHECK=0
+USE_CLOUDFRONT=0
+case "${CLOUDFRONT_ENABLED:-}" in
+  1 | true | yes) USE_CLOUDFRONT=1 ;;
+esac
+SKIP_CLOUDFRONT_CHECK=0
 ASSUME_YES=0
 SKIP_PUBLIC_CHECK=0
+REPAIR_ENV=0
 
 usage() {
   cat <<'USAGE'
@@ -55,10 +66,15 @@ and a generated client secret. The admin signs in via the web dashboard or
 Options:
   --api-domain <domain>        Public API domain, for example updates.example.com.
   --storage-domain <domain>    Public storage domain for the bundled MinIO,
-                               for example storage.updates.example.com.
+                               for example storage-updates.example.com.
                                Bundled storage only; rejected with
                                --storage-mode s3/gcs (external storage has
                                no storage domain).
+  --storage-origin-domain <domain>
+                               Bundled-storage hostname CloudFront uses as its
+                               protected origin. Defaults to
+                               origin-<storage-domain> with --cloudfront;
+                               rejected for s3/gcs storage.
   --email <email>              Admin and ACME email. Must match the verified
                                primary email of the admin's GitHub or
                                Bitbucket account.
@@ -141,7 +157,33 @@ Options:
   --cloudflare-api-base-url <url>
                                Cloudflare API base URL override (optional).
   --skip-cloudflare-check      Do not verify the Cloudflare token/zone via the API.
+  --cloudfront                Use CloudFront for public delivery and cache purge.
+  --cloudfront-distribution-id <id>
+                               CloudFront distribution id (required).
+  --cloudfront-access-key-id <id>
+                               Purge IAM access key id. Set together with
+                               --cloudfront-secret-access-key, or omit both to
+                               use the AWS SDK default credential chain.
+  --cloudfront-secret-access-key <secret>
+                               Purge IAM secret access key.
+  --cloudfront-origin-verify-secret <secret>
+                               Bundled storage only: value configured on the
+                               distribution's X-Codemagic-Patch-Origin-Verify
+                               custom origin header. Generated when omitted.
+  --skip-cloudfront-check      Do not submit the preflight invalidation.
   --skip-public-check          Do not wait for public HTTPS DNS/TLS readiness.
+  --repair-env                 Rewrite ONLY the values supplied in this
+                               invocation into an existing .env.selfhost,
+                               leaving every other line untouched, then
+                               continue the normal rerun. For an install that
+                               never completed and baked in a wrong value (a
+                               mistyped domain, a wrong OAuth pair, a
+                               CloudFront distribution id that fails
+                               verification only after the build). The stack
+                               shape is NOT repairable: switching the database
+                               mode, the storage mode, or the delivery adapter
+                               on an existing deployment stays a manual
+                               migration these scripts do not perform.
   -y, --yes                    Use defaults for non-destructive prompts.
   -h, --help                   Show this help.
 USAGE
@@ -151,6 +193,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --api-domain) API_DOMAIN="${2:-}"; shift 2 ;;
     --storage-domain) STORAGE_DOMAIN="${2:-}"; shift 2 ;;
+    --storage-origin-domain) STORAGE_ORIGIN_DOMAIN="${2:-}"; shift 2 ;;
     --email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
     --github-oauth-client-id) GITHUB_OAUTH_CLIENT_ID="${2:-}"; shift 2 ;;
     --github-oauth-client-secret) GITHUB_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
@@ -175,7 +218,14 @@ while [ "$#" -gt 0 ]; do
     --cloudflare-zone-id) CLOUDFLARE_ZONE_ID="${2:-}"; shift 2 ;;
     --cloudflare-api-base-url) CLOUDFLARE_API_BASE_URL="${2:-}"; shift 2 ;;
     --skip-cloudflare-check) SKIP_CLOUDFLARE_CHECK=1; shift ;;
+    --cloudfront) USE_CLOUDFRONT=1; shift ;;
+    --cloudfront-distribution-id) CLOUDFRONT_DISTRIBUTION_ID="${2:-}"; shift 2 ;;
+    --cloudfront-access-key-id) CLOUDFRONT_ACCESS_KEY_ID="${2:-}"; shift 2 ;;
+    --cloudfront-secret-access-key) CLOUDFRONT_SECRET_ACCESS_KEY="${2:-}"; shift 2 ;;
+    --cloudfront-origin-verify-secret) CLOUDFRONT_ORIGIN_VERIFY_SECRET="${2:-}"; shift 2 ;;
+    --skip-cloudfront-check) SKIP_CLOUDFRONT_CHECK=1; shift ;;
     --skip-public-check) SKIP_PUBLIC_CHECK=1; shift ;;
+    --repair-env) REPAIR_ENV=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail_selfhost "unknown option: $1" ;;
@@ -364,6 +414,14 @@ gcs_values_given() {
     [ -n "$GCS_CREDENTIALS_FILE" ]
 }
 
+cloudfront_values_given() {
+  [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ] ||
+    [ -n "$CLOUDFRONT_ACCESS_KEY_ID" ] ||
+    [ -n "$CLOUDFRONT_SECRET_ACCESS_KEY" ] ||
+    [ -n "$CLOUDFRONT_ORIGIN_VERIFY_SECRET" ] ||
+    [ -n "$STORAGE_ORIGIN_DOMAIN" ]
+}
+
 prompt_storage() {
   # The storage mode is fixed at install time (switching later is a manual
   # data migration the scripts do not perform), so resolve it before the env
@@ -493,6 +551,13 @@ prompt_cloudflare() {
     USE_CLOUDFLARE=1
   fi
 
+  # Explicit CloudFront configuration suppresses the optional interactive
+  # Cloudflare offer. prompt_cloudfront validates that both adapters were not
+  # explicitly selected after this function returns.
+  if [ "$USE_CLOUDFRONT" -eq 1 ] || cloudfront_values_given; then
+    return 0
+  fi
+
   # The CDN domain differs by storage mode: bundled fronts the storage domain,
   # external storage fronts the PUBLIC_BASE_URL host (the CDN in front of the
   # bucket). prompt_storage has already resolved both by the time this runs —
@@ -529,6 +594,41 @@ prompt_cloudflare() {
     "Cloudflare API Token (scoped to Zone > Cache Purge, not the Global API Key)" "$CLOUDFLARE_API_TOKEN"
   prompt_required CLOUDFLARE_ZONE_ID \
     "Cloudflare Zone ID for ${cdn_host}" "$CLOUDFLARE_ZONE_ID"
+}
+
+prompt_cloudfront() {
+  # Supplying any CloudFront-specific value selects CloudFront even when the
+  # convenience flag is omitted. This matches the Cloudflare flag behavior
+  # and makes environment-driven non-interactive installs predictable.
+  if [ "$USE_CLOUDFRONT" -eq 0 ] && cloudfront_values_given; then
+    USE_CLOUDFRONT=1
+  fi
+
+  if [ "$USE_CLOUDFRONT" -eq 1 ] && [ "$USE_CLOUDFLARE" -eq 1 ]; then
+    fail_selfhost "Cloudflare and CloudFront are alternative delivery adapters; select only one of --cloudflare or --cloudfront"
+  fi
+
+  [ "$USE_CLOUDFRONT" -eq 1 ] || return 0
+
+  prompt_required CLOUDFRONT_DISTRIBUTION_ID \
+    "CloudFront distribution id" "$CLOUDFRONT_DISTRIBUTION_ID"
+
+  # Purge credentials follow the AWS SDK contract: an explicit pair, or the
+  # default credential chain. A half pair would otherwise fail only when the
+  # first release tries to invalidate a manifest.
+  if [ -n "$CLOUDFRONT_ACCESS_KEY_ID" ] && [ -z "$CLOUDFRONT_SECRET_ACCESS_KEY" ]; then
+    fail_selfhost "--cloudfront-access-key-id requires --cloudfront-secret-access-key (set both, or neither to use the AWS SDK default credential chain)"
+  fi
+  if [ -z "$CLOUDFRONT_ACCESS_KEY_ID" ] && [ -n "$CLOUDFRONT_SECRET_ACCESS_KEY" ]; then
+    fail_selfhost "--cloudfront-secret-access-key requires --cloudfront-access-key-id (set both, or neither to use the AWS SDK default credential chain)"
+  fi
+
+  if [ "$STORAGE_MODE" = "bundled" ]; then
+    STORAGE_ORIGIN_DOMAIN="${STORAGE_ORIGIN_DOMAIN:-origin-${STORAGE_DOMAIN}}"
+    CLOUDFRONT_ORIGIN_VERIFY_SECRET="${CLOUDFRONT_ORIGIN_VERIFY_SECRET:-$(random_selfhost_secret)}"
+  elif [ -n "$STORAGE_ORIGIN_DOMAIN" ] || [ -n "$CLOUDFRONT_ORIGIN_VERIFY_SECRET" ]; then
+    fail_selfhost "--storage-origin-domain and --cloudfront-origin-verify-secret are bundled-storage-only; an external S3/GCS origin is configured directly in CloudFront"
+  fi
 }
 
 verify_cloudflare() {
@@ -588,6 +688,69 @@ verify_cloudflare() {
   log_selfhost "Cloudflare credentials verified"
 }
 
+verify_cloudfront() {
+  [ "$USE_CLOUDFRONT" -eq 1 ] || return 0
+
+  if [ "$SKIP_CLOUDFRONT_CHECK" -eq 1 ]; then
+    warn_selfhost "skipping CloudFront invalidation credential verification"
+    return 0
+  fi
+
+  log_selfhost "verifying CloudFront invalidation access for distribution ${CLOUDFRONT_DISTRIBUTION_ID}"
+  # Run with the freshly built server image so the probe uses exactly the AWS
+  # SDK and credential path the runtime adapter will use. Secrets stay in the
+  # container environment; none are interpolated into the Node program/argv.
+  #
+  # The probe separates "these credentials cannot invalidate" (exit 1, fatal)
+  # from "CloudFront is busy right now" (exit 75, EX_TEMPFAIL). install.sh is
+  # the documented way to apply every delivery config change, including both
+  # halves of a secret rotation, so a throttled distribution must not abort a
+  # rerun after the env file and images have already been updated.
+  local probe_status=0
+  # shellcheck disable=SC2016
+  compose_selfhost run --rm --no-deps server \
+    node --input-type=module -e '
+      import { CloudFrontClient, CreateInvalidationCommand } from "@aws-sdk/client-cloudfront";
+      const accessKeyId = process.env.CLOUDFRONT_ACCESS_KEY_ID;
+      const secretAccessKey = process.env.CLOUDFRONT_SECRET_ACCESS_KEY;
+      const credentials = accessKeyId && secretAccessKey
+        ? { accessKeyId, secretAccessKey }
+        : undefined;
+      const client = new CloudFrontClient({ region: "us-east-1", credentials });
+      try {
+        await client.send(new CreateInvalidationCommand({
+          DistributionId: process.env.CLOUDFRONT_DISTRIBUTION_ID,
+          InvalidationBatch: {
+            CallerReference: `codemagic-patch-install-${Date.now()}`,
+            Paths: { Quantity: 1, Items: ["/.codemagic-patch-install-check"] },
+          },
+        }));
+      } catch (error) {
+        const name = error?.name ?? "UnknownError";
+        // The SDK already retries throttling internally; anything still
+        // throttling here, plus a busy distribution or a 5xx, is transient.
+        const transient =
+          name === "TooManyInvalidationsInProgress" ||
+          error?.$retryable?.throttling === true ||
+          (error?.$metadata?.httpStatusCode ?? 0) >= 500;
+        process.stderr.write(`${name}: ${error?.message ?? error}\n`);
+        process.exit(transient ? 75 : 1);
+      }
+    ' || probe_status=$?
+
+  case "$probe_status" in
+    0)
+      log_selfhost "CloudFront invalidation credentials verified"
+      ;;
+    75)
+      warn_selfhost "CloudFront could not accept the preflight invalidation right now (throttled, or too many invalidations already in progress on distribution ${CLOUDFRONT_DISTRIBUTION_ID}). This does not disprove the credentials, so the install continues — confirm a real purge after the stack is up."
+      ;;
+    *)
+      fail_selfhost "CloudFront invalidation check failed for distribution ${CLOUDFRONT_DISTRIBUTION_ID}. Ensure the distribution exists and the selected IAM identity can call cloudfront:CreateInvalidation on it, or pass --skip-cloudfront-check to bypass."
+      ;;
+  esac
+}
+
 check_tooling() {
   require_command_selfhost docker
   require_command_selfhost curl
@@ -619,12 +782,17 @@ print_prerequisites() {
 EOF
       ;;
     *)
-      cat <<'EOF'
+      local cloudfront_origin_prerequisite=""
+      if [ "$USE_CLOUDFRONT" -eq 1 ] || cloudfront_values_given; then
+        cloudfront_origin_prerequisite=$'  - CloudFront with bundled storage also needs its separate origin hostname\n    pointing at THIS host before install so Caddy can obtain its certificate.'
+      fi
+      cat <<EOF
 [selfhost] Before continuing, make sure:
   - DNS: A/AAAA records for BOTH the API and storage domains point to THIS
     host's public IP (Let's Encrypt validates over HTTP on port 80). The
     storage domain is only needed for the default bundled storage; external
     object storage (--storage-mode s3/gcs) needs the API domain only.
+${cloudfront_origin_prerequisite}
   - Ports 80 and 443 are open to the internet and free on this host.
   - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
     OAuth consumer — with an Authorization callback URL
@@ -656,8 +824,12 @@ check_port_hint() {
 }
 
 write_env_file() {
-  local worker_secret
+  local worker_secret storage_origin_mode
   worker_secret="$(random_selfhost_secret)"
+  storage_origin_mode=direct
+  if [ "$STORAGE_MODE" = "bundled" ] && [ "$USE_CLOUDFRONT" -eq 1 ]; then
+    storage_origin_mode=cdn-origin
+  fi
 
   # Bundled storage derives the public download URL from the storage domain;
   # external modes record the operator's --public-base-url instead.
@@ -675,6 +847,9 @@ write_env_file() {
   validate_env_file_literal "--s3-secret-access-key" "$S3_SECRET_ACCESS_KEY"
   validate_env_file_literal "--cloudflare-api-token" "$CLOUDFLARE_API_TOKEN"
   validate_env_file_literal "--cloudflare-api-base-url" "$CLOUDFLARE_API_BASE_URL"
+  validate_env_file_literal "--cloudfront-access-key-id" "$CLOUDFRONT_ACCESS_KEY_ID"
+  validate_env_file_literal "--cloudfront-secret-access-key" "$CLOUDFRONT_SECRET_ACCESS_KEY"
+  validate_env_file_literal "--cloudfront-origin-verify-secret" "$CLOUDFRONT_ORIGIN_VERIFY_SECRET"
   validate_env_file_literal "--github-oauth-client-secret" "$GITHUB_OAUTH_CLIENT_SECRET"
   validate_env_file_literal "--bitbucket-oauth-client-secret" "$BITBUCKET_OAUTH_CLIENT_SECRET"
 
@@ -699,6 +874,7 @@ ACME_EMAIL=${ADMIN_EMAIL}
 # data by hand; the selfhost scripts do not perform it.
 SELFHOST_DATABASE_MODE=${DATABASE_MODE}
 SELFHOST_STORAGE_MODE=${STORAGE_MODE}
+SELFHOST_STORAGE_ORIGIN_MODE=${storage_origin_mode}
 
 SERVER_URL=https://${API_DOMAIN}
 PUBLIC_BASE_URL='${PUBLIC_BASE_URL}'
@@ -706,6 +882,16 @@ PUBLIC_BASE_URL='${PUBLIC_BASE_URL}'
 CODEMAGIC_PATCH_SERVER_IMAGE=codemagic-patch-server:selfhost
 CODEMAGIC_PATCH_CADDY_IMAGE=codemagic-patch-caddy:selfhost
 EOF
+
+  if [ "$STORAGE_MODE" = "bundled" ] && [ "$USE_CLOUDFRONT" -eq 1 ]; then
+    cat >>"$env_tmp" <<EOF
+CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN=${STORAGE_ORIGIN_DOMAIN}
+CLOUDFRONT_ORIGIN_VERIFY_SECRET='${CLOUDFRONT_ORIGIN_VERIFY_SECRET}'
+# Add CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS only while rotating the origin
+# header: set it to the old value, deploy, update the distribution, then delete
+# the line again. Caddy accepts both slots so a rotation has no 403 window.
+EOF
+  fi
 
   # Bundled DB gets generated Postgres credentials; external mode records the
   # operator's DATABASE_URL instead (a POSTGRES_* block would be dead config
@@ -748,7 +934,6 @@ LOGGER=true
 STORAGE_ADAPTER=s3
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
-MANIFEST_CACHE_CONTROL="no-cache, must-revalidate"
 EOF
   else
     cat >>"$env_tmp" <<EOF
@@ -758,8 +943,6 @@ WORKER_SHARED_SECRET=${worker_secret}
 MODE=all
 RUN_MIGRATIONS=true
 LOGGER=true
-
-MANIFEST_CACHE_CONTROL="no-cache, must-revalidate"
 EOF
     if [ "$STORAGE_MODE" = "s3" ]; then
       # Only what the operator provided: the omitted optionals fall through
@@ -790,8 +973,7 @@ EOF
   fi
 
   # Delivery / CDN. Default base-url serves the PUBLIC_BASE_URL host directly;
-  # cloudflare fronts it with Cloudflare and purges the edge cache after
-  # releases (bundled: the storage domain; external: the CDN over the bucket).
+  # CDN adapters purge their edge cache after releases.
   if [ "$USE_CLOUDFLARE" -eq 1 ]; then
     {
       printf '\nDELIVERY_ADAPTER=cloudflare\n'
@@ -799,6 +981,15 @@ EOF
       printf 'CLOUDFLARE_ZONE_ID=%s\n' "$CLOUDFLARE_ZONE_ID"
       if [ -n "$CLOUDFLARE_API_BASE_URL" ]; then
         printf "CLOUDFLARE_API_BASE_URL='%s'\n" "$CLOUDFLARE_API_BASE_URL"
+      fi
+    } >>"$env_tmp"
+  elif [ "$USE_CLOUDFRONT" -eq 1 ]; then
+    {
+      printf '\nDELIVERY_ADAPTER=cloudfront\n'
+      printf 'CLOUDFRONT_DISTRIBUTION_ID=%s\n' "$CLOUDFRONT_DISTRIBUTION_ID"
+      if [ -n "$CLOUDFRONT_ACCESS_KEY_ID" ]; then
+        printf "CLOUDFRONT_ACCESS_KEY_ID='%s'\n" "$CLOUDFRONT_ACCESS_KEY_ID"
+        printf "CLOUDFRONT_SECRET_ACCESS_KEY='%s'\n" "$CLOUDFRONT_SECRET_ACCESS_KEY"
       fi
     } >>"$env_tmp"
   else
@@ -847,8 +1038,214 @@ EOF
   log_selfhost "created ${SELFHOST_ENV_FILE}"
 }
 
+# --repair-env: rewrite exactly the keys this invocation supplied, and nothing
+# else.
+#
+# It exists because install.sh writes .env.selfhost BEFORE it verifies
+# credentials and builds, and on rerun it deliberately ignores newly passed
+# values — so a shape-valid but wrong answer is baked in and replayed
+# identically by every retry, with "ssh in and hand-edit .env.selfhost" as the
+# only documented escape.
+#
+# It lives here rather than in a caller for three reasons. Derived keys:
+# SERVER_URL and the OAuth redirect allowlists are computed from the API
+# domain, so rewriting the domain alone would leave the file internally
+# inconsistent, and that derivation exists once, in this script. Quoting and
+# atomicity: writes reuse the same single-quoted-literal rule write_env_file
+# uses and the same temp-file-then-mv swap, instead of a second dotenv
+# serializer that has to stay in lockstep with the first. Validation:
+# replacement values go through the same checks a first install applies, so a
+# repair cannot write something this script would have rejected on day one.
+#
+# Keys not supplied keep their current values, so the generated secrets
+# (POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD, WORKER_SHARED_SECRET,
+# OAUTH_CLI_AUTH_SECRET) and an already-deployed
+# CLOUDFRONT_ORIGIN_VERIFY_SECRET survive by construction.
+#
+# Writes are staged, never applied inline: set_selfhost_env_value rewrites the
+# file one key at a time, so a guard that fires after an earlier key was
+# already written would leave the operator with a half-repaired env file —
+# worse than the wrong-but-consistent one they started with, and the opposite
+# of write_env_file's validate-before-the-first-write rule. The pass below
+# therefore runs every guard and validate_* while only recording the intended
+# writes; flush_selfhost_env_plan applies them once all of them have passed.
+REPAIR_ENV_PLAN_KEYS=()
+REPAIR_ENV_PLAN_VALUES=()
+
+# Records the value exactly as it should appear after the `=`.
+plan_selfhost_env_value() {
+  REPAIR_ENV_PLAN_KEYS+=("$1")
+  REPAIR_ENV_PLAN_VALUES+=("$2")
+}
+
+# The single-quoted variant, mirroring set_selfhost_env_literal: the quoting a
+# key was created with must be the quoting it is repaired with.
+plan_selfhost_env_literal() {
+  plan_selfhost_env_value "$1" "'${2}'"
+}
+
+flush_selfhost_env_plan() {
+  local i=0
+  while [ "$i" -lt "${#REPAIR_ENV_PLAN_KEYS[@]}" ]; do
+    set_selfhost_env_value "${REPAIR_ENV_PLAN_KEYS[$i]}" "${REPAIR_ENV_PLAN_VALUES[$i]}"
+    i=$((i + 1))
+  done
+}
+
+repair_env_file() {
+  local adapter storage_mode storage_origin_mode api_domain repaired=0
+
+  REPAIR_ENV_PLAN_KEYS=()
+  REPAIR_ENV_PLAN_VALUES=()
+
+  adapter="$(selfhost_env_value_from_file DELIVERY_ADAPTER)"
+  adapter="${adapter:-base-url}"
+  storage_mode="$(selfhost_env_value_from_file SELFHOST_STORAGE_MODE)"
+  storage_mode="${storage_mode:-bundled}"
+  storage_origin_mode="$(selfhost_env_value_from_file SELFHOST_STORAGE_ORIGIN_MODE)"
+  storage_origin_mode="${storage_origin_mode:-direct}"
+
+  # The stack shape is fixed at install time. --repair-env must not become a
+  # way around that: the file's own refusal to rewrite these on rerun is what
+  # stops a live stack from being switched under its data.
+  if [ -n "$DATABASE_MODE" ] || [ -n "$DATABASE_URL" ] || [ -n "$STORAGE_MODE" ] ||
+    [ -n "$PUBLIC_BASE_URL" ] || s3_values_given || gcs_values_given ||
+    [ -n "$GCS_CREDENTIALS_FILE" ]; then
+    fail_selfhost "--repair-env does not change the database or storage mode (SELFHOST_DATABASE_MODE=$(selfhost_env_value_from_file SELFHOST_DATABASE_MODE), SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE}); switching either is a manual data migration these scripts do not perform. Drop the mode/storage flags and rerun."
+  fi
+  if [ "$USE_CLOUDFLARE" -eq 1 ] || [ "$USE_CLOUDFRONT" -eq 1 ]; then
+    fail_selfhost "--repair-env does not switch the delivery adapter (DELIVERY_ADAPTER=${adapter} in ${SELFHOST_ENV_FILE}); it only corrects that adapter's own values. Drop --cloudflare/--cloudfront and pass just the values to fix."
+  fi
+
+  if [ -n "$API_DOMAIN" ]; then
+    validate_domain "API domain" "$API_DOMAIN"
+    plan_selfhost_env_value CODEMAGIC_PATCH_API_DOMAIN "$API_DOMAIN"
+    # Derived, not independent: keeping these in step with the domain is the
+    # whole reason repair belongs in this script.
+    plan_selfhost_env_value SERVER_URL "https://${API_DOMAIN}"
+    if [ -n "$(selfhost_env_value_from_file GITHUB_OAUTH_CLIENT_ID)" ]; then
+      plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "https://${API_DOMAIN}/auth/callback"
+    fi
+    if [ -n "$(selfhost_env_value_from_file BITBUCKET_OAUTH_CLIENT_ID)" ]; then
+      plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "https://${API_DOMAIN}/auth/callback"
+    fi
+    repaired=1
+  fi
+  api_domain="${API_DOMAIN:-$(selfhost_env_value_from_file CODEMAGIC_PATCH_API_DOMAIN)}"
+
+  if [ -n "$STORAGE_DOMAIN" ]; then
+    [ "$storage_mode" = "bundled" ] ||
+      fail_selfhost "--storage-domain does not apply to this deployment: SELFHOST_STORAGE_MODE=${storage_mode} has no storage domain on this host"
+    validate_domain "storage domain" "$STORAGE_DOMAIN"
+    plan_selfhost_env_value CODEMAGIC_PATCH_STORAGE_DOMAIN "$STORAGE_DOMAIN"
+    # Bundled storage derives the download URL from the storage domain
+    # (write_env_file), so the pair moves together or not at all.
+    plan_selfhost_env_literal PUBLIC_BASE_URL "https://${STORAGE_DOMAIN}/codemagic-patch"
+    repaired=1
+  fi
+
+  if [ -n "$STORAGE_ORIGIN_DOMAIN" ]; then
+    [ "$storage_origin_mode" = "cdn-origin" ] ||
+      fail_selfhost "--storage-origin-domain does not apply to this deployment: SELFHOST_STORAGE_ORIGIN_MODE=${storage_origin_mode} serves storage directly, with no separate CloudFront origin hostname"
+    validate_domain "storage origin domain" "$STORAGE_ORIGIN_DOMAIN"
+    plan_selfhost_env_value CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN "$STORAGE_ORIGIN_DOMAIN"
+    repaired=1
+  fi
+
+  if [ -n "$ADMIN_EMAIL" ]; then
+    # INITIAL_ADMIN_EMAILS moves with it: --repair-env is for an install that
+    # never completed, so no admin account exists yet to be orphaned by the
+    # change, and leaving the two out of step would create one for an address
+    # that is no longer the operator's.
+    plan_selfhost_env_value ACME_EMAIL "$ADMIN_EMAIL"
+    plan_selfhost_env_value INITIAL_ADMIN_EMAILS "$ADMIN_EMAIL"
+    repaired=1
+  fi
+
+  if [ -n "$GITHUB_OAUTH_CLIENT_ID" ] || [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
+    { [ -n "$GITHUB_OAUTH_CLIENT_ID" ] && [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; } ||
+      fail_selfhost "--github-oauth-client-id and --github-oauth-client-secret must be repaired together (the dashboard's confidential code exchange needs both)"
+    validate_env_file_literal "--github-oauth-client-secret" "$GITHUB_OAUTH_CLIENT_SECRET"
+    plan_selfhost_env_value GITHUB_OAUTH_CLIENT_ID "$GITHUB_OAUTH_CLIENT_ID"
+    plan_selfhost_env_literal GITHUB_OAUTH_CLIENT_SECRET "$GITHUB_OAUTH_CLIENT_SECRET"
+    plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "https://${api_domain}/auth/callback"
+    repaired=1
+  fi
+
+  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] || [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
+    { [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; } ||
+      fail_selfhost "--bitbucket-oauth-client-id and --bitbucket-oauth-client-secret must be repaired together"
+    validate_env_file_literal "--bitbucket-oauth-client-secret" "$BITBUCKET_OAUTH_CLIENT_SECRET"
+    plan_selfhost_env_value BITBUCKET_OAUTH_CLIENT_ID "$BITBUCKET_OAUTH_CLIENT_ID"
+    plan_selfhost_env_literal BITBUCKET_OAUTH_CLIENT_SECRET "$BITBUCKET_OAUTH_CLIENT_SECRET"
+    plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "https://${api_domain}/auth/callback"
+    repaired=1
+  fi
+
+  if [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ] ||
+    [ -n "$CLOUDFLARE_API_BASE_URL" ]; then
+    [ "$adapter" = "cloudflare" ] ||
+      fail_selfhost "this deployment records DELIVERY_ADAPTER=${adapter}, so there are no Cloudflare values to repair"
+    if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+      validate_env_file_literal "--cloudflare-api-token" "$CLOUDFLARE_API_TOKEN"
+      plan_selfhost_env_literal CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"
+    fi
+    if [ -n "$CLOUDFLARE_ZONE_ID" ]; then
+      plan_selfhost_env_value CLOUDFLARE_ZONE_ID "$CLOUDFLARE_ZONE_ID"
+    fi
+    if [ -n "$CLOUDFLARE_API_BASE_URL" ]; then
+      validate_env_file_literal "--cloudflare-api-base-url" "$CLOUDFLARE_API_BASE_URL"
+      plan_selfhost_env_literal CLOUDFLARE_API_BASE_URL "$CLOUDFLARE_API_BASE_URL"
+    fi
+    repaired=1
+  fi
+
+  if cloudfront_values_given; then
+    [ "$adapter" = "cloudfront" ] ||
+      fail_selfhost "this deployment records DELIVERY_ADAPTER=${adapter}, so there are no CloudFront values to repair"
+    if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+      plan_selfhost_env_value CLOUDFRONT_DISTRIBUTION_ID "$CLOUDFRONT_DISTRIBUTION_ID"
+    fi
+    if [ -n "$CLOUDFRONT_ACCESS_KEY_ID" ] || [ -n "$CLOUDFRONT_SECRET_ACCESS_KEY" ]; then
+      # Both or neither: validate_selfhost_delivery_config rejects half a pair,
+      # and the SDK's default credential chain is the documented way to supply
+      # neither.
+      { [ -n "$CLOUDFRONT_ACCESS_KEY_ID" ] && [ -n "$CLOUDFRONT_SECRET_ACCESS_KEY" ]; } ||
+        fail_selfhost "--cloudfront-access-key-id and --cloudfront-secret-access-key must be repaired together"
+      validate_env_file_literal "--cloudfront-access-key-id" "$CLOUDFRONT_ACCESS_KEY_ID"
+      validate_env_file_literal "--cloudfront-secret-access-key" "$CLOUDFRONT_SECRET_ACCESS_KEY"
+      plan_selfhost_env_literal CLOUDFRONT_ACCESS_KEY_ID "$CLOUDFRONT_ACCESS_KEY_ID"
+      plan_selfhost_env_literal CLOUDFRONT_SECRET_ACCESS_KEY "$CLOUDFRONT_SECRET_ACCESS_KEY"
+    fi
+    if [ -n "$CLOUDFRONT_ORIGIN_VERIFY_SECRET" ]; then
+      # Same guard as --storage-origin-domain, its pair: the header secret
+      # exists only for the protected origin site bundled storage puts in
+      # front of MinIO. On s3/gcs (or bundled+direct) the key is not merely
+      # unused — validate_selfhost_delivery_config rejects the whole env file
+      # for containing it, so writing it here would break every later flagless
+      # rerun and force the hand-edit --repair-env exists to remove.
+      [ "$storage_origin_mode" = "cdn-origin" ] ||
+        fail_selfhost "--cloudfront-origin-verify-secret does not apply to this deployment: SELFHOST_STORAGE_MODE=${storage_mode} with SELFHOST_STORAGE_ORIGIN_MODE=${storage_origin_mode} has no protected CloudFront origin site on this host; the external origin is configured directly in CloudFront"
+      validate_env_file_literal "--cloudfront-origin-verify-secret" "$CLOUDFRONT_ORIGIN_VERIFY_SECRET"
+      plan_selfhost_env_literal CLOUDFRONT_ORIGIN_VERIFY_SECRET "$CLOUDFRONT_ORIGIN_VERIFY_SECRET"
+    fi
+    repaired=1
+  fi
+
+  [ "$repaired" -eq 1 ] ||
+    fail_selfhost "--repair-env was given but no repairable value was supplied. Pass the values to correct (for example --api-domain, --email, --github-oauth-client-id/--github-oauth-client-secret, or this deployment's CDN values)."
+
+  # Every guard above has passed: only now does the file change.
+  flush_selfhost_env_plan
+
+  log_selfhost "repaired ${SELFHOST_ENV_FILE}"
+}
+
 main() {
   check_tooling
+  if [ "$REPAIR_ENV" -eq 1 ] && [ ! -f "$SELFHOST_ENV_FILE" ]; then
+    fail_selfhost "--repair-env applies only to an existing ${SELFHOST_ENV_FILE}; there is nothing to repair here. Run the install without it."
+  fi
   if [ ! -f "$SELFHOST_ENV_FILE" ]; then
     print_prerequisites
   fi
@@ -864,11 +1261,11 @@ main() {
     validate_bitbucket_oauth
     prompt_github_oauth
     prompt_database
-    # prompt_storage before prompt_cloudflare: the Cloudflare prompts name the
-    # CDN domain, which is the storage domain (bundled, prompted in
-    # prompt_storage) or the PUBLIC_BASE_URL host (external).
+    # Storage must resolve before either CDN: bundled CloudFront derives its
+    # protected origin hostname, while Cloudflare names the viewer hostname.
     prompt_storage
     prompt_cloudflare
+    prompt_cloudfront
     # DR3/DR4: validate before writing so we never persist a broken env file that
     # the reuse path would then keep loading.
     validate_domain "API domain" "$API_DOMAIN"
@@ -877,9 +1274,19 @@ main() {
       if [ "$API_DOMAIN" = "$STORAGE_DOMAIN" ]; then
         fail_selfhost "the API domain and storage domain must differ (they map to separate Caddy sites); got ${API_DOMAIN} for both"
       fi
+      if [ "$USE_CLOUDFRONT" -eq 1 ]; then
+        validate_domain "storage origin domain" "$STORAGE_ORIGIN_DOMAIN"
+        if [ "$STORAGE_ORIGIN_DOMAIN" = "$API_DOMAIN" ] ||
+          [ "$STORAGE_ORIGIN_DOMAIN" = "$STORAGE_DOMAIN" ]; then
+          fail_selfhost "the CloudFront storage origin domain must differ from both the API and viewer storage domains; got ${STORAGE_ORIGIN_DOMAIN}"
+        fi
+      fi
     fi
     install_gcs_credentials
     write_env_file
+  elif [ "$REPAIR_ENV" -eq 1 ]; then
+    log_selfhost "repairing existing ${SELFHOST_ENV_FILE}"
+    repair_env_file
   else
     log_selfhost "reusing existing ${SELFHOST_ENV_FILE}"
     if [ -n "$GITHUB_OAUTH_CLIENT_ID" ] || [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
@@ -894,6 +1301,10 @@ main() {
       [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ]; then
       warn_selfhost "ignoring --cloudflare/--cloudflare-api-token/--cloudflare-zone-id; delivery config is only written on initial install"
       warn_selfhost "edit DELIVERY_ADAPTER/CLOUDFLARE_* in ${SELFHOST_ENV_FILE} to change them, then rerun"
+    fi
+    if [ "$USE_CLOUDFRONT" -eq 1 ] || cloudfront_values_given; then
+      warn_selfhost "ignoring --cloudfront/--cloudfront-*/--storage-origin-domain; delivery and origin config are only written on initial install"
+      warn_selfhost "edit DELIVERY_ADAPTER/CLOUDFRONT_*/SELFHOST_STORAGE_ORIGIN_MODE/CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN in ${SELFHOST_ENV_FILE} to change them, then rerun"
     fi
     if [ -n "$DATABASE_MODE" ] || [ -n "$DATABASE_URL" ]; then
       warn_selfhost "ignoring --database-mode/--database-url; the database mode is only written on initial install"
@@ -916,6 +1327,12 @@ main() {
   CLOUDFLARE_API_TOKEN=""
   CLOUDFLARE_ZONE_ID=""
   CLOUDFLARE_API_BASE_URL=""
+  USE_CLOUDFRONT=0
+  CLOUDFRONT_DISTRIBUTION_ID=""
+  CLOUDFRONT_ACCESS_KEY_ID=""
+  CLOUDFRONT_SECRET_ACCESS_KEY=""
+  CLOUDFRONT_ORIGIN_VERIFY_SECRET=""
+  STORAGE_ORIGIN_DOMAIN=""
   DATABASE_MODE=""
   DATABASE_URL=""
   STORAGE_MODE=""
@@ -936,6 +1353,12 @@ main() {
   # the stack that will actually be assembled.
   DATABASE_MODE="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
   STORAGE_MODE="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
+  STORAGE_ORIGIN_MODE="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
+  validate_selfhost_stack_shape
+  # install.sh is the only caller that also judges delivery configuration:
+  # compose_selfhost deliberately skips it so a CloudFront misconfiguration
+  # cannot abort backup.sh/restore.sh/upgrade.sh on an otherwise sound stack.
+  validate_selfhost_delivery_config
 
   # DR29: a reused or hand-edited env file may be missing required values (e.g.
   # truncated by an interrupted write). Assert them before building so the install
@@ -997,6 +1420,13 @@ main() {
     if [ "$CODEMAGIC_PATCH_API_DOMAIN" = "$CODEMAGIC_PATCH_STORAGE_DOMAIN" ]; then
       fail_selfhost "CODEMAGIC_PATCH_API_DOMAIN and CODEMAGIC_PATCH_STORAGE_DOMAIN must differ (they map to separate Caddy sites). Edit ${SELFHOST_ENV_FILE} (or rerun with distinct --api-domain/--storage-domain) and retry."
     fi
+    if [ "${STORAGE_ORIGIN_MODE:-direct}" = "cdn-origin" ]; then
+      validate_domain "CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN" "$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN"
+      if [ "$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN" = "$CODEMAGIC_PATCH_API_DOMAIN" ] ||
+        [ "$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN" = "$CODEMAGIC_PATCH_STORAGE_DOMAIN" ]; then
+        fail_selfhost "CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN must differ from both CODEMAGIC_PATCH_API_DOMAIN and CODEMAGIC_PATCH_STORAGE_DOMAIN. Edit ${SELFHOST_ENV_FILE} and retry."
+      fi
+    fi
   fi
 
   SERVER_URL="$(strip_trailing_slash "$SERVER_URL")"
@@ -1006,7 +1436,25 @@ main() {
   # Cloudflare credentials it records before building (initial install or rerun).
   if [ "${DELIVERY_ADAPTER:-base-url}" = "cloudflare" ]; then
     USE_CLOUDFLARE=1
+  elif [ "${DELIVERY_ADAPTER:-base-url}" = "cloudfront" ]; then
+    # The distribution id and the both-or-neither credential pair are already
+    # asserted by validate_selfhost_delivery_config above, against the same env
+    # file, so this branch only records the selection.
+    USE_CLOUDFRONT=1
   fi
+
+  # Installs created before CDN delivery pinned
+  # MANIFEST_CACHE_CONTROL="no-cache, must-revalidate" into .env.selfhost. An
+  # explicit value wins over the adapter-derived default, so adopting a CDN by
+  # editing DELIVERY_ADAPTER alone leaves meta.json/manifest.json ineligible
+  # for edge caching — purge keeps working, but there is never a cache to hit.
+  if { [ "$USE_CLOUDFLARE" -eq 1 ] || [ "$USE_CLOUDFRONT" -eq 1 ]; } &&
+    [ -n "${MANIFEST_CACHE_CONTROL:-}" ] &&
+    ! printf '%s' "${MANIFEST_CACHE_CONTROL}" | grep -q 's-maxage'; then
+    warn_selfhost "MANIFEST_CACHE_CONTROL is pinned to \"${MANIFEST_CACHE_CONTROL}\" in ${SELFHOST_ENV_FILE}, and it has no s-maxage — ${DELIVERY_ADAPTER} will not cache meta.json/manifest.json at the edge, so releases purge a cache that never fills."
+    warn_selfhost "delete that line to take the CDN default (public, max-age=0, s-maxage=300, must-revalidate), or keep it if the origin-only policy is deliberate"
+  fi
+
   verify_cloudflare
 
   # At least one OAuth provider (GitHub or Bitbucket) is mandatory, and each
@@ -1018,6 +1466,7 @@ main() {
 
   log_selfhost "building images ${CODEMAGIC_PATCH_SERVER_IMAGE:-codemagic-patch-server:selfhost} and ${CODEMAGIC_PATCH_CADDY_IMAGE:-codemagic-patch-caddy:selfhost}"
   compose_selfhost build server caddy
+  verify_cloudfront
 
   log_selfhost "starting self-host stack"
   compose_selfhost up -d
@@ -1064,6 +1513,15 @@ main() {
     else
       printf '  %s (the PUBLIC_BASE_URL host) is the Cloudflare-proxied CDN\n' "$(url_host "$PUBLIC_BASE_URL")"
       printf '  domain in front of the bucket; releases purge its cache automatically.\n\n'
+    fi
+  elif [ "$USE_CLOUDFRONT" -eq 1 ]; then
+    printf 'CDN:\n  CloudFront cache purge enabled (DELIVERY_ADAPTER=cloudfront).\n'
+    if [ "${STORAGE_MODE:-bundled}" = "bundled" ]; then
+      printf '  Protected origin: https://%s\n' "$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN"
+      printf '  Keep %s serving this host until the CloudFront distribution is\n' "$CODEMAGIC_PATCH_STORAGE_DOMAIN"
+      printf '  verified, then point that viewer hostname at CloudFront.\n\n'
+    else
+      printf '  %s is the viewer URL in front of the external bucket origin.\n\n' "$PUBLIC_BASE_URL"
     fi
   elif [ "${STORAGE_MODE:-bundled}" = "bundled" ]; then
     printf 'CDN:\n  none - clients fetch storage directly (DELIVERY_ADAPTER=base-url).\n\n'

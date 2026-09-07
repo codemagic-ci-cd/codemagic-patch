@@ -13,6 +13,7 @@ const sidebars: SidebarsConfig = {
         'introduction/core-concepts',
         'introduction/comparison',
         'introduction/pricing',
+        'introduction/support',
       ],
     },
     {
@@ -28,6 +29,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'setup/install',
             'setup/cloudflare',
+            'setup/cloudfront',
             'setup/infrastructure',
             'setup/ongoing-maintenance',
           ],
@@ -59,6 +61,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'using-patch/dashboard',
             'using-patch/releasing-updates',
+            'using-patch/fingerprinting',
             'using-patch/verify-test-release',
             'using-patch/preparing-for-production',
             'using-patch/production-control',
@@ -101,6 +104,7 @@ const sidebars: SidebarsConfig = {
     },
     'troubleshooting',
     'faq',
+    'releases',
   ],
 };
 

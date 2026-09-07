@@ -205,6 +205,7 @@ export interface MetricEventRow {
   sdk_version: string | null;
   platform: string | null;
   attributes: Record<string, unknown> | null;
+  failure_payload: Record<string, unknown> | null;
   created_at: Date;
 }
 
@@ -451,6 +452,7 @@ export function mapMetricEventRow(row: MetricEventRow): MetricEvent {
     emittedAt: row.emitted_at,
     eventId: row.event_id,
     eventName: row.event_name,
+    failurePayload: row.failure_payload,
     id: row.id,
     platform: row.platform,
     runningPackageHash: row.running_package_hash,

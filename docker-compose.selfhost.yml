@@ -66,11 +66,18 @@ services:
       # overlay (deploy/selfhost/compose.bundled-storage.yml,
       # compose.external-storage-s3.yml, or compose.external-storage-gcs.yml).
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
-      MANIFEST_CACHE_CONTROL: ${MANIFEST_CACHE_CONTROL:-no-cache, must-revalidate}
+      # Left empty on purpose: the server derives the mutable-JSON policy from
+      # DELIVERY_ADAPTER (revalidate-always for base-url, a five-minute
+      # s-maxage behind a purging CDN). Set it in .env.selfhost only to
+      # override that.
+      MANIFEST_CACHE_CONTROL: ${MANIFEST_CACHE_CONTROL:-}
       DELIVERY_ADAPTER: ${DELIVERY_ADAPTER:-base-url}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
       CLOUDFLARE_API_BASE_URL: ${CLOUDFLARE_API_BASE_URL:-}
+      CLOUDFRONT_DISTRIBUTION_ID: ${CLOUDFRONT_DISTRIBUTION_ID:-}
+      CLOUDFRONT_ACCESS_KEY_ID: ${CLOUDFRONT_ACCESS_KEY_ID:-}
+      CLOUDFRONT_SECRET_ACCESS_KEY: ${CLOUDFRONT_SECRET_ACCESS_KEY:-}
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       GITHUB_OAUTH_ALLOWED_REDIRECT_URIS: ${GITHUB_OAUTH_ALLOWED_REDIRECT_URIS:-}

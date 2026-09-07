@@ -5,12 +5,14 @@
 
 import { authenticatedRequest } from "./authenticatedRequest";
 import {
+  assertHttpUrl,
   buildApiUrl,
   buildApiUrlWithQuery,
   UsageError,
+  ValidationError,
   type CommandDeps,
 } from "./commands/shared";
-import { isRecord } from "./output";
+import { isRecord, writeLine } from "./output";
 import type { PromptFn } from "./prompt";
 
 export type NamedResource = {
@@ -20,12 +22,44 @@ export type NamedResource = {
 
 export type ResourceLabel = "app" | "deployment" | "team";
 
+/**
+ * Re-asked rather than rejected: a URL typed without its scheme used to end
+ * the run with the same message this now prints above the next question, and
+ * the mistyped value stays in the field so the fix is an edit, not a retype.
+ * A non-empty answer always comes back passing `assertHttpUrl`, which callers
+ * still apply to flag and environment values that never went through a prompt.
+ *
+ * An empty answer is handed back as it is, not re-asked: the prompt layer
+ * refuses one before it gets here, so an empty answer only ever comes from a
+ * caller's own prompt double, and the flag resolver's contract is that an
+ * answer which does not unblock its parse ends the round rather than looping.
+ */
 export async function promptServerUrl(
+  deps: Pick<CommandDeps, "stderr">,
   prompt: PromptFn,
   initial: string | undefined,
 ): Promise<string> {
-  const value = await prompt({ initial, message: "Server URL", type: "text" });
-  return String(value).trim();
+  for (;;) {
+    const value = String(
+      await prompt({ initial, message: "Server URL", type: "text" }),
+    ).trim();
+    if (value.length === 0) {
+      return value;
+    }
+
+    try {
+      return assertHttpUrl(value);
+    } catch (error) {
+      if (!(error instanceof ValidationError)) {
+        throw error;
+      }
+
+      if (deps.stderr !== undefined) {
+        writeLine(deps.stderr, error.message);
+      }
+      initial = value;
+    }
+  }
 }
 
 export async function promptResource(
@@ -56,6 +90,52 @@ export async function promptResource(
 }
 
 /**
+ * Not an id any server issues, so it cannot collide with a real selection.
+ */
+const CREATE_NEW = "__create_new__";
+
+/**
+ * The same picker, plus a way out of it: choose an existing resource, or say
+ * that none of them is the one and it should be created.
+ *
+ * Offered where a list that is missing what the user needs would otherwise be
+ * a dead end they can only leave by running another command — a team that
+ * holds another project's apps, or one where a previous run created some of
+ * this project's and stopped.
+ */
+export async function promptResourceOrCreate(
+  prompt: PromptFn,
+  message: string,
+  resources: NamedResource[],
+  label: ResourceLabel,
+  createTitle: string,
+): Promise<NamedResource | "create"> {
+  const value = await prompt({
+    choices: [
+      ...resources.map((resource) => ({
+        title: resource.name,
+        value: resource.id,
+      })),
+      { title: createTitle, value: CREATE_NEW },
+    ],
+    message,
+    type: "select",
+  });
+
+  const selectedId = Array.isArray(value) ? value[0] : value;
+  if (selectedId === CREATE_NEW) {
+    return "create";
+  }
+
+  const chosen = resources.find((resource) => resource.id === selectedId);
+  if (chosen === undefined) {
+    throw new UsageError(`Invalid ${label} selection.`);
+  }
+
+  return chosen;
+}
+
+/**
  * A name for something about to be created. Free text, so unlike the selects
  * there is nothing to constrain it to — the parser still validates what comes
  * back, and an unusable answer ends the round rather than looping.
@@ -63,8 +143,13 @@ export async function promptResource(
 export async function promptName(
   prompt: PromptFn,
   noun: string,
+  initial?: string,
 ): Promise<string> {
-  const value = await prompt({ message: `Name for the new ${noun}`, type: "text" });
+  const value = await prompt({
+    ...(initial !== undefined ? { initial } : {}),
+    message: `Name for the new ${noun}`,
+    type: "text",
+  });
 
   return String(value).trim();
 }

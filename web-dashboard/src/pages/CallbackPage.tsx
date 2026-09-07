@@ -111,7 +111,7 @@ export function CallbackPage() {
           >
             <AlertIcon size={24} />
           </div>
-          <h1 className="text-[23px] font-extrabold tracking-[-.02em]">
+          <h1 className="text-[23px] font-semibold tracking-[-.02em] text-fg">
             Sign-in failed
           </h1>
           <div
@@ -145,7 +145,7 @@ export function CallbackPage() {
 
       <main className="relative z-[2] text-center text-white" role="status">
         <div className="spinner" aria-hidden="true" />
-        <h2 className="text-[20px] font-extrabold tracking-[-.02em]">
+        <h2 className="text-[20px] font-semibold tracking-[-.02em]">
           Signing you in…
         </h2>
         <p className="mt-2 text-[14px] text-[rgba(255,255,255,.6)]">

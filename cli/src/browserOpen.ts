@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 
+/** How long an opener may stay attached to the browser before it counts as launched. */
+const HANDOFF_TIMEOUT_MS = 3_000;
+
 /**
  * Best-effort default browser launch, hand-rolled instead of a dependency:
  * `open` (darwin) / `rundll32` (win32, a real executable so the query string's
@@ -21,16 +24,34 @@ export function openBrowser(
       detached: true,
       stdio: "ignore",
     });
-    child.on("error", () => {
-      resolve(false);
-    });
+
+    // The child is released only once it has answered. It used to be unref'd
+    // on spawn, and that emptied the event loop: the prompt that asked "open
+    // it?" leaves stdin paused when it resolves, so nothing else was pending
+    // and Node exited 0 — the wizard vanished the moment the browser appeared,
+    // before this promise could settle and the next question could be asked.
+    let settled = false;
+    const settle = (opened: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(handoff);
+      child.unref();
+      resolve(opened);
+    };
+
     // `open`/`xdg-open`/`start` exit as soon as they hand off to the browser,
     // so the exit code is a reliable success signal without waiting on the
-    // browser itself.
-    child.on("exit", (code) => {
-      resolve(code === 0);
+    // browser itself. An opener that instead stays attached to the browser it
+    // launched is treated as having handed off once it has run this long.
+    const handoff = setTimeout(() => settle(true), HANDOFF_TIMEOUT_MS);
+    child.on("error", () => {
+      settle(false);
     });
-    child.unref();
+    child.on("exit", (code) => {
+      settle(code === 0);
+    });
   });
 }
 

@@ -191,16 +191,67 @@ GitHub Actions and remote CI runners cannot call `http://127.0.0.1` or `localhos
 - `INITIAL_ADMIN_EMAILS` matches the GitHub (or Bitbucket) account's verified primary email
 - OAuth callback URL is `https://<api-domain>/auth/callback` ([OAuth Apps](https://github.com/settings/developers))
 
+### cmpatch selfhost cannot connect over SSH
+
+The first `cmpatch selfhost` command against a server connects with your own
+SSH setup once to install its own key. When that connection fails it offers a
+private key file, a retry with the SSH password, a line to paste into your
+provider's web console, and a chance to correct the user or address. If none
+of them connects:
+
+- The account is wrong more often than the address: `root` on most VPS
+  providers, `ubuntu` on Ubuntu cloud images, `ec2-user` on Amazon Linux,
+  `admin` on Debian on AWS, `azureuser` on Azure
+- Port 22 is open to your machine in the provider's firewall or security group
+- A rebuilt server behind the same IP changes its host key, and `ssh` then
+  refuses every connection to it. The command prints the `ssh-keygen -R`
+  command that clears the old entry; run it and try again
+- On Google Compute Engine with **OS Login** enabled, keys pasted into
+  `authorized_keys` are ignored, so the console paste never takes effect. Turn
+  OS Login off for the instance, or add the key through Google Cloud's own SSH
+  keys screen
+- `--ssh-key <path>` supplies the first-connection key without the prompt, and
+  is the way in for a non-interactive run
+
 ### Caddy certificate issuance is slow
 
 - API and storage DNS point at the host; ports 80/443 are open
 - With Cloudflare, keep the storage domain DNS only (grey cloud in [DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records)) until the first certificate is issued: see [Cloudflare setup](/docs/setup/cloudflare)
+- With bundled CloudFront, keep both the viewer and origin hostnames pointed at
+  the Patch host until install and the pre-cutover checks finish. Moving the
+  viewer CNAME early prevents Caddy's HTTP-01 challenge; see
+  [CloudFront DNS ordering](/docs/setup/cloudfront#bundled-minio)
+
+### CloudFront returns 403 or 502
+
+- `403` from the origin hostname without
+  `X-Codemagic-Patch-Origin-Verify` is expected and proves bundled-origin
+  protection is active
+- `403` through CloudFront usually means its custom origin header differs from
+  both `CLOUDFRONT_ORIGIN_VERIFY_SECRET` values; follow the
+  [rotation procedure](/docs/setup/cloudfront#rotate-the-bundled-origin-secret)
+- `502` commonly means the origin domain is wrong, its certificate is not
+  valid for that hostname, or the distribution forwards the viewer `Host`
+  header instead of letting CloudFront send the origin hostname
+- Confirm the distribution status is **Deployed**, then run the two
+  [pre-cutover commands](/docs/setup/cloudfront#5-verify-before-changing-dns)
+
+### CloudFront serves stale manifests
+
+- Request the same `meta.json` twice and inspect `x-cache`; expect Miss then Hit
+- Check server logs for `delivery cache purge completed with failures`
+- Confirm `CLOUDFRONT_DISTRIBUTION_ID` names the viewer distribution and its IAM
+  identity has only `cloudfront:CreateInvalidation` on that distribution
+- Leave `MANIFEST_CACHE_CONTROL` unset so it keeps the five-minute `s-maxage`
+  that `DELIVERY_ADAPTER=cloudfront` selects, bounding the stale window when a
+  purge fails
 
 ## Release published but app finds no update
 
 - `CodemagicPatchDeploymentKey` matches `cmpatch deployment list`
 - App binary version matches the release's target binary version
-- `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`
+- `CodemagicPatchDownloadBaseUrl` exactly matches the server's `PUBLIC_BASE_URL`;
+  only the bundled-storage default necessarily ends with `/codemagic-patch`
 - iOS and Android use separate deployment keys and apps
 
 ## Release stuck processing

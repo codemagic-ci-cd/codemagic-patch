@@ -7,11 +7,18 @@ import type {
 } from "../../app/problemDetails";
 import type {
   DeploymentTimeseriesHandlerInput,
+  FailureBucketHandlerInput,
+  FailureCodesHandlerInput,
+  FailureEventsHandlerInput,
   MetricEventIngestHandlerInput,
 } from "../../app/types";
 import {
+  DEFAULT_METRICS_FAILURE_EVENTS_LIMIT,
   DEFAULT_METRICS_TIMESERIES_SERIES_LIMIT,
   INVALID_BINARY_VERSION_ERROR,
+  INVALID_METRICS_FAILURE_EVENTS_LIMIT_ERROR,
+  MAX_METRICS_FAILURE_EVENTS_LIMIT,
+  MISSING_METRICS_FAILURE_REASON_ERROR,
   INVALID_METRIC_DELIVERY_TYPE_ERROR,
   INVALID_METRIC_EVENT_BODY_ERROR,
   INVALID_METRIC_EVENT_EMITTED_AT_ERROR,
@@ -20,11 +27,17 @@ import {
   INVALID_METRICS_TIMESERIES_SERIES_LIMIT_ERROR,
   INVALID_METRICS_TIMESERIES_TO_ERROR,
   MAX_METRICS_TIMESERIES_SERIES_LIMIT,
+  METRIC_EVENT_FAILURE_PAYLOAD_MAX_BYTES,
   METRICS_TIMESERIES_RANGE_DAYS_LIMIT,
   METRICS_TIMESERIES_RANGE_ORDER_ERROR,
   METRICS_TIMESERIES_RANGE_TOO_LARGE_ERROR,
 } from "./routeSupport";
-import type { TimeseriesRangeQuery } from "./routeTypes";
+import type {
+  FailureBucketQuery,
+  FailureCodesQuery,
+  FailureEventsQuery,
+  TimeseriesRangeQuery,
+} from "./routeTypes";
 import {
   isJsonObject,
   parseBoundedIntegerQueryParam,
@@ -189,11 +202,154 @@ export function parseMetricEventInput(body: unknown):
       emittedAt,
       eventId: body.event_id as string,
       eventName: body.event_name,
+      failurePayload: decodeFailurePayload(attributes),
       id: createMetricEventId(),
       platform: platform.value,
       runningPackageHash: runningPackageHash.value,
       sdkVersion: sdkVersion.value,
       targetPackageHash: targetPackageHash.value,
+    },
+  };
+}
+
+/**
+ * Decodes `attributes.payload` (PROTOCOL.md §Metric Event `Failed` Payload).
+ *
+ * Every rejection path returns null rather than a validation problem: the
+ * payload is best-effort detail, and dropping a `Failed` event because its
+ * detail blob was malformed would lose the count that actually matters. The
+ * raw string stays in `attributes` regardless, so an undecodable payload is
+ * still recoverable from the stored row.
+ */
+export function decodeFailurePayload(
+  attributes: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const payload = attributes?.payload;
+  if (typeof payload !== "string") {
+    return null;
+  }
+
+  if (Buffer.byteLength(payload, "utf8") > METRIC_EVENT_FAILURE_PAYLOAD_MAX_BYTES) {
+    return null;
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+
+  return isJsonObject(decoded) ? decoded : null;
+}
+
+/**
+ * Parses the failure-codes drill-down query.
+ *
+ * `reason` is the only parameter. The code list is returned whole rather than
+ * paged: its value space is the enumerable set of HTTP statuses plus two
+ * sentinels, so it is bounded by the payload contract rather than by how much
+ * data has accumulated, exactly like the reason counts it drills into.
+ */
+export function parseFailureCodesInput(query: FailureCodesQuery):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: FailureCodesHandlerInput;
+    } {
+  const reason = typeof query.reason === "string" ? query.reason.trim() : "";
+  if (reason.length === 0) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        MISSING_METRICS_FAILURE_REASON_ERROR,
+        "reason",
+        query.reason === undefined ? "required" : "invalid_value",
+      ),
+    };
+  }
+
+  return { kind: "success", value: { reason } };
+}
+
+/**
+ * Parses a query addressing one `payload.code` bucket.
+ *
+ * `code` is genuinely optional: an omitted `code` selects the bucket of
+ * failures whose payload carried none, which is a real bucket the reader opens
+ * like any other, not a missing parameter. No sentinel value is needed because
+ * these endpoints never address "every code at once".
+ */
+export function parseFailureBucketInput(query: FailureBucketQuery):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: FailureBucketHandlerInput;
+    } {
+  const base = parseFailureCodesInput(query);
+  if (base.kind === "error") {
+    return base;
+  }
+
+  return {
+    kind: "success",
+    value: {
+      ...base.value,
+      code:
+        typeof query.code === "string" && query.code.length > 0
+          ? query.code
+          : null,
+    },
+  };
+}
+
+/**
+ * Parses the raw-event feed query.
+ *
+ * `cursor` is opaque and echoed back unvalidated: the repository restarts the
+ * feed on anything it cannot parse, which is a better answer than an error
+ * page for a scroll position that can only be wrong if a client invented it.
+ */
+export function parseFailureEventsInput(query: FailureEventsQuery):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: FailureEventsHandlerInput;
+    } {
+  const base = parseFailureBucketInput(query);
+  if (base.kind === "error") {
+    return base;
+  }
+
+  const limit = parseBoundedIntegerQueryParam(query.limit, {
+    defaultValue: DEFAULT_METRICS_FAILURE_EVENTS_LIMIT,
+    field: "limit",
+    max: MAX_METRICS_FAILURE_EVENTS_LIMIT,
+    min: 1,
+    problemDetail: INVALID_METRICS_FAILURE_EVENTS_LIMIT_ERROR,
+  });
+  if (limit.kind === "error") {
+    return limit;
+  }
+
+  return {
+    kind: "success",
+    value: {
+      ...base.value,
+      cursor:
+        typeof query.cursor === "string" && query.cursor.length > 0
+          ? query.cursor
+          : null,
+      limit: limit.value,
     },
   };
 }

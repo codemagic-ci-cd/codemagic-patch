@@ -4,6 +4,9 @@ import { createProblem, sendProblem } from "../../app/problemDetails";
 import {
   extractAcknowledgeableEventId,
   parseDeploymentTimeseriesInput,
+  parseFailureCodesInput,
+  parseFailureBucketInput,
+  parseFailureEventsInput,
   parseMetricEventInput,
 } from "./metricsSupport";
 import { parseDeploymentMetricsInput } from "./releaseSupport";
@@ -22,6 +25,9 @@ import {
 import type {
   ApiRoutesOptions,
   DeploymentParams,
+  FailureCodesQuery,
+  FailureBucketQuery,
+  FailureEventsQuery,
   MetricEventBatchRequestBody,
   PaginationQuery,
   ReleaseReadParams,
@@ -29,6 +35,9 @@ import type {
 } from "./routeTypes";
 import {
   toDeploymentTimeseriesWire,
+  toFailureCodesWire,
+  toFailureDistributionWire,
+  toFailureEventsWire,
   toReleaseMetricsRowWire,
 } from "./wireSerializers";
 
@@ -97,6 +106,18 @@ export function registerMetricsRoutes(
           request.log.warn(
             { deploymentKey: input.value.deploymentKey, reason: result.reason },
             "dropping metric event for unknown deployment",
+          );
+        } else if (result.outcome === "superseded") {
+          // Not a problem with the event, so no warning: the device already
+          // reported that this package went on to succeed, and the failure
+          // being reported here preceded that outcome.
+          request.log.debug(
+            {
+              deviceId: input.value.deviceId,
+              eventId: input.value.eventId,
+              targetPackageHash: input.value.targetPackageHash,
+            },
+            "dropping Failed metric event superseded by the device's Success",
           );
         }
         acknowledgedEventIds.add(input.value.eventId);
@@ -204,6 +225,279 @@ export function registerMetricsQueryRoutes(
       }
 
       return toDeploymentTimeseriesWire(input.value, result);
+    },
+  );
+
+  app.get<{ Params: DeploymentParams; Querystring: FailureCodesQuery }>(
+    "/metrics/deployments/:deploymentId/failures",
+    async (request, reply) => {
+      const input = parseFailureCodesInput(request.query);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveDeploymentScope(
+            request.params.deploymentId,
+          ),
+        createDeploymentNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.deploymentFailureCodesHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "deployment failure codes is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.deploymentFailureCodesHandler(
+        request.params.deploymentId,
+        input.value,
+      );
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createDeploymentNotFoundProblem());
+      }
+
+      return toFailureCodesWire(result);
+    },
+  );
+
+  app.get<{ Params: ReleaseReadParams; Querystring: FailureCodesQuery }>(
+    "/metrics/releases/:releaseId/failures",
+    async (request, reply) => {
+      const input = parseFailureCodesInput(request.query);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveReleaseScope(
+            request.params.releaseId,
+          ),
+        createReleaseNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.releaseFailureCodesHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "release failure codes is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.releaseFailureCodesHandler(
+        request.params.releaseId,
+        input.value,
+      );
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createReleaseNotFoundProblem());
+      }
+
+      return {
+        ...toFailureCodesWire(result),
+        target_package_hash: result.targetPackageHash,
+      };
+    },
+  );
+
+  app.get<{ Params: DeploymentParams; Querystring: FailureBucketQuery }>(
+    "/metrics/deployments/:deploymentId/failures/distribution",
+    async (request, reply) => {
+      const input = parseFailureBucketInput(request.query);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveDeploymentScope(
+            request.params.deploymentId,
+          ),
+        createDeploymentNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.deploymentFailureDistributionHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "deployment failure distribution is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.deploymentFailureDistributionHandler(
+        request.params.deploymentId,
+        input.value,
+      );
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createDeploymentNotFoundProblem());
+      }
+
+      return toFailureDistributionWire(result);
+    },
+  );
+
+  app.get<{ Params: ReleaseReadParams; Querystring: FailureBucketQuery }>(
+    "/metrics/releases/:releaseId/failures/distribution",
+    async (request, reply) => {
+      const input = parseFailureBucketInput(request.query);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveReleaseScope(
+            request.params.releaseId,
+          ),
+        createReleaseNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.releaseFailureDistributionHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "release failure distribution is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.releaseFailureDistributionHandler(
+        request.params.releaseId,
+        input.value,
+      );
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createReleaseNotFoundProblem());
+      }
+
+      return toFailureDistributionWire(result);
+    },
+  );
+
+  app.get<{ Params: DeploymentParams; Querystring: FailureEventsQuery }>(
+    "/metrics/deployments/:deploymentId/failures/events",
+    async (request, reply) => {
+      const input = parseFailureEventsInput(request.query);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveDeploymentScope(
+            request.params.deploymentId,
+          ),
+        createDeploymentNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.deploymentFailureEventsHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "deployment failure events is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.deploymentFailureEventsHandler(
+        request.params.deploymentId,
+        input.value,
+      );
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createDeploymentNotFoundProblem());
+      }
+
+      return toFailureEventsWire(result);
+    },
+  );
+
+  app.get<{ Params: ReleaseReadParams; Querystring: FailureEventsQuery }>(
+    "/metrics/releases/:releaseId/failures/events",
+    async (request, reply) => {
+      const input = parseFailureEventsInput(request.query);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveReleaseScope(
+            request.params.releaseId,
+          ),
+        createReleaseNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.releaseFailureEventsHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "release failure events is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const result = await options.releaseFailureEventsHandler(
+        request.params.releaseId,
+        input.value,
+      );
+
+      if (result.outcome === "not_found") {
+        return sendProblem(reply, createReleaseNotFoundProblem());
+      }
+
+      return toFailureEventsWire(result);
     },
   );
 

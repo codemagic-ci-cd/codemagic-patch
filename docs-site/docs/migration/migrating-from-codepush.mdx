@@ -36,11 +36,10 @@ Follow [Install](/docs/install) (or the [Local quickstart](/docs/) to try the st
 - API URL → `CodemagicPatchApiUrl`
 - Download base URL → `CodemagicPatchDownloadBaseUrl`
 
-Create apps and deployments to mirror your CodePush layout (one app per platform is the usual pattern):
+Create apps to mirror your CodePush layout (one app per platform is the usual pattern). From your project root, `cmpatch init` connects to the server, signs you in, creates one app per platform, and links the project:
 
 ```bash
-cmpatch app create --name MyApp-iOS
-cmpatch app create --name MyApp-Android
+cmpatch init
 cmpatch deployment list --app MyApp-iOS --format table
 ```
 
@@ -78,9 +77,11 @@ Install and authenticate the Patch CLI:
 
 ```bash
 npm install -g @codemagic/patch-cli
-cmpatch config set server-url https://updates.example.com
 cmpatch token create --name ci   # store cm_pat_… as a CI secret
 ```
+
+Commit the `codemagic-patch.config.json` that `cmpatch init` wrote, and CI
+needs only the token; without it, set `CODEMAGIC_PATCH_SERVER_URL`.
 
 Swap your fork's release / `release-react` CI steps for:
 

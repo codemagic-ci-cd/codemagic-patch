@@ -6,8 +6,9 @@ description: >-
   Run Patch on your laptop with one command, then watch an OTA update apply in
   the on-device demo.
 llmsDescription: >-
-  Local Patch evaluation via scripts/local-eval/up.sh, then
-  examples/on-device-demo on simulator or emulator.
+  Local Patch evaluation via cmpatch selfhost local-eval (or
+  scripts/local-eval/up.sh from a clone), then examples/on-device-demo on
+  simulator or emulator.
 ---
 
 import CopyLlmsFullLink from '@site/src/components/CopyLlmsFullLink';
@@ -24,12 +25,32 @@ Use this button to send your AI assistant to the full markdown index.
 
 ## What you need
 
-- [Docker](https://docs.docker.com/get-docker/) with Compose v2
-- Node.js `≥ 22.20` (required by the quickstart script; the `cmpatch` CLI itself runs on Node `≥ 20`)
-- Yarn via [Corepack](https://nodejs.org/api/corepack.html) (`corepack enable`)
-- For the demo app: an **iOS Simulator** (macOS + Xcode) and/or an **Android emulator** (`adb` on `PATH`)
+- macOS, Linux, or WSL 2 on Windows — the command runs a bash script, so a native Windows shell is not supported
+- Node.js `20.19+` or `22.12+` for the `cmpatch` CLI, plus `git` and `curl` (the CLI downloads its copy of the repository and runs its bootstrap script)
+- [Docker](https://docs.docker.com/get-docker/) with Compose v2 — if it is missing or not running, the CLI offers to install or start it
+- For the demo app: an **iOS Simulator** (macOS + Xcode) and/or an **Android emulator** (`adb` on `PATH`), plus Node.js `≥ 22.20` and Yarn via [Corepack](https://nodejs.org/api/corepack.html)
 
 ## 1. Start the stack
+
+```bash
+npm install -g @codemagic/patch-cli
+cmpatch selfhost local-eval
+```
+
+The command checks Docker first (offering to install or start it), prepares the source it needs, builds and starts the stack, seeds demo apps, and points `cmpatch` at it. The first run can take a few minutes while images build. Running it again is safe: an already-running stack is just re-checked.
+
+When it finishes you get:
+
+- **Dashboard** — [http://localhost:8080](http://localhost:8080) (sign in as `local-admin@example.com`, prefilled, one click; the CLI offers to open it)
+- **API** — [http://localhost:3000](http://localhost:3000); the CLI makes it the default when no higher-precedence project or environment setting overrides it
+- Seeded `demo-app-ios` / `demo-app-android` for the on-device demo, plus **Example Data** (Staging / Production releases and metrics) so the dashboard looks populated before you publish
+
+`cmpatch selfhost local-eval status` prints everything else about the stack whenever you need it: the services and their state, the MinIO console, the seeded API token, and a sample publish command.
+
+<details>
+<summary>From a clone instead</summary>
+
+If you would rather work from your own clone of the repository, the script the CLI wraps does the same thing (it also needs Node.js `≥ 22.20` and Yarn, and installs `cmpatch` globally itself):
 
 ```bash
 git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
@@ -37,13 +58,7 @@ cd codemagic-patch
 ./scripts/local-eval/up.sh
 ```
 
-The script builds and starts `docker-compose.dev.yml`, installs the `cmpatch` CLI globally, seeds demo apps, and prints a ready banner. The first run can take a few minutes while images build.
-
-When it finishes you get:
-
-- **Dashboard** — [http://localhost:8080](http://localhost:8080) (sign in as `local-admin@example.com`, prefilled, one click)
-- **API** — [http://localhost:3000](http://localhost:3000)
-- Seeded `demo-app-ios` / `demo-app-android` for the on-device demo, plus **Example Data** (Staging / Production releases and metrics) so the dashboard looks populated before you publish
+</details>
 
 :::warning
 Evaluation only, not a production install. Authentication is disabled and all ports bind to localhost. To deploy with your own domains, follow [Install](/docs/install).
@@ -52,19 +67,25 @@ Evaluation only, not a production install. Authentication is disabled and all po
 ## 2. Sign in with the CLI
 
 ```bash
-cmpatch login --server-url http://localhost:3000
+cmpatch login
 ```
 
 `cmpatch login` opens the dashboard in your browser and finishes over a localhost redirect; the local stack approves the sign-in automatically.
 
+:::note
+If `cmpatch` already had a different default server when you started the stack, the CLI asked before replacing it. A `CODEMAGIC_PATCH_SERVER_URL` environment variable or project config can also override that default. When localhost is not the effective server, the command's ready output shows the exact `cmpatch login --server-url http://localhost:3000` form; add the same flag to every command below.
+:::
+
 ## 3. Watch an update apply (on-device demo)
 
-[`examples/on-device-demo`](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) is a React Native demo storefront preconfigured against this stack. Checkout starts broken on purpose: you flip one line, publish a release, and watch the running app install the fix over the air. That fix arriving is Patch replacing the JS bundle.
+[`examples/on-device-demo`](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) is a React Native demo storefront preconfigured against this stack. The checked-in app starts broken on purpose: you flip one line, publish a release, and watch the running app install the fix over the air. That fix arriving is Patch replacing the JS bundle.
 
-One-time setup and install (from the demo directory):
+Use an editable clone of the public repository for the demo app (skip the clone
+command if you already have one):
 
 ```bash
-cd examples/on-device-demo
+git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
+cd codemagic-patch/examples/on-device-demo
 yarn install
 yarn demo:setup:ios   # iOS only — installs pods
 
@@ -86,13 +107,11 @@ Publish from the same directory:
 ```bash
 # iOS
 cmpatch release-react \
-  --server-url http://localhost:3000 \
   --app demo-app-ios --deployment staging \
   --platform ios
 
 # Android
 cmpatch release-react \
-  --server-url http://localhost:3000 \
   --app demo-app-android --deployment staging \
   --platform android
 ```
@@ -105,11 +124,10 @@ Full detail and troubleshooting: [on-device demo README](https://github.com/code
 
 Open [http://localhost:8080](http://localhost:8080), sign in as `local-admin@example.com`, then open **demo-app-ios** or **demo-app-android** and its `staging` deployment. You should see the release you just published. **Example Data** is separate sample catalog data for browsing metrics; those releases are not downloadable.
 
-Without a simulator, you can still publish the bundled fixture from the repo root (uses the seeded `cli-smoke-test` deployment so it does not collide with the on-device demo):
+Without a simulator, you can still publish the bundled fixture from the root of that clone (it uses the seeded `cli-smoke-test` deployment so it does not collide with the on-device demo):
 
 ```bash
 cmpatch release create \
-  --server-url http://localhost:3000 \
   --app demo-app-ios \
   --deployment cli-smoke-test \
   --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \
@@ -129,7 +147,7 @@ The demo proves the loop. To see Patch on your project, keep this stack running 
 | `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
 | `CodemagicPatchDeploymentKey` | from `cmpatch deployment list` for your app |
 
-Create your own apps and deployments with `cmpatch` (do not reuse `demo-app-*` unless you only need the bundled demo). Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does; use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs. The on-device demo uses `adb reverse` for the Android emulator.
+Run `cmpatch init` from your project root: while the stack runs it is the default server, so the command creates one app per platform (do not reuse `demo-app-*` unless you only need the bundled demo) and links the project. Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does; use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs. The on-device demo uses `adb reverse` for the Android emulator.
 
 - [Native setup](/docs/setup/native-setup) for bare React Native or the Expo config plugin
 - Coming from Expo Updates: [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) (local PoC path first)
@@ -138,14 +156,10 @@ Create your own apps and deployments with `cmpatch` (do not reuse `demo-app-*` u
 ## Tear down
 
 ```bash
-docker compose -f docker-compose.dev.yml down -v
+cmpatch selfhost local-eval down
 ```
 
-Re-print the ready banner without reinstalling the CLI:
-
-```bash
-./scripts/local-eval/up.sh --skip-cli
-```
+The stack's data (database and stored bundles) is kept for the next start; add `--delete-data` to remove it too. From a clone, the equivalent is `docker compose -f docker-compose.dev.yml down -v`.
 
 ## What you just ran
 

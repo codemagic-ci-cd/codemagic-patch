@@ -6,8 +6,8 @@ By default the app checks for updates on launch and resume. With install confirm
 
 ## Prerequisites
 
-- The local evaluation stack is **up**: from the repo root, run `./scripts/local-eval/up.sh`. It also installs the `cmpatch` CLI globally.
-- You are signed in once: `cmpatch login --server-url http://localhost:3000` (the local stack approves the sign-in automatically).
+- The local evaluation stack is **up**: `cmpatch selfhost local-eval` (with the CLI installed, `npm install -g @codemagic/patch-cli`), or `./scripts/local-eval/up.sh` from the repo root of a clone, which also installs the CLI globally. The CLI keeps its checkout at `~/.codemagic-patch/local-eval/codemagic-patch`; this directory is `examples/on-device-demo` inside it (`cmpatch selfhost local-eval status` prints the path).
+- You are signed in once: `cmpatch login` (the local stack approves the sign-in automatically; add `--server-url http://localhost:3000` if `cmpatch` defaults to another server).
 - Node.js ≥ 22.20 and Yarn (via Corepack).
 - **iOS**: macOS with Xcode and an iOS Simulator
 - **Android**: an Android SDK with a running emulator, and `adb` on PATH.
@@ -76,7 +76,7 @@ The matching `demo-app-ios` / `demo-app-android` apps, each with a `staging` dep
 
 ## Troubleshooting
 
-- **"Local stack unreachable — is it running?"** — the evaluation stack isn't up (or was torn down). From the repo root, run `./scripts/local-eval/up.sh` and check again.
+- **"Local stack unreachable — is it running?"** — the evaluation stack isn't up (or was torn down). Run `cmpatch selfhost local-eval` (or `./scripts/local-eval/up.sh` from the repo root of a clone) and check again.
 - **Android stops finding updates after an emulator restart** — `adb reverse` mappings don't survive the emulator or adb server restarting. Re-run `yarn demo:android`, or only the two `adb reverse` commands from [`package.json`](package.json).
 - **`release-react` fails with a duplicate-release error** — you published the exact same bundle twice. Change `CHECKOUT_BROKEN` (or any other code) and publish again.
-- **Reset the environment** — set `CHECKOUT_BROKEN` back to `true`, uninstall the app so a previous OTA is not still active, clean the native Release outputs if needed, then from the repo root run `docker compose -f docker-compose.dev.yml down -v` and `./scripts/local-eval/up.sh`. Confirm **Add to cart** still shows the payment error before publishing again.
+- **Reset the environment** — set `CHECKOUT_BROKEN` back to `true`, uninstall the app so a previous OTA is not still active, clean the native Release outputs if needed, then run `cmpatch selfhost local-eval down --delete-data` and `cmpatch selfhost local-eval` (from a clone: `docker compose -f docker-compose.dev.yml down -v` and `./scripts/local-eval/up.sh` at the repo root). Confirm **Add to cart** still shows the payment error before publishing again.

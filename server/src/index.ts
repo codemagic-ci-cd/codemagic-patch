@@ -275,8 +275,10 @@ export {
   computePackageHashFromZipBuffer,
 } from "./packageHash";
 export {
+  CDN_MANIFEST_CACHE_CONTROL,
   DEFAULT_ARTIFACT_CACHE_CONTROL,
   DEFAULT_MANIFEST_CACHE_CONTROL,
+  DIRECT_MANIFEST_CACHE_CONTROL,
   executeReconcilePlan,
   manifestSerializer,
   materializeCanonicalBundleArchive,
@@ -285,7 +287,11 @@ export {
 } from "./worker/index";
 export type { ReconcileReleaseDependencies } from "./worker/reconcileRelease";
 export { resolveRuntimeConfig } from "./runtime/config";
-export type { GitHubOAuthConfig, RuntimeConfig } from "./runtime/config";
+export type {
+  CloudFrontDeliveryConfig,
+  GitHubOAuthConfig,
+  RuntimeConfig,
+} from "./runtime/config";
 export { createServerRuntime } from "./runtime/createServerRuntime";
 export type {
   ManagementIdGenerator,

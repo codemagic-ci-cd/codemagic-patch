@@ -34,7 +34,7 @@ Where the app runs determines which server URLs work. Two common setups:
 
 | Setup | Typical use | Server URLs |
 | --- | --- | --- |
-| **Local + simulator** | Local evaluation stack on your Mac, app in iOS Simulator or a same-machine Android emulator | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Local quickstart](/docs/#5-try-it-with-your-own-app) |
+| **Local + simulator** | Local evaluation stack on your Mac (`cmpatch selfhost local-eval`), app in iOS Simulator or a same-machine Android emulator | `http://localhost:3000` + `http://localhost:9100/codemagic-patch`, [Local quickstart](/docs/#5-try-it-with-your-own-app) |
 | **Server + phone** | Phone or test-track build (TestFlight, Play internal testing) talking to a real Patch install | Public HTTPS API + storage domains from [Install](/docs/install) |
 
 You do not need separate guides for each path; the test loop is the same. Only the URLs and how you install the binary differ.

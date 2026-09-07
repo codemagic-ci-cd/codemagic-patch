@@ -57,9 +57,35 @@ class CodemagicPatchModule: NSObject {
       do {
         resolve(try work() ?? NSNull())
       } catch {
-        reject(rejectCode, error.localizedDescription, error)
+        self.rejectClassified(reject, code: rejectCode, message: error.localizedDescription, error: error)
       }
     }
+  }
+
+  /**
+   Rejects with the SDK's public error code while carrying the failed response's
+   HTTP status in userInfo, so JS can build the metric payload without changing
+   what host apps catch.
+   */
+  private func rejectClassified(
+    _ reject: @escaping RCTPromiseRejectBlock,
+    code: String,
+    message: String,
+    error: Error
+  ) {
+    let nsError = error as NSError
+    reject(code, message, NSError(
+      domain: nsError.domain,
+      code: nsError.code,
+      userInfo: [
+        NSLocalizedDescriptionKey: message,
+        CodemagicPatchFailure.detailCodeKey: CodemagicPatchFailure.httpStatusCode(error),
+        // The raw platform text, without the caller's URL prefix: `message` is
+        // for a developer reading one rejection, this is what the metric
+        // payload groups on.
+        CodemagicPatchFailure.detailMessageKey: error.localizedDescription
+      ]
+    ))
   }
 
   @objc
@@ -87,7 +113,9 @@ class CodemagicPatchModule: NSObject {
         "confirmedPackageHash": current as Any? ?? NSNull(),
         "pendingPackageHash": pending as Any? ?? NSNull(),
         "previousPackageHash": state.previous?.packageHash as Any? ?? NSNull(),
-        "failedInstall": self.failedInstall() as Any? ?? NSNull()
+        "failedInstall": self.failedInstall() as Any? ?? NSNull(),
+        // Android-only: iOS exposes no API for why the previous process died.
+        "androidPreviousProcessExit": NSNull()
       ]
     }
   }
@@ -230,7 +258,12 @@ class CodemagicPatchModule: NSObject {
         resolve(nil)
       } catch {
         let prefix = requestedUrlString.isEmpty ? "" : "\(requestedUrlString): "
-        reject("NETWORK_ERROR", "\(prefix)\(error.localizedDescription)", error)
+        self.rejectClassified(
+          reject,
+          code: "NETWORK_ERROR",
+          message: "\(prefix)\(error.localizedDescription)",
+          error: error
+        )
       }
     }
   }
@@ -369,85 +402,35 @@ class CodemagicPatchModule: NSObject {
       "confirmedPackageHash": NSNull(),
       "pendingPackageHash": NSNull(),
       "previousPackageHash": NSNull(),
-      "failedInstall": NSNull()
+      "failedInstall": NSNull(),
+      "androidPreviousProcessExit": NSNull()
     ]
   }
 
-  private func prepareBootState() {
-    if CodemagicPatch.hasCompletedLaunchSelection {
-      return
-    }
+  /**
+   Runs the rollback decision on the module's side of the boot race.
 
+   The rule itself belongs to `CodemagicPatch`; only the values this entry
+   point resolves differently travel from here. Unlike the static path, the
+   module can honour E2E overrides for the deployment key, the device id, and
+   the binary version.
+   */
+  private func prepareBootState() {
     guard let binaryVersion = binaryVersionOrNil() else {
       return
     }
-    let state = storage.readState()
-    let hashes = state.packageHashes
-    if hashes.contains(where: { !storage.metadataMatchesBinary(packageHash: $0, binaryVersion: binaryVersion) }) {
-      try? storage.writeState(CodemagicPatchState())
-      return
-    }
-
-    guard let started = state.pendingStarted else {
-      return
-    }
-    guard let pending = state.pending?.packageHash else {
-      try? storage.mutateState { $0.pendingStarted = nil }
-      return
-    }
-    if started != pending {
-      try? storage.mutateState { $0.pendingStarted = nil }
-      return
-    }
-
-    let failedAt = CodemagicPatchUtil.currentIsoTimestamp()
-    do {
-      try storage.mutateState { state in
-        state.failedInstall = CodemagicPatchFailedInstall(
-          packageHash: pending,
-          reason: "crash_rollback",
-          failedAt: failedAt
-        )
-        state.pending = nil
-        state.pendingStarted = nil
-      }
-    } catch {
-      return
-    }
-    enqueueCrashRollbackMetric(packageHash: pending, emittedAt: failedAt)
-  }
-
-  private func enqueueCrashRollbackMetric(packageHash: String, emittedAt: String) {
-    do {
-      try withCodemagicPatchMetricsLock {
-        guard let binaryVersion = binaryVersionOrNil() else {
-          return
-        }
-        let deviceId = getOrCreateDeviceId()
-        let eventId = CodemagicPatchUtil.crashRollbackEventId(
-          deviceId: deviceId,
-          packageHash: packageHash,
-          failedAt: emittedAt
-        )
-        try storage.writeJson("events/\(eventId).json", [
-          "event_id": eventId,
-          "event_name": "Failed",
-          "emitted_at": emittedAt,
-          "device_id": deviceId,
-          "deployment_key": config("CodemagicPatchDeploymentKey"),
-          "binary_version": binaryVersion,
-          "running_package_hash": NSNull(),
-          "target_package_hash": packageHash,
-          "platform": "ios",
-          "sdk_version": "0.0.0",
-          "attributes": [
-            "reason": "install_fail",
-            "failure_subtype": "crash_rollback"
-          ]
-        ])
-        storage.enforceEventQueueCap()
-      }
-    } catch {
+    CodemagicPatch.prepareBootState(
+      storage: storage,
+      binaryVersion: binaryVersion
+    ) { packageHash, failedAt in
+      CodemagicPatch.writeCrashRollbackEvent(
+        storage: self.storage,
+        binaryVersion: binaryVersion,
+        deploymentKey: self.config("CodemagicPatchDeploymentKey"),
+        deviceId: self.getOrCreateDeviceId(),
+        packageHash: packageHash,
+        emittedAt: failedAt
+      )
     }
   }
 
@@ -631,14 +614,7 @@ class CodemagicPatchModule: NSObject {
   }
 
   private func binaryVersionOrNil() -> String? {
-    if let e2e = e2eConfig("CODEMAGIC_PATCH_E2E_BINARY_VERSION") {
-      return e2e
-    }
-    guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else {
-      return nil
-    }
-    let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
+    e2eConfig("CODEMAGIC_PATCH_E2E_BINARY_VERSION") ?? CodemagicPatch.bundleBinaryVersion()
   }
 
   private func e2eConfig(_ key: String) -> String? {

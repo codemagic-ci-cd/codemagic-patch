@@ -36,6 +36,14 @@
 #                 demo-app-android/staging    → dev_local_android_deployment_key
 #   dashboard   = Example Data / Staging + Production (releases + metrics)
 #   api token   = cm_pat_local-dev-token-change-me-00000001
+#
+# The project name is pinned so that a clone and the CLI's managed checkout
+# (`cmpatch selfhost local-eval`) address the same stack, whatever their
+# directories are called. `scripts/local-eval/up.sh` and the CLI pass the
+# same name as `--project-name`, which also wins over a COMPOSE_PROJECT_NAME
+# left in the shell; keep the three in sync.
+
+name: codemagic-patch-local-eval
 
 services:
   postgres:

@@ -1,6 +1,5 @@
 // Avatar literals (legacy `.av` family), shared by every consumer that builds
-// a deterministic avatar: TeamSwitcher, AccountMenu, and the
-// Teams/Members/Profile pages. The legacy `.av` rule set a default gradient
+// a deterministic avatar: the Teams/Members/Profile pages. The legacy `.av` rule set a default gradient
 // and the `.av.aqua/.magenta/.yellow` modifiers REPLACED only that gradient;
 // under the no-merge contract the base string here carries NO gradient and
 // every tint (including the default "blue") supplies exactly one — so a tinted
@@ -50,16 +49,6 @@ const AVATAR_TINT_CYCLE: readonly AvatarTint[] = [
 /** Full avatar class string for an explicit tint + size. */
 export function avatarClass(tint: AvatarTint, size: AvatarSize = "md"): string {
   return `${AVATAR_BASE} ${AVATAR_SIZE[size]} ${AVATAR_TINT[tint]}`;
-}
-
-// Legacy `.team-switch__btn .av`: both topbar triggers (TeamSwitcher + the
-// AccountMenu, which reuses team-switch__btn) sized their avatar to 24px/7px but
-// 11px text — distinct from `.av.sm`'s 10px. One explicit size set (no-merge).
-const TRIGGER_AVATAR_SIZE = "size-6 rounded-[7px] text-[11px]";
-
-/** Topbar-trigger avatar (the 24px/7px/11px variant), tinted. */
-export function triggerAvatarClass(tint: AvatarTint): string {
-  return `${AVATAR_BASE} ${AVATAR_TINT[tint]} ${TRIGGER_AVATAR_SIZE}`;
 }
 
 /** Deterministic tint pick from an id (legacy `t.color` hash over the cycle). */

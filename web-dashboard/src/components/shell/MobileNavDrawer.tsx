@@ -1,6 +1,6 @@
 // Sub-760px navigation drawer. Below --breakpoint-shell the desktop sidebar is
-// `display:none` (Sidebar.tsx `max-shell:hidden`) and the TopBar holds only the
-// account menu, so primary nav would otherwise be unreachable. The TopBar
+// `display:none` (Sidebar.tsx `max-shell:hidden`), so primary nav would
+// otherwise be unreachable. The TopBar hamburger opens this off-canvas
 // hamburger opens this off-canvas drawer, which re-renders the shared
 // SidebarBody behind a focus trap mirroring the Modal contract: focus moves in
 // on open and restores to the opener on close, Esc / overlay-click close, body

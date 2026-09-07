@@ -481,7 +481,17 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
       try {
         promise.resolve(work())
       } catch (error: Exception) {
-        promise.reject(rejectCode, error.message, error)
+        // The reject code stays the SDK's public error value; the failed
+        // response's HTTP status rides along in userInfo so JS can build the
+        // metric payload without changing what host apps catch.
+        val userInfo = Arguments.createMap().apply {
+          putString(
+            CodemagicPatchFailure.DETAIL_CODE_KEY,
+            CodemagicPatchFailure.httpStatusCode(error)
+          )
+          putString(CodemagicPatchFailure.DETAIL_MESSAGE_KEY, error.message ?: "")
+        }
+        promise.reject(rejectCode, error.message, error, userInfo)
       }
     }
   }
@@ -527,6 +537,10 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
         putNull("pendingPackageHash")
         putNull("previousPackageHash")
         putNull("failedInstall")
+        putString(
+          "androidPreviousProcessExit",
+          CodemagicPatchFailure.previousProcessExitReason(reactContext)
+        )
       }
     }
 
@@ -548,69 +562,37 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
       putString("confirmedPackageHash", current)
       putString("pendingPackageHash", pending)
       putString("previousPackageHash", state.previous?.packageHash)
+      // Carried on the boot snapshot rather than fetched per failure: the
+      // value is fixed for the process, and every Failed payload wants it.
+      putString(
+        "androidPreviousProcessExit",
+        CodemagicPatchFailure.previousProcessExitReason(reactContext)
+      )
       putMap("failedInstall", state.failedInstall?.toFailedInstallMap())
     }
   }
 
+  /**
+   * Runs the rollback decision on the module's side of the boot race.
+   *
+   * The rule itself belongs to `CodemagicPatch`; only the values this entry
+   * point resolves differently travel from here. Unlike the static path, the
+   * module has a react context and can honour E2E launch-argument overrides
+   * for the deployment key, the device id, and the binary version.
+   */
   private fun prepareBootState() {
-    if (CodemagicPatch.hasCompletedLaunchSelection()) {
-      return
-    }
-
     val binaryVersion = binaryVersionOrNull() ?: return
-    val state = storage.readState()
-    val hasInvalidBinary = state.packageHashes
-      .any { hash -> !storage.metadataMatchesBinary(hash, binaryVersion) }
-
-    if (hasInvalidBinary) {
-      storage.writeState(CodemagicPatchState())
-      return
+    CodemagicPatch.prepareBootState(storage, binaryVersion) { packageHash, failedAt ->
+      CodemagicPatch.writeCrashRollbackEvent(
+        storage = storage,
+        binaryVersion = binaryVersion,
+        deploymentKey = config("CodemagicPatchDeploymentKey"),
+        deviceId = getDeviceId(),
+        packageHash = packageHash,
+        emittedAt = failedAt,
+        attributes = crashRollbackAttributes(reactContext)
+      )
     }
-
-    val pending = state.pending?.packageHash
-    val pendingStarted = state.pendingStarted
-    if (pendingStarted != null && pendingStarted != pending) {
-      storage.mutateState { it.pendingStarted = null }
-      return
-    }
-    if (pending != null && pendingStarted != null) {
-      val failedAt = CodemagicPatchUtil.currentIsoTimestamp()
-      storage.mutateState {
-        it.failedInstall = CodemagicPatchFailedInstall(
-          packageHash = pending,
-          reason = "crash_rollback",
-          failedAt = failedAt
-        )
-        it.pending = null
-        it.pendingStarted = null
-      }
-      enqueueCrashRollbackMetric(pending, failedAt)
-    }
-  }
-
-  private fun enqueueCrashRollbackMetric(packageHash: String, emittedAt: String) {
-    try {
-      val binaryVersion = binaryVersionOrNull() ?: return
-      synchronized(CodemagicPatchExecutors.metricsLock) {
-        val deviceId = getDeviceId()
-        val event = JSONObject()
-          .put("event_id", CodemagicPatchUtil.crashRollbackEventId(deviceId, packageHash, emittedAt))
-          .put("event_name", "Failed")
-          .put("emitted_at", emittedAt)
-          .put("device_id", deviceId)
-          .put("deployment_key", config("CodemagicPatchDeploymentKey"))
-          .put("binary_version", binaryVersion)
-          .put("running_package_hash", JSONObject.NULL)
-          .put("target_package_hash", packageHash)
-          .put("platform", "android")
-          .put("sdk_version", "0.0.0")
-          .put("attributes", JSONObject()
-            .put("reason", "install_fail")
-            .put("failure_subtype", "crash_rollback"))
-        storage.writeJson("events/${event.getString("event_id")}.json", event)
-        storage.enforceEventQueueCap()
-      }
-    } catch (_: Exception) {}
   }
 
   private fun flushMetricEvents() {
@@ -785,15 +767,9 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
     return if (id == 0) "" else reactContext.getString(id)
   }
 
-  private fun binaryVersionOrNull(): String? {
-    e2eConfig("CodemagicPatchBinaryVersion")?.let { return it }
-    return try {
-      val info = reactContext.packageManager.getPackageInfo(reactContext.packageName, 0)
-      info.versionName?.trim()?.takeIf { it.isNotBlank() }
-    } catch (_: Exception) {
-      null
-    }
-  }
+  private fun binaryVersionOrNull(): String? =
+      e2eConfig("CodemagicPatchBinaryVersion")
+          ?: CodemagicPatch.packageManagerBinaryVersion(reactContext)
 
   private fun nativeBootPackageHash(binaryVersion: String? = binaryVersionOrNull()): String? {
     val version = binaryVersion ?: return null

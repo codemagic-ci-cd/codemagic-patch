@@ -1,12 +1,20 @@
 .navbarActions {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 0.25rem;
   margin-left: 0.25rem;
 }
 
+/* Docusaurus absolutely positions this at the right edge below 997px,
+   which sits under Discord / GitHub / theme toggle. Keep it in flow. */
 .navbarSearch {
+  position: static !important;
+  right: auto !important;
+  padding: 0;
   margin-right: 0.25rem;
+  flex: 0 1 auto;
+  min-width: 8rem;
 }
 
 .colorModeToggle {

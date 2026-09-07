@@ -8,7 +8,7 @@ llmsDescription: 'Publish and manage OTA releases via CLI, dashboard, or CI pipe
 
 This guide explains how to publish and manage OTA updates, from the dashboard, the `cmpatch` CLI, or CI.
 
-If you use the CLI and do not have `cmpatch` yet, install it with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then sign in with `cmpatch login --server-url https://updates.example.com`.
+If you use the CLI and do not have `cmpatch` yet, install it with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then run `cmpatch init` from your project root: it signs you in and links the project so the commands below need no `--server-url` or `--app` flags.
 
 ## Ways to publish
 
@@ -125,7 +125,7 @@ cmpatch release-react \
 
 `--target-binary-version` must be an exact version. Semantic ranges and wildcards (e.g. `^1.2.0`, `~1.2.0`) are rejected by both the CLI and the server.
 
-Only apps whose running binary version matches the release's target receive the update. One exception widens delivery automatically: the release is also published to other binary versions whose recorded native fingerprint matches, so store builds with identical native code receive the same update (see [Core concepts](/docs/introduction/core-concepts)).
+Only apps whose running binary version matches the release's target receive the update. One exception widens delivery automatically: the release is also published to other binary versions whose recorded native fingerprint matches, so store builds with identical native code receive the same update. See [Fingerprinting](/docs/using-patch/fingerprinting).
 
 ## Dry runs and inspection
 
@@ -146,6 +146,7 @@ In the dashboard, open the deployment or release detail page to see status and m
 
 ## Next steps
 
+- [Fingerprinting](/docs/using-patch/fingerprinting): block incompatible OTAs against a store-build baseline
 - [Verify a test release](/docs/using-patch/verify-test-release): confirm devices receive Staging updates before promoting
 - [Web dashboard](/docs/using-patch/dashboard): UI overview, tokens, team management
 - [Production control](/docs/using-patch/production-control): rollouts, mandatory updates, rollbacks

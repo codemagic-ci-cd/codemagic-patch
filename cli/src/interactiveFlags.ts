@@ -255,7 +255,7 @@ async function askFor(
   }
 
   if (wanted.has("serverUrl")) {
-    answers.serverUrl = await promptServerUrl(prompt, current.serverUrl);
+    answers.serverUrl = await promptServerUrl(deps, prompt, current.serverUrl);
   }
 
   // The server-side selectors have to be walked in order: apps belong to a

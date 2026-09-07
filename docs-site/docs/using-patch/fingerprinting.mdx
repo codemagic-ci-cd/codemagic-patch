@@ -1,0 +1,46 @@
+---
+title: Fingerprinting
+description: >-
+  How native fingerprints block incompatible OTAs, and how to register each
+  store binary with a disabled release.
+llmsDescription: >-
+  Fingerprint mismatch blocking, first-write registry, disabled store-build
+  seed, optional expansion.
+---
+
+# Fingerprinting
+
+A fingerprint is a hash of the native code in your project. Patch computes it at release time and records the first value it sees for each deployment and binary version.
+
+It is a compatibility signal. Matching fingerprints should mean compatible native code but are not a 100% guarantee.
+
+## How it helps
+
+### Disagreements
+
+If a new release's fingerprint disagrees with the value already stored for that binary version, the current CLI and dashboard block the publication. If you want to, you can manually override this block, but it's designed to stop accidental incompatibilities.
+
+### Expansion
+
+The SDK usually only installs a release whose target binary version matches the running app. Fingerprint expansion is the exception: the worker also publishes that release to other binary versions that already recorded the same fingerprint.
+
+Store builds that share native code can therefore receive the same OTA without you targeting each binary version by hand.
+
+
+## Register each store build
+
+Fingerprint checks rely on having a baseline for that binary version for further releases to check against.
+
+On each store (or production-track) build, from the same commit as the published binary, create a disabled release on the deployment those devices use:
+
+```bash
+cmpatch release-react \
+  --platform ios \
+  --deployment Production \
+  --disabled \
+  --yes
+```
+
+Using `--disabled` means the release is stored on the server and the fingerprint is recorded, but devices do not download it. Later OTA releases to that binary can then be checked against the fingerprint.
+
+For targeting and promotion, see [Releasing updates](/docs/using-patch/releasing-updates).

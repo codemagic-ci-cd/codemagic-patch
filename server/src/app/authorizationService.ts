@@ -84,6 +84,10 @@ export function createAuthorizationService(
         };
       }
 
+      if (scope.type === "instance") {
+        return authorizeInstanceScope(action);
+      }
+
       const team = await getTeamById(pool, scope.teamId);
       if (!team) {
         return {
@@ -222,6 +226,23 @@ export function createAuthorizationService(
         : { outcome: "not_found" };
     },
   };
+}
+
+/**
+ * Instance-scoped actions have no role bindings in the public schema yet, so
+ * the policy is fixed here: every active account may read instance-level
+ * status; nothing else is granted. When instance roles land, replace this
+ * with a role_permission lookup (managed hosting already layers its system-
+ * admin grants on top of a "forbidden" verdict, so tightening here is safe).
+ */
+function authorizeInstanceScope(
+  action: ControlPlaneAction,
+): AuthorizationResult {
+  if (action === "instance.read") {
+    return { outcome: "authorized" };
+  }
+
+  return { outcome: "forbidden" };
 }
 
 async function getUserById(

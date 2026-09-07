@@ -1,0 +1,17 @@
+# Bundled MinIO CloudFront-origin overlay. Appended after
+# compose.bundled-storage.yml when SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin.
+# It keeps the normal viewer hostname and adds a separate, header-protected
+# origin hostname, so the final viewer DNS cutover is reversible and does not
+# interrupt binaries still resolving the old record.
+services:
+  caddy:
+    environment:
+      CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN: ${CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN}
+      CLOUDFRONT_ORIGIN_VERIFY_SECRET: ${CLOUDFRONT_ORIGIN_VERIFY_SECRET}
+      # Outside a rotation there is no previous secret. Fall back to the
+      # current one: Caddy's header matcher needs a value for both slots, and
+      # an empty one makes the WHOLE Caddyfile fail to adapt ("malformed header
+      # matcher"), taking the API and dashboard sites down with the origin.
+      CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS: ${CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS:-${CLOUDFRONT_ORIGIN_VERIFY_SECRET}}
+    volumes:
+      - ./deploy/selfhost/Caddyfile.cdn-origin:/etc/caddy/Caddyfile:ro

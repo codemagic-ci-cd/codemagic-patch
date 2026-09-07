@@ -477,7 +477,7 @@ async function bestEffortPurge(
   }
 
   try {
-    const result = await delivery.purge(paths);
+    const result = await delivery.purge(paths, { scope: "manifest" });
     if (result.failures.length === 0) {
       return;
     }

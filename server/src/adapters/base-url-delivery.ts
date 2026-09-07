@@ -1,4 +1,4 @@
-import type { DeliveryAdapter, PurgeResult } from "./delivery";
+import type { DeliveryAdapter, PurgeOptions, PurgeResult } from "./delivery";
 
 export interface BaseUrlDeliveryAdapterOptions {
   baseUrl: string;
@@ -16,7 +16,7 @@ export class BaseUrlDeliveryAdapter implements DeliveryAdapter {
     return `${this.baseUrl}/${normalizedKey}`;
   }
 
-  async purge(paths: string[]): Promise<PurgeResult> {
+  async purge(paths: string[], _options: PurgeOptions): Promise<PurgeResult> {
     return {
       failures: [],
       requested: paths.length,

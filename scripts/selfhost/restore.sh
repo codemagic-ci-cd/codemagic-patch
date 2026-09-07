@@ -11,6 +11,7 @@ SKIP_SAFETY_BACKUP=0
 BACKUP_DIR=""
 SAFETY_BACKUP_DIR=""
 RESTORE_COMPLETE=0
+CLEANUP_DONE=0
 
 usage() {
   cat <<'USAGE'
@@ -297,6 +298,10 @@ load_selfhost_env
 # The restored env may predate mandatory OAuth (notably with --restore-env);
 # validate and backfill before any destructive step so the stack can boot.
 ensure_selfhost_oauth_env
+# Same class, and deliberately after the --restore-env overwrite above so it
+# judges the env file the stack will actually come up on: a cloudfront adapter
+# without a distribution id makes resolveRuntimeConfig throw at startup.
+validate_selfhost_delivery_bootable
 
 # Backups taken before the override was included cannot satisfy an env file
 # that requires one. Fail here, before any destructive step, instead of
@@ -317,6 +322,16 @@ fi
 restore_tmp="$(mktemp -d)"
 cleanup() {
   local exit_code=$?
+  local signal_number="${1:-}"
+
+  if [ -n "$signal_number" ]; then
+    exit_code=$((128 + signal_number))
+  fi
+  if [ "$CLEANUP_DONE" -eq 1 ]; then
+    exit "$exit_code"
+  fi
+  CLEANUP_DONE=1
+
   rm -rf "${restore_tmp:-}"
   # After the destructive step any failure leaves the stack mid-restore; point
   # the operator at the safety backup so they can roll back. --restore-env is
@@ -328,7 +343,9 @@ cleanup() {
   fi
   exit "$exit_code"
 }
-trap cleanup EXIT
+trap 'cleanup' EXIT
+trap 'cleanup 2' INT
+trap 'cleanup 15' TERM
 
 log_selfhost "stopping stack"
 compose_selfhost down

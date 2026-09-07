@@ -2,6 +2,9 @@ import type {
   App,
   ApiTokenMetadata,
   Deployment,
+  FailureCodeBreakdown,
+  FailureDistributionEntry,
+  FailureEventSample,
   Release,
   ReleaseJob,
   Team,
@@ -23,6 +26,10 @@ import type {
   ApiTokenWire,
   AppWire,
   DeploymentWire,
+  FailureCodesWireResponse,
+  FailureDistributionEntryWire,
+  FailureDistributionWireResponse,
+  FailureEventsWireResponse,
   InvitationWire,
   OAuthCliAuthorizationWire,
   OAuthRefreshWire,
@@ -309,6 +316,7 @@ export function toReleaseMetricsWire(metrics: {
   active: number;
   downloaded: number;
   failed: number;
+  failureReasonDetailCounts: Record<string, number>;
   failureReasons: Record<string, number>;
   installed: number;
   success: number;
@@ -317,6 +325,7 @@ export function toReleaseMetricsWire(metrics: {
     active: metrics.active,
     downloaded: metrics.downloaded,
     failed: metrics.failed,
+    failure_reason_detail_counts: { ...metrics.failureReasonDetailCounts },
     failure_reasons: { ...metrics.failureReasons },
     installed: metrics.installed,
     success: metrics.success,
@@ -328,6 +337,7 @@ export function toReleaseMetricsRowWire(row: {
     active: number;
     downloaded: number;
     failed: number;
+    failureReasonDetailCounts: Record<string, number>;
     failureReasons: Record<string, number>;
     installed: number;
     success: number;
@@ -343,6 +353,53 @@ export function toReleaseMetricsRowWire(row: {
     release_label: row.releaseLabel,
     target_binary_version: row.targetBinaryVersion,
     target_package_hash: row.targetPackageHash,
+  };
+}
+
+export function toFailureCodesWire(result: {
+  codes: readonly FailureCodeBreakdown[];
+}): FailureCodesWireResponse {
+  return {
+    codes: result.codes.map((code) => ({
+      code: code.code,
+      count: code.count,
+      first_seen_at: code.firstSeenAt.toISOString(),
+      last_seen_at: code.lastSeenAt.toISOString(),
+    })),
+  };
+}
+
+export function toFailureDistributionWire(result: {
+  exitReasons: readonly FailureDistributionEntry[];
+  messages: readonly FailureDistributionEntry[];
+  total: number;
+}): FailureDistributionWireResponse {
+  return {
+    exit_reasons: result.exitReasons.map(toFailureDistributionEntryWire),
+    messages: result.messages.map(toFailureDistributionEntryWire),
+    total: result.total,
+  };
+}
+
+function toFailureDistributionEntryWire(
+  entry: FailureDistributionEntry,
+): FailureDistributionEntryWire {
+  return { count: entry.count, value: entry.value };
+}
+
+export function toFailureEventsWire(result: {
+  events: readonly FailureEventSample[];
+  nextCursor: string | null;
+}): FailureEventsWireResponse {
+  return {
+    events: result.events.map((event) => ({
+      android_previous_process_exit: event.androidPreviousProcessExit,
+      device_id: event.deviceId,
+      emitted_at: event.emittedAt.toISOString(),
+      id: event.id,
+      message: event.message,
+    })),
+    next_cursor: result.nextCursor,
   };
 }
 

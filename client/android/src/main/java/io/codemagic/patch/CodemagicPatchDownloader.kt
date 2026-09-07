@@ -37,6 +37,19 @@ internal class CodemagicPatchDownloader(private val storage: CodemagicPatchStora
     connection.readTimeout = 180_000
     var downloadedBytes = 0L
     try {
+      // Read the status before touching the input stream: HttpURLConnection
+      // turns a non-2xx into a FileNotFoundException whose message is nothing
+      // but the requested URL, discarding both the status and the origin's
+      // error document. Both are what the failure payload is made of.
+      val status = connection.responseCode
+      if (status !in 200..299) {
+        throw CodemagicPatchHttpException(
+          status,
+          CodemagicPatchFailure.storageErrorMessage(
+            CodemagicPatchFailure.readErrorBody(connection.errorStream)
+          )
+        )
+      }
       connection.inputStream.use { input ->
         downloadedBytes = storage.writeStream(
           "downloads/${request.packageHash}/$payloadName",
@@ -51,7 +64,7 @@ internal class CodemagicPatchDownloader(private val storage: CodemagicPatchStora
 
     if (expectedBytes != null && downloadedBytes != expectedBytes) {
       downloadDir.deleteRecursively()
-      error("downloaded byte count mismatch")
+      error("expected $expectedBytes bytes, received $downloadedBytes")
     }
 
     val record = JSONObject()

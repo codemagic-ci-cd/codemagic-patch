@@ -1,6 +1,5 @@
-// Dropdown-menu literals (legacy `.menu` family), shared by the five
-// hand-rolled dropdowns: TeamSwitcher, AccountMenu, MembersPage row actions,
-// and the DeploymentDetailPage / DeploymentTable kebab menus. Styling only —
+// Dropdown-menu literals (legacy `.menu` family), shared by the four
+// hand-rolled dropdowns: MembersPage row actions, and the DeploymentDetailPage / DeploymentTable kebab menus. Styling only —
 // each consumer keeps its own open/outside-click/focus behavior
 // (consolidating that is a post-migration refactor, out of parity scope).
 //
@@ -14,7 +13,7 @@ export const MENU =
 export const MENU_RIGHT = "right-0";
 
 export const MENU_LABEL =
-  "px-[11px] pb-[5px] pt-[9px] text-[10.5px] font-bold uppercase tracking-[.1em] text-fg-3";
+  "px-[11px] pb-[5px] pt-[9px] text-[12px] font-bold uppercase tracking-[.1em] text-fg-3";
 
 export const MENU_SEP = "mx-1 my-1.5 h-px bg-border";
 
@@ -23,7 +22,7 @@ export const MENU_SEP = "mx-1 my-1.5 h-px bg-border";
 // <Link>, so line-height intentionally stays inherited per element (UA
 // normal on buttons, body 1.5 on links — exactly the legacy rendering).
 export const MENU_ITEM =
-  "flex w-full items-center gap-[11px] rounded-sm border-0 bg-transparent px-[11px] py-[9px] text-left text-[13.5px] font-medium hover:bg-surface-2";
+  "flex w-full items-center gap-[11px] rounded-sm border-0 bg-transparent px-[11px] py-[9px] text-left text-[15px] font-medium hover:bg-surface-2";
 
 export const MENU_ITEM_TONE = {
   default: "text-fg",

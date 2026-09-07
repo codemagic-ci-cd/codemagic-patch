@@ -29,20 +29,18 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 
 ## 1. Stand up Patch
 
-For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/) (`./scripts/local-eval/up.sh`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server.
+For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/) (`cmpatch selfhost local-eval`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server.
 
 | | Local eval | Running on VM |
 | --- | --- | --- |
 | API (`apiUrl`) | `http://localhost:3000` | `https://updates.example.com` |
-| Download base (`downloadBaseUrl`) | `http://localhost:9100/codemagic-patch` | `https://storage.updates.example.com/codemagic-patch` |
+| Download base (`downloadBaseUrl`) | `http://localhost:9100/codemagic-patch` | `https://storage-updates.example.com/codemagic-patch` |
 
 Create apps for your product (skip the seeded `demo-app-*` apps unless you are only trying the bundled on-device demo):
 
 ```bash
-cmpatch login --server-url http://localhost:3000
-cmpatch app create --server-url http://localhost:3000 --name MyApp-iOS
-cmpatch app create --server-url http://localhost:3000 --name MyApp-Android
-cmpatch deployment list --server-url http://localhost:3000 --app MyApp-iOS --format table
+cmpatch init      # from your Expo project root: signs in, creates one app per platform, links the project
+cmpatch deployment list --app MyApp-iOS --format table
 ```
 
 Map each EAS channel you use today to a Patch deployment (e.g. EAS `preview` → Patch `Staging`, EAS `production` → Patch `Production`). Copy each deployment key into the Expo config plugin in the next step.
@@ -137,7 +135,7 @@ When you cut over for real, install the CLI against your hosted API and create a
 
 ```bash
 npm install -g @codemagic/patch-cli
-cmpatch config set server-url https://updates.example.com
+cmpatch init      # re-run in the project to point it at the production server
 cmpatch token create --name ci
 ```
 

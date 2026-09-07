@@ -4494,7 +4494,7 @@ export function parseDeploymentHistory(
 
 export function parseRawArgvCommand(
   args: string[],
-  kind: "config" | "init",
+  kind: "config" | "init" | "selfhost",
 ): ParseCliResult {
   const stripped = stripGlobalFormatArgs(args);
 

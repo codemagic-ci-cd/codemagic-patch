@@ -21,6 +21,8 @@ Icon
 ### Node / Yarn
 node_modules/
 dist/
+build/
+.tmp/
 coverage/
 .omx/
 .pnp.*
@@ -62,3 +64,5 @@ web-dashboard/src/styles/app.local.css
 # CLI global-install packing dir
 .tmp-pack/
 .gstack
+# Internal test-build tarballs from scripts/dev/pack-internal-test-cli.sh
+/codemagic-patch-cli-*.tgz

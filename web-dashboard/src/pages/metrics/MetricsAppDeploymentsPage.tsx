@@ -18,6 +18,7 @@ import {
   TBL_TR,
   TBL_WRAP,
 } from "../../components/ui/table";
+import { clickableRowProps } from "../../components/ui/clickableRow";
 import { MetricsRollupCells } from "./MetricsRollupCells";
 import { MetricsPageFrame, MetricsTableSkeleton } from "./MetricsPageFrame";
 import { metricsDeploymentPath } from "./metricsPaths";
@@ -38,7 +39,7 @@ export function MetricsAppDeploymentsPage() {
 
   const title = appQuery.data?.name ?? "App";
   const subtitle =
-    "Metrics rolled up per deployment. Open one for version distribution and install outcomes.";
+    "Metrics rolled up per deployment. Open one for version distribution and update outcomes.";
 
   if (appQuery.isPending || deploymentsQuery.isPending) {
     return (
@@ -147,16 +148,9 @@ function DeploymentMetricsRow({
 
   return (
     <tr
-      className={`${TBL_TR} cursor-pointer`}
-      onClick={(event) => {
-        if (
-          event.target instanceof Element &&
-          event.target.closest("a") !== null
-        ) {
-          return;
-        }
+      {...clickableRowProps(TBL_TR, () => {
         void navigate(detailPath);
-      }}
+      })}
     >
       <td className={TBL_TD}>
         <div className={CELL_MAIN}>

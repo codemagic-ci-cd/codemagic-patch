@@ -87,9 +87,17 @@ export type ControlPlaneAction =
   | "app.read"
   | "release.view"
   | "release.deploy"
-  | "iam.manage";
+  | "iam.manage"
+  | "instance.read";
 
 export type AuthorizationResourceScope =
+  | {
+      /**
+       * The whole install rather than one team's resources (host health,
+       * running version). Carries no id: there is exactly one instance.
+       */
+      type: "instance";
+    }
   | {
       type: "team";
       teamId: TeamId;
@@ -314,6 +322,12 @@ export interface MetricEvent {
   sdkVersion: string | null;
   platform: string | null;
   attributes: Record<string, unknown> | null;
+  /**
+   * Decoded `attributes.payload` (PROTOCOL.md §Metric Event `Failed` Payload).
+   * Null when the event carried no payload or the payload could not be
+   * decoded — the raw string stays in `attributes` either way.
+   */
+  failurePayload: Record<string, unknown> | null;
   createdAt: Date;
 }
 
@@ -328,8 +342,85 @@ export interface ReleaseMetrics {
    * `failed`.
    */
   failureReasons: Record<string, number>;
+  /**
+   * How many of each reason's failures carried a decodable `payload`
+   * (PROTOCOL.md §Metric Event `Failed` Payload), keyed the same way. The
+   * dashboard needs it to decide whether a reason row is worth opening: a
+   * reason no device ever sent detail for has nothing behind it, and offering
+   * a drill-down into an empty dialog is a dead end. Reasons with no detail
+   * at all are absent rather than zero.
+   */
+  failureReasonDetailCounts: Record<string, number>;
   installed: number;
   success: number;
+}
+
+/**
+ * Failures sharing one `payload.code` under a reason. `code` is null for
+ * failures reported without a decodable payload: the pre-payload SDK versions
+ * and the malformed-blob cases both land in that bucket.
+ *
+ * The bucket's detail is not inlined. Its value distributions and its raw
+ * events are fetched only when a reader opens it, so a code nobody looks at
+ * costs nothing beyond this row.
+ */
+export interface FailureCodeBreakdown {
+  code: string | null;
+  count: number;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+}
+
+/**
+ * Every distinct code under one reason, highest count first.
+ *
+ * Not paged. The value space is the enumerable set of HTTP statuses plus two
+ * sentinels (PROTOCOL.md §Metric Event `Failed` Payload), so the result is
+ * small and bounded by the contract rather than by the data — the same shape
+ * as the reason counts this drills into, which are also returned whole.
+ */
+export interface FailureCodeBreakdownList {
+  codes: FailureCodeBreakdown[];
+}
+
+/** One value and its occurrence count inside a code bucket. */
+export interface FailureDistributionEntry {
+  count: number;
+  value: string;
+}
+
+/**
+ * A code bucket's top values, aggregated over the whole bucket.
+ *
+ * Deliberately not derived from the event page a reader has scrolled to: that
+ * would describe the newest N events and would shift under them as they
+ * scrolled, which is the opposite of what a distribution is for.
+ */
+export interface FailureDistribution {
+  /** Top `payload.android_previous_process_exit` values; empty off Android. */
+  exitReasons: FailureDistributionEntry[];
+  /** Top `payload.message` values. */
+  messages: FailureDistributionEntry[];
+  /** Events in the bucket, so shares account for the values below the cut. */
+  total: number;
+}
+
+/** One raw `Failed` event inside a code bucket. */
+export interface FailureEventSample {
+  androidPreviousProcessExit: string | null;
+  deviceId: string;
+  emittedAt: Date;
+  id: string;
+  message: string | null;
+}
+
+/**
+ * One keyset page of a code bucket's events, newest first.
+ */
+export interface FailureEventPage {
+  events: FailureEventSample[];
+  /** Null once the last page has been served. */
+  nextCursor: string | null;
 }
 
 export interface AuditEvent {

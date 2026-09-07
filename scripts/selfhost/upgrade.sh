@@ -12,6 +12,7 @@ IMAGE_ENV_UPDATED=0
 PREVIOUS_IMAGE_ENV_ENTRY=""
 STACK_RECREATE_ATTEMPTED=0
 PRE_UPGRADE_BACKUP_DIR=""
+CLEANUP_DONE=0
 
 usage() {
   cat <<'USAGE'
@@ -56,6 +57,11 @@ load_selfhost_env
 # Fail (or backfill) before the backup/build instead of letting the upgraded
 # server refuse to boot over missing OAuth env.
 ensure_selfhost_oauth_env
+# Same reason, same moment: DELIVERY_ADAPTER=cloudfront without a distribution
+# id (or with half a credential pair) makes resolveRuntimeConfig throw at
+# startup. compose_selfhost no longer rejects it — that would abort a backup on
+# a stack backup.sh can still service — so the recreating paths assert it here.
+validate_selfhost_delivery_bootable
 
 # The gcs storage overlay bind-mounts the service-account key into the server
 # container; with the file missing, `compose up` puts an empty docker-created
@@ -97,6 +103,16 @@ printf 'Current server image:\n  %s\n\n' "$previous_image"
 # re-pinning the image alone is NOT a safe rollback — a full restore is.
 upgrade_failed() {
   local exit_code=$?
+  local signal_number="${1:-}"
+
+  if [ -n "$signal_number" ]; then
+    exit_code=$((128 + signal_number))
+  fi
+  if [ "$CLEANUP_DONE" -eq 1 ]; then
+    exit "$exit_code"
+  fi
+  CLEANUP_DONE=1
+
   if [ "$exit_code" -eq 0 ]; then
     return 0
   fi
@@ -147,7 +163,9 @@ fi
 
 # Cover both the image-pin and rebuild paths from here on (env-pin restore +
 # rollback guidance once the stack is recreated).
-trap upgrade_failed EXIT
+trap 'upgrade_failed' EXIT
+trap 'upgrade_failed 2' INT
+trap 'upgrade_failed 15' TERM
 
 if [ -n "$TARGET_IMAGE" ]; then
   log_selfhost "updating CODEMAGIC_PATCH_SERVER_IMAGE to ${TARGET_IMAGE}"
@@ -200,7 +218,7 @@ if [ "$SKIP_SMOKE" -eq 0 ]; then
 fi
 
 IMAGE_ENV_UPDATED=0
-trap - EXIT
+trap - EXIT INT TERM
 
 printf '\nUpgrade complete.\n'
 printf 'Previous server image:\n  %s\n' "$previous_image"

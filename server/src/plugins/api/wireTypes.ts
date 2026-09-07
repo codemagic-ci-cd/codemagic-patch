@@ -227,8 +227,50 @@ export interface ReleaseMetricsWire {
   failed: number;
   /** Failed counts keyed by client-reported reason; unreported → "unknown". */
   failure_reasons: Record<string, number>;
+  /** Of those, how many carried a decodable payload; reasons with none are absent. */
+  failure_reason_detail_counts: Record<string, number>;
   installed: number;
   success: number;
+}
+
+/** One distinct `payload.message` under a failure code, with its count. */
+/** One value and its count inside a code bucket's distribution. */
+export interface FailureDistributionEntryWire {
+  count: number;
+  value: string;
+}
+
+/** Failures sharing one `payload.code`; `code` is null when no payload decoded. */
+export interface FailureCodeWire {
+  code: string | null;
+  count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+/** Every code under one reason. Not paged; see domain FailureCodeBreakdownList. */
+export interface FailureCodesWireResponse {
+  codes: FailureCodeWire[];
+}
+
+export interface FailureDistributionWireResponse {
+  exit_reasons: FailureDistributionEntryWire[];
+  messages: FailureDistributionEntryWire[];
+  total: number;
+}
+
+export interface FailureEventWire {
+  android_previous_process_exit: string | null;
+  device_id: string;
+  emitted_at: string;
+  id: string;
+  message: string | null;
+}
+
+export interface FailureEventsWireResponse {
+  events: FailureEventWire[];
+  /** Opaque; echoed back as `cursor`. Null once the last page has been served. */
+  next_cursor: string | null;
 }
 
 export interface ReleaseMetricsRowWire {

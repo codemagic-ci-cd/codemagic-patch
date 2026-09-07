@@ -52,8 +52,12 @@ STORAGE_ADAPTER=s3
 PUBLIC_BASE_URL=https://storage.example.com/codemagic-patch
 ```
 
-(`MANIFEST_CACHE_CONTROL` is optional tuning — the built-in default is already
-`no-cache, must-revalidate`.)
+(`MANIFEST_CACHE_CONTROL` is optional tuning — the built-in default follows
+`DELIVERY_ADAPTER`. With `base-url` it is `no-cache, must-revalidate`, because
+that adapter's purge is a no-op and nothing could shorten a shared cache's TTL
+after a rollback. With `cloudflare` or `cloudfront` it is
+`public, max-age=0, s-maxage=300, must-revalidate`: clients still revalidate,
+while a failed purge is bounded to five minutes at the edge.)
 
 An OAuth sign-in provider is **required** for `MODE=all`/`MODE=api` — the
 server refuses to boot without at least one of GitHub
@@ -152,7 +156,7 @@ inside the deployment boundary.
 You need two public origins:
 
 - API origin, for example `https://updates.example.com`.
-- Artifact origin, for example `https://storage.updates.example.com/codemagic-patch`.
+- Artifact origin, for example `https://storage-updates.example.com/codemagic-patch`.
 
 In the mobile app, the API origin is the `CodemagicPatchApiUrl` native resource and
 the artifact origin is `CodemagicPatchDownloadBaseUrl` (which equals `PUBLIC_BASE_URL`);

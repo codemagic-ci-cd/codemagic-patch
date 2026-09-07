@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
 import { CARD, CARD_PAD } from "../../components/ui/card";
+import { PageHeader } from "../../components/ui/PageHeader";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { PAGE_SUB, PAGE_TITLE } from "../../components/ui/typography";
 
 export function MetricsPageFrame({
   title,
@@ -17,15 +17,11 @@ export function MetricsPageFrame({
 }) {
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className={PAGE_TITLE}>{title}</h1>
-          <p className={PAGE_SUB}>{subtitle}</p>
-        </div>
-        {actions !== undefined ? (
-          <div className="flex items-center gap-2.5">{actions}</div>
-        ) : null}
-      </div>
+      <PageHeader
+        title={title}
+        description={subtitle}
+        actions={actions}
+      />
       {children}
     </>
   );

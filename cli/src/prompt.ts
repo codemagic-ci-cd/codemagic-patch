@@ -13,7 +13,12 @@ export type SelectChoice = {
 };
 
 export type PromptRequest =
-  | { initial?: string; message: string; type: "text" }
+  /**
+   * `optional` is the only way an empty answer reaches a caller: every other
+   * text prompt rejects one, so a step that offers "press Enter to skip" has
+   * to say so here or the offer is a dead end the user cannot get out of.
+   */
+  | { initial?: string; message: string; optional?: boolean; type: "text" }
   | { message: string; type: "password" }
   | {
       choices: SelectChoice[];
@@ -33,6 +38,10 @@ export type PromptFn = (request: PromptRequest) => Promise<string | string[]>;
 // Confirm prompts are kept separate from PromptFn so existing callers that
 // consume a string answer stay strictly typed; a confirm resolves to a boolean.
 export type ConfirmRequest = {
+  /** Label for the "yes" answer; defaults to clack's "Yes". */
+  active?: string;
+  /** Label for the "no" answer; defaults to clack's "No". */
+  inactive?: string;
   initial?: boolean;
   message: string;
 };
@@ -76,15 +85,19 @@ export function createInteractivePrompt(
 
   return async (request) => {
     switch (request.type) {
-      case "text":
-        return unwrap(
+      case "text": {
+        const answer = unwrap(
           await clackText({
             ...streams,
             initialValue: request.initial,
             message: request.message,
-            validate: requireNonEmpty,
+            ...(request.optional === true ? {} : { validate: requireNonEmpty }),
           }),
         );
+        // clack resolves an empty answer to `undefined` when the prompt has no
+        // default value, which only an optional prompt can reach.
+        return typeof answer === "string" ? answer : "";
+      }
       case "password":
         return unwrap(
           await clackPassword({
@@ -128,9 +141,11 @@ export function createInteractiveConfirm(
   stdin: typeof process.stdin,
   stderr: typeof process.stderr,
 ): ConfirmFn {
-  return async ({ initial, message }) =>
+  return async ({ active, inactive, initial, message }) =>
     unwrap(
       await clackConfirm({
+        active,
+        inactive,
         initialValue: initial ?? false,
         input: stdin,
         message,

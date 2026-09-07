@@ -51,7 +51,7 @@ export function LocalConsentPage() {
     return (
       <AuthBackdrop>
         <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
-          <h1 className="text-[23px] font-extrabold tracking-[-.02em]">
+          <h1 className="text-[23px] font-semibold tracking-[-.02em]">
             Page not found
           </h1>
           <p className="mt-2 text-[14px] text-fg-2">
@@ -69,7 +69,7 @@ export function LocalConsentPage() {
     return (
       <AuthBackdrop>
         <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
-          <h1 className="text-[23px] font-extrabold tracking-[-.02em]">
+          <h1 className="text-[23px] font-semibold tracking-[-.02em]">
             Nothing to approve here
           </h1>
           <p className="mt-2 text-[14px] text-fg-2">
@@ -104,7 +104,7 @@ export function LocalConsentPage() {
   return (
     <AuthBackdrop>
       <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
-        <h1 className="text-[23px] font-extrabold tracking-[-.02em]">
+        <h1 className="text-[23px] font-semibold tracking-[-.02em]">
           Local evaluation sign-in
         </h1>
         <p className="mt-2 text-[14px] text-fg-2">

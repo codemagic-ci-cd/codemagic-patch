@@ -736,10 +736,16 @@ blockquote {
 
 .navbar__inner {
   align-items: center;
+  flex-wrap: nowrap;
   width: 100%;
   max-width: 80rem;
   margin-left: auto;
   margin-right: auto;
+}
+
+.navbar__items--right {
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .navbar__brand {
@@ -790,11 +796,18 @@ blockquote {
   font-family: inherit;
   font-size: 14px;
   height: 3rem;
+  max-width: 100%;
   border-radius: var(--cm-docs-radius);
   border: 2px solid var(--cm-grey-l);
   background-color: #ffffff;
   color: var(--ifm-navbar-link-color);
   transition: all 200ms ease-in-out;
+}
+
+@media (max-width: 996px) {
+  .navbar__search-input {
+    width: 8rem;
+  }
 }
 
 .navbar__search-input::placeholder {

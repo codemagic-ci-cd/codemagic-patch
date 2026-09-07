@@ -1,7 +1,7 @@
 ---
 title: CLI command reference
 description: 'Reference for cmpatch commands, flags, and release workflows.'
-llmsDescription: 'cmpatch commands and flags — release-react, promote, rollback, doctor.'
+llmsDescription: 'cmpatch commands and flags — init, selfhost, release-react, promote, rollback, doctor.'
 ---
 
 # CLI command reference
@@ -15,8 +15,24 @@ Install with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then run `c
 | `cmpatch login` / `logout` / `whoami` | Browser sign-in via the dashboard (or `--token`) / sign out / identity |
 | `cmpatch token create \| list \| revoke` | Manage personal access tokens (`cm_pat_…`) |
 | `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
-| `cmpatch init` | Write `codemagic-patch.config.json` for a project |
+| `cmpatch init` | Link a project to a server and write `codemagic-patch.config.json`; interactively install a server or enter an existing URL, sign in after a new install, and create or select an app for each platform |
 | `cmpatch context` | Show the effective resolved context; add `--remote` to include server SDK configuration (`downloadBaseUrl`) |
+
+## Self-hosting
+
+`local-eval` runs the evaluation stack on this machine. The other commands run
+the repository's authoritative self-host scripts over SSH. The guided installer
+creates the bundled Postgres and MinIO stack; external database or S3/GCS
+installs use the direct `install.sh` path described in [Infrastructure
+adapters](/docs/setup/infrastructure).
+
+| Command | Description |
+| --- | --- |
+| `cmpatch selfhost local-eval [up\|down\|status]` | Start, stop, or inspect the localhost evaluation stack; `up` is the default |
+| `cmpatch selfhost install [user@vps]` | Check and prepare a server, then run the guided install with DNS, GitHub OAuth, and optional CDN setup |
+| `cmpatch selfhost upgrade [user@vps]` | Fast-forward the server checkout and run the guarded backup-and-update workflow |
+| `cmpatch selfhost backup [user@vps]` | Take a mode-aware backup; add `--download` to copy it to this machine |
+| `cmpatch selfhost restore [backup] [user@vps]` | Select or upload a backup, take a safety backup, and restore the components it contains |
 
 ## Apps and deployments
 

@@ -37,6 +37,9 @@ function serializeMetricEvent(event: MetricsEvent): string {
   if (event.status) attributes.status = event.status;
   if (event.reason) attributes.reason = event.reason;
   if (event.failureSubtype) attributes.failure_subtype = event.failureSubtype;
+  // PROTOCOL.md carries the payload as a JSON *string* so `attributes` stays a
+  // flat string map across every native bridge.
+  if (event.payload) attributes.payload = JSON.stringify(event.payload);
 
   return JSON.stringify({
     event_id: `${event.name}-${event.at.replace(/[^A-Za-z0-9._-]/g, "_")}-${Math.random().toString(16).slice(2)}`,

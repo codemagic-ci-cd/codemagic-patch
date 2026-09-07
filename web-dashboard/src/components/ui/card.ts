@@ -11,7 +11,7 @@ export const CARD =
 export const CARD_PAD = "p-[22px]";
 
 export const CARD_HEAD =
-  "flex items-center gap-3 border-b border-border px-[22px] py-[18px] [&_h3]:text-[15px] [&_h3]:font-bold";
+  "flex items-center gap-3 border-b border-border px-[22px] py-[18px] [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-fg";
 
 /** Legacy `.card-head .right`: trailing action cluster pinned right. */
 export const CARD_HEAD_RIGHT = "ml-auto flex items-center gap-2";

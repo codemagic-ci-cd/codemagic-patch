@@ -10,7 +10,7 @@ export const STAT =
   "stat-strip relative overflow-hidden rounded-lg border border-border bg-surface px-5 py-[18px] shadow-sm";
 
 export const STAT_TOP =
-  "flex items-center gap-[9px] text-[12.5px] font-semibold text-fg-2";
+  "flex items-center gap-[9px] text-[14px] font-semibold text-fg-2";
 
 /** Icon-chip geometry (legacy `.stat__ico` minus its accent fill/color). */
 export const STAT_ICO_BASE =
@@ -24,7 +24,7 @@ export const STAT_ICO_ACCENT =
 // nested <small>: a descendant rule, not a co-applied class, so it never
 // collides with the value's own size/weight (no-merge contract).
 export const STAT_VAL =
-  "mt-3 text-[30px] font-extrabold leading-none tracking-[-.03em] tabular-nums [&_small]:text-[15px] [&_small]:font-semibold [&_small]:text-fg-3";
+  "mt-3 text-[32px] font-bold leading-none tracking-[-.03em] tabular-nums [&_small]:text-[16px] [&_small]:font-semibold [&_small]:text-fg-3";
 
 export const STAT_META =
-  "mt-[9px] flex items-center gap-1.5 text-[12px] text-fg-3";
+  "mt-[9px] flex items-center gap-1.5 text-[13px] text-fg-3";

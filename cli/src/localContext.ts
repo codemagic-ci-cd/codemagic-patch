@@ -5,9 +5,9 @@ import type {
 } from "./configStore";
 import { readOptionValue } from "./argv";
 
-type ConfigSource = "env" | "project" | "user";
+export type ConfigSource = "env" | "project" | "user";
 
-type EffectiveValue = {
+export type EffectiveValue = {
   source: ConfigSource;
   value: string;
 };

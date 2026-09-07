@@ -22,6 +22,7 @@ export function createInitialRuntimeState(): RuntimeState {
     binaryVersion: null,
     deploymentKey: "",
     deviceId: "default-device-id",
+    androidPreviousProcessExit: null,
     remotePackage: null,
     latestBinaryVersion: null,
     storeUpdateAvailable: false,
@@ -192,6 +193,7 @@ export async function ensureHydrated(): Promise<void> {
       ]);
 
       state.deviceId = deviceId;
+      state.androidPreviousProcessExit = bootState.androidPreviousProcessExit ?? null;
       applyBootHydration({
         // Native upholds the `NativeBootSource` value space; the boundary type
         // is `string` for RN 0.76 codegen compatibility, so narrow it back here.

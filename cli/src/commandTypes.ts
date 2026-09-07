@@ -518,6 +518,16 @@ export type InitCommand = {
   kind: "init";
 };
 
+/**
+ * One command kind with internal subcommand dispatch, like `config` and
+ * `init`: `parseFlags` rejects positional arguments, and
+ * `selfhost restore [backup] [user@vps]` has two.
+ */
+export type SelfhostCommand = {
+  argv: string[];
+  kind: "selfhost";
+};
+
 export type ContextCommand = {
   kind: "context";
   projectRoot?: string;
@@ -646,6 +656,7 @@ export type CliCommand =
   | TokenCreateCommand
   | TokenListCommand
   | TokenRevokeCommand
+  | SelfhostCommand
   | LoginCommand
   | LogoutCommand
   | WhoamiCommand

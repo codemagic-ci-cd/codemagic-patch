@@ -24,6 +24,10 @@ import {
   enqueueMetricEvent,
   recordEvent,
 } from "./events";
+import {
+  commonFailurePayload,
+  networkFailurePayload,
+} from "./failurePayload";
 import { nativeDownloadRequest, positiveByteCount } from "./downloadUpdate";
 
 export const DEFAULT_INSTALL_MODE: InstallMode = "ON_NEXT_RESTART";
@@ -81,6 +85,7 @@ async function installNativeDownloadedPackage(
         deliveryType: localPackage.source,
         status: "install",
         reason: "integrity",
+        payload: commonFailurePayload(),
       });
       throw error;
     }
@@ -110,6 +115,7 @@ async function installNativeDownloadedPackage(
         deliveryType: "full_bundle",
         status: "download",
         reason: "network",
+        payload: networkFailurePayload(downloadError),
       });
       throw downloadError;
     }
@@ -130,6 +136,7 @@ async function installNativeDownloadedPackage(
         deliveryType: "full_bundle",
         status: "install",
         reason: "integrity",
+        payload: commonFailurePayload(),
       });
       throw installError;
     }

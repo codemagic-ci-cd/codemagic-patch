@@ -14,7 +14,7 @@
 // an inferred-developer downgrades the team to viewer (useTeamRole contract).
 
 import { Fragment, useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   FormEvent,
@@ -65,6 +65,7 @@ import {
   TBL_TR,
   TBL_WRAP,
 } from "../../components/ui/table";
+import { clickableRowProps } from "../../components/ui/clickableRow";
 import {
   KEBAB,
   KEBAB_BTN,
@@ -73,6 +74,7 @@ import {
   MENU_SEP,
 } from "../../components/ui/menu";
 import { DropdownPanel } from "../../components/ui/DropdownPanel";
+import { CARD_HEAD, CARD_HEAD_RIGHT } from "../../components/ui/card";
 
 // --- Problem presentation helpers (file-local, shared by the dialogs) ------
 
@@ -268,19 +270,19 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
 
   return (
     <div className="mb-[18px] overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
-      <div className="flex items-center gap-3 border-b border-border px-[22px] py-[18px]">
+      <div className={CARD_HEAD}>
         <SvgIcon className="size-[18px] text-blue">
           <path d="m12 2 9 5-9 5-9-5 9-5z" />
           <path d="m3 12 9 5 9-5" />
           <path d="m3 17 9 5 9-5" />
         </SvgIcon>
-        <h3 className="text-[15px] font-bold">Deployments</h3>
+        <h3>Deployments</h3>
         {deploymentsQuery.isSuccess ? (
           <span className={`${CHIP} ${CHIP_TONE.neutral} ml-1`}>
             {deploymentsQuery.data.length}
           </span>
         ) : null}
-        <div className="ml-auto flex items-center gap-2">
+        <div className={CARD_HEAD_RIGHT}>
           {createButton(buttonVariants({ intent: "ghost", size: "sm" }))}
         </div>
       </div>
@@ -393,15 +395,18 @@ function DeploymentRow({
   onClear,
   onDelete,
 }: DeploymentRowProps) {
+  const navigate = useNavigate();
+  const detailPath = `/teams/${teamId}/apps/${deployment.appId}/deployments/${deployment.id}`;
+
   return (
-    <tr className={TBL_TR}>
+    <tr
+      {...clickableRowProps(TBL_TR, () => {
+        void navigate(detailPath);
+      })}
+    >
       <td className={TBL_TD}>
         <div className={CELL_MAIN}>
-          <Link
-            to={`/teams/${teamId}/apps/${deployment.appId}/deployments/${deployment.id}`}
-          >
-            {deployment.name}
-          </Link>
+          <Link to={detailPath}>{deployment.name}</Link>
         </div>
       </td>
       <td className={TBL_TD}>

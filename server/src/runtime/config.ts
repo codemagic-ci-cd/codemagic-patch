@@ -2,7 +2,10 @@ import path from "node:path";
 
 import type { ServerMode } from "../app/types";
 import { DEFAULT_MAX_UPLOAD_SIZE_BYTES } from "../app/upload-size";
-import { DEFAULT_MANIFEST_CACHE_CONTROL } from "../worker/cachePolicy";
+import {
+  CDN_MANIFEST_CACHE_CONTROL,
+  DIRECT_MANIFEST_CACHE_CONTROL,
+} from "../worker/cachePolicy";
 import { resolveDatabaseSearchPath } from "./databaseSearchPath";
 
 const DEFAULT_HOST = "0.0.0.0";
@@ -48,6 +51,12 @@ export interface CloudflareDeliveryConfig {
   zoneId: string;
 }
 
+export interface CloudFrontDeliveryConfig {
+  accessKeyId?: string;
+  distributionId: string;
+  secretAccessKey?: string;
+}
+
 export interface GitHubOAuthConfig {
   allowedRedirectUris?: string[];
   apiBaseUrl: string;
@@ -75,8 +84,19 @@ export type StagedBundleRetention = "delete" | "keep";
 
 export type RegistrationMode = "invite_only" | "open";
 
+/**
+ * Outbound "is a newer server release published?" lookup behind the
+ * dashboard Status page. Absent when SERVER_UPDATE_CHECK=false — installs
+ * without egress, and deployments where upgrades are not the operator's
+ * concern, must never call out to GitHub.
+ */
+export interface UpdateCheckConfig {
+  githubApiBaseUrl: string;
+}
+
 export interface RuntimeConfig {
   bitbucketOAuth?: BitbucketOAuthConfig;
+  cloudfront?: CloudFrontDeliveryConfig;
   cloudflare?: CloudflareDeliveryConfig;
   /**
    * Absolute path of a built dashboard SPA to serve from the app: static
@@ -88,7 +108,7 @@ export interface RuntimeConfig {
   databaseMaxConnections?: number;
   databaseSearchPath: string[];
   databaseUrl?: string;
-  deliveryAdapter: "base-url" | "cloudflare";
+  deliveryAdapter: "base-url" | "cloudflare" | "cloudfront";
   gcs?: GcsStorageConfig;
   githubOAuth?: GitHubOAuthConfig;
   host: string;
@@ -129,6 +149,7 @@ export interface RuntimeConfig {
   s3?: S3StorageConfig;
   stagedBundleRetention: StagedBundleRetention;
   storageAdapter: "memory" | "s3" | "gcs";
+  updateCheck?: UpdateCheckConfig;
   workerSharedSecret?: string;
 }
 
@@ -159,6 +180,10 @@ export function resolveRuntimeConfig(
 
   return {
     bitbucketOAuth,
+    cloudfront:
+      deliveryAdapter === "cloudfront"
+        ? resolveCloudFrontConfig(env)
+        : undefined,
     cloudflare:
       deliveryAdapter === "cloudflare"
         ? resolveCloudflareConfig(env)
@@ -184,6 +209,7 @@ export function resolveRuntimeConfig(
     logger: resolveLogger(env.LOGGER),
     manifestCacheControl: resolveManifestCacheControl(
       env.MANIFEST_CACHE_CONTROL,
+      deliveryAdapter,
     ),
     maxUploadSizeBytes: resolveMaxUploadSize(env.MAX_UPLOAD_SIZE),
     mode,
@@ -216,6 +242,7 @@ export function resolveRuntimeConfig(
     s3: storageAdapter === "s3" ? resolveS3Config(env) : undefined,
     stagedBundleRetention: resolveStagedBundleRetention(env.UPLOAD_RETENTION),
     storageAdapter,
+    updateCheck: resolveUpdateCheckConfig(env),
     workerSharedSecret: resolveWorkerSharedSecret(env.WORKER_SHARED_SECRET, mode),
   };
 }
@@ -562,8 +589,21 @@ function resolveRunMigrations(runMigrations: string | undefined): boolean {
   return runMigrations !== "false";
 }
 
-function resolveManifestCacheControl(value: string | undefined): string {
-  return resolveOptionalString(value) ?? DEFAULT_MANIFEST_CACHE_CONTROL;
+// The default follows the delivery topology rather than being one global
+// value: only a purging adapter can cut a shared-cache TTL short after a
+// publish or rollback, so `base-url` keeps the revalidate-always policy.
+function resolveManifestCacheControl(
+  value: string | undefined,
+  deliveryAdapter: RuntimeConfig["deliveryAdapter"],
+): string {
+  const configured = resolveOptionalString(value);
+  if (configured !== undefined) {
+    return configured;
+  }
+
+  return deliveryAdapter === "base-url"
+    ? DIRECT_MANIFEST_CACHE_CONTROL
+    : CDN_MANIFEST_CACHE_CONTROL;
 }
 
 function resolveRegistrationMode(value: string | undefined): RegistrationMode {
@@ -666,6 +706,21 @@ function resolveGcsConfig(env: RuntimeEnvironment): GcsStorageConfig {
   };
 }
 
+function resolveUpdateCheckConfig(
+  env: RuntimeEnvironment,
+): UpdateCheckConfig | undefined {
+  if (!resolveBoolean(env.SERVER_UPDATE_CHECK, true)) {
+    return undefined;
+  }
+
+  return {
+    githubApiBaseUrl: trimTrailingSlash(
+      resolveOptionalString(env.GITHUB_API_BASE_URL) ??
+        DEFAULT_GITHUB_API_BASE_URL,
+    ),
+  };
+}
+
 function resolveBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) {
     return fallback;
@@ -688,7 +743,7 @@ function resolveBoolean(value: string | undefined, fallback: boolean): boolean {
 
 function resolveDeliveryAdapter(
   deliveryAdapter: string | undefined,
-): "base-url" | "cloudflare" {
+): "base-url" | "cloudflare" | "cloudfront" {
   if (deliveryAdapter === undefined || deliveryAdapter === "base-url") {
     return "base-url";
   }
@@ -697,9 +752,40 @@ function resolveDeliveryAdapter(
     return "cloudflare";
   }
 
+  if (deliveryAdapter === "cloudfront") {
+    return "cloudfront";
+  }
+
   throw new Error(
-    `DELIVERY_ADAPTER must be one of: base-url, cloudflare. Received: ${JSON.stringify(deliveryAdapter)}`,
+    `DELIVERY_ADAPTER must be one of: base-url, cloudflare, cloudfront. Received: ${JSON.stringify(deliveryAdapter)}`,
   );
+}
+
+function resolveCloudFrontConfig(
+  env: RuntimeEnvironment,
+): CloudFrontDeliveryConfig {
+  const distributionId = resolveOptionalString(env.CLOUDFRONT_DISTRIBUTION_ID);
+  if (!distributionId) {
+    throw new Error(
+      "CLOUDFRONT_DISTRIBUTION_ID is required when DELIVERY_ADAPTER=cloudfront",
+    );
+  }
+
+  const accessKeyId = resolveOptionalString(env.CLOUDFRONT_ACCESS_KEY_ID);
+  const secretAccessKey = resolveOptionalString(
+    env.CLOUDFRONT_SECRET_ACCESS_KEY,
+  );
+  if ((accessKeyId === undefined) !== (secretAccessKey === undefined)) {
+    throw new Error(
+      "CLOUDFRONT_ACCESS_KEY_ID and CLOUDFRONT_SECRET_ACCESS_KEY must be set together, or both omitted to use the default credential chain",
+    );
+  }
+
+  return {
+    accessKeyId,
+    distributionId,
+    secretAccessKey,
+  };
 }
 
 function resolveCloudflareConfig(

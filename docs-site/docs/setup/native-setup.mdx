@@ -13,30 +13,35 @@ Wire `@codemagic/react-native-patch` into a bare React Native or Expo prebuild a
 You need:
 
 - A running Patch server ([local quickstart](/docs/) or [Install](/docs/install))
-- The `cmpatch` CLI signed in (`cmpatch login`)
+- The `cmpatch` CLI (`npm install -g @codemagic/patch-cli`)
 - A native project you can rebuild (Expo Go is not supported)
 
 ## Create apps and deployments
 
-Set your server URL as a CLI default once, so the commands below (and later pages) can omit `--server-url`:
+From your project root, let the CLI do it:
 
 ```bash
-cmpatch config set server-url https://updates.example.com
+cmpatch init
 ```
 
-This is a per-user default; [`cmpatch init`](/docs/setup/first-release) later writes a per-project config that takes precedence, and `cmpatch context` shows where each value comes from.
+It connects to the server (or installs one), signs you in, creates or selects
+one app per platform — each with `Staging` and `Production` deployments — and
+writes `codemagic-patch.config.json` so later commands can omit `--server-url`
+and `--app`. `cmpatch context` shows where each value comes from.
 
-Keep iOS and Android in separate apps:
+To manage apps by hand instead, keep iOS and Android in separate apps:
 
 ```bash
 cmpatch app create --name MyApp-iOS
 cmpatch app create --name MyApp-Android
+```
 
+Either way, `deployment list` shows the keys your app embeds (`CodemagicPatchDeploymentKey`):
+
+```bash
 cmpatch deployment list --app MyApp-iOS --format table
 cmpatch deployment list --app MyApp-Android --format table
 ```
-
-`app create` automatically creates the `Staging` and `Production` deployments. The `DEPLOYMENT_KEY` column from `deployment list` is the value your app embeds (`CodemagicPatchDeploymentKey`).
 
 The same operations are available in the [web dashboard](/docs/using-patch/dashboard): open your app, open a deployment, and copy the deployment key plus SDK URLs from the SDK configuration panel.
 
@@ -53,7 +58,7 @@ The SDK is configured through four native values (injected at build time):
 | App config key | Value |
 | --- | --- |
 | `CodemagicPatchDeploymentKey` | the deployment key from `cmpatch deployment list` |
-| `CodemagicPatchDownloadBaseUrl` | your download base URL (ends with `/codemagic-patch`) |
+| `CodemagicPatchDownloadBaseUrl` | the server's exact `PUBLIC_BASE_URL` (the bundled-storage default ends with `/codemagic-patch`) |
 | `CodemagicPatchApiUrl` | your API URL |
 | `CodemagicPatchPublicKey` | *(optional)* PEM public key for code-signing enforcement |
 
@@ -77,7 +82,7 @@ Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, and `Codemag
 <key>CodemagicPatchDeploymentKey</key>
 <string>ios-staging-deployment-key</string>
 <key>CodemagicPatchDownloadBaseUrl</key>
-<string>https://storage.updates.example.com/codemagic-patch</string>
+<string>https://storage-updates.example.com/codemagic-patch</string>
 <key>CodemagicPatchApiUrl</key>
 <string>https://updates.example.com</string>
 <!-- optional, only when enforcing code signing -->
@@ -133,7 +138,7 @@ Add the same keys to `android/app/src/main/res/values/strings.xml`:
 ```xml
 <resources>
   <string name="CodemagicPatchDeploymentKey" translatable="false">android-staging-deployment-key</string>
-  <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage.updates.example.com/codemagic-patch</string>
+  <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage-updates.example.com/codemagic-patch</string>
   <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
   <!-- optional, only when enforcing code signing -->
   <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
@@ -190,12 +195,12 @@ Add the config plugin to `app.json` / `app.config.js`:
         {
           "ios": {
             "deploymentKey": "ios-staging-deployment-key",
-            "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+            "downloadBaseUrl": "https://storage-updates.example.com/codemagic-patch",
             "apiUrl": "https://updates.example.com"
           },
           "android": {
             "deploymentKey": "android-staging-deployment-key",
-            "downloadBaseUrl": "https://storage.updates.example.com/codemagic-patch",
+            "downloadBaseUrl": "https://storage-updates.example.com/codemagic-patch",
             "apiUrl": "https://updates.example.com"
           }
         }

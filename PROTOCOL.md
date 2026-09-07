@@ -7,6 +7,7 @@ Scope:
 - static delivery resources consumed by the client SDK
 - JSON file schemas that are not served by the control-plane API
 - artifact and directory-shape contracts shared by CLI, server, and client
+- opaque JSON blobs carried through the control-plane API whose per-variant schema cannot be expressed as one OpenAPI schema
 - behavioral rules that must stay stable across implementations
 
 Out of scope:
@@ -341,6 +342,231 @@ decompression on every client.
 - The payload may contain plain JS bundles, Hermes bytecode, and assets.
 - The server and client treat the payload as an opaque directory tree.
 - Compatibility is determined by `binary_version`, fingerprint expansion, and package hash, not by bundle file extension.
+
+## Metric Event `Failed` Payload
+
+A `Failed` metric event names *which* failure class occurred through
+`attributes.reason` (taxonomy owned by `client/specs/metrics/Spec.md`). The
+reason alone is too coarse to act on: a deployment reporting 78 `network`
+failures gives an operator no way to tell a CDN 403 apart from a device that
+lost connectivity mid-download. `attributes.payload` carries the detail that
+closes that gap.
+
+This contract lives here rather than in OpenAPI because the payload travels as
+an opaque JSON *string* inside `attributes`, which OpenAPI can describe only as
+"a string"; because what its fields mean is qualified by the value of a sibling
+field (`attributes.reason`); and because the server must accept payloads
+produced by SDK versions older than any rule written below.
+
+### Backward Compatibility Is Mandatory
+
+**Once a payload shape ships, every later change to it must stay backward
+compatible.** This is stricter than the usual API-evolution courtesy, because
+two things make an incompatible change unrecoverable rather than merely
+disruptive:
+
+- **The old shape is already in the database.** Metric events are an
+  append-only historical record: every payload a released SDK ever sent is
+  sitting in `metric_event`, and it recorded what that SDK actually observed.
+  Rewriting those rows to a new shape would not be a migration — it would be
+  fabricating measurements nobody took.
+- **The old shape keeps arriving.** A client SDK version lives on real devices
+  for as long as users decline to update, so a shape that shipped once keeps
+  being emitted indefinitely. There is no flag day and no way to force one.
+
+A field's **name, type, and meaning are immutable once released.** New
+semantics take a new field name; they never reuse an existing one. This is the
+mechanism that replaces payload versioning — there is no version marker,
+because a field that never changes meaning does not need one.
+
+| Change | Allowed | Why |
+|--------|---------|-----|
+| Add an optional field | yes | Readers already treat every field as optional |
+| Stop sending a field | yes | Stored rows keep it; readers must still tolerate it |
+| Add a value to a field's value space | yes | Readers must already tolerate values they do not recognize |
+| Rename a field | **no** | Splits one fact across two names inside a single dataset |
+| Change a field's type | **no** | No query can separate the two shapes after the fact |
+| Redefine what a value means | **no** | Silently merges two different measurements under one key |
+
+The last row is the dangerous one because it fails quietly. Had `code` been
+released carrying `"HTTP_403"`-style names and then redefined to hold bare HTTP
+statuses, both value spaces would now live in one column with nothing marking
+which SDK produced which — the breakdown would read as though a single value
+space had always been in use.
+
+Readers carry the matching obligation: **treat every payload field as optional
+and every value as possibly older than the current schema.** A dashboard or
+query that assumes a field is present, or that a value space is closed, breaks
+the first time it meets a row an older SDK wrote.
+
+The same reasoning governs every stored envelope field, not just `payload`.
+
+### Encoding
+
+- `attributes.payload` is a **JSON string**, not a nested JSON object. Every
+  other `attributes` value is a string, and keeping the map homogeneous lets
+  each platform's native bridge carry it without a nested-container code path.
+- The string MUST decode to a **JSON object**. Arrays, scalars, and `null` are
+  protocol violations.
+- The encoded string MUST NOT exceed **4096 bytes** of UTF-8. Clients truncate
+  their own fields before serializing rather than emitting an oversized payload.
+- `payload` is optional on every event. It is meaningful only on `Failed`
+  events; a `payload` present on any other `event_name` is ignored.
+
+### Schema
+
+**Every reason uses the same payload shape.** There is no per-reason schema and
+no discriminator field: one object, three optional fields, identical for a
+download failure and a crash rollback alike.
+
+```jsonc
+{
+  "code": "403",
+  "message": "AccessDenied: Access Denied.",
+  "android_previous_process_exit": "REASON_USER_REQUESTED"
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `code` | string, optional | The failure's machine-readable discriminator, and the key every breakdown groups on. What it enumerates is per-reason; see the table below. |
+| `message` | string, optional | Failure text relayed from whatever reported the failure. Never composed by the client. |
+| `android_previous_process_exit` | string, optional | Why this app's previous process ended. Android only; see below. |
+
+The uniformity is a decision about the *reader* as much as the writer. One
+shape means one server column, one aggregation query, and one dashboard
+drill-down (reason → `code` → detail) that reads identically whichever failure
+it is pointed at. A reason that gains detail later needs no new storage, no new
+endpoint, and no new screen. Per-reason shapes would have bought
+tighter-fitting fields at the cost of N of each.
+
+**Every field is optional, and a payload with nothing to put in any of them is
+not sent at all**: `payload` is omitted rather than serialized as `{}`. A crash
+rollback has no status and no text to relay, but does have the platform's
+account of how the previous process died; a download failure on iOS has the
+first two and never the third. Requiring any field would force one of those
+cases to invent a placeholder, and a placeholder is worse than an absence
+because nothing afterwards can tell it apart from a real value.
+
+A payload may carry fields beyond these three; a server MUST retain unknown
+fields verbatim rather than reject the event.
+
+### Per-Reason Meaning
+
+The shape is fixed; what `code` and `message` mean is the reason's business.
+`code` must stay **enumerable and stable within a reason** because every
+breakdown groups on it, so it must never become free text.
+
+| `reason` | `code` | `message` |
+|----------|--------|-----------|
+| `network` | HTTP status of the failed response, or `"0"` — defined below | relayed origin or platform error text — defined below |
+| every other reason | not yet populated | not yet populated |
+
+Reasons other than `network` currently carry
+`android_previous_process_exit` alone and aggregate under the no-code bucket.
+When one of them gains a discriminator, it takes **this same `code` field**
+under the same rules rather than a field of its own — that is what "one shape"
+buys, and abandoning it for the second reason would forfeit all of it.
+
+### `android_previous_process_exit`
+
+Why this app's **previous process** ended, as an Android `ApplicationExitInfo`
+reason constant name: `REASON_CRASH`, `REASON_CRASH_NATIVE`, `REASON_ANR`,
+`REASON_LOW_MEMORY`, `REASON_SIGNALED`, `REASON_USER_REQUESTED`,
+`REASON_EXIT_SELF`, and the rest of that enum. A constant a client's SDK
+version does not recognize — one added by a later platform release — is
+reported as its decimal number rather than folded into an existing name.
+**Omitted** on iOS and on Android 10 and older, where no platform API can
+answer the question.
+
+This is a *fact lookup*, not an inference: it is the only way to tell a launch
+that crashed apart from one the OS reclaimed under memory pressure. It is sent
+on every reason, not only the ones it obviously bears on, because the same
+distinction changes what a failure means everywhere — most sharply on
+`install_fail`, where it separates a genuinely broken package from a rollback
+the OS provoked.
+
+Exactly one exit reason is reported: the most recent. Older records describe
+launches the failure cannot be about.
+
+### `network` — download failure
+
+`code` is the **HTTP status code** of the failed response, in decimal, as a
+string. `"0"` when the request produced no HTTP response at all: a connect or
+read timeout, a DNS failure, a TLS handshake failure, a connection dropped
+mid-transfer, no network interface, or a cancelled request. Nothing else may
+appear here — the value space is the enumerable set of HTTP statuses plus
+`"0"`.
+
+`message` is failure text **relayed from whatever reported the failure**, at
+most **512 bytes** (clients truncate longer text). The client never composes
+it. Where it is relayed from follows `code`:
+
+- **`code = "0"`** — the platform's raw error text, unedited:
+  `"The request timed out."`, `"Unable to resolve host …"`. With no status to
+  group on, this string is the only thing separating a timeout from a DNS
+  failure.
+- **`code` = an HTTP status** — the origin's error document. OTA artifacts are
+  served by object storage or a CDN, never by the API server, and those answer
+  a non-2xx with a document naming the cause. From an S3-compatible origin the
+  client relays `"{Code}: {Message}"` —
+  `"NoSuchKey: The specified key does not exist."` for an artifact that was
+  never uploaded, `"AccessDenied: Access Denied."` for a bucket policy,
+  `"SignatureDoesNotMatch: …"` for signing. That distinction is the entire
+  diagnostic value of a 403 or 404, and only the origin can supply it.
+
+  Only `Code` and `Message` may be relayed. The same document also carries
+  `Key` and `Resource`, which embed the deployment key and package hash;
+  relaying the body wholesale would put those into telemetry, which is a data
+  hygiene question rather than an aesthetic one. Fields that merely vary per
+  request — S3's `RequestId` and `HostId`, or the request id Azure appends
+  inside `Message` itself — are **not** a reason to edit anything: `code` is
+  the aggregation key, so a message that is unique per occurrence costs nothing
+  and is often what an operator hands to the provider's support. Clients read a
+  bounded prefix of the body (**4096 bytes**) — a CDN answering with its own
+  HTML error page must not be held in memory to extract two tags from it.
+
+`message` is **omitted** when nothing could be relayed: the origin returned a
+body with neither tag, or none at all. That is not a protocol violation but the
+honest report that the origin said nothing, and the server and dashboard treat
+it as absent rather than listing it. A client must never fill the gap with text
+of its own.
+
+In no case does the client add anything of its own — no URL, no package hash,
+no timestamp. That follows from relaying rather than composing, not from any
+concern about how many distinct messages result. Text the platform or origin
+itself produced is relayed as it stands, hostnames and request ids and all.
+
+The exact wording is not part of this contract; breakdowns list the distinct
+messages under each `code` rather than matching on them.
+
+**Known gap.** Every transport-level failure shares `code = "0"`, so a timeout
+is not distinguishable from a DNS failure by the aggregation key alone — only
+the free-text `message` separates them today. A dedicated
+transport-classification field alongside `code` is deferred.
+
+### Server Rules
+
+The payload is best-effort observability and must never cost the server a
+`Failed` event:
+
+- The server parses `attributes.payload` and stores the decoded object in its
+  own column, so breakdowns aggregate on `payload -> 'code'` without re-parsing
+  text per row.
+- If `payload` is absent, is not a string, exceeds the byte cap, fails to
+  parse, or does not decode to a JSON object, the server stores **no** decoded
+  payload and **still persists the event**. A malformed detail blob must never
+  turn into a dropped `Failed` event — the count matters more than the detail.
+- `attributes` is persisted verbatim, including the raw `payload` string, so a
+  payload the server could not decode stays recoverable for debugging.
+- The server does not validate a payload against the reason that carried it. It
+  stores what decoded and lets the breakdown surface whatever `code` arrived,
+  so a reason starting to populate `code` never requires a server release
+  first.
+- Events whose decoded payload has no `code`, and events with no payload at
+  all, aggregate under the **same** no-code bucket. They are indistinguishable
+  by `code` alone and are not meant to be: both report a failure that named no
+  discriminator.
 
 ## Protocol Rules Not Well Represented by Swagger
 

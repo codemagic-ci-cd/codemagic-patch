@@ -11,6 +11,7 @@
 // dedupe), so it is presented as "Active reports", never as a user count;
 // the headline card reads the timeseries totals instead.
 
+import { useState } from "react";
 import { Link } from "react-router";
 import type { CSSProperties, ReactNode } from "react";
 
@@ -28,6 +29,7 @@ import { latestCompleteDayActive } from "../../model/timeseries";
 import type { Deployment } from "../../model/deployment";
 import { AdoptionChart } from "../../components/ui/AdoptionChart";
 import { buttonVariants } from "../../components/ui/Button";
+import { FailureDetailDialog } from "../../components/ui/FailureDetailDialog";
 import { FailureReasonList } from "../../components/ui/FailureReasonList";
 import { CARD, CARD_PAD } from "../../components/ui/card";
 import { CHIP, CHIP_TONE } from "../../components/ui/chip";
@@ -64,6 +66,9 @@ export function DeploymentCounters({
   // Server-default trailing 30 days; feeds both the adoption chart and the
   // Active devices card, so they always tell one story from one response.
   const timeseriesQuery = useDeploymentTimeseries(deployment.id);
+  // The drill-down lives in a dialog: it is two levels deep and pages on
+  // scroll, which would push the rest of the card off screen if inlined.
+  const [openReason, setOpenReason] = useState<string | null>(null);
 
   if (metricsQuery.isPending) {
     return <MetricsBodySkeleton label="Loading deployment metrics" />;
@@ -274,10 +279,10 @@ export function DeploymentCounters({
 
         <div className="flex flex-col gap-[22px]">
           <div className={`${CARD} ${CARD_PAD}`}>
-            <div className={`${SECTION_TITLE} mb-[18px]`}>Install outcomes</div>
+            <div className={`${SECTION_TITLE} mb-[18px]`}>Update outcomes</div>
             {attempts === 0 ? (
               <p className="text-[13px] text-fg-2">
-                No install outcomes reported yet.
+                No update outcomes reported yet.
               </p>
             ) : (
               <>
@@ -307,7 +312,21 @@ export function DeploymentCounters({
                     <div className="mb-[14px] text-[13px] font-semibold">
                       Failure reasons
                     </div>
-                    <FailureReasonList metrics={totals} />
+                    <FailureReasonList metrics={totals} onOpenReason={setOpenReason} />
+                    <FailureDetailDialog
+                      open={openReason !== null}
+                      onClose={() => {
+                        setOpenReason(null);
+                      }}
+                      reason={openReason}
+                      reasonTotal={
+                        openReason === null
+                          ? 0
+                          : (totals.failureReasons[openReason] ?? 0)
+                      }
+                      scope={{ id: deployment.id, kind: "deployment" }}
+                      scopeNote="Each failure event counted once, across every release in this deployment."
+                    />
                   </>
                 ) : null}
               </>

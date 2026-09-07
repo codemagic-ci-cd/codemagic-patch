@@ -1,5 +1,10 @@
 import { BaseUrlDeliveryAdapter } from "./base-url-delivery";
-import type { DeliveryAdapter, PurgeFailure, PurgeResult } from "./delivery";
+import type {
+  DeliveryAdapter,
+  PurgeFailure,
+  PurgeOptions,
+  PurgeResult,
+} from "./delivery";
 
 /**
  * CloudflareDeliveryAdapter — serves artifacts from a Cloudflare-fronted origin
@@ -63,7 +68,7 @@ export class CloudflareDeliveryAdapter implements DeliveryAdapter {
     return this.resolver.resolveUrl(publicKey);
   }
 
-  async purge(paths: string[]): Promise<PurgeResult> {
+  async purge(paths: string[], _options: PurgeOptions): Promise<PurgeResult> {
     const batches = chunk(paths, CLOUDFLARE_PURGE_URL_BATCH_SIZE);
     const results = await Promise.all(
       batches.map((batch) => this.purgeBatch(batch)),

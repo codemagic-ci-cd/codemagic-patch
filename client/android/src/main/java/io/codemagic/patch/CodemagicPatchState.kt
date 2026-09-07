@@ -24,7 +24,8 @@ internal data class CodemagicPatchState(
     var previous: CodemagicPatchPackagePointer? = null,
     var pending: CodemagicPatchPackagePointer? = null,
     var failedInstall: CodemagicPatchFailedInstall? = null,
-    var pendingStarted: String? = null
+    var pendingStarted: String? = null,
+    var pendingStartCount: Int = 0
 ) {
   val packageHashes: List<String>
     get() = listOfNotNull(
@@ -33,13 +34,35 @@ internal data class CodemagicPatchState(
       previous?.packageHash
     )
 
+  /**
+   * Charges one launch against [hash]'s attempt budget. A different pending
+   * hash restarts the budget, so a freshly installed package always gets the
+   * full allowance.
+   */
+  fun chargePendingLaunch(hash: String) {
+    pendingStartCount = if (pendingStarted == hash) pendingStartCount + 1 else 1
+    pendingStarted = hash
+  }
+
+  /**
+   * Clears the launch-attempt tracking pair. The marker and its counter are
+   * only ever meaningful together, so they are always cleared together.
+   */
+  fun clearPendingLaunchTracking() {
+    pendingStarted = null
+    pendingStartCount = 0
+  }
+
   fun toJson(): JSONObject {
     val json = JSONObject()
     current?.let { json.put("current", it.toJson()) }
     previous?.let { json.put("previous", it.toJson()) }
     pending?.let { json.put("pending", it.toJson()) }
     failedInstall?.let { json.put("failed_install", it.toJson()) }
-    pendingStarted?.let { json.put("pending_started", it) }
+    pendingStarted?.let {
+      json.put("pending_started", it)
+      json.put("pending_start_count", pendingStartCount)
+    }
     return json
   }
 
@@ -70,7 +93,14 @@ internal data class CodemagicPatchState(
         previous = pointer("previous"),
         pending = pointer("pending"),
         failedInstall = failed,
-        pendingStarted = pendingStarted
+        pendingStarted = pendingStarted,
+        // Absent on state written by an SDK older than the launch-attempt
+        // budget: such a device reads as 0 and is granted the full budget.
+        pendingStartCount = if (pendingStarted == null) {
+          0
+        } else {
+          json.optInt("pending_start_count", 0).coerceAtLeast(0)
+        }
       )
     }
   }

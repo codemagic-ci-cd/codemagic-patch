@@ -1,5 +1,9 @@
 import { resolve } from "node:path";
 import type { StartLoopbackLoginServer } from "../loopbackLoginServer";
+import type { RunProcess } from "../remoteExec";
+import type { DnsClient } from "../selfhostDns";
+import type { ProbeTlsName } from "../selfhostTls";
+import type { TcpConnect } from "../selfhostInstall";
 import { isInteractiveOutput, type WritableStream } from "../output";
 import type { ConfirmFn, PromptFn } from "../prompt";
 
@@ -62,6 +66,23 @@ export type CommandDeps = {
    * the TTY gate consults the injected `stdin`.
    */
   confirm?: ConfirmFn;
+  /**
+   * A plain TCP reachability check, used by `selfhost install`'s advisory
+   * 80/443 probe. Injected for the same reason as `runProcess`: the whole
+   * preflight is then exercisable without opening a socket.
+   */
+  connectTcp: TcpConnect;
+  /**
+   * DNS lookups for `selfhost install`'s record wait. Injected like
+   * `connectTcp`, so the whole DNS step runs in tests without a resolver.
+   */
+  dnsClient: DnsClient;
+  /**
+   * A TLS handshake with an explicit SNI, for the CloudFront pre-cutover
+   * check: `fetch` always sends the connected host as SNI, and the question
+   * there is what the distribution offers for the *viewer* name.
+   */
+  probeTlsName: ProbeTlsName;
   env: Record<string, string | undefined>;
   fetch: typeof globalThis.fetch;
   now: () => number;
@@ -71,6 +92,12 @@ export type CommandDeps = {
    * auth-command tests stay spawn-free.
    */
   openBrowser?: (url: string) => Promise<boolean>;
+  /**
+   * The OS this CLI runs on, `process.platform` unless injected: the
+   * local-eval Docker preflight chooses its install and start paths by it,
+   * and every path has to be exercisable from one test machine.
+   */
+  platform?: typeof process.platform;
   /** Loopback redirect listener for the browser login; injected for tests. */
   startLoopbackLoginServer?: StartLoopbackLoginServer;
   /** See the note on `confirm`: override together with `stdin` in tests. */
@@ -78,6 +105,13 @@ export type CommandDeps = {
   readFile: (path: string) => Promise<Buffer>;
   readDirectory: (path: string) => Promise<DirectoryEntryLike[]>;
   randomUUID: () => string;
+  /**
+   * The `selfhost` family's process primitive: unlike `runCommand`/
+   * `streamCommand` it can write the child's stdin, which is how every secret
+   * reaches the remote scripts without ever touching an argv. Injected so the
+   * whole ssh layer is testable without launching a real `ssh`.
+   */
+  runProcess: RunProcess;
   runCommand: (
     command: string,
     args: string[],

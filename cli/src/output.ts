@@ -5,6 +5,8 @@ import pc from "picocolors";
 import type { ProblemDetails } from "./problem-details";
 
 export type WritableStream = {
+  /** The terminal's width, when the stream is one; unset for pipes and files. */
+  columns?: number;
   isTTY?: boolean;
   write: (chunk: string) => void;
 };
@@ -220,6 +222,14 @@ export type Palette = {
   err: (value: string) => string;
   heading: (value: string) => string;
   ok: (value: string) => string;
+  /**
+   * Something the user is about to enter somewhere else — a DNS record, a
+   * form field, a dropdown choice, a policy to paste. clack draws the prompt
+   * that is waiting for the user in cyan, and this is the same claim on their
+   * attention: the thing to act on now. Colour alone, no weight: a console
+   * screen's worth of fields in bold would shout.
+   */
+  value: (value: string) => string;
   warn: (value: string) => string;
 };
 
@@ -289,6 +299,7 @@ function buildPalette(enabled: boolean): Palette {
     err: colors.red,
     heading: colors.bold,
     ok: colors.green,
+    value: colors.cyan,
     warn: colors.yellow,
   };
 }

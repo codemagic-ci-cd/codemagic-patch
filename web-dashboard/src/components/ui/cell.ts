@@ -10,4 +10,4 @@ export const CELL_SUB = "mt-0.5 text-[12px] text-fg-3";
 export const CELL_APP = "flex items-center gap-[11px]";
 
 export const APP_ICO =
-  "grid size-[34px] flex-none place-items-center rounded-[10px] text-[13px] font-extrabold text-white";
+  "grid size-[34px] flex-none place-items-center rounded-[10px] text-[13px] font-bold text-white";

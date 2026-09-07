@@ -1,6 +1,6 @@
-// Button primitive (Tailwind migration). The variant strings are a 1:1 port
-// of the legacy `.btn*` rules — visual parity is pinned by the e2e screenshot
-// suite, so edits here must pass the zero-diff gate.
+// Button primitive (Tailwind migration). Ghost/subtle/danger stay a port of
+// the legacy `.btn*` rules. Primary consumes the dashboard action role rather
+// than choosing a Codemagic blue swatch directly.
 //
 // Two intentional consumption forms:
 //   <Button intent="primary">            — components / refactored call sites
@@ -28,10 +28,9 @@ export const buttonVariants = cva(
     variants: {
       intent: {
         primary: [
-          "border-transparent bg-[linear-gradient(180deg,var(--color-blue),var(--color-blue-deep))] text-white",
-          "shadow-[0_6px_16px_-6px_rgba(0,81,255,.6)]",
-          "hover:brightness-[1.06] hover:shadow-[0_8px_22px_-6px_rgba(0,81,255,.7),var(--shadow-glow)]",
-          "active:translate-y-px",
+          "border-transparent bg-action-primary text-white",
+          "hover:bg-action-primary-hover",
+          "active:scale-[0.97]",
         ],
         ghost:
           "border-border-strong bg-surface text-fg hover:border-blue hover:text-blue hover:shadow-xs",
@@ -48,9 +47,9 @@ export const buttonVariants = cva(
         // No explicit leading here ON PURPOSE: <button> does not inherit the
         // body line-height — it uses the UA's `line-height: normal`, and the
         // legacy .btn sizing was built on that (e.g. 15px text → 44px button).
-        md: "gap-2 rounded-control px-[15px] py-[9px] text-[13.5px] [&_svg]:size-4",
-        sm: "gap-1.5 rounded-sm px-[11px] py-1.5 text-[12.5px] [&_svg]:size-3.5",
-        lg: "gap-2 rounded-md px-[22px] py-[13px] text-[15px] [&_svg]:size-4",
+        md: "gap-2 rounded-control px-[15px] py-2.5 text-[15px] [&_svg]:size-4",
+        sm: "gap-1.5 rounded-sm px-[11px] py-1.5 text-[13px] [&_svg]:size-3.5",
+        lg: "gap-2 rounded-control px-[22px] py-[13px] text-[16px] [&_svg]:size-4",
       },
       block: {
         true: "w-full",

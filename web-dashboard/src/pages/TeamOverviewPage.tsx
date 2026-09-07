@@ -21,6 +21,7 @@ import { useInvitations, useRoleBindings } from "../api/hooks/iam";
 import { useIsMultiTeam, useTeam } from "../api/hooks/teams";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ErrorState } from "../components/ui/ErrorState";
+import { PageHeader } from "../components/ui/PageHeader";
 import { Skeleton } from "../components/ui/Skeleton";
 import type { Role } from "../model/permissions";
 import type { TeamStatus } from "../model/team";
@@ -28,7 +29,7 @@ import { useTeamRole } from "../rbac/useTeamRole";
 import { buttonVariants } from "../components/ui/Button";
 import { SUMMARY_ROW } from "../components/ui/summary";
 import { CHIP, CHIP_TONE } from "../components/ui/chip";
-import { PAGE_SUB, PAGE_TITLE } from "../components/ui/typography";
+import { SECTION_TITLE } from "../components/ui/typography";
 import {
   STAT,
   STAT_ICO_ACCENT,
@@ -74,16 +75,18 @@ function TeamOverview({ teamId }: { teamId: string }) {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className={PAGE_TITLE}>
+      <PageHeader
+        title={
+          <>
             Overview
             {team !== undefined ? (
               <TeamStatusChip status={team.status} />
             ) : null}
             <TeamRoleBadge teamId={teamId} />
-          </h1>
-          <p className={PAGE_SUB}>
+          </>
+        }
+        description={
+          <>
             Real-time health of your OTA releases across every app
             {isMultiTeam ? (
               <>
@@ -97,9 +100,9 @@ function TeamOverview({ teamId }: { teamId: string }) {
               </>
             ) : null}
             .
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <div className="mb-[18px] grid-cols-[repeat(3,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[1fr]">
         <AppsTile teamId={teamId} />
@@ -108,7 +111,7 @@ function TeamOverview({ teamId }: { teamId: string }) {
       </div>
 
       <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
-        <div className="mb-[18px] flex items-center gap-2.5 text-[16px] font-bold tracking-[-.01em]">
+        <div className={`${SECTION_TITLE} mb-[18px]`}>
           This team
         </div>
         <div className="flex flex-col gap-0">
@@ -127,7 +130,7 @@ function TeamOverview({ teamId }: { teamId: string }) {
                 to={`/teams/${teamId}/members`}
                 icon={<UsersIcon />}
                 iconBackground="var(--color-aqua-tint)"
-                iconColor="#0496c0"
+                iconColor="#007a99"
                 title="Members"
                 subtitle="Roles & access"
               />
@@ -308,7 +311,7 @@ function QuickLink({
         {icon}
       </span>
       <div>
-        <div className="font-bold">{title}</div>
+        <div className="font-semibold text-fg">{title}</div>
         <div className="mt-0.5 text-[12px] text-fg-3">{subtitle}</div>
       </div>
       <span className="text-fg-3 ml-auto" aria-hidden="true">

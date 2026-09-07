@@ -1,7 +1,5 @@
 import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
-import {useLocation} from '@docusaurus/router';
-import useBaseUrl from '@docusaurus/useBaseUrl';
 import {
   useThemeConfig,
   ErrorCauseBoundary,
@@ -17,6 +15,7 @@ import NavbarMobileSidebarToggle from '@theme/Navbar/MobileSidebar/Toggle';
 import NavbarLogo from '@theme/Navbar/Logo';
 import NavbarSearch from '@theme/Navbar/Search';
 import SearchBar from '@theme/SearchBar';
+import NavbarDiscordLink from '@site/src/components/NavbarDiscordLink';
 import NavbarGithubLink from '@site/src/components/NavbarGithubLink';
 
 import styles from './styles.module.css';
@@ -78,10 +77,6 @@ export default function NavbarContent(): ReactNode {
   const items = useNavbarItems();
   const [leftItems, rightItems] = splitNavbarItems(items);
   const searchBarItem = items.find((item) => item.type === 'search');
-  const {pathname} = useLocation();
-  const homePath = useBaseUrl('/');
-  const isHomepage =
-    pathname === homePath || pathname === homePath.replace(/\/$/, '');
 
   return (
     <NavbarContentLayout
@@ -95,12 +90,13 @@ export default function NavbarContent(): ReactNode {
       right={
         <>
           <NavbarItems items={rightItems} />
-          {!searchBarItem && !isHomepage && (
+          {!searchBarItem && (
             <NavbarSearch className={styles.navbarSearch}>
               <SearchBar />
             </NavbarSearch>
           )}
           <div className={styles.navbarActions}>
+            <NavbarDiscordLink />
             <NavbarGithubLink />
             <NavbarColorModeToggle className={styles.colorModeToggle} />
           </div>

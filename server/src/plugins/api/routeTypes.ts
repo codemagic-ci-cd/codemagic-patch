@@ -15,6 +15,9 @@ import type {
   DeploymentClearRouteHandler,
   DeploymentCreateRouteHandler,
   DeploymentDeleteRouteHandler,
+  DeploymentFailureCodesRouteHandler,
+  FailureDistributionRouteHandler,
+  FailureEventsRouteHandler,
   DeploymentMetricsRouteHandler,
   DeploymentRollbackRouteHandler,
   DeploymentTimeseriesRouteHandler,
@@ -42,10 +45,12 @@ import type {
   ReleaseCreationPreflightRouteHandler,
   ReleaseCreationRouteHandler,
   ReleaseListRouteHandler,
+  ReleaseFailureCodesRouteHandler,
   ReleaseMetricsReadRouteHandler,
   ReleasePatchRouteHandler,
   ReleasePromoteRouteHandler,
   ReleaseReadRouteHandler,
+  ServerStatusRouteHandler,
   TeamAppsListRouteHandler,
   TeamCreateRouteHandler,
   TeamListRouteHandler,
@@ -64,6 +69,20 @@ export interface PaginationQuery {
 
 export interface ReleaseListQuery extends PaginationQuery {
   include?: unknown;
+}
+
+export interface FailureCodesQuery {
+  reason?: string;
+}
+
+export interface FailureBucketQuery extends FailureCodesQuery {
+  /** Omitted selects the no-code bucket, matching a payload with none. */
+  code?: string;
+}
+
+export interface FailureEventsQuery extends FailureBucketQuery {
+  cursor?: string;
+  limit?: string;
 }
 
 export interface TimeseriesRangeQuery {
@@ -232,6 +251,9 @@ export interface ApiRoutesOptions {
   deploymentClearHandler?: DeploymentClearRouteHandler;
   deploymentCreateHandler?: DeploymentCreateRouteHandler;
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
+  deploymentFailureCodesHandler?: DeploymentFailureCodesRouteHandler;
+  deploymentFailureDistributionHandler?: FailureDistributionRouteHandler;
+  deploymentFailureEventsHandler?: FailureEventsRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
@@ -260,6 +282,9 @@ export interface ApiRoutesOptions {
   readinessCheckHandler?: ReadinessCheckRouteHandler;
   releaseCreationHandler?: ReleaseCreationRouteHandler;
   releaseCreationPreflightHandler?: ReleaseCreationPreflightRouteHandler;
+  releaseFailureCodesHandler?: ReleaseFailureCodesRouteHandler;
+  releaseFailureDistributionHandler?: FailureDistributionRouteHandler;
+  releaseFailureEventsHandler?: FailureEventsRouteHandler;
   releaseListHandler?: ReleaseListRouteHandler;
   releaseMetricsReadHandler?: ReleaseMetricsReadRouteHandler;
   releasePatchHandler?: ReleasePatchRouteHandler;
@@ -273,6 +298,7 @@ export interface ApiRoutesOptions {
   sdkConfig?: {
     downloadBaseUrl: string;
   };
+  serverStatusHandler?: ServerStatusRouteHandler;
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
   teamListHandler?: TeamListRouteHandler;

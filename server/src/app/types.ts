@@ -7,6 +7,9 @@ import type {
   App,
   ControlPlaneAction,
   Deployment,
+  FailureCodeBreakdown,
+  FailureDistribution,
+  FailureEventPage,
   MetricEvent,
   Release,
   ReleaseJob,
@@ -1194,6 +1197,91 @@ export interface ReleaseMetricsReadRouteHandler {
   (releaseId: string): Promise<ReleaseMetricsReadHandlerResult>;
 }
 
+export interface FailureCodesHandlerInput {
+  /** The `attributes.reason` bucket being drilled into. */
+  reason: string;
+}
+
+/** Identifies one `payload.code` bucket under a reason. */
+export interface FailureBucketHandlerInput extends FailureCodesHandlerInput {
+  /** Null selects the bucket of failures whose payload carried no code. */
+  code: string | null;
+}
+
+export interface FailureEventsHandlerInput extends FailureBucketHandlerInput {
+  /** Opaque keyset cursor; null starts at the newest event. */
+  cursor: string | null;
+  limit: number;
+}
+
+export type DeploymentFailureCodesHandlerResult =
+  | {
+      outcome: "found";
+      codes: FailureCodeBreakdown[];
+    }
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found";
+    };
+
+export interface DeploymentFailureCodesRouteHandler {
+  (
+    deploymentId: string,
+    input: FailureCodesHandlerInput,
+  ): Promise<DeploymentFailureCodesHandlerResult>;
+}
+
+export type ReleaseFailureCodesHandlerResult =
+  | {
+      outcome: "found";
+      codes: FailureCodeBreakdown[];
+      /**
+       * The hash the breakdown was scoped to. Null while a release is still
+       * being processed and has no hash yet, where no failure can be
+       * attributed to it and `codes` is therefore empty.
+       */
+      targetPackageHash: string | null;
+    }
+  | {
+      outcome: "not_found";
+      reason: "release_not_found";
+    };
+
+export interface ReleaseFailureCodesRouteHandler {
+  (
+    releaseId: string,
+    input: FailureCodesHandlerInput,
+  ): Promise<ReleaseFailureCodesHandlerResult>;
+}
+
+export type FailureDistributionHandlerResult =
+  | ({ outcome: "found" } & FailureDistribution)
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found" | "release_not_found";
+    };
+
+export interface FailureDistributionRouteHandler {
+  (
+    resourceId: string,
+    input: FailureBucketHandlerInput,
+  ): Promise<FailureDistributionHandlerResult>;
+}
+
+export type FailureEventsHandlerResult =
+  | ({ outcome: "found" } & FailureEventPage)
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found" | "release_not_found";
+    };
+
+export interface FailureEventsRouteHandler {
+  (
+    resourceId: string,
+    input: FailureEventsHandlerInput,
+  ): Promise<FailureEventsHandlerResult>;
+}
+
 export interface ReleasePatchHandlerInput {
   createdBy: string | null;
   isMandatory?: boolean;
@@ -1330,6 +1418,12 @@ export interface MetricEventIngestHandlerInput {
   emittedAt: Date;
   eventId: string;
   eventName: "Downloaded" | "Installed" | "Success" | "Failed" | "Active";
+  /**
+   * Decoded `attributes.payload`; null when absent or undecodable. The raw
+   * string stays in `attributes` either way (PROTOCOL.md §Metric Event
+   * `Failed` Payload).
+   */
+  failurePayload: Record<string, unknown> | null;
   id: string;
   platform: string | null;
   runningPackageHash: string | null;
@@ -1345,6 +1439,15 @@ export type MetricEventIngestHandlerResult =
   | {
       outcome: "not_found";
       reason: "deployment_not_found";
+    }
+  | {
+      /**
+       * A `Failed` event for a package the device has already reported
+       * `Success` for (server tech spec §Metrics Service → Failure
+       * Supersession). Nothing is stored; the event is acknowledged so the
+       * client stops retransmitting it.
+       */
+      outcome: "superseded";
     };
 
 export interface MetricEventIngestRouteHandler {
@@ -1419,6 +1522,87 @@ export interface ReadinessCheckRouteHandler {
   (): Promise<ReadinessCheckResult>;
 }
 
+export type ServerStatusProbeState = "error" | "ok" | "skipped";
+
+/**
+ * Every probe on `GET /v1/server/status` shares this envelope, so the
+ * dashboard renders them uniformly and a new probe is one more key in
+ * `ServerStatusChecks` rather than a new response shape. `ok` carries the
+ * probe's details inline; `skipped` means the probe does not apply to this
+ * process (for example no bucket in `api` mode, or the update check is
+ * disabled) and is not a failure.
+ */
+export type ServerStatusProbe<TDetails extends object = Record<never, never>> =
+  | ({ status: "ok" } & TDetails)
+  | { error: string; status: "error" }
+  | { reason: string; status: "skipped" };
+
+export interface ServerStatusDiskDetails {
+  free_bytes: number;
+  /** Mount the numbers describe — the server container's root today. */
+  path: string;
+  total_bytes: number;
+}
+
+/**
+ * Reachability of `PUBLIC_BASE_URL` (the origin SDK clients download
+ * artifacts from), probed from the server process. It lives here rather than
+ * in the dashboard because the SPA ships with `connect-src 'self'`, which
+ * blocks a browser-side fetch to a separate storage or CDN origin.
+ */
+export interface ServerStatusDownloadUrlDetails {
+  /** HTTP status the origin answered; a 403/404 on the prefix still counts. */
+  http_status: number;
+  url: string;
+}
+
+export interface ServerStatusLatestReleaseDetails {
+  html_url: string;
+  published_at: string | null;
+  /** GitHub release tag, e.g. `codemagic-patch-server-v0.2.0`. */
+  tag: string;
+  /** The tag without its prefix, comparable to `version.running`. */
+  version: string;
+}
+
+export interface ServerStatusChecks {
+  database: ServerStatusProbe;
+  disk: ServerStatusProbe<ServerStatusDiskDetails>;
+  download_url: ServerStatusProbe<ServerStatusDownloadUrlDetails>;
+  latest_release: ServerStatusProbe<ServerStatusLatestReleaseDetails>;
+  storage: ServerStatusProbe;
+}
+
+/**
+ * What this process sits on, derived from existing config rather than a new
+ * env: the bundled Compose overlays pin `DATABASE_URL` to host `postgres` and
+ * `S3_ENDPOINT` to host `minio`, so those literals identify a bundled
+ * service; anything else is operator-managed. `hosting` comes from the
+ * entrypoint (`mainManaged` vs `main`). The dashboard uses it to drop cards
+ * that only describe the bundled single-VM install.
+ */
+export interface ServerStatusTopology {
+  database: "bundled" | "external";
+  hosting: "managed" | "self-hosted";
+  /** `none` is the in-process memory adapter (local dev, `api` mode). */
+  storage: "bundled" | "external" | "none";
+}
+
+export interface ServerStatus {
+  checks: ServerStatusChecks;
+  topology: ServerStatusTopology;
+  version: {
+    /** `server/package.json` version of the running process. */
+    running: string | null;
+    /** null when either side is unknown or not semver. */
+    update_available: boolean | null;
+  };
+}
+
+export interface ServerStatusRouteHandler {
+  (): Promise<ServerStatus>;
+}
+
 export interface BuildAppOptions {
   apiTokenCreateHandler?: ApiTokenCreateRouteHandler;
   apiTokenDeleteHandler?: ApiTokenDeleteRouteHandler;
@@ -1430,6 +1614,9 @@ export interface BuildAppOptions {
   deploymentClearHandler?: DeploymentClearRouteHandler;
   deploymentCreateHandler?: DeploymentCreateRouteHandler;
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
+  deploymentFailureCodesHandler?: DeploymentFailureCodesRouteHandler;
+  deploymentFailureDistributionHandler?: FailureDistributionRouteHandler;
+  deploymentFailureEventsHandler?: FailureEventsRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
@@ -1476,6 +1663,9 @@ export interface BuildAppOptions {
   readinessCheckHandler?: ReadinessCheckRouteHandler;
   releaseCreationHandler?: ReleaseCreationRouteHandler;
   releaseCreationPreflightHandler?: ReleaseCreationPreflightRouteHandler;
+  releaseFailureCodesHandler?: ReleaseFailureCodesRouteHandler;
+  releaseFailureDistributionHandler?: FailureDistributionRouteHandler;
+  releaseFailureEventsHandler?: FailureEventsRouteHandler;
   releaseListHandler?: ReleaseListRouteHandler;
   releaseMetricsReadHandler?: ReleaseMetricsReadRouteHandler;
   releasePatchHandler?: ReleasePatchRouteHandler;
@@ -1489,6 +1679,7 @@ export interface BuildAppOptions {
   sdkConfig?: {
     downloadBaseUrl: string;
   };
+  serverStatusHandler?: ServerStatusRouteHandler;
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
   teamListHandler?: TeamListRouteHandler;

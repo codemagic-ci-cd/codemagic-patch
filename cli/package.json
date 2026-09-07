@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/patch-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Codemagic Patch CLI for releasing and managing over-the-air React Native updates",
   "license": "Apache-2.0",
   "repository": {
@@ -57,6 +57,7 @@
     "dev": "yarn exec tsx src/bin/cmpatch.ts",
     "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "prepack": "node scripts/build.mjs",
+    "prepublishOnly": "node -e \"if (require('node:fs').existsSync('dist/source.bundle')) { throw new Error('dist/source.bundle is the internal-test source snapshot and must never be published; rebuild dist/ first'); }\"",
     "test": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run",
     "test:http": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run test/http-contract.test.ts",
     "test:http:smoke": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run test/http-smoke.e2e.test.ts",

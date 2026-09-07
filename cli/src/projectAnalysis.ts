@@ -143,6 +143,27 @@ export async function detectProjectBundler(
   return markers[0] ?? { kind: "metro", reason: "default Metro fallback" };
 }
 
+/**
+ * What this project calls itself, for defaulting a name the user is about to
+ * create on the server. The npm scope is dropped (`@acme/my-app` → `my-app`):
+ * it identifies a registry owner, not the app. Null when package.json is
+ * missing or names nothing usable, leaving the choice of fallback to the
+ * caller.
+ */
+export async function detectProjectName(
+  deps: Pick<CommandDeps, "readFile">,
+  projectRoot: string,
+): Promise<string | null> {
+  const packageJson = await readProjectPackageJson(deps, projectRoot);
+  const name = packageJson?.name;
+  if (typeof name !== "string") {
+    return null;
+  }
+
+  const withoutScope = name.trim().replace(/^@[^/]+\//u, "");
+  return withoutScope.length > 0 ? withoutScope : null;
+}
+
 export function formatBundlerName(kind: DetectedBundler["kind"]): string {
   if (kind === "repack") {
     return "Re.Pack";

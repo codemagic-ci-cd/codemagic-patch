@@ -17,6 +17,7 @@ import {
   TBL_TR,
   TBL_WRAP,
 } from "../../components/ui/table";
+import { clickableRowProps } from "../../components/ui/clickableRow";
 import { MetricsPageFrame, MetricsTableSkeleton } from "./MetricsPageFrame";
 import { metricsAppPath } from "./metricsPaths";
 
@@ -100,16 +101,9 @@ function AppRow({ teamId, app }: { teamId: string; app: App }) {
 
   return (
     <tr
-      className={`${TBL_TR} cursor-pointer`}
-      onClick={(event) => {
-        if (
-          event.target instanceof Element &&
-          event.target.closest("a") !== null
-        ) {
-          return;
-        }
+      {...clickableRowProps(TBL_TR, () => {
         void navigate(detailPath);
-      }}
+      })}
     >
       <td className={TBL_TD}>
         <div className={CELL_APP}>

@@ -6,6 +6,7 @@ import type {
   PromptableFlag,
 } from "./commandTypes";
 import type { ActionSummary, ObjectField } from "./resultView";
+import { summarizeInit } from "./initSummary";
 import { renderCommand } from "./argv";
 import { PRODUCT_NAME } from "./branding";
 import {
@@ -74,6 +75,7 @@ import {
   executeContextCommand,
   executeInitCommand,
 } from "./commands/localConfig";
+import { executeSelfhostCommand } from "./commands/selfhost";
 import {
   executeMemberAdd,
   executeMemberInvite,
@@ -133,7 +135,8 @@ type CommandHelpGroupName =
   | "diagnostics"
   | "fingerprint"
   | "management"
-  | "release";
+  | "release"
+  | "selfhost";
 
 export type CommandFlagHelp = {
   /** The flag with its value placeholder, e.g. "--app <name>". */
@@ -318,6 +321,10 @@ const flagHelp = {
     summary: "Publish after verifying a fingerprint mismatch",
   },
   app: { flag: "--app <name>", summary: "App name" },
+  sshKey: {
+    flag: "--ssh-key <path>",
+    summary: "Key for the first connection only",
+  },
   appId: { flag: "--app-id <id>", summary: "App id (alternative to --app)" },
   deployment: { flag: "--deployment <name>", summary: "Deployment name" },
   deploymentId: {
@@ -472,6 +479,17 @@ const helpGroups: readonly CommandHelpGroup[] = [
   },
   {
     examples: [
+      "cmpatch selfhost install ubuntu@203.0.113.7",
+      "cmpatch selfhost backup",
+      "cmpatch selfhost upgrade ubuntu@203.0.113.7",
+      "cmpatch selfhost local-eval",
+    ],
+    name: "selfhost",
+    summary: "Install and maintain your own update server.",
+    topics: ["selfhost"],
+  },
+  {
+    examples: [
       "cmpatch fingerprint --platform ios --format json",
       "cmpatch debug ios",
     ],
@@ -543,6 +561,7 @@ const commandSpecs: RunnableCommandSpec[] = [
   }),
   commandSpec({
     commandName: "init",
+    view: { kind: "action", summarize: summarizeInit },
     defaults: false,
     execute: executeInitCommand,
     kind: "init",
@@ -578,6 +597,234 @@ const commandSpecs: RunnableCommandSpec[] = [
     ],
     parse: (args) => parseRawArgvCommand(args, "init"),
     routes: [{ path: ["init"] }],
+  }),
+  commandSpec({
+    aliases: [
+      "selfhost backup",
+      "selfhost install",
+      "selfhost local-eval",
+      "selfhost restore",
+      "selfhost upgrade",
+    ],
+    commandName: "selfhost",
+    defaults: false,
+    execute: executeSelfhostCommand,
+    kind: "selfhost",
+    help: [
+      {
+        description:
+          "Install the server on a machine you own, over ssh. Checks the machine, sets up Docker, git, and curl if they are missing, and runs the installer.",
+        flags: [
+          {
+            flags: [
+              {
+                flag: "--api-domain <domain>",
+                summary: "The domain your apps and dashboard will use",
+              },
+              {
+                flag: "--storage-domain <domain>",
+                summary:
+                  "Where downloads are served (default: storage.<api-domain> on a zone apex, storage-<api-domain> on a subdomain)",
+              },
+              { flag: "--email <email>", summary: "The admin's email address" },
+              {
+                flag: "--github-oauth-client-id <id>",
+                summary: "GitHub OAuth app client ID",
+              },
+              {
+                flag: "--github-oauth-client-secret <secret>",
+                summary: "GitHub OAuth app client secret (or GITHUB_OAUTH_CLIENT_SECRET)",
+              },
+              {
+                flag: "--install-docker",
+                summary: "Install Docker on the server without asking",
+              },
+              {
+                flag: "--install-git",
+                summary: "Install git on the server without asking",
+              },
+              {
+                flag: "--install-curl",
+                summary: "Install curl on the server without asking",
+              },
+              {
+                flag: "--resume",
+                summary: "Continue an install that was interrupted",
+              },
+              {
+                flag: "--repair",
+                summary: "Correct a setting that was wrong, then continue",
+              },
+              {
+                flag: "--start-over",
+                summary: "Discard the attempt and start fresh (with --discard-data)",
+              },
+              {
+                flag: "--discard-data",
+                summary:
+                  "Confirm that --start-over, or a start-over chosen from the recovery menu, may delete the server's data",
+              },
+              {
+                flag: "--yes",
+                summary:
+                  "Skip the confirmations that do not delete anything, such as the Cloudflare rule check",
+              },
+              flagHelp.sshKey,
+              flagHelp.nonInteractive,
+            ],
+          },
+          {
+            flags: [
+              {
+                flag: "--cloudflare",
+                summary: "Serve downloads through Cloudflare",
+              },
+              {
+                flag: "--cloudflare-api-token <token>",
+                summary: "Cloudflare token with Cache Purge (or CLOUDFLARE_API_TOKEN)",
+              },
+              {
+                flag: "--cloudflare-zone-id <id>",
+                summary: "Cloudflare zone id for the download domain",
+              },
+              {
+                flag: "--cloudfront",
+                summary: "Serve downloads through CloudFront",
+              },
+              {
+                flag: "--cloudfront-distribution-id <id>",
+                summary: "CloudFront distribution id",
+              },
+              {
+                flag: "--cloudfront-access-key-id <id>",
+                summary: "Purge key id (or CLOUDFRONT_ACCESS_KEY_ID)",
+              },
+              {
+                flag: "--cloudfront-secret-access-key <secret>",
+                summary: "Purge key secret (or CLOUDFRONT_SECRET_ACCESS_KEY)",
+              },
+              {
+                flag: "--storage-origin-domain <domain>",
+                summary: "Hostname CloudFront fetches from (default: origin-<storage-domain>)",
+              },
+              {
+                flag: "--cloudfront-origin-verify-secret <secret>",
+                summary:
+                  "Header value an existing distribution already sends (default: generated)",
+              },
+            ],
+            title: "CDN",
+          },
+        ],
+        group: "selfhost",
+        usage: "cmpatch selfhost install [flags] [user@vps]",
+      },
+      {
+        description:
+          "Upgrade the server to the latest release. Updates the server's copy of the source first (fast-forward only), then rebuilds and restarts.",
+        flags: [
+          {
+            flags: [
+              {
+                flag: "--image <ref>",
+                summary: "Run a prebuilt server image instead of rebuilding",
+              },
+              {
+                flag: "--local-image",
+                summary: "Use --image from this host, without pulling",
+              },
+              {
+                flag: "--i-have-a-backup",
+                summary: "Skip the automatic pre-upgrade backup",
+              },
+              { flag: "--skip-smoke", summary: "Skip the post-upgrade check" },
+              flagHelp.sshKey,
+              flagHelp.nonInteractive,
+            ],
+          },
+        ],
+        group: "selfhost",
+        usage: "cmpatch selfhost upgrade [flags] [user@vps]",
+      },
+      {
+        description:
+          "Save a snapshot of the server. Publishing pauses briefly while it is taken.",
+        flags: [
+          {
+            flags: [
+              {
+                flag: "--download",
+                summary: "Also copy the backup to this machine",
+              },
+              flagHelp.yes,
+              flagHelp.sshKey,
+              flagHelp.nonInteractive,
+            ],
+          },
+        ],
+        group: "selfhost",
+        usage: "cmpatch selfhost backup [flags] [user@vps]",
+      },
+      {
+        description:
+          "Replace the server's data with a backup. Asks which backup, and takes a safety backup of the current data first.",
+        flags: [
+          {
+            flags: [
+              {
+                flag: "--restore-env",
+                summary: "Also restore the settings file",
+              },
+              {
+                flag: "--smoke",
+                summary: "Run the publish check (needs an older access token)",
+              },
+              {
+                flag: "--skip-smoke",
+                summary: "Skip the publish check (the default)",
+              },
+              flagHelp.yes,
+              flagHelp.sshKey,
+              flagHelp.nonInteractive,
+            ],
+          },
+        ],
+        group: "selfhost",
+        usage: "cmpatch selfhost restore [backup] [user@vps]",
+      },
+      {
+        description:
+          "Run the evaluation stack on this machine with Docker, to try the product. Not a deployment: sign-in is disabled and nothing is reachable beyond localhost. `up` (the default) starts or re-checks the stack, `down` stops it, `status` shows it.",
+        flags: [
+          {
+            flags: [
+              {
+                flag: "--checkout <path>",
+                summary:
+                  "Run from this checkout of the repository instead of the copy the CLI keeps",
+              },
+              {
+                flag: "--install-docker",
+                summary: "Install Docker on this machine without asking",
+              },
+              {
+                flag: "--start-docker",
+                summary: "Start Docker on this machine without asking",
+              },
+              {
+                flag: "--delete-data",
+                summary: "With down: also delete the stack's database and stored bundles",
+              },
+              flagHelp.nonInteractive,
+            ],
+          },
+        ],
+        group: "selfhost",
+        usage: "cmpatch selfhost local-eval [up|down|status] [flags]",
+      },
+    ],
+    parse: (args) => parseRawArgvCommand(args, "selfhost"),
+    routes: [{ path: ["selfhost"] }],
   }),
   commandSpec({
     commandName: "app create",

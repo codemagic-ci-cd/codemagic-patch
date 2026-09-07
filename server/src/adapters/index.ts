@@ -7,7 +7,13 @@ export type {
   ListOptions,
   ListResult,
 } from "./storage";
-export type { DeliveryAdapter, PurgeResult, PurgeFailure } from "./delivery";
+export type {
+  DeliveryAdapter,
+  PurgeFailure,
+  PurgeOptions,
+  PurgeResult,
+  PurgeScope,
+} from "./delivery";
 export type { EnqueueOptions, JobQueueAdapter } from "./job-queue";
 export { BaseUrlDeliveryAdapter } from "./base-url-delivery";
 export {
@@ -15,6 +21,11 @@ export {
   DEFAULT_CLOUDFLARE_API_BASE_URL,
   type CloudflareDeliveryAdapterOptions,
 } from "./cloudflare-delivery";
+export {
+  CloudFrontDeliveryAdapter,
+  type CloudFrontDeliveryAdapterOptions,
+  type CloudFrontInvalidationClient,
+} from "./cloudfront-delivery";
 export { createNativeGcsStorageClient } from "./gcs-native-storage-client";
 export {
   GcsStorageAdapter,

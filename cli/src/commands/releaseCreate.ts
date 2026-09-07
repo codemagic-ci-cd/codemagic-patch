@@ -124,7 +124,10 @@ export async function executeReleaseCreate(
 
     // Path limits and the long-name compat warning belong before the confirm
     // prompt: a publisher who sees the warning only as the upload starts has
-    // no abort point left.
+    // no abort point left. Settled first: a borrowed tree (release react)
+    // arrives with a step in flight, and the warning is a raw stderr line the
+    // spinner's redraw would erase.
+    progress.settle();
     await checkBundlePayloadPaths(deps, bundlePath.resolvedPath, bundlePath.stats);
 
     const fingerprint = await resolveFingerprint(command, deps);

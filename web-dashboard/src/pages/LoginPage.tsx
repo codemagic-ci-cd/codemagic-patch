@@ -23,6 +23,7 @@ import {
   startLogin,
 } from "../auth/webConfig";
 import { PRODUCT_NAME } from "../branding";
+import { PatchBrand } from "../components/brand/PatchBrand";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import type { OAuthWebConfigProvider } from "../api/types";
@@ -168,10 +169,8 @@ export function LoginPage() {
       />
 
       <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
-        <span className="mx-auto mb-5 size-[54px] flex-none place-items-center rounded-[16px] bg-[linear-gradient(135deg,var(--color-blue),var(--color-aqua))] shadow-[0_6px_18px_-4px_rgba(0,81,255,.7)] [display:grid] [&_svg]:size-[30px]">
-          <LogoIcon />
-        </span>
-        <h1 className="text-[23px] font-extrabold tracking-[-.02em]">
+        <PatchBrand decorative className="mx-auto mb-5 h-8 w-auto" />
+        <h1 className="text-[23px] font-semibold tracking-[-.02em] text-fg">
           Sign in to {PRODUCT_NAME}
         </h1>
         <p className="mt-2 text-[14px] text-fg-2">
@@ -257,21 +256,6 @@ function ProviderIcon({ provider }: { provider: string }) {
   return null;
 }
 
-// Logo markup (fill-based, unlike shell icons).
-function LogoIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 2.2l2.2 6.1 6.1 2.2-6.1 2.2L12 18.8l-2.2-6.1L3.7 10.5l6.1-2.2z"
-        fill="#fff"
-      />
-      <circle cx="18.5" cy="5.5" r="1.6" fill="#fff" opacity=".85" />
-    </svg>
-  );
-}
-
-// Icon paths mirror the shared icon set (`github`, `check`, `alert`,
-// `refresh`).
 function GitHubIcon() {
   return (
     <svg

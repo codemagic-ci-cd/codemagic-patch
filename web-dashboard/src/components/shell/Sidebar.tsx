@@ -1,19 +1,27 @@
 // Team-scoped sidebar: brand, main nav (Apps, Metrics), and a foot section
-// (Members for `iam.manage`, GitHub repo link) above Collapse.
+// (Profile, Status, Members for `iam.manage`, GitHub repo link) above Collapse.
 // against the route map — the DOM/class structure is ported, its hardcoded
 // `.html` hrefs and global `DB` are not. Members is HIDDEN, not disabled,
 // when the resolved role lacks `iam.manage` (useTeamRole — inferred developer
 // and still-loading states both hide it, so forbidden links never flash).
-// The chrome renders immediately: nav needs only the route's teamId; on
-// team-less routes (/teams, /account/*) the shell passes the last-team
-// fallback, and with no team at all only brand/footer/collapse render.
-// Collapse state is owned by AppShell (the wrapper's `data-collapsed` drives
-// the group-data-collapsed/app: variants here); the button reports the toggle.
+// Profile (`/account/profile`) and Status (`/account/server`) are
+// account-scoped; Profile is always shown, Status only once
+// `GET /v1/server/status` has answered anything but 501 (a deployment
+// without a status handler). API tokens and log out live on the Profile page.
+// Profile's active match covers `/account/profile` and `/account/tokens`
+// only, so Status can light independently. The chrome
+// renders immediately: nav needs only the route's teamId; on team-less
+// routes (/teams, /account/*) the shell passes the last-team fallback, and
+// with no team at all only brand/footer/collapse render. Collapse state is
+// owned by AppShell (the wrapper's `data-collapsed` drives the
+// group-data-collapsed/app: variants here); the button reports the toggle.
 
-import { Link, NavLink } from "react-router";
+import { Link, NavLink, useLocation } from "react-router";
 import type { ReactElement, ReactNode } from "react";
 
-import { PRODUCT_NAME, PRODUCT_SHORT_NAME, SOURCE_REPO_URL } from "../../branding";
+import { PRODUCT_NAME, SOURCE_REPO_URL } from "../../branding";
+import { PatchBrand } from "../brand/PatchBrand";
+import { useServerStatusAvailability } from "../../api/hooks/serverStatus";
 import { useTeamRole } from "../../rbac/useTeamRole";
 
 // nav-item is split base + state under the no-merge contract: the idle/active
@@ -26,13 +34,13 @@ import { useTeamRole } from "../../rbac/useTeamRole";
 // <span>s — collapsed hides them (legacy `.app.collapsed .nav-item span`); no
 // .badge is rendered here so its legacy margin/hide rules drop with the rule.
 const NAV_ITEM =
-  "nav-active-bar relative flex items-center gap-3 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-[13.5px] font-medium [transition:.15s] [&_svg]:size-[18px] [&_svg]:flex-none group-data-collapsed/app:justify-center group-data-collapsed/app:p-2.5 group-data-collapsed/app:[&_span]:hidden";
+  "nav-active-bar relative flex items-center gap-3 whitespace-nowrap rounded-[10px] px-[9px] py-[9px] text-[15px] font-medium [transition:.15s] [&_svg]:size-[18px] [&_svg]:flex-none group-data-collapsed/app:justify-center group-data-collapsed/app:p-2.5 group-data-collapsed/app:[&_span]:hidden";
 
 const NAV_ITEM_IDLE =
   "text-sb-text hover:bg-surface-2 hover:text-fg [&_svg]:opacity-85";
 
 const NAV_ITEM_ACTIVE =
-  "is-active bg-blue text-white shadow-xs [&_svg]:text-white [&_svg]:opacity-100";
+  "is-active bg-nav-active text-white shadow-xs [&_svg]:text-white [&_svg]:opacity-100";
 
 export interface SidebarProps {
   /** Active team id (route param or last-team fallback); null hides team nav. */
@@ -76,20 +84,20 @@ export function SidebarBody({
   return (
     <>
       <Link
-        className="flex items-center gap-[11px] px-5 pb-4 pt-5 font-extrabold text-fg"
+        className="flex items-center px-[33px] pb-3 pt-5 group-data-collapsed/app:justify-center group-data-collapsed/app:px-2.5"
         to={teamId === null ? "/" : `/teams/${teamId}`}
         aria-label={PRODUCT_NAME}
         onClick={onNavigate}
       >
-        <span className="[display:grid] size-[34px] flex-none place-items-center rounded-[10px] bg-[linear-gradient(135deg,var(--color-blue),var(--color-blue-bright))] shadow-sm [&_svg]:size-5">
-          {LOGOMARK}
-        </span>
-        <span className="text-[15.5px] leading-[1.05] tracking-[-.02em] group-data-collapsed/app:hidden">
-          <b className="block font-black text-blue">Codemagic</b>
-          <span className="block text-[9.5px] font-semibold uppercase tracking-[.16em] text-fg-3">
-            {PRODUCT_SHORT_NAME}
-          </span>
-        </span>
+        <PatchBrand
+          decorative
+          className="h-7 w-auto group-data-collapsed/app:hidden"
+        />
+        <PatchBrand
+          variant="mark"
+          decorative
+          className="hidden size-7 group-data-collapsed/app:block"
+        />
       </Link>
       {teamId !== null && <TeamNav teamId={teamId} onNavigate={onNavigate} />}
       <div className="flex-1" />
@@ -97,7 +105,7 @@ export function SidebarBody({
       {onToggleCollapsed !== undefined && (
         <button
           type="button"
-          className="mx-3 mb-3 flex items-center justify-center gap-2 rounded-sm border border-sb-border bg-surface-2 p-[7px] text-[12px] text-sb-text [transition:.15s] hover:bg-surface-3 hover:text-fg [&_svg]:size-4 [&_svg]:[transition:.2s] group-data-collapsed/app:[&_svg]:rotate-180 group-data-collapsed/app:[&_span]:hidden"
+          className="mx-3 mb-3 flex items-center justify-center gap-2 rounded-sm border border-sb-border bg-surface-2 p-[7px] text-[13px] text-sb-text [transition:.15s] hover:bg-surface-3 hover:text-fg [&_svg]:size-4 [&_svg]:[transition:.2s] group-data-collapsed/app:[&_svg]:rotate-180 group-data-collapsed/app:[&_span]:hidden"
           onClick={onToggleCollapsed}
           aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -109,7 +117,7 @@ export function SidebarBody({
           <span>Collapse</span>
         </button>
       )}
-      <div className="border-t border-sb-border p-3.5 text-[11px] text-fg-3">
+      <div className="border-t border-sb-border p-3.5 text-[12px] text-fg-3">
         Codemagic © 2026
       </div>
     </>
@@ -176,7 +184,7 @@ function TeamNav({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="px-3 pb-1 pt-3.5">
+    <div className="px-3 pb-1 pt-1">
       <nav className="flex flex-col gap-[2px] px-3" aria-label="Team">
         {MAIN_NAV_ITEMS.map((item) => (
           <SidebarNavLink
@@ -201,6 +209,8 @@ function SidebarFoot({
   return (
     <div className="border-t border-sb-border px-3 pb-1 pt-3">
       <nav className="flex flex-col gap-[2px] px-3" aria-label="More">
+        <ProfileNavLink onNavigate={onNavigate} />
+        <StatusNavLink onNavigate={onNavigate} />
         {teamId !== null ? (
           <MembersNavLink teamId={teamId} onNavigate={onNavigate} />
         ) : null}
@@ -216,6 +226,53 @@ function SidebarFoot({
         </a>
       </nav>
     </div>
+  );
+}
+
+function ProfileNavLink({ onNavigate }: { onNavigate?: () => void }) {
+  const { pathname } = useLocation();
+  const isActive =
+    pathname === "/account/profile" || pathname === "/account/tokens";
+
+  return (
+    <Link
+      to="/account/profile"
+      className={`${NAV_ITEM} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE}`}
+      aria-current={isActive ? "page" : undefined}
+      onClick={onNavigate}
+    >
+      <NavIcon>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21v-1a6 6 0 0 1 12 0v1" />
+      </NavIcon>
+      <span>Profile</span>
+    </Link>
+  );
+}
+
+function StatusNavLink({ onNavigate }: { onNavigate?: () => void }) {
+  // HIDDEN, not disabled, until the server says the page exists: a
+  // deployment without a status handler answers 501 and never shows it; the
+  // entry appears once the server answers anything else.
+  const availability = useServerStatusAvailability();
+  if (availability !== "available") {
+    return null;
+  }
+
+  return (
+    <NavLink
+      to="/account/server"
+      className={({ isActive }) =>
+        `${NAV_ITEM} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE}`
+      }
+      onClick={onNavigate}
+    >
+      <NavIcon>
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <path d="M6 21h12M12 17v4" />
+      </NavIcon>
+      <span>Status</span>
+    </NavLink>
   );
 }
 
@@ -288,14 +345,3 @@ function GitHubNavIcon() {
     </NavIcon>
   );
 }
-
-/** Brand logomark ported verbatim from shell.js (white-on-blue tile asset). */
-const LOGOMARK = (
-  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path
-      d="M12 2.2l2.2 6.1 6.1 2.2-6.1 2.2L12 18.8l-2.2-6.1L3.7 10.5l6.1-2.2z"
-      fill="#fff"
-    />
-    <circle cx="18.5" cy="5.5" r="1.6" fill="#fff" opacity=".85" />
-  </svg>
-);

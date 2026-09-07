@@ -53,6 +53,7 @@ import {
   TOGGLE_INPUT,
   TOGGLE_TRACK,
 } from "../components/ui/form";
+import { PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
 
 // --- Problem presentation helpers (file-local, shared by the dialogs) ------
 
@@ -215,9 +216,9 @@ export function AppDetailPage() {
       <div className="mb-6 flex flex-wrap items-start gap-[18px]">
         <div className="min-w-0 flex-1">
           {editingName ? (
-            <div className="flex items-center gap-3 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
+            <div className={PAGE_TITLE}>
               <span
-                className={`grid flex-none place-items-center font-extrabold text-white ${APP_ICON_CLASS}`}
+                className={`grid flex-none place-items-center font-bold text-white ${APP_ICON_CLASS}`}
                 aria-hidden="true"
               >
                 {app.name.slice(0, 2).toLowerCase()}
@@ -268,9 +269,9 @@ export function AppDetailPage() {
               </form>
             </div>
           ) : (
-            <h1 className="flex items-center gap-3 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
+            <h1 className={PAGE_TITLE}>
               <span
-                className={`grid flex-none place-items-center font-extrabold text-white ${APP_ICON_CLASS}`}
+                className={`grid flex-none place-items-center font-bold text-white ${APP_ICON_CLASS}`}
                 aria-hidden="true"
               >
                 {app.name.slice(0, 2).toLowerCase()}
@@ -314,7 +315,7 @@ export function AppDetailPage() {
       <div className="grid-cols-[repeat(2,1fr)] gap-[18px] [display:grid]">
         {/* Settings: code-signing toggle. */}
         <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
-          <div className="mb-[18px] flex items-center gap-2.5 text-[16px] font-bold tracking-[-.01em]">
+          <div className={`${SECTION_TITLE} mb-[18px]`}>
             Settings
           </div>
           <div className="flex items-center justify-between gap-[14px]">

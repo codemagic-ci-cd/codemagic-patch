@@ -3,6 +3,6 @@
   "position": 3,
   "link": {
     "type": "generated-index",
-    "description": "Install the server, CLI, apps, and SDK, through your first release."
+    "description": "Install the server, choose Cloudflare or CloudFront delivery, configure apps and SDKs, and ship your first release."
   }
 }

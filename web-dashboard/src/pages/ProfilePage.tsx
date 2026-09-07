@@ -2,7 +2,7 @@
 // the displayed name falls back to the email when `displayName` is null.
 // Sign-out is best-effort: `logoutSession()` always clears local
 // credentials even when the server-side revoke fails, then we navigate to
-// /login — same contract as the AccountMenu logout. The narrow
+// /login. The narrow
 // content column is approximated with an inner max-width wrapper
 // because AppShell owns the `.content` element for every routed page.
 
@@ -17,8 +17,9 @@ import { CHIP, CHIP_TONE } from "../components/ui/chip";
 import { Copyable } from "../components/ui/Copyable";
 import { DL, DL_DT, DL_DD } from "../components/ui/dl";
 import { ErrorState } from "../components/ui/ErrorState";
+import { PageHeader } from "../components/ui/PageHeader";
 import { Skeleton } from "../components/ui/Skeleton";
-import { PAGE_TITLE, PAGE_SUB } from "../components/ui/typography";
+import { SECTION_TITLE } from "../components/ui/typography";
 import { formatDate } from "../model/format";
 import type { User } from "../model/user";
 import { buttonVariants } from "../components/ui/Button";
@@ -43,16 +44,10 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto w-full max-w-[920px]">
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className={PAGE_TITLE}>
-            Profile
-          </h1>
-          <p className={PAGE_SUB}>
-            Your personal account details and active sessions.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Profile"
+        description="Your personal account details and active sessions."
+      />
 
       {meQuery.isPending ? (
         <div
@@ -85,7 +80,7 @@ export function ProfilePage() {
       )}
 
       <div className="mb-[18px] rounded-lg border border-border bg-surface p-[22px] shadow-sm">
-        <div className="mb-[18px] flex items-center gap-2.5 text-[16px] font-bold tracking-[-.01em]">
+        <div className={`${SECTION_TITLE} mb-[18px]`}>
           Sessions
         </div>
         <p className="text-fg-2 mb-4 text-[13px]">
@@ -109,7 +104,7 @@ export function ProfilePage() {
       <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
         <div className="flex items-center justify-between gap-3.5">
           <div>
-            <div className="mb-1 flex items-center gap-2.5 text-[16px] font-bold tracking-[-.01em]">
+            <div className={`${SECTION_TITLE} mb-1`}>
               <span className="size-4 text-blue" aria-hidden="true">
                 <KeyIcon />
               </span>{" "}
@@ -139,7 +134,7 @@ function IdentityCard({ user }: { user: User }) {
           {initials(user)}
         </span>
         <div>
-          <div className="text-[18px] font-extrabold tracking-[-.02em]">
+          <div className="text-[18px] font-semibold tracking-[-.02em] text-fg">
             {displayName}
           </div>
           <div className="text-fg-3 mt-0.5 text-[13px]">

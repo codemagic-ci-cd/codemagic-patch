@@ -116,7 +116,7 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    <key>CodemagicPatchDeploymentKey</key>
    <string>ios-staging-deployment-key</string>
    <key>CodemagicPatchDownloadBaseUrl</key>
-   <string>https://storage.updates.example.com/codemagic-patch</string>
+   <string>https://storage-updates.example.com/codemagic-patch</string>
    <key>CodemagicPatchApiUrl</key>
    <string>https://updates.example.com</string>
    <!-- optional, only when enforcing code signing -->
@@ -129,7 +129,7 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    ```xml
    <resources>
      <string name="CodemagicPatchDeploymentKey" translatable="false">android-staging-deployment-key</string>
-     <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage.updates.example.com/codemagic-patch</string>
+     <string name="CodemagicPatchDownloadBaseUrl" translatable="false">https://storage-updates.example.com/codemagic-patch</string>
      <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
      <!-- optional, only when enforcing code signing -->
      <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>

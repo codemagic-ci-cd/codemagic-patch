@@ -8,6 +8,12 @@ llmsDescription: 'Self-host day-2 ops — backup, restore, upgrade, smoke test, 
 
 Command reference for a self-hosted install. For cadence and what to watch day to day, see [Ongoing maintenance](/docs/setup/ongoing-maintenance).
 
+The backup, restore, and upgrade sections have `cmpatch selfhost` equivalents
+that run the scripts over SSH from your own machine — connecting, selecting,
+and confirming for you. They are wrappers, never reimplementations. Status,
+logs, and smoke checks are direct host commands. The scripts remain the
+reference, and still work when run on the host.
+
 All maintenance commands run against the `codemagic-patch-selfhost` Compose project.
 
 ## Status and logs
@@ -22,30 +28,79 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
 
 ## Backup
 
-Quiesces the server, dumps Postgres, mirrors the MinIO bucket:
+Copies the settings, deployment-mode manifest, and version metadata. When
+either data component is bundled it also quiesces the server while dumping
+Postgres and/or mirroring the MinIO bucket. With both components external it
+leaves the server running and creates a configuration-only backup:
 
 ```bash
-scripts/selfhost/backup.sh
-# → backups/codemagic-patch-selfhost-<timestamp>/ : env.selfhost, postgres.dump,
-#   minio-codemagic-patch.tar.gz, versions.txt
+cmpatch selfhost backup --download
 ```
+
+```bash
+# on the host:
+scripts/selfhost/backup.sh
+# → backups/codemagic-patch-selfhost-<timestamp>/ : env.selfhost,
+#   backup-manifest, versions.txt, plus postgres.dump and/or
+#   minio-codemagic-patch.tar.gz for each bundled component
+```
+
+Run through the CLI, backups land under `~/codemagic-patch-backups/` on the
+server so `cmpatch selfhost restore` can list them, and `--download` copies one
+to this machine as well.
+
+On a server installed before the CLI's `selfhost` commands existed, the
+checkout's `backup.sh` predates the `--directory` option the CLI uses, and
+`cmpatch selfhost backup` refuses rather than guess. Run
+`cmpatch selfhost upgrade` once first (it takes its own pre-upgrade backup),
+then back up through the CLI.
+
+:::warning External data needs a separate backup
+An external PostgreSQL database or S3/GCS bucket is not copied. The command
+names each omitted component before it continues; protect those components with
+your provider's snapshot, PITR, or object-storage backup tooling. A downloaded
+backup and the automatic pre-restore safety backup have the same exclusions.
+Use `created_at` in `versions.txt` as the point-in-time anchor when restoring
+provider-managed components.
+:::
 
 ## Restore
 
 ```bash
+cmpatch selfhost restore
+# lists the backups on the server (labelling the automatic safety ones),
+# or takes a folder from this machine and uploads it
+```
+
+```bash
+# on the host:
 scripts/selfhost/restore.sh backups/codemagic-patch-selfhost-<timestamp>
 # also replace .env.selfhost from the backup:
 scripts/selfhost/restore.sh --restore-env backups/codemagic-patch-selfhost-<timestamp>
 ```
 
-Restore always takes a pre-restore safety backup first (unless `--skip-safety-backup`).
+Restore takes a pre-restore safety backup first unless the current bundled data
+volumes do not exist (or the direct script is passed `--skip-safety-backup`). It
+restores only the components present in the selected backup; recover any
+external database or object storage separately with the provider's tooling.
 
 ## Upgrade
+
+To see if a new server version is available, check the repo or the Status page in the dashboard.
 
 Backs up, updates server + Caddy images, then smoke-tests:
 
 ```bash
-scripts/selfhost/upgrade.sh
+cmpatch selfhost upgrade
 # pin a specific server image:
+cmpatch selfhost upgrade --image registry.example.com/codemagic-patch-server:tag
+```
+
+The CLI fast-forwards the server's checkout first, and refuses to build from a
+tree with local edits or commits of its own.
+
+```bash
+# on the host:
+scripts/selfhost/upgrade.sh
 scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
 ```

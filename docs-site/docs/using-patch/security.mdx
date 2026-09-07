@@ -26,7 +26,8 @@ Developers sign in through the browser — `cmpatch login` opens the dashboard a
 cmpatch login --server-url https://updates.example.com
 ```
 
-Credentials are stored locally in `~/.codemagic-patch/`.
+In a project set up with `cmpatch init`, the server URL is already known and
+`cmpatch login` needs no flag. Credentials are stored locally in `~/.codemagic-patch/`.
 
 ### API tokens (CI and automation)
 
@@ -39,7 +40,7 @@ cmpatch token create --name ci
 - Prefix: `cm_pat_…`
 - Shown once at creation: store in your secret manager
 - Supply via `CODEMAGIC_PATCH_TOKEN` or `--token`
-- Revoke from the dashboard API tokens page when compromised
+- Revoke with `cmpatch token revoke` (or from the dashboard) when compromised
 
 :::warning
 Treat `cm_pat_…` tokens like production credentials. Scope pipeline access and rotate on schedule.

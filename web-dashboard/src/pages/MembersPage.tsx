@@ -63,6 +63,7 @@ import { avatarClassFor } from "../components/ui/avatar";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
+import { PageHeader } from "../components/ui/PageHeader";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useTeamRole } from "../rbac/useTeamRole";
 import type {
@@ -106,7 +107,6 @@ import {
   MENU_SEP,
 } from "../components/ui/menu";
 import { DropdownPanel } from "../components/ui/DropdownPanel";
-import { PAGE_TITLE, PAGE_SUB } from "../components/ui/typography";
 import { SUMMARY_ARROW } from "../components/ui/summary";
 
 export function MembersPage() {
@@ -252,26 +252,21 @@ function MembersScreen({ teamId }: { teamId: string }) {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className={PAGE_TITLE}>
-            Members
-          </h1>
-          <p className={PAGE_SUB}>
-            People with access to this team, including pending and expired
-            invitations.
-          </p>
-        </div>
-        {canManage ? (
-          <button
-            type="button"
-            className={buttonVariants({ intent: "primary" })}
-            onClick={() => setAddOpen(true)}
-          >
-            <PlusIcon /> Add member
-          </button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Members"
+        description="People with access to this team, including pending and expired invitations."
+        actions={
+          canManage ? (
+            <button
+              type="button"
+              className={buttonVariants({ intent: "primary" })}
+              onClick={() => setAddOpen(true)}
+            >
+              <PlusIcon /> Add member
+            </button>
+          ) : undefined
+        }
+      />
       {body}
       {canManage ? (
         <AddMemberModal

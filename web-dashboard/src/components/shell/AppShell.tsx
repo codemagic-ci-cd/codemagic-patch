@@ -12,8 +12,8 @@
 // Sidebar collapse persists in localStorage; the `data-collapsed` attribute
 // lives on the `group/app` wrapper so children react via group-data-collapsed/
 // app: variants (the Tailwind port of the legacy `.app.collapsed` cascade).
-// The chrome renders immediately — only data-dependent labels skeleton (inside
-// TeamSwitcher/AccountMenu/Breadcrumbs). `.content stagger` is the load-in
+// The chrome renders immediately — only data-dependent labels skeleton
+// (inside Breadcrumbs). `.content stagger` is the load-in
 // animation; base.css disables it under prefers-reduced-motion.
 
 import { useCallback, useEffect, useState } from "react";

@@ -273,7 +273,7 @@ export function Modal({
           <div>
             <h3
               id={titleId}
-              className="text-[18px] font-extrabold tracking-[-.02em]"
+              className="text-[18px] font-semibold tracking-[-.02em] text-fg"
             >
               {title}
             </h3>

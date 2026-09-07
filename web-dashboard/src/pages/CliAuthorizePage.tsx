@@ -189,10 +189,10 @@ export function CliAuthorizePage() {
       />
 
       <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
-        <span className="mx-auto mb-5 size-[54px] flex-none place-items-center rounded-[16px] bg-[linear-gradient(135deg,var(--color-blue),var(--color-aqua))] shadow-[0_6px_18px_-4px_rgba(0,81,255,.7)] [display:grid] [&_svg]:size-[30px]">
+        <span className="mx-auto mb-5 size-[54px] flex-none place-items-center rounded-[16px] bg-[linear-gradient(135deg,var(--color-blue),var(--color-aqua))] shadow-[0_6px_18px_-4px_rgba(9,87,255,.7)] [display:grid] [&_svg]:size-[30px]">
           <TerminalIcon />
         </span>
-        <h1 className="text-[23px] font-extrabold tracking-[-.02em]">
+        <h1 className="text-[23px] font-semibold tracking-[-.02em] text-fg">
           Sign in the {PRODUCT_NAME} CLI?
         </h1>
 

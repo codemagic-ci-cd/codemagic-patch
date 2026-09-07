@@ -23,7 +23,7 @@
 
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -86,6 +86,7 @@ import {
   TBL_TR,
   TBL_WRAP,
 } from "../components/ui/table";
+import { clickableRowProps } from "../components/ui/clickableRow";
 import {
   KEBAB,
   KEBAB_BTN,
@@ -94,6 +95,8 @@ import {
   MENU_SEP,
 } from "../components/ui/menu";
 import { DropdownPanel } from "../components/ui/DropdownPanel";
+import { CARD, CARD_HEAD, CARD_HEAD_RIGHT } from "../components/ui/card";
+import { PAGE_TITLE } from "../components/ui/typography";
 
 /**
  * Lifecycle actions this screen can trigger. `release` is the target row for
@@ -316,14 +319,14 @@ function DeploymentDetail({
   }
 
   const historyCard = (
-    <div className="rounded-lg border border-border bg-surface shadow-sm">
-      <div className="flex items-center gap-3 border-b border-border px-[22px] py-[18px]">
+    <div className={CARD}>
+      <div className={CARD_HEAD}>
         <span className="size-[18px] text-blue" aria-hidden="true">
           <ActivityIcon />
         </span>
-        <h3 className="text-[15px] font-bold">Release history</h3>
+        <h3>Release history</h3>
         {total !== undefined ? (
-          <div className="ml-auto flex items-center gap-2">
+          <div className={CARD_HEAD_RIGHT}>
             <span className="text-fg-3 text-[12.5px]">
               {total} {total === 1 ? "release" : "releases"}
             </span>
@@ -338,7 +341,7 @@ function DeploymentDetail({
     <>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <h1 className="m-0 text-[18px] font-semibold leading-none tracking-[-.015em] text-fg-2">
+          <h1 className={`${PAGE_TITLE} m-0`}>
             {deployment.name}
           </h1>
           <DeploymentSdkDetails
@@ -797,6 +800,7 @@ function ReleaseRow({
   onAction: (action: DeploymentReleaseAction, release: Release) => void;
   resolveUser: (userId: string | null) => string | null;
 }) {
+  const navigate = useNavigate();
   const { release, metrics } = item;
 
   // Status gating (model/release.ts) decides WHICH actions exist; role
@@ -842,7 +846,11 @@ function ReleaseRow({
   }
 
   return (
-    <tr className={TBL_TR}>
+    <tr
+      {...clickableRowProps(TBL_TR, () => {
+        void navigate(releasePath);
+      })}
+    >
       <td className={releaseHistoryCol.td.release}>
         <div className={CELL_MAIN}>
           <Link className="font-semibold" to={releasePath}>

@@ -7,7 +7,13 @@ import type {
   RoleRef,
   TeamInvitation,
 } from "../model/iam";
-import type { ReleaseMetrics } from "../model/metrics";
+import type {
+  FailureCodeBreakdown,
+  FailureDistribution,
+  FailureDistributionEntry,
+  FailureEventPage,
+  ReleaseMetrics,
+} from "../model/metrics";
 import type { Release, ReleaseJob } from "../model/release";
 import type { Team } from "../model/team";
 import type {
@@ -39,6 +45,8 @@ import type {
   ReleasePatchResponse,
   SessionResponse,
   SessionUser,
+  ServerStatus,
+  ServerStatusProbe,
 } from "./types";
 
 export interface TeamWire {
@@ -227,8 +235,44 @@ export interface ReleaseMetricsWire {
   downloaded: number;
   failed: number;
   failure_reasons: Record<string, number>;
+  failure_reason_detail_counts: Record<string, number>;
   installed: number;
   success: number;
+}
+
+export interface FailureDistributionEntryWire {
+  count: number;
+  value: string;
+}
+
+export interface FailureCodeWire {
+  code: string | null;
+  count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface FailureCodesWireResponse {
+  codes: FailureCodeWire[];
+}
+
+export interface FailureDistributionWireResponse {
+  exit_reasons: FailureDistributionEntryWire[];
+  messages: FailureDistributionEntryWire[];
+  total: number;
+}
+
+export interface FailureEventWire {
+  android_previous_process_exit: string | null;
+  device_id: string;
+  emitted_at: string;
+  id: string;
+  message: string | null;
+}
+
+export interface FailureEventsWireResponse {
+  events: FailureEventWire[];
+  next_cursor: string | null;
 }
 
 export interface ReleaseMetricsRowWire {
@@ -609,9 +653,52 @@ export function fromReleaseMetricsWire(
     active: metrics.active,
     downloaded: metrics.downloaded,
     failed: metrics.failed,
+    failureReasonDetailCounts: metrics.failure_reason_detail_counts ?? {},
     failureReasons: metrics.failure_reasons,
     installed: metrics.installed,
     success: metrics.success,
+  };
+}
+
+export function fromFailureCodesWire(
+  response: FailureCodesWireResponse,
+): FailureCodeBreakdown[] {
+  return response.codes.map((code) => ({
+    code: code.code,
+    count: code.count,
+    firstSeenAt: code.first_seen_at,
+    lastSeenAt: code.last_seen_at,
+  }));
+}
+
+export function fromFailureDistributionWire(
+  response: FailureDistributionWireResponse,
+): FailureDistribution {
+  return {
+    exitReasons: response.exit_reasons.map(fromFailureDistributionEntryWire),
+    messages: response.messages.map(fromFailureDistributionEntryWire),
+    total: response.total,
+  };
+}
+
+function fromFailureDistributionEntryWire(
+  entry: FailureDistributionEntryWire,
+): FailureDistributionEntry {
+  return { count: entry.count, value: entry.value };
+}
+
+export function fromFailureEventsWire(
+  response: FailureEventsWireResponse,
+): FailureEventPage {
+  return {
+    events: response.events.map((event) => ({
+      androidPreviousProcessExit: event.android_previous_process_exit,
+      deviceId: event.device_id,
+      emittedAt: event.emitted_at,
+      id: event.id,
+      message: event.message,
+    })),
+    nextCursor: response.next_cursor,
   };
 }
 
@@ -856,5 +943,88 @@ export function toIamUserProvisionWireBody(body: IamUserProvisionBody) {
     ...(body.tokenDisplayName !== undefined
       ? { token_display_name: body.tokenDisplayName }
       : {}),
+  };
+}
+
+export type ServerStatusProbeWire<
+  TDetails extends object = Record<never, never>,
+> =
+  | ({ status: "ok" } & TDetails)
+  | { error: string; status: "error" }
+  | { reason: string; status: "skipped" };
+
+export interface ServerStatusWire {
+  checks: {
+    database: ServerStatusProbeWire;
+    disk: ServerStatusProbeWire<{
+      free_bytes: number;
+      path: string;
+      total_bytes: number;
+    }>;
+    download_url: ServerStatusProbeWire<{
+      http_status: number;
+      url: string;
+    }>;
+    latest_release: ServerStatusProbeWire<{
+      html_url: string;
+      published_at: string | null;
+      tag: string;
+      version: string;
+    }>;
+    storage: ServerStatusProbeWire;
+  };
+  topology: {
+    database: "bundled" | "external";
+    hosting: "managed" | "self-hosted";
+    storage: "bundled" | "external" | "none";
+  };
+  version: {
+    running: string | null;
+    update_available: boolean | null;
+  };
+}
+
+/** Maps a probe's `ok` details; `error` and `skipped` pass through unchanged. */
+function fromProbeWire<TWire extends object, TModel extends object>(
+  probe: ServerStatusProbeWire<TWire>,
+  details: (wire: TWire) => TModel,
+): ServerStatusProbe<TModel> {
+  if (probe.status === "ok") {
+    const { status, ...rest } = probe;
+    return { status, ...details(rest as TWire) };
+  }
+  return probe;
+}
+
+export function fromServerStatusWire(wire: ServerStatusWire): ServerStatus {
+  return {
+    checks: {
+      database: fromProbeWire(wire.checks.database, () => ({})),
+      disk: fromProbeWire(wire.checks.disk, (disk) => ({
+        freeBytes: disk.free_bytes,
+        path: disk.path,
+        totalBytes: disk.total_bytes,
+      })),
+      downloadUrl: fromProbeWire(wire.checks.download_url, (download) => ({
+        httpStatus: download.http_status,
+        url: download.url,
+      })),
+      latestRelease: fromProbeWire(wire.checks.latest_release, (release) => ({
+        htmlUrl: release.html_url,
+        publishedAt: release.published_at,
+        tag: release.tag,
+        version: release.version,
+      })),
+      storage: fromProbeWire(wire.checks.storage, () => ({})),
+    },
+    topology: {
+      database: wire.topology.database,
+      hosting: wire.topology.hosting,
+      storage: wire.topology.storage,
+    },
+    version: {
+      running: wire.version.running,
+      updateAvailable: wire.version.update_available,
+    },
   };
 }

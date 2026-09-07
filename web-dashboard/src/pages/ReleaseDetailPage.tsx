@@ -35,6 +35,7 @@ import { useUserLabel } from "../api/hooks/userLabels";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
+import { FailureDetailDialog } from "../components/ui/FailureDetailDialog";
 import { FailureReasonList } from "../components/ui/FailureReasonList";
 import { JobBadge } from "../components/ui/JobBadge";
 import {
@@ -65,7 +66,7 @@ import { CHIP, CHIP_TONE } from "../components/ui/chip";
 import { DL, DL_DD, DL_DT } from "../components/ui/dl";
 import { ICON_BTN } from "../components/ui/iconButton";
 import { PIN, PIN_TONE } from "../components/ui/pin";
-import { SECTION_TITLE } from "../components/ui/typography";
+import { PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
 import { formatCount, formatDateTime } from "../model/format";
 
 /**
@@ -205,7 +206,7 @@ function ReleaseDetail({
     <>
       <div className="mb-6 flex flex-wrap items-start gap-[18px]">
         <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-3 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
+          <h1 className={PAGE_TITLE}>
             {release.releaseLabel}{" "}
             {release.isMandatory ? (
               <span className={`${PIN} ${PIN_TONE.mandatory}`}>
@@ -610,6 +611,9 @@ function JobStateReferenceCard() {
 
 function MetricsPanel({ releaseId }: { releaseId: string }) {
   const metricsQuery = useReleaseMetrics(releaseId);
+  // The drill-down lives in a dialog: it is two levels deep and pages on
+  // scroll, which would push the rest of the card off screen if inlined.
+  const [openReason, setOpenReason] = useState<string | null>(null);
 
   let body: ReactNode;
   if (metricsQuery.isPending) {
@@ -669,7 +673,7 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
           <div className="flex items-center justify-between gap-3.5">
             <span className="text-[13px] text-fg-2">Install success rate</span>
             <span
-              className="font-extrabold"
+              className="font-semibold"
               style={{ color: rate === null ? undefined : "var(--color-green-deep)" }}
             >
               {rate === null ? "—" : `${(rate * 100).toFixed(1)}%`}
@@ -692,7 +696,21 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
               <div className="mb-[14px] text-[13px] font-semibold">
                 Failure reasons
               </div>
-              <FailureReasonList metrics={metrics} />
+              <FailureReasonList metrics={metrics} onOpenReason={setOpenReason} />
+              <FailureDetailDialog
+                open={openReason !== null}
+                onClose={() => {
+                  setOpenReason(null);
+                }}
+                reason={openReason}
+                reasonTotal={
+                  openReason === null
+                    ? 0
+                    : (metrics.failureReasons[openReason] ?? 0)
+                }
+                scope={{ id: releaseId, kind: "release" }}
+                scopeNote="Each failure event counted once, for this release's package hash."
+              />
             </>
           ) : null}
         </>
@@ -756,7 +774,7 @@ function Counter({
     <div>
       <div className="text-[12px] font-semibold text-fg-3">{label}</div>
       <div
-        className="text-[22px] font-extrabold tabular-nums"
+        className="text-[22px] font-semibold tabular-nums"
         style={{ color: value === null ? undefined : accent }}
       >
         {value === null ? "—" : formatCount(value)}

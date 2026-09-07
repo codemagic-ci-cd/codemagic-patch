@@ -17,6 +17,7 @@ export const LLMS_SECTIONS = [
       'introduction/core-concepts',
       'introduction/comparison',
       'introduction/pricing',
+      'introduction/support',
     ],
   },
   {
@@ -24,6 +25,7 @@ export const LLMS_SECTIONS = [
     docIds: [
       'setup/install',
       'setup/cloudflare',
+      'setup/cloudfront',
       'setup/infrastructure',
       'setup/ongoing-maintenance',
       'setup/native-setup',
@@ -38,6 +40,7 @@ export const LLMS_SECTIONS = [
     docIds: [
       'using-patch/dashboard',
       'using-patch/releasing-updates',
+      'using-patch/fingerprinting',
       'using-patch/verify-test-release',
       'using-patch/preparing-for-production',
       'using-patch/production-control',
@@ -65,6 +68,6 @@ export const LLMS_SECTIONS = [
   },
   {
     label: 'Optional',
-    docIds: ['troubleshooting', 'faq'],
+    docIds: ['troubleshooting', 'faq', 'releases'],
   },
 ];

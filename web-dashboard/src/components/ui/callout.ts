@@ -7,7 +7,7 @@ export const CALLOUT =
   "flex gap-[11px] rounded-md px-[15px] py-[13px] text-[13px]/[1.5] [&_svg]:mt-px [&_svg]:size-[18px] [&_svg]:flex-none [&_b]:font-bold";
 
 export const CALLOUT_TONE = {
-  info: "bg-blue-tint text-[#1a3da8] [&_svg]:text-blue",
+  info: "bg-blue-tint text-blue-deep [&_svg]:text-blue",
   warn: "bg-yellow-tint text-[#8a5414] [&_svg]:text-yellow",
   danger: "bg-red-tint text-[#9a0a30] [&_svg]:text-red",
   green: "bg-green-tint text-[#0a6e4f] [&_svg]:text-green-deep",

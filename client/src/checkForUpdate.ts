@@ -18,6 +18,7 @@ import {
 import { computeRolloutHash } from "./rollout";
 import { ensureHydrated, state } from "./runtime";
 import { recordEvent } from "./events";
+import { commonFailurePayload } from "./failurePayload";
 
 function createRemotePackageView(
   remotePackage: RuntimeRemotePackage,
@@ -229,6 +230,7 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
       await recordEvent("Failed", {
         status: "check",
         reason: "missing_binary_version",
+        payload: commonFailurePayload(),
       });
       return upToDateResult();
     }

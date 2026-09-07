@@ -46,6 +46,12 @@ export function renderObjectView(
 
 export type ActionSummary = {
   /**
+   * Lines printed under the summary, verbatim, for the one kind of action
+   * whose reader has nowhere else to go next: a setup that ends with things
+   * to do outside the CLI. Everything else says what changed and stops.
+   */
+  details?: readonly string[];
+  /**
    * Where to go for the detail this line leaves out. Details belong to the
    * commands built to show them, so an action names the next command instead of
    * printing a record nobody asked for.
@@ -60,10 +66,14 @@ export function renderActionView(
   palette: Palette,
 ): string {
   const head = `${palette.ok("✓")} ${action.summary}\n`;
+  const details =
+    action.details === undefined || action.details.length === 0
+      ? ""
+      : `\n${action.details.map((line) => (line === "" ? "" : `  ${line}`)).join("\n")}\n`;
 
   return action.hint === undefined
-    ? head
-    : `${head}${palette.dim(`  ${action.hint}`)}\n`;
+    ? `${head}${details}`
+    : `${head}${details}${palette.dim(`  ${action.hint}`)}\n`;
 }
 
 /**

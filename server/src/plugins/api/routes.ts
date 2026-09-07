@@ -10,6 +10,7 @@ import {
 } from "./metricsRoutes";
 import { registerReleaseRoutes } from "./releaseRoutes";
 import type { ApiRoutesOptions } from "./routeTypes";
+import { registerServerRoutes } from "./serverRoutes";
 
 export const apiRoutes: FastifyPluginAsync<ApiRoutesOptions> = async (
   app,
@@ -83,6 +84,7 @@ export const apiRoutes: FastifyPluginAsync<ApiRoutesOptions> = async (
       registerIamRoutes(controlPlane, options);
       registerMetricsQueryRoutes(controlPlane, options);
       registerReleaseRoutes(controlPlane, options);
+      registerServerRoutes(controlPlane, options);
     },
     { prefix: "/v1" },
   );

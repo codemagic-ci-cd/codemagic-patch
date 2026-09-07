@@ -11,7 +11,7 @@ export const CHIP =
 export const CHIP_TONE = {
   neutral: "border-border bg-surface-2 text-fg-2",
   blue: "border-transparent bg-blue-tint text-blue",
-  aqua: "border-transparent bg-aqua-tint text-[#0496c0]",
+  aqua: "border-transparent bg-aqua-tint text-[#007a99]",
   green: "border-transparent bg-green-tint text-green-deep",
   yellow: "border-transparent bg-yellow-tint text-[#9a560f]",
   magenta: "border-transparent bg-magenta-tint text-[#a417b8]",

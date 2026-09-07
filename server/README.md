@@ -238,7 +238,7 @@ When `STORAGE_ADAPTER=s3` is set:
 | `S3_FORCE_PATH_STYLE`    | no       | `false`                     | Set to `true` for MinIO and other backends without virtual-host-style addressing.                                                                                                  |
 | `S3_ACCESS_KEY_ID`       | no       | —                           | Static access key. Set together with `S3_SECRET_ACCESS_KEY` or omit both to use the AWS SDK's default credential chain. The server refuses to start if only one of the two is set. |
 | `S3_SECRET_ACCESS_KEY`   | no       | —                           | Static secret key. Must be set together with `S3_ACCESS_KEY_ID`.                                                                                                                   |
-| `MANIFEST_CACHE_CONTROL` | no       | `no-cache, must-revalidate` | Cache policy applied to mutable `manifest.json` and `meta.json` uploads.                                                                                                           |
+| `MANIFEST_CACHE_CONTROL` | no       | derived from `DELIVERY_ADAPTER` | Cache policy applied to mutable `manifest.json` and `meta.json` uploads.                                                                                                           |
 
 Example (MinIO running on `localhost:9000`):
 
@@ -260,7 +260,7 @@ When `STORAGE_ADAPTER=gcs` is set:
 | `PUBLIC_BASE_URL`        | yes      | —                           | Client-facing base URL for public artifact keys. For direct GCS delivery, use `https://storage.googleapis.com/<public-bucket>`.                       |
 | `GCS_PUBLIC_BUCKET`      | yes      | —                           | Bucket for public OTA manifests, bundles, patches, and `meta.json`.                                                                                   |
 | `GCS_INTERNAL_BUCKET`    | yes      | —                           | Bucket for `_internal/*` upload staging and worker-private artifacts. Must differ from `GCS_PUBLIC_BUCKET`.                                            |
-| `MANIFEST_CACHE_CONTROL` | no       | `no-cache, must-revalidate` | Cache policy applied to mutable `manifest.json` and `meta.json` uploads.                                                                              |
+| `MANIFEST_CACHE_CONTROL` | no       | derived from `DELIVERY_ADAPTER` | Cache policy applied to mutable `manifest.json` and `meta.json` uploads.                                                                              |
 
 The GCS adapter uses the native `@google-cloud/storage` client and Application
 Default Credentials. On GCP this normally means the Compute Engine service
@@ -291,7 +291,7 @@ matter before pointing clients at a real S3 / MinIO deployment:
 1. **`_internal/` keys must not be reachable through `PUBLIC_BASE_URL`.** The bucket holds both public release artifacts (`{deployment_key}/{binary_version}/...`) and private staging / worker-internal objects under `_internal/`. Exposing the bucket root directly leaks those internal objects. Use one of:
    - a reverse proxy in front of the bucket that only forwards public-prefix paths and rejects `_internal/*`, or
    - a bucket policy / CDN rule that explicitly denies anonymous reads under `_internal/*` (recommended; example below).
-2. **Mutable JSON cache behavior is explicit but conservative by default.** The worker uploads `manifest.json` and `meta.json` with `Cache-Control: no-cache, must-revalidate` unless `MANIFEST_CACHE_CONTROL` overrides it. If you put a CDN in front of object storage, choose a short mutable-object TTL that matches your purge behavior.
+2. **Mutable JSON cache behavior follows the delivery topology.** The worker uploads `manifest.json` and `meta.json` with `Cache-Control: no-cache, must-revalidate` under `DELIVERY_ADAPTER=base-url`, whose purge is a no-op, and `public, max-age=0, s-maxage=300, must-revalidate` under `cloudflare`/`cloudfront`, where clients still revalidate while a shared cache has a five-minute bound that complements best-effort purge. `MANIFEST_CACHE_CONTROL` overrides either.
 
 For GCS, the intended safety boundary is two buckets: `GCS_PUBLIC_BUCKET`
 receives only public OTA keys, while `GCS_INTERNAL_BUCKET` receives `_internal/*`
@@ -327,7 +327,11 @@ The dev stack at [`docker-compose.dev.yml`](../docker-compose.dev.yml) ships a w
 
 Replace `<bucket>` with the value of `S3_BUCKET`. Apply with whichever tool the backend uses — `aws s3api put-bucket-policy`, MinIO's `mc anonymous set-json`, or your CDN's equivalent.
 
-The cache-header default is intentionally conservative for direct object-storage deployments. High-traffic CDN deployments can set `MANIFEST_CACHE_CONTROL` to a short positive TTL such as `public, max-age=60, must-revalidate` after validating their purge behavior.
+The cache-header default keeps direct clients revalidating in every topology,
+and only grants a shared CDN cache its five-minute window when a purging
+delivery adapter is configured to cut that window short. Override
+`MANIFEST_CACHE_CONTROL` only when a deployment has a deliberate, verified
+cache/purge policy.
 
 ### Running The Adapter Test Slice
 

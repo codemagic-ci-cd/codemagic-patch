@@ -28,6 +28,7 @@ import { useToast } from "../components/overlay/ToastProvider";
 import { CheckIcon, CopyIcon, useCopyState } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
+import { PageHeader } from "../components/ui/PageHeader";
 import { Skeleton } from "../components/ui/Skeleton";
 import type { ApiTokenCreateBody, ApiTokenCreateResponse } from "../api/types";
 import type { ApiTokenMetadata } from "../model/apiToken";
@@ -94,17 +95,10 @@ export function TokensPage() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-3 text-[27px] font-extrabold leading-[1.1] tracking-[-.025em]">
-            API tokens
-          </h1>
-          <p className="mt-1.5 max-w-[62ch] text-[14px] text-fg-2">
-            Personal access tokens for the CLI and CI. These are per-user, not
-            per-team.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
+      <PageHeader
+        title="API tokens"
+        description="Personal access tokens for the CLI and CI. These are per-user, not per-team."
+        actions={
           <button
             type="button"
             className={buttonVariants({ intent: "primary" })}
@@ -112,8 +106,8 @@ export function TokensPage() {
           >
             <PlusIcon /> Create token
           </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className={`${CALLOUT} ${CALLOUT_TONE.info} mb-[18px]`}>
         <InfoIcon />

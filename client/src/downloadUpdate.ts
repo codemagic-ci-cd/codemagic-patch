@@ -14,6 +14,7 @@ import NativeCodemagicPatch, {
 } from "./NativeCodemagicPatch";
 import { ensureHydrated, nowIso, state } from "./runtime";
 import { recordEvent } from "./events";
+import { networkFailurePayload } from "./failurePayload";
 
 const NATIVE_DOWNLOAD_PROGRESS_EVENT = "CodemagicPatchDownloadProgress";
 
@@ -191,6 +192,7 @@ export async function downloadUpdate(
           deliveryType: firstArtifactType,
           status: "download",
           reason: "network",
+          payload: networkFailurePayload(error),
         });
         throw error;
       }
@@ -204,6 +206,7 @@ export async function downloadUpdate(
           deliveryType: "full_bundle",
           status: "download",
           reason: "network",
+          payload: networkFailurePayload(fullBundleError),
         });
         throw fullBundleError;
       }

@@ -10,15 +10,15 @@
 // leading) except .textarea, whose legacy rule set 1.55.
 export const FIELD = "mb-4 block";
 
-export const FIELD_LABEL = "mb-[7px] block text-[13px] font-semibold text-fg";
+export const FIELD_LABEL = "mb-[7px] block text-[14px] font-semibold text-fg";
 
-export const FIELD_HINT = "mt-[7px] text-[12px] text-fg-3";
+export const FIELD_HINT = "mt-[7px] text-[13px] text-fg-3";
 
 export const FIELD_ERR =
-  "mt-[7px] flex items-center gap-[5px] text-[12px] text-red [&_svg]:size-[13px]";
+  "mt-[7px] flex items-center gap-[5px] text-[13px] text-red [&_svg]:size-[13px]";
 
 export const INPUT =
-  "w-full rounded-control border bg-surface px-[13px] py-2.5 text-[13.5px] text-fg [font-family:inherit] [transition:.15s] placeholder:text-fg-faint focus:outline-none";
+  "w-full rounded-control border bg-surface px-[13px] py-2.5 text-[15px] text-fg [font-family:inherit] [transition:.15s] placeholder:text-fg-faint focus:outline-none";
 
 export const INPUT_STATE = {
   normal: "border-border-strong focus:border-blue focus:shadow-glow",
@@ -39,7 +39,7 @@ export const TEXTAREA_EXTRA = "min-h-[84px] resize-y leading-[1.55]";
 // thumb (::after) off peer-checked / peer-focus-visible, replacing the
 // legacy `input:checked + .track` sibling selectors.
 export const TOGGLE =
-  "relative inline-flex cursor-pointer items-center gap-[11px] text-[13.5px] font-medium";
+  "relative inline-flex cursor-pointer items-center gap-[11px] text-[15px] font-medium";
 
 export const TOGGLE_INPUT = "peer absolute opacity-0";
 
@@ -71,7 +71,7 @@ export const RADIO_CARD_STATE = {
 } as const;
 
 /** Legacy `.radio-card .rc-title`. */
-export const RC_TITLE = "text-[13.5px] font-bold";
+export const RC_TITLE = "text-[15px] font-bold";
 
 /** Legacy `.radio-card .rc-desc`. */
-export const RC_DESC = "mt-[3px] text-[12.5px] text-fg-2";
+export const RC_DESC = "mt-[3px] text-[13px] text-fg-2";

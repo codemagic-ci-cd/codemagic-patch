@@ -14,19 +14,36 @@ npm install -g @codemagic/patch-cli
 
 ## Quick start
 
-```sh
-# 1. Authenticate against your Codemagic Patch server
-#    (opens the dashboard sign-in in your browser; add --no-browser to just
-#     print the URL, or --token <cm_pat_...> for headless machines)
-cmpatch login --server-url https://updates.example.com
+From your React Native project root, let the CLI connect the project to a Patch
+server and create or select the platform apps and deployment:
 
-# 2. Set up project defaults
+```sh
 cmpatch init
 
-# 3. Publish a React Native bundle as an OTA release
-cmpatch release-react --deployment Staging --dry-run   # preview first
+# Preview, then publish an OTA release
+cmpatch release-react --deployment Staging --dry-run
 cmpatch release-react --deployment Staging
 ```
+
+`cmpatch init` guides you to install a server or enter an existing server URL,
+sign in when needed, and writes the selected context to
+`codemagic-patch.config.json`.
+
+### Try the full service locally
+
+To evaluate Patch before provisioning a server, start the full stack on your
+machine:
+
+```sh
+cmpatch selfhost local-eval
+```
+
+This checks Docker (and offers to install or start it), keeps its own checkout
+of Codemagic Patch, and starts the server, worker, Postgres, MinIO, and dashboard
+on localhost. It requires `git`, `curl`, and Docker with Compose v2, and runs on
+macOS, Linux, or WSL 2. Use `cmpatch selfhost local-eval status` to see the
+services, checkout, and sample publish command; stop it with
+`cmpatch selfhost local-eval down`.
 
 ## Commands
 
@@ -38,6 +55,7 @@ cmpatch release-react --deployment Staging
 | `diagnostics` | Diagnose local setup and OTA readiness (`cmpatch doctor`). |
 | `config` | Store defaults and inspect the effective local context. |
 | `fingerprint` | Compute fingerprints and inspect device update logs. |
+| `selfhost` | Run the local evaluation stack or install and maintain a self-hosted server. |
 
 Use `cmpatch help <group>` for the commands in a group, `cmpatch help <command>` for per-command usage and examples, and `cmpatch --version` to print the CLI version.
 

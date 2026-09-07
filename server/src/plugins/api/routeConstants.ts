@@ -48,6 +48,19 @@ export const INVALID_METRIC_EVENT_EMITTED_AT_ERROR =
   "emitted_at must be a valid ISO timestamp";
 export const INVALID_METRIC_DELIVERY_TYPE_ERROR =
   "attributes.delivery_type must be either patch or full_bundle";
+/** PROTOCOL.md §Metric Event `Failed` Payload — encoded payload size cap. */
+export const METRIC_EVENT_FAILURE_PAYLOAD_MAX_BYTES = 4096;
+export const DEFAULT_METRICS_FAILURE_EVENTS_LIMIT = 25;
+export const MAX_METRICS_FAILURE_EVENTS_LIMIT = 100;
+export const INVALID_METRICS_FAILURE_EVENTS_LIMIT_ERROR =
+  `limit must be an integer between 1 and ${MAX_METRICS_FAILURE_EVENTS_LIMIT}`;
+export const MISSING_METRICS_FAILURE_REASON_ERROR = "reason is required";
+/**
+ * Entries kept per distribution axis. A chart is read at a glance, so the tail
+ * past the first few bars carries no information a reader can act on; the
+ * events feed below it is where an unbounded search belongs.
+ */
+export const METRICS_FAILURE_DISTRIBUTION_LIMIT = 4;
 export const INVALID_METRICS_TIMESERIES_FROM_ERROR =
   "from must be a valid ISO timestamp";
 export const INVALID_METRICS_TIMESERIES_TO_ERROR =

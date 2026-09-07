@@ -1,0 +1,376 @@
+---
+title: CloudFront setup
+description: >-
+  Front bundled MinIO or external object storage with Amazon CloudFront and
+  purge stale Patch manifests automatically.
+llmsDescription: >-
+  CloudFront CDN for Patch — separate bundled and external-storage setup,
+  DNS cutover, origin protection, IAM, verification, and secret rotation.
+---
+
+# CloudFront setup
+
+:::tip Set this up while installing
+On an uninterrupted `cmpatch selfhost install`, the CloudFront step prints the
+exact values for each AWS Console screen, generates the origin secret, watches
+the certificate validation record, and runs equivalent pre-cutover probes before
+it tells you to move the DNS record. It creates nothing in AWS and never asks
+for AWS credentials beyond the scoped purge key. If an earlier run stopped
+after you had created the distribution, the next run asks whether one exists
+and keeps the origin header value it already sends instead of generating a new
+one.
+
+If you resume or repair after the server becomes healthy, the closing summary
+links back here because the CLI no longer has the AWS Console answers from the
+original run. Complete every pre-cutover check below by hand before changing
+DNS. This page is also the reference for adding CloudFront to a running server.
+:::
+
+
+CloudFront can sit in front of either the bundled MinIO storage or an external
+S3/GCS-compatible bucket. Patch keeps manifest invalidation scoped and
+best-effort: publishing still succeeds if a purge fails, while the
+`s-maxage=300` that this adapter selects for mutable JSON bounds stale edge
+content.
+
+Choose one complete track below. The bundled track uses a separate protected
+origin hostname on your Patch host. The external-storage track points
+CloudFront at the bucket and does not use the Caddy origin settings.
+
+## Bundled MinIO
+
+Start with three distinct hostnames. `storage.` and `origin-storage.` are easy
+to transpose in the CloudFront console, so write down the mapping first:
+
+| Role | Example | DNS before install | DNS after cutover |
+| --- | --- | --- | --- |
+| API and dashboard | `updates.example.com` | A/AAAA → Patch host | unchanged |
+| Viewer/download | `storage-updates.example.com` | A/AAAA → Patch host | CNAME → CloudFront |
+| CloudFront origin | `origin-storage-updates.example.com` | A/AAAA → Patch host | unchanged |
+
+:::danger DNS ordering is mandatory
+Keep the **viewer/download hostname pointed at the Patch host for the entire
+install**. Move it to CloudFront only after the distribution and protected
+origin pass the pre-cutover checks. Pointing it at CloudFront early prevents
+Caddy from completing HTTP-01 certificate issuance and leaves neither path
+ready to serve downloads.
+:::
+
+### 1. Prepare DNS, certificate, and origin secret
+
+1. Create the three DNS records shown above, all initially pointing at the
+   Patch host. Lower the viewer record TTL to 60 seconds and let its old TTL
+   expire before the final cutover.
+2. In AWS Certificate Manager, switch to **US East (N. Virginia),
+   `us-east-1`**, request a public certificate for the viewer hostname, and
+   complete DNS validation. CloudFront cannot use an ACM certificate from
+   another region. See [AWS certificate requirements](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cnames-and-https-requirements.html).
+3. Generate a random origin-header value and keep it available for both the
+   distribution and the installer:
+
+```bash
+openssl rand -hex 32
+```
+
+### 2. Create the distribution
+
+Create a standard CloudFront distribution with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Origin domain | `origin-storage-updates.example.com` |
+| Origin protocol | HTTPS only |
+| Origin custom header | `X-Codemagic-Patch-Origin-Verify: <generated-secret>` |
+| Alternate domain name | `storage-updates.example.com` |
+| Viewer certificate | the ACM certificate from `us-east-1` |
+| Viewer protocol policy | Redirect HTTP to HTTPS |
+| Allowed methods | GET, HEAD |
+| Cache policy | Managed `CachingOptimized` |
+| Origin request policy | None; do **not** forward the viewer `Host` header |
+
+The origin Caddy site answers only for the origin hostname. Forwarding the
+viewer `Host` header makes origin requests hit the wrong Caddy site and defeats
+the protected-origin check. With no viewer `Host` forwarding, CloudFront sends
+the origin hostname as `Host`; see [AWS origin request policy behavior](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-request-understand-origin-request-policy.html).
+
+CloudFront's managed cache policy applies Patch's origin cache lifetime within
+the policy's TTL bounds: mutable JSON uses
+`public, max-age=0, s-maxage=300, must-revalidate`, while content-addressed
+artifacts use a one-year immutable policy.
+
+### 3. Create a purge-only IAM identity
+
+Create an IAM policy scoped to this one distribution and attach it to the IAM
+user or role the Patch server will use:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "cloudfront:CreateInvalidation",
+      "Resource": "arn:aws:cloudfront::YOUR_AWS_ACCOUNT_ID:distribution/YOUR_DISTRIBUTION_ID"
+    }
+  ]
+}
+```
+
+Create an access key for that identity if the host does not use an EC2/ECS IAM
+role. It must be the IAM user's permanent key (the ID starts with `AKIA`).
+Temporary credentials from AWS SSO, an assumed role, or CloudShell (IDs
+starting with `ASIA`) only work with a session token that nothing here can
+carry, and the installer rejects them. Put only this scoped key in
+`.env.selfhost`; do not copy administrator or general AWS credentials onto the
+Patch host.
+
+### 4. Run the first install
+
+Use the same origin secret that is already configured on the distribution:
+
+```bash
+export CLOUDFRONT_ACCESS_KEY_ID=<purge_access_key_id>
+export CLOUDFRONT_SECRET_ACCESS_KEY=<purge_secret_access_key>
+
+cmpatch selfhost install ubuntu@203.0.113.7 \
+  --storage-origin-domain origin-storage-updates.example.com \
+  --cloudfront \
+  --cloudfront-distribution-id <distribution_id> \
+  --cloudfront-origin-verify-secret <generated-secret>
+```
+
+The guided install still asks for anything else it needs (the domains, the
+OAuth app, the admin email). `scripts/selfhost/install.sh` on the host takes
+the same flags, plus `--cloudfront-access-key-id` /
+`--cloudfront-secret-access-key`, for an on-server install.
+
+Omit both access-key flags to use the AWS SDK default credential chain. The
+installer writes `SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin`, brings up the
+additive viewer and protected-origin Caddy sites, and submits one synthetic
+invalidation to verify the distribution ID and IAM permission. That check uses
+one CloudFront invalidation path; `--skip-cloudfront-check` bypasses it. A
+rejected permission fails the install, while a throttled or busy distribution
+is only a warning — that answer does not disprove the credentials, so the
+install continues and you confirm a real purge afterwards.
+
+To adopt CloudFront on a running bundled install, create the AWS resources
+first, then edit `.env.selfhost` instead of passing first-install flags:
+
+```dotenv
+SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin
+CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN=origin-storage-updates.example.com
+DELIVERY_ADAPTER=cloudfront
+CLOUDFRONT_DISTRIBUTION_ID=<distribution_id>
+CLOUDFRONT_ACCESS_KEY_ID='<purge_access_key_id>'
+CLOUDFRONT_SECRET_ACCESS_KEY='<purge_secret_access_key>'
+CLOUDFRONT_ORIGIN_VERIFY_SECRET='<generated-secret>'
+```
+
+Also **delete any existing `MANIFEST_CACHE_CONTROL` line**. Installs created
+before CDN delivery pinned `no-cache, must-revalidate` there, and an explicit
+value wins over the adapter default — leaving it in place makes CloudFront
+revalidate every manifest request, so releases purge a cache that never fills.
+The installer warns when it sees this. Keep the line only if an origin-only
+policy is deliberate.
+
+Rerun `scripts/selfhost/install.sh` with no delivery flags. Existing installs
+deliberately ignore those flags and keep `.env.selfhost` authoritative.
+
+### 5. Verify before changing DNS
+
+Publish at least one release, then run all three checks against the same
+manifest path. The first proves CloudFront can reach the origin. The second
+connects to the distribution while keeping the final viewer hostname for TLS
+SNI and the HTTP `Host` header, proving the alternate domain name and viewer
+certificate work before DNS moves. The third proves a direct origin request
+without the secret is denied.
+
+```bash
+DEPLOYMENT_KEY=<deployment-key>
+DISTRIBUTION_DOMAIN=d111111abcdef8.cloudfront.net
+VIEWER_DOMAIN=storage-updates.example.com
+ORIGIN_DOMAIN=origin-storage-updates.example.com
+MANIFEST_PATH="/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
+
+# Expect HTTP 200 and x-cache: Miss from cloudfront.
+curl -fsSI "https://${DISTRIBUTION_DOMAIN}${MANIFEST_PATH}" \
+  | grep -Ei '^(HTTP/|x-cache:)'
+
+# Expect HTTP 200 and x-cache from CloudFront again. TLS verification must pass.
+# --connect-to tests the viewer hostname against CloudFront without changing DNS.
+curl -fsSI \
+  --connect-to "${VIEWER_DOMAIN}:443:${DISTRIBUTION_DOMAIN}:443" \
+  "https://${VIEWER_DOMAIN}${MANIFEST_PATH}" \
+  | grep -Ei '^(HTTP/|x-cache:)'
+
+# Expect exactly 403. Do not add the origin verification header.
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "https://${ORIGIN_DOMAIN}${MANIFEST_PATH}"
+```
+
+Do not add `-k` or `--insecure`: a certificate error is a failed pre-cutover
+check. Do not cut over if any expectation fails.
+
+### 6. Cut over and confirm a cache hit
+
+Change only the viewer/download DNS record to a CNAME targeting the
+distribution domain. Then request the manifest twice:
+
+```bash
+VIEWER_DOMAIN=storage-updates.example.com
+MANIFEST_PATH="/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
+
+curl -fsSI "https://${VIEWER_DOMAIN}${MANIFEST_PATH}" | grep -i '^x-cache:'
+curl -fsSI "https://${VIEWER_DOMAIN}${MANIFEST_PATH}" | grep -i '^x-cache:'
+```
+
+Expect `Miss from cloudfront` followed by `Hit from cloudfront` (allow a short
+propagation delay). Restore the normal DNS TTL after verification.
+
+After cutover, Caddy can no longer complete HTTP-01 renewal for the old viewer
+site because that DNS name now reaches CloudFront. Renewal warnings for that
+viewer certificate are expected and harmless; the origin certificate still
+renews through the unchanged origin DNS record. The custom header protects the
+origin hostname, not the host IP itself: a caller that reaches the IP and forges
+the old viewer `Host` header can still reach MinIO, so retain normal host-level
+network controls.
+
+### Rotate the bundled origin secret
+
+The Caddy origin accepts a second, temporary secret so rotation has no 403
+window while a CloudFront distribution update deploys. Outside a rotation
+`CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS` is simply absent:
+
+1. Generate a new secret. In `.env.selfhost`, set
+   `CLOUDFRONT_ORIGIN_VERIFY_SECRET` to the new value and **add**
+   `CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS` with the old value. Rerun
+   `scripts/selfhost/install.sh`.
+2. Change the distribution's `X-Codemagic-Patch-Origin-Verify` custom header to
+   the new value and wait until the distribution status is **Deployed**.
+3. **Delete** the `CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS` line and rerun the
+   installer. The old value is no longer accepted.
+
+Skipping step 3 leaves the old secret valid indefinitely.
+
+## External S3 or GCS storage
+
+First determine what `PUBLIC_BASE_URL` already is:
+
+- If it is a custom domain you control, keep it unchanged and point that name
+  at CloudFront. Existing binaries and published manifests move together.
+- If it is a raw bucket URL, you need a new viewer hostname and a new
+  `PUBLIC_BASE_URL`. Existing binaries keep downloading directly from the
+  public bucket until a new native release, and existing manifests keep their
+  old absolute artifact URLs until that deployment is released, promoted,
+  rolled back, or cleared again.
+
+Changing `PUBLIC_BASE_URL` does not rewrite existing manifests immediately.
+Keep the bucket public-read during this transition.
+
+### 1. Create the certificate, distribution, and purge identity
+
+Request the viewer certificate in ACM **`us-east-1`** and create the same
+distribution behavior and purge-only IAM policy described in the bundled
+track. Do **not** forward the viewer `Host` header. Select the origin shape for
+your backend:
+
+| Backend | CloudFront origin |
+| --- | --- |
+| AWS S3 | Select the bucket as an S3 origin and use **Origin access: Public** initially. Do not configure it as a custom or S3 website origin. |
+| Google Cloud Storage | Custom HTTPS origin `storage.googleapis.com`, Origin path `/<public-bucket-name>`. GCS supports this path-style public endpoint. |
+| S3-compatible (`S3_ENDPOINT` set) | Custom HTTPS origin at the provider endpoint; add the provider-specific bucket path if its URL format requires one. |
+
+For GCS, the public bucket must allow anonymous object reads; Public Access
+Prevention cannot be enforced on that bucket. The internal GCS bucket is never
+an origin.
+
+### 2. Install with external storage
+
+Point `--public-base-url` at the CloudFront viewer domain. Example for S3:
+
+```bash
+scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
+  --github-oauth-client-secret <github_client_secret> \
+  --storage-mode s3 \
+  --s3-bucket my-patch-public-bucket \
+  --s3-region eu-west-1 \
+  --public-base-url https://cdn.example.com \
+  --cloudfront \
+  --cloudfront-distribution-id <distribution_id> \
+  --cloudfront-access-key-id <purge_access_key_id> \
+  --cloudfront-secret-access-key <purge_secret_access_key>
+```
+
+For GCS, replace the storage flags in that command with:
+
+```bash
+  --storage-mode gcs \
+  --gcs-public-bucket my-patch-public \
+  --gcs-internal-bucket my-patch-internal \
+  --gcs-credentials-file /secure/path/service-account.json \
+  --public-base-url https://cdn.example.com
+```
+
+For an S3-compatible provider, keep `--storage-mode s3` and add its endpoint
+and addressing mode:
+
+```bash
+  --s3-bucket my-patch-bucket \
+  --s3-endpoint https://objects.provider.example \
+  --s3-force-path-style true \
+  --s3-access-key-id <storage_access_key_id> \
+  --s3-secret-access-key <storage_secret_access_key> \
+  --public-base-url https://cdn.example.com
+```
+
+The storage credentials and CloudFront purge credentials are separate. The
+former read/write objects; the latter can only invalidate one distribution.
+
+External storage always uses `SELFHOST_STORAGE_ORIGIN_MODE=direct`. Do not set
+`CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN` or either origin verification secret;
+the installer rejects those bundled-only values.
+
+Verify `x-cache: Miss from cloudfront` then `Hit from cloudfront` with the
+viewer URL and a real manifest path, as in the bundled track. There is no Caddy
+origin-bypass check for an external public bucket.
+
+### Optional S3 Origin Access Control
+
+Origin Access Control (OAC) can make an AWS S3 bucket private so only one
+CloudFront distribution reads it. Treat this as a later hardening step, not the
+default. It is safe only when `PUBLIC_BASE_URL` has always been the custom
+viewer domain. All three hazards matter:
+
+1. A standard OAC allow grants the CloudFront service principal
+   `s3:GetObject`. The public-bucket policy's account-conditioned
+   `_internal/*` deny does not cover that service principal, so a naive OAC
+   policy can expose staged uploads through CloudFront. Replace it with
+   [`deploy/selfhost/aws-s3-bucket-policy.cloudfront-oac.example.json`](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/deploy/selfhost/aws-s3-bucket-policy.cloudfront-oac.example.json), which explicitly denies CloudFront access to `_internal/*`.
+2. Making the bucket private breaks already-shipped binaries whose
+   `CodemagicPatchDownloadBaseUrl` is the raw bucket URL.
+3. It also breaks every previously published manifest whose absolute artifact
+   URLs still point at the raw bucket, including manifests fetched by new
+   clients.
+
+If either a binary or a manifest has ever carried a raw bucket URL, keep the
+bucket public until that population and all such manifests have aged out. AWS
+requires an S3 bucket origin (not a website endpoint) and a distribution-scoped
+bucket policy for OAC; see [Restrict access to an Amazon S3 origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html).
+
+## Purge behavior and cost
+
+Patch invalidates mutable manifest paths. Deployment/app deletion collapses
+all artifact paths below a deployment key into one trailing-wildcard path, so a
+large delete does not submit thousands of invalidation paths. CloudFront counts
+a wildcard as one path and provides the first 1,000 invalidation paths per AWS
+account each month at no charge; see [AWS invalidation pricing](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PayingForInvalidation.html).
+
+## Related
+
+- [Install](/docs/install)
+- [Infrastructure adapters](/docs/setup/infrastructure)
+- [Configuration reference](/docs/reference/configuration)
+- [Troubleshooting](/docs/troubleshooting)

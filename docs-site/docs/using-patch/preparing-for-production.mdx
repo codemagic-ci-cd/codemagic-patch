@@ -55,8 +55,10 @@ Reserve server-side `--mandatory` for fixes that truly cannot wait. Immediate ma
 
 Production phones must reach your Patch API and storage domains over **public HTTPS**, not `localhost` or a dev machine LAN IP.
 
-- Confirm `CodemagicPatchDownloadBaseUrl` ends with `/codemagic-patch`
-- Put a CDN in front of the storage domain if you expect large install bases, see [Delivery](/docs/using-patch/delivery) and [Cloudflare setup](/docs/setup/cloudflare)
+- Confirm `CodemagicPatchDownloadBaseUrl` exactly matches the server's
+  `PUBLIC_BASE_URL`; only the bundled-storage default necessarily ends with
+  `/codemagic-patch`
+- Put a CDN in front of the storage domain if you expect large install bases; see [Delivery](/docs/using-patch/delivery), [Cloudflare setup](/docs/setup/cloudflare), and [CloudFront setup](/docs/setup/cloudfront)
 
 ## 5. Optional: bundle signing
 

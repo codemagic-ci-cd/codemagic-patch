@@ -49,6 +49,7 @@ const TOP_LEVEL_SECTIONS: readonly {
       ["deployment", "Manage deployments and their history"],
       ["member", "Manage team members and invitations"],
       ["token", "Manage personal access tokens"],
+      ["selfhost", "Install and maintain your own update server"],
     ],
     title: "Manage",
   },

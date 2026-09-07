@@ -17,6 +17,7 @@ SELFHOST_COMPOSE_OVERRIDE_FILE="${SELFHOST_COMPOSE_OVERRIDE_FILE:-${SELFHOST_REP
 SELFHOST_COMPOSE_BUNDLED_DB_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.bundled-db.yml"
 SELFHOST_COMPOSE_EXTERNAL_DB_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-db.yml"
 SELFHOST_COMPOSE_BUNDLED_STORAGE_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.bundled-storage.yml"
+SELFHOST_COMPOSE_BUNDLED_STORAGE_CDN_ORIGIN_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.bundled-storage-cdn-origin.yml"
 SELFHOST_COMPOSE_STORAGE_S3_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-storage-s3.yml"
 SELFHOST_COMPOSE_STORAGE_GCS_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-storage-gcs.yml"
 # GCS service-account key the gcs storage overlay bind-mounts into the server
@@ -150,7 +151,11 @@ selfhost_compose_override_required() {
 # compose_selfhost before load_selfhost_env has run, and an ambient-environment
 # override would assemble the wrong stack against live data. Missing file or
 # missing flag prints nothing (callers default to bundled).
-selfhost_mode_from_env_file() {
+# Reads one value straight out of the env FILE, parsed the way
+# load_selfhost_env and compose's dotenv parse it. Used where the file — not
+# the ambient environment — has to be the authority: mode flags, the delivery
+# adapter, and --repair-env's view of what is already configured.
+selfhost_env_value_from_file() {
   local flag="$1"
   local line value
   [ -f "$SELFHOST_ENV_FILE" ] || return 0
@@ -176,14 +181,134 @@ selfhost_mode_from_env_file() {
   printf '%s' "$value"
 }
 
+# The mode-flag-named alias every existing caller uses. Same reader.
+selfhost_mode_from_env_file() {
+  selfhost_env_value_from_file "$1"
+}
+
+selfhost_env_file_has_key() {
+  local flag="$1"
+  [ -f "$SELFHOST_ENV_FILE" ] || return 1
+  grep -Eq "^[[:space:]]*(export[[:space:]]+)?${flag}[[:space:]]*=" "$SELFHOST_ENV_FILE"
+}
+
+# Assembly-affecting validation only: what decides WHICH compose files are
+# selected, plus a selected overlay whose values would render a stack that
+# cannot boot. compose_selfhost runs this on every invocation — backup.sh,
+# restore.sh, and upgrade.sh included — so a check that merely describes a
+# misconfigured delivery adapter must not live here. Blocking a backup is a
+# price worth paying only for the wrong-stack-against-live-data class that the
+# SELFHOST_*_MODE rules exist to prevent.
+validate_selfhost_stack_shape() {
+  local storage_mode origin_mode origin_domain origin_secret
+  storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
+  origin_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
+
+  case "${origin_mode:-direct}" in
+    direct | cdn-origin) ;;
+    *) fail_selfhost "SELFHOST_STORAGE_ORIGIN_MODE=${origin_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: direct, cdn-origin. Fix the flag — falling back to direct here would drop the protected CloudFront origin site from the assembled stack." ;;
+  esac
+
+  [ "${origin_mode:-direct}" = "cdn-origin" ] || return 0
+  # The cdn-origin overlay is only appended for bundled storage, so the same
+  # flag on an external bucket assembles the ordinary external stack. That is a
+  # wrong belief, not a wrong stack; validate_selfhost_delivery_config rejects
+  # it at install time.
+  [ "${storage_mode:-bundled}" = "bundled" ] || return 0
+
+  # An empty value in either slot makes Caddy's header matcher malformed, which
+  # fails the WHOLE Caddyfile to adapt — API and dashboard sites included, not
+  # just the origin. Fail before `up -d` rather than after.
+  origin_domain="$(selfhost_mode_from_env_file CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN)"
+  origin_secret="$(selfhost_mode_from_env_file CLOUDFRONT_ORIGIN_VERIFY_SECRET)"
+  [ -n "$origin_domain" ] || fail_selfhost "CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN is missing or empty in ${SELFHOST_ENV_FILE}; it is required when SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin."
+  [ -n "$origin_secret" ] || fail_selfhost "CLOUDFRONT_ORIGIN_VERIFY_SECRET is missing or empty in ${SELFHOST_ENV_FILE}; it is required when SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin."
+  # CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS is deliberately optional: only a
+  # rotation in flight has a second live value. The compose overlay falls back
+  # to the current secret, so an absent or emptied slot is the normal steady
+  # state rather than a config error.
+}
+
+# The delivery settings the server itself reads at startup. resolveRuntimeConfig
+# throws on either of these and main.ts turns that into exit 1, so an env file
+# carrying them cannot produce a running server — unlike the rest of
+# validate_selfhost_delivery_config, where the stack comes up and only the
+# operator's intent goes unmet. Every path that is about to recreate the server
+# checks this, next to the OAuth/SERVER_URL assertions that exist for the same
+# reason (upgrade.sh, restore.sh). backup.sh deliberately does not: it asserts
+# no boot-critical value at all, because its job is to work on a sick
+# deployment.
+validate_selfhost_delivery_bootable() {
+  local delivery_adapter distribution_id
+  local cloudfront_access_key cloudfront_secret_key
+  delivery_adapter="$(selfhost_mode_from_env_file DELIVERY_ADAPTER)"
+  [ "${delivery_adapter:-base-url}" = "cloudfront" ] || return 0
+
+  distribution_id="$(selfhost_mode_from_env_file CLOUDFRONT_DISTRIBUTION_ID)"
+  cloudfront_access_key="$(selfhost_mode_from_env_file CLOUDFRONT_ACCESS_KEY_ID)"
+  cloudfront_secret_key="$(selfhost_mode_from_env_file CLOUDFRONT_SECRET_ACCESS_KEY)"
+
+  [ -n "$distribution_id" ] || fail_selfhost "CLOUDFRONT_DISTRIBUTION_ID is missing or empty in ${SELFHOST_ENV_FILE}; it is required when DELIVERY_ADAPTER=cloudfront. The server refuses to start without it, so fix this before the stack is recreated."
+  if { [ -n "$cloudfront_access_key" ] && [ -z "$cloudfront_secret_key" ]; } ||
+    { [ -z "$cloudfront_access_key" ] && [ -n "$cloudfront_secret_key" ]; }; then
+    fail_selfhost "CLOUDFRONT_ACCESS_KEY_ID and CLOUDFRONT_SECRET_ACCESS_KEY in ${SELFHOST_ENV_FILE} must be set together, or both omitted to use the AWS SDK default credential chain. The server refuses to start on a half pair, so fix this before the stack is recreated."
+  fi
+}
+
+# The full install-time delivery judgement: bootability, plus the coherence
+# checks below that only install.sh makes. Those describe an operator intent
+# the running stack will not fulfil, not a stack that fails to run, so
+# compose_selfhost deliberately skips them — failing there would abort a backup
+# on a deployment that is otherwise perfectly backup-able (and abort it without
+# a message, since backup.sh reads `compose_selfhost ps` inside a command
+# substitution that discards stderr).
+validate_selfhost_delivery_config() {
+  local storage_mode origin_mode delivery_adapter
+  storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
+  origin_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
+  delivery_adapter="$(selfhost_mode_from_env_file DELIVERY_ADAPTER)"
+
+  validate_selfhost_delivery_bootable
+
+  if [ "${storage_mode:-bundled}" != "bundled" ]; then
+    if [ "${origin_mode:-direct}" != "direct" ] ||
+      selfhost_env_file_has_key CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN ||
+      selfhost_env_file_has_key CLOUDFRONT_ORIGIN_VERIFY_SECRET ||
+      selfhost_env_file_has_key CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS; then
+      fail_selfhost "SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin and the CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN/CLOUDFRONT_ORIGIN_VERIFY_SECRET variables are bundled-storage-only. ${SELFHOST_ENV_FILE} selects SELFHOST_STORAGE_MODE=${storage_mode}; remove those values and use SELFHOST_STORAGE_ORIGIN_MODE=direct."
+    fi
+  fi
+
+  if [ "${storage_mode:-bundled}" = "bundled" ] &&
+    [ "${delivery_adapter:-base-url}" = "cloudfront" ] &&
+    [ "${origin_mode:-direct}" != "cdn-origin" ]; then
+    fail_selfhost "DELIVERY_ADAPTER=cloudfront with bundled storage requires SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin; direct mode has no protected CloudFront origin site."
+  fi
+
+  if [ "${origin_mode:-direct}" = "direct" ] &&
+    { selfhost_env_file_has_key CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN ||
+      selfhost_env_file_has_key CLOUDFRONT_ORIGIN_VERIFY_SECRET ||
+      selfhost_env_file_has_key CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS; }; then
+    fail_selfhost "CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN and CLOUDFRONT_ORIGIN_VERIFY_SECRET variables require SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin; direct mode would ignore them."
+  fi
+
+  if [ "${origin_mode:-direct}" = "cdn-origin" ] &&
+    [ "${delivery_adapter:-base-url}" != "cloudfront" ]; then
+    warn_selfhost "SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin is active while DELIVERY_ADAPTER=${delivery_adapter:-base-url}; the protected origin site will remain available for rollback/debugging but is idle until CloudFront delivery is selected."
+  fi
+}
+
 compose_selfhost() {
   if [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] && selfhost_compose_override_required; then
     fail_selfhost "this deployment requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true in ${SELFHOST_ENV_FILE}), but the file is missing — running compose without it would silently revert the stack to the base configuration. Restore the override (re-run the installer that wrote it), or set SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false to proceed without it."
   fi
 
-  local db_mode storage_mode
+  validate_selfhost_stack_shape
+
+  local db_mode storage_mode origin_mode
   db_mode="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
   storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
+  origin_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
 
   # An unrecognized mode must fail hard, never fall back to bundled: on an
   # external-DB deployment a typo'd flag would assemble the bundled stack,
@@ -195,7 +320,12 @@ compose_selfhost() {
     *) fail_selfhost "SELFHOST_DATABASE_MODE=${db_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, external. Fix the flag — falling back to the bundled database here could start an empty Postgres instead of your external one." ;;
   esac
   case "${storage_mode:-bundled}" in
-    bundled) compose_files+=(-f "$SELFHOST_COMPOSE_BUNDLED_STORAGE_FILE") ;;
+    bundled)
+      compose_files+=(-f "$SELFHOST_COMPOSE_BUNDLED_STORAGE_FILE")
+      if [ "${origin_mode:-direct}" = "cdn-origin" ]; then
+        compose_files+=(-f "$SELFHOST_COMPOSE_BUNDLED_STORAGE_CDN_ORIGIN_FILE")
+      fi
+      ;;
     s3) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_S3_FILE") ;;
     gcs) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_GCS_FILE") ;;
     *) fail_selfhost "SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag — falling back to bundled storage here could point the stack at an empty MinIO instead of your external bucket." ;;
@@ -205,7 +335,15 @@ compose_selfhost() {
     compose_files+=(-f "$SELFHOST_COMPOSE_OVERRIDE_FILE")
   fi
 
-  docker compose \
+  # Compose interpolation gives an exported shell variable precedence over
+  # --env-file, so a value still exported in the operator's shell would shadow
+  # the env file this deployment is validated against. The rotation slot is the
+  # one where that silently un-revokes a secret: deleting the line is supposed
+  # to stop the old origin header from being accepted. Blank it for this
+  # invocation only — the overlay's :- fallback then resolves it to the current
+  # secret, and a real rotation value in the env file is unaffected.
+  CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS="$(selfhost_mode_from_env_file CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS)" \
+    docker compose \
     --project-name "$SELFHOST_PROJECT_NAME" \
     --env-file "$SELFHOST_ENV_FILE" \
     "${compose_files[@]}" \
@@ -380,8 +518,14 @@ set_selfhost_env_value() {
   local tmp
   tmp="$(mktemp "${SELFHOST_ENV_FILE}.XXXXXX")"
 
-  awk -v key="$key" -v line="${key}=${value}" '
-    BEGIN { replaced = 0 }
+  # The replacement line travels through the environment, never through
+  # `awk -v`: awk applies C-escape processing to -v values, so a secret
+  # containing a backslash would be silently altered (`\` dropped, `\n`
+  # expanded into a real newline) while every check before this write saw the
+  # intact value. ENVIRON hands the bytes over untouched. The key is a shell
+  # identifier literal in this codebase and stays a -v value.
+  CMPATCH_ENV_LINE="${key}=${value}" awk -v key="$key" '
+    BEGIN { replaced = 0; line = ENVIRON["CMPATCH_ENV_LINE"] }
     index($0, key "=") == 1 {
       print line
       replaced = 1
@@ -397,6 +541,17 @@ set_selfhost_env_value() {
 
   chmod 600 "$tmp"
   mv "$tmp" "$SELFHOST_ENV_FILE"
+}
+
+# The single-quoted variant, for the keys write_env_file writes single-quoted
+# (secrets, tokens, connection URLs). compose's dotenv parser expands $
+# sequences in an unquoted value — silently mangling a password containing $
+# while every script-side check still sees the intact value — so the quoting a
+# key was created with must be the quoting it is repaired with.
+set_selfhost_env_literal() {
+  local key="$1"
+  local value="$2"
+  set_selfhost_env_value "$key" "'${value}'"
 }
 
 remove_selfhost_env_value() {

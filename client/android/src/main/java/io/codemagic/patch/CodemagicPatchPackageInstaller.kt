@@ -85,7 +85,7 @@ internal class CodemagicPatchPackageInstaller(private val storage: CodemagicPatc
         state.previous = CodemagicPatchPackagePointer(current)
       }
       state.pending = CodemagicPatchPackagePointer(context.packageHash)
-      state.pendingStarted = null
+      state.clearPendingLaunchTracking()
     }
   }
 
@@ -95,7 +95,7 @@ internal class CodemagicPatchPackageInstaller(private val storage: CodemagicPatc
       if (pending != null) {
         state.current = CodemagicPatchPackagePointer(pending)
         state.pending = null
-        state.pendingStarted = null
+        state.clearPendingLaunchTracking()
       }
     }
   }
@@ -105,7 +105,7 @@ internal class CodemagicPatchPackageInstaller(private val storage: CodemagicPatc
       state.current = null
       state.previous = null
       state.pending = null
-      state.pendingStarted = null
+      state.clearPendingLaunchTracking()
     }
   }
 

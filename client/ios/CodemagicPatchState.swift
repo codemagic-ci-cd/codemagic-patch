@@ -26,6 +26,10 @@ struct CodemagicPatchState: Codable {
   var pending: CodemagicPatchPackagePointer? = nil
   var failedInstall: CodemagicPatchFailedInstall? = nil
   var pendingStarted: String? = nil
+  // Optional so state written by an SDK older than the launch-attempt budget
+  // still decodes: the synthesized decoder would throw on a missing key for a
+  // non-optional, and a throw here resets every lifecycle pointer.
+  var pendingStartCount: Int? = nil
 
   enum CodingKeys: String, CodingKey {
     case current
@@ -33,19 +37,46 @@ struct CodemagicPatchState: Codable {
     case pending
     case failedInstall = "failed_install"
     case pendingStarted = "pending_started"
+    case pendingStartCount = "pending_start_count"
   }
 
   var packageHashes: [String] {
     [pending, current, previous].compactMap { $0?.packageHash }
   }
 
+  /// Launches already charged against the pending package's attempt budget.
+  var pendingLaunchAttempts: Int {
+    max(pendingStartCount ?? 0, 0)
+  }
+
+  /**
+   Charges one launch against `hash`'s attempt budget. A different pending hash
+   restarts the budget, so a freshly installed package always gets the full
+   allowance.
+   */
+  mutating func chargePendingLaunch(_ hash: String) {
+    pendingStartCount = pendingStarted == hash ? pendingLaunchAttempts + 1 : 1
+    pendingStarted = hash
+  }
+
+  /**
+   Clears the launch-attempt tracking pair. The marker and its counter are only
+   ever meaningful together, so they are always cleared together.
+   */
+  mutating func clearPendingLaunchTracking() {
+    pendingStarted = nil
+    pendingStartCount = nil
+  }
+
   func sanitized() -> CodemagicPatchState {
-    CodemagicPatchState(
+    let safePendingStarted = pendingStarted?.takeIfSafePackageHash()
+    return CodemagicPatchState(
       current: current.sanitized(),
       previous: previous.sanitized(),
       pending: pending.sanitized(),
       failedInstall: failedInstall.sanitized(),
-      pendingStarted: pendingStarted?.takeIfSafePackageHash()
+      pendingStarted: safePendingStarted,
+      pendingStartCount: safePendingStarted == nil ? nil : pendingStartCount
     )
   }
 }

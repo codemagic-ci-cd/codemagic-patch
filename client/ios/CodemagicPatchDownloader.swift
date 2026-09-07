@@ -167,10 +167,14 @@ private final class CodemagicPatchDownloadDelegate: NSObject, URLSessionDownload
   ) {
     if let status = (downloadTask.response as? HTTPURLResponse)?.statusCode,
        !(200...299).contains(status) {
-      result = .failure(NSError(
-        domain: "CodemagicPatch",
-        code: status,
-        userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]
+      // URLSession treats a non-2xx as a completed transfer, so the origin's
+      // error document is sitting at `location` — the only place the reason
+      // behind this status is written down.
+      result = .failure(CodemagicPatchFailure.httpError(
+        status: status,
+        message: CodemagicPatchFailure.storageErrorMessage(
+          CodemagicPatchFailure.readErrorBody(at: location)
+        )
       ))
       return
     }
@@ -178,10 +182,8 @@ private final class CodemagicPatchDownloadDelegate: NSObject, URLSessionDownload
     do {
       if let expectedBytes = expectedBytes,
          try fileSize(location) != expectedBytes {
-        throw NSError(
-          domain: "CodemagicPatch",
-          code: 1,
-          userInfo: [NSLocalizedDescriptionKey: "downloaded byte count mismatch"]
+        throw CodemagicPatchFailure.transportError(
+          message: "downloaded byte count mismatch"
         )
       }
       try commitDownloadedFile(location, destination)

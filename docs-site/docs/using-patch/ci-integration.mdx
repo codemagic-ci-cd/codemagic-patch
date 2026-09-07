@@ -115,6 +115,7 @@ Developer runs the workflow when ready to ship an OTA update.
 - Store tokens as CI secrets; never commit them
 - Restrict who can trigger release pipelines
 - Release to `Staging` first; [promote to Production](/docs/using-patch/releasing-updates) after validation
+- On each store build, register that binary's fingerprint with a [disabled release](/docs/using-patch/fingerprinting#register-each-store-build)
 - Run `cmpatch doctor` in CI before publishing when debugging integration issues
 - [Monitor metrics](/docs/using-patch/analytics) after deployment
 

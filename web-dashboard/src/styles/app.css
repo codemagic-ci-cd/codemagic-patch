@@ -30,6 +30,7 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
+@import "./brand.css";
 @import "./fonts.css";
 @import "./base.css" layer(base);
 
@@ -108,7 +109,7 @@
     background: var(--color-blue-tint);
   }
   .role-developer {
-    color: #0496c0;
+    color: #007a99;
     background: var(--color-aqua-tint);
   }
   .role-viewer {
@@ -325,77 +326,6 @@
 }
 
 @theme {
-  /* type */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
-
-  /* brand */
-  --color-blue: #2563eb;
-  --color-blue-deep: #1d4ed8;
-  --color-blue-bright: #3b82f6;
-  --color-aqua: #3b82f6;
-  --color-magenta: #fe19ff;
-  --color-yellow: #ff9100;
-  --color-orange: #ff4d13;
-  --color-red: #dc2626;
-  --color-green: #15803d;
-  --color-green-deep: #166534;
-
-  /* neutrals */
-  --color-canvas: #ffffff;
-  --color-surface: #ffffff;
-  --color-surface-2: #f8f9fb;
-  --color-surface-3: #eef0f3;
-  --color-border: #e4e7ec;
-  --color-border-strong: #d0d5dd;
-  --color-ink: #0a0e22;
-  --color-fg: #10152e;
-  --color-fg-2: #525a78;
-  /* fg-3 / fg-faint darkened to clear WCAG-AA: fg-3 is the pervasive muted-text
-     token (field hints, breadcrumbs, account email, table headers, dl labels) so
-     it must clear 4.5:1 as normal text — #5f6786 measures >=4.9:1 on white,
-     surface-2 and canvas. fg-faint (input placeholders + breadcrumb separator)
-     stays the lightest muted shade but clears the 3:1 non-text floor on canvas
-     at #737b99. */
-  --color-fg-3: #5f6786;
-  --color-fg-faint: #737b99;
-
-  /* sidebar — light chrome aligned with Codemagic app shell */
-  --color-sb-bg: #ffffff;
-  --color-sb-bg-2: #fafbfc;
-  --color-sb-text: #667085;
-  --color-sb-text-hi: #10152e;
-  --color-sb-border: #e4e7ec;
-  --color-sb-active: #2563eb;
-
-  /* tints */
-  --color-blue-tint: #eff6ff;
-  --color-blue-tint-2: #dbeafe;
-  --color-aqua-tint: #eff6ff;
-  --color-green-tint: #f0fdf4;
-  --color-red-tint: #fef2f2;
-  --color-yellow-tint: #fff2e0;
-  --color-magenta-tint: #fde6ff;
-  --color-slate-tint: #f6f7f9;
-
-  /* radii (shadow Tailwind defaults; --radius-control = the btn/input radius) */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 20px;
-  --radius-pill: 999px;
-  --radius-control: 8px;
-
-  /* shadows */
-  --shadow-xs: 0 1px 2px rgba(16, 21, 46, 0.04);
-  --shadow-sm: 0 1px 2px rgba(16, 21, 46, 0.04);
-  --shadow-md: 0 4px 12px -4px rgba(16, 21, 46, 0.08);
-  --shadow-lg: 0 16px 40px -12px rgba(10, 14, 34, 0.2),
-    0 6px 16px -6px rgba(10, 14, 34, 0.12);
-  --shadow-glow: 0 0 0 4px rgba(37, 99, 235, 0.14);
-  --shadow-glow-aqua: 0 0 0 4px rgba(59, 130, 246, 0.14);
-
   /* legacy media queries: (max-width:1080px) cols collapse, (max-width:760px) shell */
   --breakpoint-cols: 1080px;
   --breakpoint-shell: 760px;

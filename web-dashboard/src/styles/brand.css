@@ -1,0 +1,143 @@
+/* ============================================================================
+   Codemagic brand primitives -> dashboard semantic tokens.
+
+   The primitive palette mirrors the Codemagic brand source. Components consume
+   dashboard roles (action, navigation, text, focus) rather than choosing a
+   brand swatch directly. The legacy short names remain compatibility aliases
+   while the UI migrates to role-based names.
+   ============================================================================ */
+
+:root {
+  /* Codemagic fixed brand palette. */
+  --cm-color-nobugblue: #0031ea;
+  --cm-color-neverblue: #0051ff;
+  --cm-color-cta-blue: #0957ff;
+  --cm-color-continuousblue: #008bf7;
+  --cm-color-dashaqua: #00ceff;
+  --cm-color-pinkmagic: #fe19ff;
+  --cm-color-swwyellow: #ff9100;
+  --cm-color-nativeorange: #ff4d13;
+  --cm-color-red: #ec0c43;
+
+  --cm-color-text-heading: #11285b;
+  --cm-color-text-body: #3a4865;
+  --cm-font-sans: "Metropolis", sans-serif;
+  --cm-font-mono: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Dashboard roles. Changing brand expression should stop at this mapping. */
+  --dashboard-action-primary: var(--cm-color-cta-blue);
+  --dashboard-action-primary-hover: var(--cm-color-nobugblue);
+  --dashboard-focus-ring: var(--cm-color-cta-blue);
+  --dashboard-selection: rgba(9, 87, 255, 0.18);
+  --dashboard-nav-active: var(--cm-color-cta-blue);
+  --dashboard-text-heading: var(--cm-color-text-heading);
+  --dashboard-text-body: var(--cm-color-text-body);
+
+  /* Dashboard typography roles; deliberately smaller than marketing headings. */
+  --type-page-title: 600 32px/1.1 var(--cm-font-sans);
+  --type-page-subtitle: 400 16px/1.5 var(--cm-font-sans);
+  --type-section-title: 600 18px/1.5 var(--cm-font-sans);
+}
+
+@theme {
+  /* type */
+  --font-sans: var(--cm-font-sans);
+  --font-mono: var(--cm-font-mono);
+
+  /* semantic interaction roles */
+  --color-action-primary: var(--dashboard-action-primary);
+  --color-action-primary-hover: var(--dashboard-action-primary-hover);
+  --color-focus-ring: var(--dashboard-focus-ring);
+  --color-nav-active: var(--dashboard-nav-active);
+
+  /* compatibility palette; new interactive code should use the roles above */
+  --color-blue: var(--cm-color-cta-blue);
+  --color-blue-deep: var(--cm-color-nobugblue);
+  --color-blue-bright: var(--cm-color-continuousblue);
+  --color-aqua: var(--cm-color-dashaqua);
+  --color-magenta: var(--cm-color-pinkmagic);
+  --color-yellow: var(--cm-color-swwyellow);
+  --color-orange: var(--cm-color-nativeorange);
+  --color-red: var(--cm-color-red);
+  --color-green: #15803d;
+  --color-green-deep: #166534;
+
+  /* neutrals */
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8f9fb;
+  --color-surface-3: #eef0f3;
+  --color-border: #e4e7ec;
+  --color-border-strong: #d0d5dd;
+  --color-ink: var(--dashboard-text-heading);
+  --color-fg: var(--dashboard-text-heading);
+  --color-fg-2: var(--dashboard-text-body);
+  /* Muted text remains darker than the marketing palette so normal-size text
+     clears WCAG AA on canvas and surface backgrounds. */
+  --color-fg-3: #5f6786;
+  --color-fg-faint: #737b99;
+
+  /* sidebar */
+  --color-sb-bg: #ffffff;
+  --color-sb-bg-2: #fafbfc;
+  --color-sb-text: #667085;
+  --color-sb-text-hi: var(--dashboard-text-heading);
+  --color-sb-border: #e4e7ec;
+  --color-sb-active: var(--dashboard-nav-active);
+
+  /* tone tints */
+  --color-blue-tint: #e8eefc;
+  --color-blue-tint-2: #ceddff;
+  --color-aqua-tint: #e6f9ff;
+  --color-green-tint: #f0fdf4;
+  --color-red-tint: #fde8ee;
+  --color-yellow-tint: #fff2e0;
+  --color-magenta-tint: #fde6ff;
+  --color-slate-tint: #f6f7f9;
+
+  /* shape */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  --radius-control: 12px;
+
+  /* elevation */
+  --shadow-xs: 0 1px 2px rgba(16, 21, 46, 0.04);
+  --shadow-sm: 0 1px 2px rgba(16, 21, 46, 0.04);
+  --shadow-md: 0 4px 12px -4px rgba(16, 21, 46, 0.08);
+  --shadow-lg:
+    0 16px 40px -12px rgba(10, 14, 34, 0.2),
+    0 6px 16px -6px rgba(10, 14, 34, 0.12);
+  --shadow-glow: 0 0 0 4px rgba(9, 87, 255, 0.14);
+  --shadow-glow-aqua: 0 0 0 4px rgba(0, 206, 255, 0.14);
+}
+
+@layer components {
+  .type-page-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font: var(--type-page-title);
+    letter-spacing: -0.025em;
+    color: var(--color-fg);
+  }
+
+  .type-page-subtitle {
+    max-width: 62ch;
+    margin-top: 6px;
+    font: var(--type-page-subtitle);
+    color: var(--color-fg-2);
+  }
+
+  .type-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: var(--type-section-title);
+    letter-spacing: -0.01em;
+    color: var(--color-fg);
+  }
+}

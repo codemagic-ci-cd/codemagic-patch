@@ -5,6 +5,7 @@ import { Storage } from "@google-cloud/storage";
 
 import {
   BaseUrlDeliveryAdapter,
+  CloudFrontDeliveryAdapter,
   CloudflareDeliveryAdapter,
   createNativeGcsStorageClient,
   type DeliveryAdapter,
@@ -70,6 +71,9 @@ import type {
   DeploymentClearRouteHandler,
   DeploymentCreateRouteHandler,
   DeploymentDeleteRouteHandler,
+  DeploymentFailureCodesRouteHandler,
+  FailureDistributionRouteHandler,
+  FailureEventsRouteHandler,
   DeploymentMetricsRouteHandler,
   DeploymentRollbackRouteHandler,
   DeploymentTimeseriesRouteHandler,
@@ -96,9 +100,11 @@ import type {
   OAuthWebConfig,
   ReleaseCreationPreflightRouteHandler,
   ReleaseCreationRouteHandler,
+  ReleaseFailureCodesRouteHandler,
   ReleaseListRouteHandler,
   ReleaseMetricsReadRouteHandler,
   ReadinessCheckResult,
+  ServerStatusRouteHandler,
   ReleasePatchRouteHandler,
   ReleasePromoteRouteHandler,
   ReleaseReadRouteHandler,
@@ -114,6 +120,16 @@ import {
   type AuthNAdapterRegistration,
 } from "../app/authNAdapterRegistry";
 import { assembleDeploymentTimeseries } from "../app/metricsTimeseries";
+import { createLatestServerReleaseLookup } from "../app/latestServerRelease";
+import {
+  collectServerStatus,
+  downloadUrlProbe,
+  readProcessDisk,
+  readinessProbe,
+  resolveServerStatusTopology,
+  skipProbe,
+} from "../app/serverStatus";
+import { METRICS_FAILURE_DISTRIBUTION_LIMIT } from "../plugins/api/routeConstants";
 import { createBitbucketAuthNAdapter } from "../app/bitbucketAuthNAdapter";
 import { createGitHubAuthNAdapter } from "../app/githubAuthNAdapter";
 import {
@@ -150,6 +166,7 @@ import {
   startupSweep,
   type ReconcileResult,
 } from "../worker/index";
+import { getServerVersion } from "../version";
 import type { RuntimeConfig } from "./config";
 import { createNoopLogger, type RuntimeLogger } from "./logger";
 import { createTrackedReconcileExecutor } from "./trackedReconcileExecutor";
@@ -175,6 +192,9 @@ export interface ServerRuntime {
   deploymentClearHandler?: DeploymentClearRouteHandler;
   deploymentCreateHandler?: DeploymentCreateRouteHandler;
   deploymentDeleteHandler?: DeploymentDeleteRouteHandler;
+  deploymentFailureCodesHandler?: DeploymentFailureCodesRouteHandler;
+  deploymentFailureDistributionHandler?: FailureDistributionRouteHandler;
+  deploymentFailureEventsHandler?: FailureEventsRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
@@ -201,12 +221,16 @@ export interface ServerRuntime {
   readinessCheckHandler: () => Promise<ReadinessCheckResult>;
   releaseCreationHandler?: ReleaseCreationRouteHandler;
   releaseCreationPreflightHandler?: ReleaseCreationPreflightRouteHandler;
+  releaseFailureCodesHandler?: ReleaseFailureCodesRouteHandler;
+  releaseFailureDistributionHandler?: FailureDistributionRouteHandler;
+  releaseFailureEventsHandler?: FailureEventsRouteHandler;
   releaseListHandler?: ReleaseListRouteHandler;
   releaseMetricsReadHandler?: ReleaseMetricsReadRouteHandler;
   releasePatchHandler?: ReleasePatchRouteHandler;
   releasePromoteHandler?: ReleasePromoteRouteHandler;
   releaseReadHandler?: ReleaseReadRouteHandler;
   releaseUploadStorage?: StorageAdapter;
+  serverStatusHandler?: ServerStatusRouteHandler;
   start(): Promise<void>;
   teamAppsListHandler?: TeamAppsListRouteHandler;
   teamCreateHandler?: TeamCreateRouteHandler;
@@ -243,6 +267,14 @@ export interface ServerRuntimeOptions {
    */
   extraMigrations?: readonly SqlMigration[];
   githubUserLookupService?: GitHubUserLookupService;
+  /**
+   * How this process is operated, reported on `GET /v1/server/status`.
+   * "self-hosted" (default) is an operator-run install; "managed" is the
+   * internal multi-team entrypoint, where upgrades are not the viewer's job,
+   * so the GitHub release lookup is skipped and the dashboard hides the
+   * version card.
+   */
+  hosting?: "managed" | "self-hosted";
   /**
    * Interval for the recurring job sweep that requeues expired-lease work
    * lost to a crashed instance. The boot sweep alone recovers such jobs only
@@ -760,6 +792,27 @@ export async function createServerRuntime(
         ok: db === "ok",
       } as const;
     };
+    const readinessCheckHandler = (): Promise<ReadinessCheckResult> => {
+      inflightReadinessCheck ??= runReadinessCheck().finally(() => {
+        inflightReadinessCheck = null;
+      });
+      return inflightReadinessCheck;
+    };
+
+    let inflightServerStatus: ReturnType<typeof collectServerStatus> | null =
+      null;
+    const statusTopology = resolveServerStatusTopology({
+      databaseUrl: config.databaseUrl,
+      hosting: options.hosting ?? "self-hosted",
+      s3Endpoint: config.s3?.endpoint,
+      storageAdapter: config.storageAdapter,
+    });
+    const latestServerRelease =
+      config.updateCheck && statusTopology.hosting === "self-hosted"
+        ? createLatestServerReleaseLookup({
+            apiBaseUrl: config.updateCheck.githubApiBaseUrl,
+          })
+        : null;
 
     return {
       ...userAuthHandlers,
@@ -771,6 +824,27 @@ export async function createServerRuntime(
       auditEventWriteHandler: createAuditEventWriteHandler(auditRepository),
       authorizationService,
       controlPlaneAuthHandler,
+      deploymentFailureCodesHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createDeploymentFailureCodesHandler(
+              releaseRepository,
+              metricsRepository,
+            )
+          : undefined,
+      deploymentFailureDistributionHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createFailureDistributionHandler(
+              resolveDeploymentFailureScope(releaseRepository),
+              metricsRepository,
+            )
+          : undefined,
+      deploymentFailureEventsHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createFailureEventsHandler(
+              resolveDeploymentFailureScope(releaseRepository),
+              metricsRepository,
+            )
+          : undefined,
       deploymentMetricsHandler:
         config.mode === "all" || config.mode === "api"
           ? createDeploymentMetricsHandler(releaseRepository, metricsRepository)
@@ -799,6 +873,27 @@ export async function createServerRuntime(
       metricEventIngestHandler:
         config.mode === "all" || config.mode === "api"
           ? createMetricEventIngestHandler(metricsRepository)
+          : undefined,
+      releaseFailureCodesHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createReleaseFailureCodesHandler(
+              releaseRepository,
+              metricsRepository,
+            )
+          : undefined,
+      releaseFailureDistributionHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createFailureDistributionHandler(
+              resolveReleaseFailureScope(releaseRepository),
+              metricsRepository,
+            )
+          : undefined,
+      releaseFailureEventsHandler:
+        config.mode === "all" || config.mode === "api"
+          ? createFailureEventsHandler(
+              resolveReleaseFailureScope(releaseRepository),
+              metricsRepository,
+            )
           : undefined,
       releaseMetricsReadHandler:
         config.mode === "all" || config.mode === "api"
@@ -849,11 +944,40 @@ export async function createServerRuntime(
         }
       },
 
-      readinessCheckHandler() {
-        inflightReadinessCheck ??= runReadinessCheck().finally(() => {
-          inflightReadinessCheck = null;
+      readinessCheckHandler,
+
+      serverStatusHandler() {
+        // Same single-flight rule as readiness: concurrent dashboard loads
+        // share one round of probes instead of each hitting the DB, the
+        // bucket and the disk.
+        inflightServerStatus ??= collectServerStatus({
+          probes: {
+            database: readinessProbe(readinessCheckHandler),
+            disk: () => readProcessDisk("/"),
+            download_url: downloadUrlProbe({ url: config.publicBaseUrl }),
+            latest_release: async () =>
+              latestServerRelease === null
+                ? skipProbe(
+                    statusTopology.hosting === "managed"
+                      ? "managed hosting upgrades itself"
+                      : "update check disabled",
+                  )
+                : ((await latestServerRelease()) ??
+                  skipProbe("no published server release found")),
+            storage: async () => {
+              if (storage === null) {
+                return skipProbe("no bucket attached to this process");
+              }
+              await storage.list("", { maxKeys: 1 });
+              return {};
+            },
+          },
+          readRunningVersion: () => getServerVersion(),
+          topology: statusTopology,
+        }).finally(() => {
+          inflightServerStatus = null;
         });
-        return inflightReadinessCheck;
+        return inflightServerStatus;
       },
 
       async workerReconcileHandler(jobId) {
@@ -1031,6 +1155,20 @@ function createDeliveryAdapter(config: RuntimeConfig): DeliveryAdapter {
     });
   }
 
+  if (config.deliveryAdapter === "cloudfront") {
+    if (!config.cloudfront) {
+      throw new Error(
+        "CloudFront delivery configuration is missing; CLOUDFRONT_DISTRIBUTION_ID is required when DELIVERY_ADAPTER=cloudfront",
+      );
+    }
+    return new CloudFrontDeliveryAdapter({
+      accessKeyId: config.cloudfront.accessKeyId,
+      baseUrl: config.publicBaseUrl,
+      distributionId: config.cloudfront.distributionId,
+      secretAccessKey: config.cloudfront.secretAccessKey,
+    });
+  }
+
   throw new Error(
     `Unsupported delivery adapter: ${config.deliveryAdapter satisfies never}`,
   );
@@ -1066,7 +1204,7 @@ function createDeploymentStaticStateClearer(options: {
     ]);
 
     await options.delivery
-      .purge([metaKey, ...manifestKeys])
+      .purge([metaKey, ...manifestKeys], { scope: "manifest" })
       .then((result) => {
         if (result.failures.length > 0) {
           options.logger.warn(
@@ -1149,7 +1287,7 @@ function createDeploymentDeleteStaticStateCleaner(options: {
     );
     if (publicArtifactKeys.length > 0) {
       await options.delivery
-        .purge(publicArtifactKeys)
+        .purge(publicArtifactKeys, { scope: "artifact-delete" })
         .then((result) => {
           if (result.failures.length > 0) {
             options.logger.warn(
@@ -2285,6 +2423,165 @@ function createReleaseMetricsReadHandler(
           : ZERO_RELEASE_METRICS,
       },
     };
+  };
+}
+
+/**
+ * Resolves a failure drill-down's scope.
+ *
+ * Every one of these endpoints answers the same two questions first: does the
+ * resource exist (an unknown one must 404 rather than return an empty result),
+ * and which `target_package_hash` values does it cover. Deployment scope
+ * covers every hash, so it passes null; release scope covers exactly its own.
+ * A release still being processed has no hash yet (the worker sets it once it
+ * has computed the package hash from the uploaded bundle), so nothing can be
+ * attributed to it and it reports an empty scope rather than the
+ * deployment's.
+ */
+type FailureScopeResolution =
+  | {
+      outcome: "found";
+      deploymentId: DeploymentId;
+      targetPackageHash: string | null;
+      targetPackageHashes: string[] | null;
+    }
+  | {
+      outcome: "not_found";
+      reason: "deployment_not_found" | "release_not_found";
+    };
+
+function resolveDeploymentFailureScope(
+  repository: ReturnType<typeof createPostgresReleaseRepository>,
+) {
+  return async (deploymentId: string): Promise<FailureScopeResolution> => {
+    const identities = await repository.listReleaseIdentitiesForDeployment(
+      deploymentId as DeploymentId,
+    );
+
+    return identities.outcome === "found"
+      ? {
+          outcome: "found",
+          deploymentId: deploymentId as DeploymentId,
+          targetPackageHash: null,
+          targetPackageHashes: null,
+        }
+      : { outcome: "not_found", reason: "deployment_not_found" };
+  };
+}
+
+function resolveReleaseFailureScope(
+  repository: ReturnType<typeof createPostgresReleaseRepository>,
+) {
+  return async (releaseId: string): Promise<FailureScopeResolution> => {
+    const release = await repository.findReleaseById(releaseId as ReleaseId);
+
+    if (!release) {
+      return { outcome: "not_found", reason: "release_not_found" };
+    }
+
+    return {
+      outcome: "found",
+      deploymentId: release.deploymentId,
+      targetPackageHash: release.targetPackageHash,
+      targetPackageHashes:
+        release.targetPackageHash === null ? [] : [release.targetPackageHash],
+    };
+  };
+}
+
+function createDeploymentFailureCodesHandler(
+  repository: ReturnType<typeof createPostgresReleaseRepository>,
+  metricsRepository: ReturnType<typeof createPostgresMetricsRepository>,
+): DeploymentFailureCodesRouteHandler {
+  const resolveScope = resolveDeploymentFailureScope(repository);
+
+  return async (deploymentId, input) => {
+    const scope = await resolveScope(deploymentId);
+    if (scope.outcome === "not_found") {
+      return { outcome: "not_found", reason: "deployment_not_found" };
+    }
+
+    const list = await metricsRepository.listFailureCodes(scope.deploymentId, {
+      reason: input.reason,
+      targetPackageHashes: scope.targetPackageHashes,
+    });
+
+    return { outcome: "found", codes: list.codes };
+  };
+}
+
+function createReleaseFailureCodesHandler(
+  repository: ReturnType<typeof createPostgresReleaseRepository>,
+  metricsRepository: ReturnType<typeof createPostgresMetricsRepository>,
+): ReleaseFailureCodesRouteHandler {
+  const resolveScope = resolveReleaseFailureScope(repository);
+
+  return async (releaseId, input) => {
+    const scope = await resolveScope(releaseId);
+    if (scope.outcome === "not_found") {
+      return { outcome: "not_found", reason: "release_not_found" };
+    }
+
+    if (scope.targetPackageHash === null) {
+      return { outcome: "found", codes: [], targetPackageHash: null };
+    }
+
+    const list = await metricsRepository.listFailureCodes(scope.deploymentId, {
+      reason: input.reason,
+      targetPackageHashes: scope.targetPackageHashes,
+    });
+
+    return {
+      outcome: "found",
+      codes: list.codes,
+      targetPackageHash: scope.targetPackageHash,
+    };
+  };
+}
+
+function createFailureDistributionHandler(
+  resolveScope: (resourceId: string) => Promise<FailureScopeResolution>,
+  metricsRepository: ReturnType<typeof createPostgresMetricsRepository>,
+): FailureDistributionRouteHandler {
+  return async (resourceId, input) => {
+    const scope = await resolveScope(resourceId);
+    if (scope.outcome === "not_found") {
+      return { outcome: "not_found", reason: scope.reason };
+    }
+
+    const distribution = await metricsRepository.listFailureDistribution(
+      scope.deploymentId,
+      {
+        code: input.code,
+        limit: METRICS_FAILURE_DISTRIBUTION_LIMIT,
+        reason: input.reason,
+        targetPackageHashes: scope.targetPackageHashes,
+      },
+    );
+
+    return { outcome: "found", ...distribution };
+  };
+}
+
+function createFailureEventsHandler(
+  resolveScope: (resourceId: string) => Promise<FailureScopeResolution>,
+  metricsRepository: ReturnType<typeof createPostgresMetricsRepository>,
+): FailureEventsRouteHandler {
+  return async (resourceId, input) => {
+    const scope = await resolveScope(resourceId);
+    if (scope.outcome === "not_found") {
+      return { outcome: "not_found", reason: scope.reason };
+    }
+
+    const page = await metricsRepository.listFailureEvents(scope.deploymentId, {
+      code: input.code,
+      cursor: input.cursor,
+      limit: input.limit,
+      reason: input.reason,
+      targetPackageHashes: scope.targetPackageHashes,
+    });
+
+    return { outcome: "found", ...page };
   };
 }
 

@@ -1,0 +1,201 @@
+---
+title: Release Notes
+description: >-
+  What changed in each Patch release: SDK, CLI, server, and dashboard.
+llmsDescription: 'Patch releases: SDK, CLI, server, and dashboard changes by version.'
+toc_max_heading_level: 2
+---
+
+# Release Notes
+
+Longer-form notes for each Patch release train. Shorter summaries and install
+links stay on [GitHub Releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases).
+
+Patch ships three versioned surfaces on independent tags. To upgrade each one, run the following:
+
+| Surface | Upgrade |
+| --- | --- |
+| React Native SDK | `npm install @codemagic/react-native-patch@latest` |
+| CLI | `npm install -g @codemagic/patch-cli@latest` |
+| Server (self-host) | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
+
+## Version 0.3.0
+
+*7th September 2026*
+
+CLI-first install, CloudFront as a delivery option, and metrics you can debug.
+You can put a server on a VPS or try the stack on a laptop from `cmpatch`,
+without cloning the repo first.
+
+What's included:
+
+- [Self-host install wizard](#self-host-install-wizard)
+- [Improved CLI setup for local-eval](#improved-cli-setup-for-local-eval)
+- [CloudFront in front of storage](#cloudfront-in-front-of-storage)
+- [Drill into why installs failed](#drill-into-why-installs-failed)
+- [Successful installs stop counting as failures](#successful-installs-stop-counting-as-failures)
+- [Server status in the dashboard](#server-status-in-the-dashboard)
+
+:::warning If you already use Cloudflare
+After you upgrade, delete the two-hour Edge TTL Cache Rule for `.json` from the
+previous setup guide, and remove any `MANIFEST_CACHE_CONTROL` line from
+`.env.selfhost`. The Cache Rule overrides the origin `s-maxage` and stretches
+the stale window from five minutes to two hours. A leftover
+`MANIFEST_CACHE_CONTROL` pins the old `no-cache` value, so manifests never enter
+the edge cache at all. See [Cloudflare setup](/docs/setup/cloudflare).
+:::
+
+### Self-host install wizard
+
+You can install and operate a production server from your own machine. The
+wizard pairs over SSH, checks the host, can install Docker and Git with your
+consent, then walks through domains, DNS, GitHub OAuth, and optional Cloudflare
+or CloudFront. The same CLI wraps backup, restore, and upgrade.
+
+```bash
+cmpatch selfhost install
+```
+
+`cmpatch init` offers this install when you have no server URL yet, then
+continues into sign-in and app creation. An interrupted backup restarts the
+server before it exits, so a killed backup does not leave the server stopped;
+interrupted restore and upgrade runs print the rollback command instead. The
+wizard sets up the bundled Postgres and MinIO stack with GitHub sign-in.
+Bitbucket, external databases, and S3/GCS stay on the direct `install.sh`
+path. See [Install](/docs/install) and
+[Operations](/docs/reference/operations).
+
+### Improved CLI setup for local-eval
+
+The evaluation stack is the same as before. You no longer clone the repo first:
+`cmpatch` keeps its own copy and updates it on later runs. If Docker is missing
+or not running, it asks before installing or starting it.
+
+```bash
+cmpatch selfhost local-eval
+```
+
+See [Local quickstart](/docs/).
+
+### CloudFront in front of storage
+
+Devices can fetch artifacts from Amazon CloudFront instead of only Cloudflare
+or the origin host, for bundled MinIO or external S3/GCS. The install wizard
+prints the AWS Console values, generates the origin secret, and verifies the
+distribution before you move DNS. It does not create AWS resources or ask for
+AWS credentials beyond the scoped purge key. See
+[CloudFront setup](/docs/setup/cloudfront).
+
+### Drill into why installs failed
+
+A single `network` count is no longer a dead end. Failed installs carry a
+payload the dashboard can open: HTTP status, the origin or platform error
+message, and on Android 11+ the previous process exit reason. Open a failure
+reason on the metrics view to see codes, then the values behind a code.
+
+A pending package now gets three consecutive launches to call
+`notifyAppReady()` before the SDK rolls back and reports `Failed`. That cuts
+false crash-rollbacks from OS process kills without stranding devices on a
+broken bundle. See [Analytics and metrics](/docs/using-patch/analytics).
+
+### Successful installs stop counting as failures
+
+Failures now come only from devices that never got the update, not from
+retries on a flaky network that later succeeded. When a device later installs
+the same package successfully, its earlier `Failed` events for that package are
+dropped. A late `Failed` after a
+`Success` is acknowledged and discarded.
+
+### Server status in the dashboard
+
+You can check the Patch server without SSHing to the host. The dashboard has a
+**Status** page: API and database health, whether the download URL is
+reachable, disk use on a bundled single-host install, and the running server
+version compared with the latest GitHub release. Disk and version cards hide on
+topologies where they would not apply.
+
+## Version 0.2.0
+
+*25th August 2026*
+
+Interactive CLI, fingerprint checks that can block a bad publish, failure
+reasons on each release, and Compose support for an external database or
+bucket.
+
+What's included:
+
+- [See which OTA bundle is running](#see-which-ota-bundle-is-running)
+- [Interactive CLI](#interactive-cli)
+- [Fingerprint mismatch blocks the release](#fingerprint-mismatch-blocks-the-release)
+- [Failure reasons on each release](#failure-reasons-on-each-release)
+- [External Postgres and object storage](#external-postgres-and-object-storage)
+
+### See which OTA bundle is running
+
+You can show which OTA release is active in the current process, for an in-app
+"About this build" screen or for QA. `getRunningBundleUpdateMetadata()` returns
+`label`, `packageHash`, and `releaseNotes`, or `null` when the app is still on
+the embedded store binary.
+
+```ts
+import { getRunningBundleUpdateMetadata } from "@codemagic/react-native-patch";
+
+const running = await getRunningBundleUpdateMetadata();
+if (running) {
+  console.log(running.label, running.packageHash, running.releaseNotes);
+}
+```
+
+The value does not change until the next reload. See
+[SDK reference](/docs/reference/sdk-reference#getrunningbundleupdatemetadata).
+
+### Interactive CLI
+
+Missing flags no longer fail with a bare usage line. `cmpatch` prompts for
+them, shows progress, and offers sign-in and retry paths when browser login
+fails. CI and scripts stay non-interactive: pass the flags you need, or use
+`--yes` where supported. See [CLI command reference](/docs/reference/cli-reference).
+
+### Fingerprint mismatch blocks the release
+
+A release aimed at the wrong native binary is blocked unless you confirm it.
+The CLI and dashboard compare the release fingerprint against the value already
+recorded for that deployment and binary version. When they disagree, you see
+the evidence and can cancel or proceed.
+
+In CI, where there is no prompt, pass `--allow-fingerprint-mismatch` only after
+you have verified the release targets the intended native binary:
+
+```bash
+cmpatch release-react \
+  --deployment Production \
+  --allow-fingerprint-mismatch \
+  --yes
+```
+
+Uploads can send `block_on_fingerprint_mismatch: true` so a disagreement
+returns `409` with no release created. The current CLI and dashboard send that
+flag by default; older clients and explicit overrides keep the previous
+warning-only behavior. See [Fingerprinting](/docs/using-patch/fingerprinting).
+
+### Failure reasons on each release
+
+You can see whether failures cluster on integrity, signature, rollout, or
+another category, instead of one opaque `failed` number. Metrics APIs and the
+dashboard expose `failure_reasons` on each release; those counts sum to
+`failed`. Use the deployment metrics view or `cmpatch release metrics` during a
+rollout. See [Analytics and metrics](/docs/using-patch/analytics).
+
+### External Postgres and object storage
+
+You can point Compose at a managed PostgreSQL database and S3-compatible
+bucket instead of the bundled Postgres and MinIO containers, when MinIO on the
+same host is not enough. The default `scripts/selfhost/install.sh` run still
+creates the bundled stack. For external storage or database, pass its storage
+and database flags, then configure adapters as described in
+[Infrastructure adapters](/docs/setup/infrastructure) and
+[Configuration reference](/docs/reference/configuration).
+
+Backups and restores remain mode-aware: external databases and buckets are not
+copied by the default backup script. Plan provider-level backups for those
+components. See [Operations](/docs/reference/operations).

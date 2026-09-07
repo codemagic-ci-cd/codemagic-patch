@@ -28,6 +28,13 @@ export interface NativeBootState {
   pendingPackageHash: string | null;
   previousPackageHash: string | null;
   failedInstall: NativeFailedInstall | null;
+  /**
+   * Why this app's previous process ended, as an `ApplicationExitInfo` reason
+   * name. Android 11+ only; null everywhere else. Carried on the boot snapshot
+   * because the value is fixed for the process and every `Failed` payload
+   * wants it (PROTOCOL.md §Metric Event `Failed` Payload).
+   */
+  androidPreviousProcessExit: string | null;
 }
 
 export type NativeManifestSource = "running-package" | "binary-version";

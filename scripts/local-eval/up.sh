@@ -5,7 +5,7 @@
 # + dashboard, local sign-in), installs the `cmpatch` CLI globally, waits for
 # readiness, and prints a ready banner with URLs and next steps.
 #
-#   ./scripts/local-eval/up.sh [--skip-cli]
+#   ./scripts/local-eval/up.sh [--skip-cli] [--no-banner]
 #
 # Re-running is safe and cheap: the compose stack is idempotent, and a run
 # against an already-up stack just re-verifies health and reprints the banner
@@ -24,7 +24,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/docker-compose.dev.yml"
-COMPOSE=(docker compose -f "${COMPOSE_FILE}")
+# Pinned (and the same in the compose file's `name:` and in the CLI): the
+# flag outranks a COMPOSE_PROJECT_NAME in the caller's shell, so the stack
+# can never land under, or tear down, some other project's name.
+COMPOSE_PROJECT_NAME_PINNED="codemagic-patch-local-eval"
+COMPOSE=(docker compose --project-name "${COMPOSE_PROJECT_NAME_PINNED}" -f "${COMPOSE_FILE}")
 
 DASHBOARD_URL="http://localhost:8080"
 SERVER_URL="http://localhost:3000"
@@ -36,6 +40,7 @@ READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-180}"
 EVAL_PORTS=(3000 8080 9100 9101 55433)
 
 SKIP_CLI=0
+NO_BANNER=0
 
 LOCAL_EVAL_LOG_PREFIX="local-eval"
 # shellcheck source=scripts/local-eval/common.sh
@@ -51,6 +56,9 @@ cmpatch CLI globally, and prints the ready banner.
 Options:
   --skip-cli   Skip the CLI install entirely (Docker stays the only
                prerequisite; the banner shows manual CLI instructions instead)
+  --no-banner  Exit quietly once the stack is ready instead of printing the
+               ready banner (for a wrapper that renders its own, such as
+               `cmpatch selfhost local-eval`)
   -h, --help   Show this help
 EOF
 }
@@ -58,6 +66,7 @@ EOF
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --skip-cli) SKIP_CLI=1; shift ;;
+    --no-banner) NO_BANNER=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option: $1" ;;
   esac
@@ -164,6 +173,11 @@ fi
 # ---------------------------------------------------------------------------
 # Ready banner
 # ---------------------------------------------------------------------------
+
+if [ "${NO_BANNER}" -eq 1 ]; then
+  log "evaluation stack is ready"
+  exit 0
+fi
 
 cat <<EOF
 

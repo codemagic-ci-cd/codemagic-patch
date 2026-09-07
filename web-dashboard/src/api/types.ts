@@ -357,6 +357,63 @@ export interface MeResponse {
   user: User;
 }
 
+/**
+ * `GET /v1/server/status` — one probe envelope per check so the Status page
+ * renders them uniformly; `skipped` means the probe does not apply to this
+ * deployment and is not a failure.
+ */
+export type ServerStatusProbe<TDetails extends object = Record<never, never>> =
+  | ({ status: "ok" } & TDetails)
+  | { error: string; status: "error" }
+  | { reason: string; status: "skipped" };
+
+export interface ServerStatusDisk {
+  freeBytes: number;
+  path: string;
+  totalBytes: number;
+}
+
+/** `PUBLIC_BASE_URL` reachability, probed from the server process. */
+export interface ServerStatusDownloadUrl {
+  httpStatus: number;
+  url: string;
+}
+
+export interface ServerStatusLatestRelease {
+  htmlUrl: string;
+  publishedAt: string | null;
+  tag: string;
+  version: string;
+}
+
+export interface ServerStatusChecks {
+  database: ServerStatusProbe;
+  disk: ServerStatusProbe<ServerStatusDisk>;
+  downloadUrl: ServerStatusProbe<ServerStatusDownloadUrl>;
+  latestRelease: ServerStatusProbe<ServerStatusLatestRelease>;
+  storage: ServerStatusProbe;
+}
+
+/**
+ * What the process sits on. The server derives it from existing config (the
+ * bundled Compose overlays pin fixed service hosts) and the entrypoint; the
+ * page uses it to hide cards that only describe the bundled single-VM install.
+ */
+export interface ServerStatusTopology {
+  database: "bundled" | "external";
+  hosting: "managed" | "self-hosted";
+  storage: "bundled" | "external" | "none";
+}
+
+export interface ServerStatus {
+  checks: ServerStatusChecks;
+  topology: ServerStatusTopology;
+  version: {
+    running: string | null;
+    updateAvailable: boolean | null;
+  };
+}
+
 /** `GET /v1/auth/tokens` */
 export interface ApiTokensListResponse {
   apiTokens: ApiTokenMetadata[];

@@ -9,8 +9,10 @@ export {
 } from "./artifactKeys";
 export { computeDesiredState } from "./computeDesiredState";
 export {
+  CDN_MANIFEST_CACHE_CONTROL,
   DEFAULT_ARTIFACT_CACHE_CONTROL,
   DEFAULT_MANIFEST_CACHE_CONTROL,
+  DIRECT_MANIFEST_CACHE_CONTROL,
 } from "./cachePolicy";
 export { resolveReconcileTargets } from "./computeDesiredState";
 export { diffPlan } from "./diffPlan";

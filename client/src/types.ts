@@ -225,6 +225,36 @@ export interface FailedInstallState {
   reason: string;
 }
 
+/**
+ * Detail attached to a `Failed` event, serialized into `attributes.payload` as
+ * a JSON string. One shape for every reason — PROTOCOL.md §Metric Event
+ * `Failed` Payload is the contract.
+ *
+ * Mirrors `shared/src/failurePayload.ts`, which server and dashboard import.
+ * The SDK ships as a standalone npm package with no workspace dependency, so
+ * it cannot import that module; both answer to PROTOCOL.md, and a change to
+ * one belongs in the other.
+ */
+export interface MetricsFailurePayload {
+  /**
+   * The failure's machine-readable discriminator, and the key every
+   * server-side and dashboard breakdown groups on. For `network` this is the
+   * HTTP status of the failed response as a decimal string, or `"0"` when no
+   * response was received.
+   */
+  code?: string;
+  /**
+   * Failure text relayed from whatever reported it. Never composed by the SDK;
+   * omitted when nothing could be relayed.
+   */
+  message?: string;
+  /**
+   * Android `ApplicationExitInfo` reason for the previous process. Android
+   * API 30+ only — absent on iOS and older Android.
+   */
+  android_previous_process_exit?: string;
+}
+
 export interface MetricsEvent {
   name: string;
   packageHash?: string;
@@ -235,6 +265,7 @@ export interface MetricsEvent {
   status?: string;
   reason?: string;
   failureSubtype?: string;
+  payload?: MetricsFailurePayload;
   at: string;
 }
 
@@ -247,6 +278,12 @@ export interface RuntimeState {
   binaryVersion: string | null;
   deploymentKey: string;
   deviceId: string;
+  /**
+   * Why the previous process ended (Android 11+; null elsewhere). Read once at
+   * hydration from the native boot snapshot and carried on every `Failed`
+   * payload.
+   */
+  androidPreviousProcessExit: string | null;
   remotePackage: RuntimeRemotePackage | null;
   latestBinaryVersion: string | null;
   storeUpdateAvailable: boolean;

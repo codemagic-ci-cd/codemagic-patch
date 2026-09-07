@@ -8,18 +8,19 @@ llmsDescription: 'First OTA publish — cmpatch init, release-react, verify serv
 
 This is the last step in Setup; it confirms your server, CLI, app, and SDK are wired correctly. After this, see Using Patch for ongoing release workflows.
 
-From your React Native project root, create the CLI context once:
+From your React Native project root, link the project once:
 
 ```bash
-cmpatch init \
-  --server-url https://updates.example.com \
-  --ios-app MyApp-iOS \
-  --android-app MyApp-Android \
-  --deployment Staging \
-  --yes
+cmpatch init
 ```
 
-This writes `codemagic-patch.config.json` so later commands can omit `--server-url`/`--app`. Inspect the resolved context:
+It finds or asks for the server, signs you in if needed, creates or selects an
+app per platform with a default deployment, and writes
+`codemagic-patch.config.json` so later commands can omit `--server-url` and
+`--app`. Every question has a flag for scripted setups, for example
+`cmpatch init --server-url https://updates.example.com --ios-app MyApp-iOS --android-app MyApp-Android --deployment Staging --yes`.
+
+Inspect the resolved context:
 
 ```bash
 cmpatch context

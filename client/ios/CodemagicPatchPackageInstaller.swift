@@ -91,7 +91,7 @@ final class CodemagicPatchPackageInstaller {
         state.previous = CodemagicPatchPackagePointer(packageHash: current)
       }
       state.pending = CodemagicPatchPackagePointer(packageHash: context.packageHash)
-      state.pendingStarted = nil
+      state.clearPendingLaunchTracking()
     }
   }
 
@@ -100,7 +100,7 @@ final class CodemagicPatchPackageInstaller {
       if let pending = state.pending?.packageHash {
         state.current = CodemagicPatchPackagePointer(packageHash: pending)
         state.pending = nil
-        state.pendingStarted = nil
+        state.clearPendingLaunchTracking()
       }
     }
   }
@@ -110,7 +110,7 @@ final class CodemagicPatchPackageInstaller {
       state.current = nil
       state.previous = nil
       state.pending = nil
-      state.pendingStarted = nil
+      state.clearPendingLaunchTracking()
     }
   }
 

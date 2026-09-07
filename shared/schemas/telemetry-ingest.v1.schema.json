@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codemagic.io/patch/schemas/telemetry-ingest/v1.json",
+  "title": "CodemagicPatch anonymous telemetry ingest report (v1)",
+  "description": "Wire contract for the report body a CodemagicPatch server instance POSTs to the central telemetry ingest endpoint when anonymous usage telemetry is enabled. The body is JSON, normally gzip-compressed (Content-Encoding: gzip), at most 256 KiB after decompression, and carries only aggregated counters — never device identifiers, app/team/deployment identifiers, or URLs. The root schema is the lenient envelope the ingest enforces at runtime; `strictEnvelope` is the exact shape current senders produce and is what sender/ingest contract tests validate fixtures against. See TELEMETRY.md in the codemagic-patch repository for the full protocol description, response semantics, and privacy statement.",
+  "$comment": "Evolution rules: additive-only within v1. The ingest ignores unknown envelope/instance/record fields, ignores records with an unknown `type` or `event` (the request still succeeds), and coerces unknown `platform` to 'unknown' and unknown `reason` to 'other'. Records whose `type` IS known must satisfy that type's structural definition or the whole request is rejected with 400. `schema_version` is bumped only for breaking changes; v1 remains accepted for at least 24 months after v2 ships.",
+  "$ref": "#/$defs/envelope",
+  "$defs": {
+    "envelope": {
+      "title": "Ingest report envelope (runtime contract)",
+      "type": "object",
+      "required": ["schema_version", "instance_id", "report_id", "sent_at", "instance", "records"],
+      "properties": {
+        "schema_version": {
+          "description": "Wire-format major version. Always 1 for this schema.",
+          "const": 1
+        },
+        "instance_id": {
+          "description": "Random UUID minted once per installation. Anonymous instance identity used for deduplication and instance counting; carries no information about the operator.",
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "report_id": {
+          "description": "UUID minted per built batch. Lets the ingest fast-path exact replays; a batch rebuilt after retry/restart may legitimately carry a NEW report_id, so correctness never depends on this value.",
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "sent_at": {
+          "description": "RFC 3339 timestamp of when the sender built the request. Used only for clock-skew monitoring.",
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "instance": {
+          "description": "Coarse, non-identifying instance properties for version-adoption statistics.",
+          "type": "object",
+          "required": ["server_version", "mode", "storage_adapter", "delivery_adapter"],
+          "properties": {
+            "server_version": { "type": "string", "maxLength": 100 },
+            "mode": { "type": "string", "maxLength": 100 },
+            "storage_adapter": { "type": "string", "maxLength": 100 },
+            "delivery_adapter": { "type": "string", "maxLength": 100 }
+          }
+        },
+        "records": {
+          "description": "Heterogeneous array of tagged records. Each element declares its shape via the `type` discriminator. Elements with an unknown `type` are ignored individually; elements with a known `type` must satisfy that type's structural definition.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "minLength": 1, "maxLength": 64 }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "type": "object",
+                  "properties": { "type": { "const": "counter" } },
+                  "required": ["type"]
+                },
+                "then": { "$ref": "#/$defs/counterRecord" }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": { "type": { "const": "dau" } },
+                  "required": ["type"]
+                },
+                "then": { "$ref": "#/$defs/dauRecord" }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": { "type": { "const": "heartbeat" } },
+                  "required": ["type"]
+                },
+                "then": { "$ref": "#/$defs/heartbeatRecord" }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "counterRecord": {
+      "title": "Hourly aggregate event counter cell (structural / runtime contract)",
+      "description": "One count for one (closed UTC hour, event, platform[, reason]) cell, bucketed by the instance's server receive time. Value fields `event`, `platform`, and `reason` are structurally plain bounded strings so that future values remain additive; the ingest ignores records with an unknown `event` and coerces unknown `platform`/`reason`. The strict definitions below pin today's closed value sets.",
+      "type": "object",
+      "required": ["type", "window_start", "window_end", "event", "platform", "count"],
+      "properties": {
+        "type": { "const": "counter" },
+        "window_start": {
+          "description": "Inclusive start of the closed UTC hour window (hour-aligned).",
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "window_end": {
+          "description": "Exclusive end of the window; always window_start + 1 hour.",
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "event": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "platform": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "count": {
+          "description": "Number of events in the cell. Positive safe integer; zero cells are never sent. No business ceiling — this is a type/storage constraint only.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "dauRecord": {
+      "title": "Daily active devices count (structural / runtime contract)",
+      "description": "COUNT(DISTINCT device) computed on the instance for one UTC day; only the integer leaves the instance. Re-sent as the day grows; the ingest keeps the greatest value seen.",
+      "type": "object",
+      "required": ["type", "date", "count"],
+      "properties": {
+        "type": { "const": "dau" },
+        "date": {
+          "description": "UTC calendar day (YYYY-MM-DD).",
+          "type": "string",
+          "format": "date",
+          "maxLength": 10
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "heartbeatRecord": {
+      "title": "Instance liveness heartbeat (structural / runtime contract)",
+      "description": "Liveness signal so idle instances still register as alive. Senders include exactly one per request (enforced by strictEnvelope; the ingest tolerates any number).",
+      "type": "object",
+      "required": ["type", "at"],
+      "properties": {
+        "type": { "const": "heartbeat" },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        }
+      }
+    },
+    "strictCounterRecord": {
+      "title": "Counter cell exactly as current senders produce it (test contract)",
+      "type": "object",
+      "$ref": "#/$defs/counterRecord",
+      "properties": {
+        "window_start": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:00:00(?:\\.000)?Z$" },
+        "window_end": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:00:00(?:\\.000)?Z$" },
+        "event": { "enum": ["active", "downloaded", "installed", "success", "failed"] },
+        "platform": { "enum": ["ios", "android", "unknown"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": { "event": { "const": "failed" } },
+            "required": ["event"]
+          },
+          "then": {
+            "type": "object",
+            "required": ["reason"],
+            "properties": {
+              "reason": {
+                "enum": ["signature_verification", "missing_binary_version", "network", "integrity", "other"]
+              }
+            }
+          },
+          "else": {
+            "not": { "required": ["reason"] }
+          }
+        }
+      ]
+    },
+    "strictDauRecord": {
+      "title": "DAU record exactly as current senders produce it (test contract)",
+      "$ref": "#/$defs/dauRecord"
+    },
+    "strictHeartbeatRecord": {
+      "title": "Heartbeat record exactly as current senders produce it (test contract)",
+      "type": "object",
+      "$ref": "#/$defs/heartbeatRecord",
+      "properties": {
+        "at": { "type": "string", "pattern": "Z$" }
+      }
+    },
+    "strictRecord": {
+      "title": "Closed tagged union of the three v1 record shapes (test contract)",
+      "description": "Used by sender and ingest contract tests to assert fixtures carry only shapes and values current senders are allowed to produce. The runtime ingest deliberately does NOT use this union: an unknown record type must be ignored, not fail the batch.",
+      "oneOf": [
+        { "$ref": "#/$defs/strictCounterRecord" },
+        { "$ref": "#/$defs/strictDauRecord" },
+        { "$ref": "#/$defs/strictHeartbeatRecord" }
+      ]
+    },
+    "strictEnvelope": {
+      "title": "Envelope exactly as current senders produce it (test contract)",
+      "type": "object",
+      "$ref": "#/$defs/envelope",
+      "properties": {
+        "records": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/strictRecord" },
+          "contains": {
+            "type": "object",
+            "required": ["type"],
+            "properties": { "type": { "const": "heartbeat" } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      }
+    }
+  }
+}

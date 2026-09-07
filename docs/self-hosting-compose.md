@@ -2,9 +2,12 @@
 
 > **Just evaluating?** Don't start here. The [local evaluation
 > stack](../README.md#quickstart--try-it-locally) runs the full product —
-> dashboard included — on a laptop with one `docker compose` command and
-> Docker as the only prerequisite. Deploying for real (this document) additionally needs public
-> DNS, open ports 80/443, and an OAuth app on GitHub and/or Bitbucket.
+> dashboard included — on a laptop with one command (`cmpatch selfhost
+> local-eval` after installing the npm CLI). It uses Node.js, git, curl, and
+> Docker with Compose v2; the CLI offers to install or start Docker when needed.
+> `scripts/local-eval/up.sh` remains available from a clone. Deploying for real
+> (this document) additionally needs public DNS, open ports 80/443, and an OAuth
+> app on GitHub and/or Bitbucket.
 
 This is the supported deployment path for Codemagic Patch — and in the initial
 open-source release, the only one. It runs the Codemagic Patch server as a single
@@ -72,7 +75,7 @@ at the HTTPS-readiness step.
 
 ```text
 updates.example.com          A/AAAA  <server-ip>
-storage.updates.example.com  A/AAAA  <server-ip>
+storage-updates.example.com  A/AAAA  <server-ip>
 ```
 
 The storage domain is intentionally separate. The API domain serves the control
@@ -114,7 +117,24 @@ the `PUBLIC_BASE_URL` host) — see
 
 ## Install
 
-From the repository root:
+From your own machine, `cmpatch selfhost install user@vps` runs this same
+installer over SSH and guides you through DNS, the OAuth app, and an optional
+CDN, checking each step; it covers the default bundled Postgres/MinIO stack
+(see [Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine)
+for the day-2 commands). The rest of this section is the on-server path.
+
+If you are not already on the server, one command gets you there and starts the
+installer:
+
+```bash
+ssh -t user@vps 'git clone https://github.com/codemagic-ci-cd/codemagic-patch && cd codemagic-patch && scripts/selfhost/install.sh'
+```
+
+This is **the** path for the advanced deployments below — an external
+PostgreSQL, S3 or GCS storage, Bitbucket sign-in — because `install.sh` takes
+the flags for all of them.
+
+From a checkout already on the server:
 
 ```bash
 ./scripts/selfhost/install.sh
@@ -125,7 +145,7 @@ Non-interactive form:
 ```bash
 ./scripts/selfhost/install.sh \
   --api-domain updates.example.com \
-  --storage-domain storage.updates.example.com \
+  --storage-domain storage-updates.example.com \
   --email admin@example.com \
   --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret>
@@ -180,7 +200,7 @@ One OAuth App (or consumer) serves both sign-in paths:
 ```bash
 ./scripts/selfhost/install.sh \
   --api-domain updates.example.com \
-  --storage-domain storage.updates.example.com \
+  --storage-domain storage-updates.example.com \
   --email admin@example.com \
   --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret>
@@ -369,7 +389,7 @@ must be allowed to create and alter tables.
 ```bash
 ./scripts/selfhost/install.sh \
   --api-domain updates.example.com \
-  --storage-domain storage.updates.example.com \
+  --storage-domain storage-updates.example.com \
   --email admin@example.com \
   --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret> \
@@ -927,6 +947,9 @@ Create a manual backup before upgrades or risky changes:
 ./scripts/selfhost/backup.sh
 ```
 
+From your own machine, `cmpatch selfhost backup` runs exactly this script over
+ssh — see [Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine).
+
 Note that the backup stops the server container while the dump runs to
 quiesce writes and restarts it when done — expect a short API outage. The
 upgrade script runs a backup first, so the same applies at the start of every
@@ -967,6 +990,10 @@ completed.
 
 Use `--restore-env` only when you also want to replace the current
 `.env.selfhost` with the copy from the backup.
+
+From your own machine, `cmpatch selfhost restore` lists the backups on the
+server and runs this script against the one you pick — see
+[Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine).
 
 A backup taken from a deployment with different mode flags is refused — see
 [Switching modes](#switching-modes) — and external components are not
@@ -1015,6 +1042,10 @@ Rebuild from the checked-out source tree and recreate the stack:
 ./scripts/selfhost/upgrade.sh
 ```
 
+From your own machine, `cmpatch selfhost upgrade` fast-forwards the server's
+checkout first and then runs this script — see
+[Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine).
+
 Move to a specific server image:
 
 ```bash
@@ -1037,6 +1068,80 @@ known-good backup or set `CODEMAGIC_PATCH_SERVER_IMAGE` in `.env.selfhost` back 
 previous image and rerun the upgrade command. To roll back only the dashboard,
 set `CODEMAGIC_PATCH_CADDY_IMAGE` to a previously built image and recreate the stack
 (the upgrade command always rebuilds the caddy image from source).
+
+## Maintaining the server from your own machine
+
+Once a server exists, `cmpatch` can run its maintenance scripts over ssh, so
+routine work needs no manual login:
+
+```bash
+cmpatch selfhost backup
+cmpatch selfhost restore
+cmpatch selfhost upgrade
+```
+
+Each command runs the same `scripts/selfhost/*.sh` on the server and streams its
+output; nothing is reimplemented locally, and the direct paths documented above
+keep behaving exactly as before.
+
+### First connection
+
+The first command against a server pairs with it. `cmpatch` generates a
+dedicated ssh key for that host (under `~/.codemagic-patch/keys/`) and installs
+its public half in the server's `authorized_keys`, labelled `cmpatch`:
+
+- If your own ssh setup already reaches the server, it is used for that first
+  connection to install the key and never again. ssh asks for anything it
+  needs itself — a password, a key passphrase — and may ask twice: once to
+  check the connection, once to install the key.
+- If it does not — an EC2 `.pem` you never wired up, GCP metadata keys, no keys
+  at all, a mistyped password or address — `cmpatch` offers four ways forward
+  and returns to the same choice after any that does not connect: a private key
+  file (an AWS `.pem` is the common case), a retry so sshd can ask for the
+  password, one line to paste into your provider's browser SSH console (it
+  waits for the paste to take effect), or a corrected user or address. A
+  changed host key is diagnosed with the `ssh-keygen -R` command that clears
+  it. `--ssh-key <path>` supplies the first-connection key without the prompt.
+
+Pass the address explicitly the first time, or whenever you have more than one
+server:
+
+```bash
+cmpatch selfhost backup ubuntu@203.0.113.7
+```
+
+Afterwards the pairing is stored against the server's URL, so the plain form
+works. Every later command authenticates with the `cmpatch` key alone — your own
+ssh configuration is a bootstrap channel, not a dependency. The key is per
+machine: a teammate, or your next laptop, pairs the same way.
+
+### What each command does
+
+- **`backup`** stops the server briefly for a consistent snapshot, writes it to
+  `~/codemagic-patch-backups/<timestamp>` on the server, and offers to download
+  a copy (`--download`). On deployments with an external database or S3/GCS
+  storage it names the components it does *not* cover before asking, since
+  those need your provider's own tooling.
+- **`restore`** lists the backups on the server — including the automatic
+  pre-upgrade and safety ones — takes a safety backup of the current data, and
+  replaces the data with the backup you pick, behind a typed confirmation.
+  `--restore-env` also restores the settings file (usually not what you want:
+  it replaces your current domains and keys). The publish check is deferred:
+  sign in with `cmpatch login` and publish a release to confirm end to end.
+  `--smoke` runs that check during the restore instead, but only a token that
+  already existed when the backup was taken can pass it (the restore replaces
+  the database its row lives in), so it is supplied explicitly:
+  `CODEMAGIC_PATCH_TOKEN=cm_pat_... cmpatch selfhost restore --smoke`.
+- **`upgrade`** fast-forwards the server's checkout to the default branch first
+  — on every path, including `--image`, because the dashboard image is rebuilt
+  from that checkout either way — and refuses a checkout that is dirty,
+  detached, diverged, or tracking another repository. Then it runs
+  `upgrade.sh`, and reports the source revision and the server image
+  separately.
+
+Every prompt has a flag equivalent, and `--non-interactive` runs the flags-only
+form. The full output of each run is kept at
+`~/.codemagic-patch/logs/<timestamp>-<command>.log`.
 
 ## Reset
 
@@ -1068,7 +1173,10 @@ The self-host smoke test treats unsafe `_internal/*` exposure as a failure.
 ## Optional: front storage with Cloudflare CDN
 
 With the bundled storage, clients by default fetch artifacts straight from
-MinIO on the storage domain (`DELIVERY_ADAPTER=base-url`). You can instead put
+MinIO on the storage domain (`DELIVERY_ADAPTER=base-url`). That is fine for
+evaluation, but for production we strongly recommend a CDN (this section or
+[CloudFront](#optional-front-storage-with-cloudfront-cdn)) so devices download
+from the edge rather than the single host. You can put
 **Cloudflare CDN** in front of the storage origin: you proxy the *same*
 storage domain through Cloudflare, so `PUBLIC_BASE_URL` is unchanged. On every
 release the server then purges the edge cache for the paths that changed,
@@ -1078,11 +1186,15 @@ storage domain — see
 [CDN in front of external storage](#cdn-in-front-of-external-storage); the
 Cache Rule guidance below applies to both.)
 
-Only the JSON delivery files need purging — per-hash and fallback
-`manifest.json` plus `meta.json`, all served `no-cache, must-revalidate`. Bundle
+Only the JSON delivery files need routine purging — per-hash and fallback
+`manifest.json` plus `meta.json`. Selecting a purging delivery adapter also
+switches their default header from `no-cache, must-revalidate` (the `base-url`
+policy, where nothing could invalidate a shared cache) to
+`public, max-age=0, s-maxage=300, must-revalidate`. Clients revalidate
+immediately while a shared CDN cache may retain them for five minutes. Bundle
 and patch artifacts are content-addressed (`max-age=1y, immutable`), so a new
-release is a new path and never needs invalidation. Purge is best-effort: a
-Cloudflare API failure is logged but never blocks a release.
+release is a new path and never needs routine invalidation. Purge is
+best-effort: a CDN API failure is logged but never blocks a release.
 
 ### Enable it at install time
 
@@ -1095,7 +1207,7 @@ storage domain. Pass them to the installer:
 ```bash
 ./scripts/selfhost/install.sh \
   --api-domain updates.example.com \
-  --storage-domain storage.updates.example.com \
+  --storage-domain storage-updates.example.com \
   --email admin@example.com \
   --github-oauth-client-id <client-id> \
   --github-oauth-client-secret <client-secret> \
@@ -1133,9 +1245,15 @@ when Cloudflare is enabled.
 Purge does nothing unless Cloudflare is actually caching the manifest/meta JSON.
 After proxying the storage domain, add a Cloudflare **Cache Rule** that makes the
 `manifest.json` / `meta.json` paths eligible for caching — for example, a rule
-whose expression is `ends_with(http.request.uri.path, "/manifest.json") or
-ends_with(http.request.uri.path, "/meta.json")` with the cache status set to
-Eligible for cache. Releases then purge exactly those paths automatically.
+for the storage hostname with cache status **Eligible for cache** and Edge TTL
+set to **Use cache-control header if present, bypass cache if not**. This rule
+is still needed because Cloudflare does not cache JSON by default. Do not add a
+second Edge TTL override — and **delete** the two-hour `.json` Edge TTL rule if
+an earlier version of this guide had you create one: Cloudflare Origin Cache
+Control respects the five-minute `s-maxage` default, while the Free-plan
+two-hour floor applies only to an explicit Edge TTL override, which takes
+precedence over `s-maxage` when present. Releases purge the mutable paths
+automatically.
 
 ### Enable it on an existing install
 
@@ -1146,3 +1264,105 @@ ignored with a warning. To turn it on later, edit `.env.selfhost` by hand — se
 [`.env.selfhost.example`](../.env.selfhost.example)) — then recreate the stack
 with [`./scripts/selfhost/upgrade.sh`](#upgrade). Do the DNS-only → proxied and
 Cache Rule steps above as well.
+
+Delete the `MANIFEST_CACHE_CONTROL` line while you are in there. Installs from
+before CDN delivery pinned `no-cache, must-revalidate`, an explicit value beats
+the adapter-derived default, and leaving it makes the edge bypass every
+manifest — the installer warns about this on the next run.
+
+## Optional: front storage with CloudFront CDN
+
+CloudFront is the CNAME-compatible alternative to Cloudflare. It uses the same
+`PUBLIC_BASE_URL`, honors the five-minute manifest `s-maxage`, and lets the
+server submit distribution-scoped invalidations. The first 1,000 invalidation
+paths per AWS account each month are free; deployment deletion uses one
+deployment-prefix wildcard instead of one path per artifact.
+
+Request the viewer certificate in ACM **`us-east-1`** and create an IAM identity
+whose only permission is `cloudfront:CreateInvalidation` on the selected
+distribution ARN. Put that scoped key—not broad AWS credentials—in
+`.env.selfhost`. Configure the default behavior with managed
+`CachingOptimized`, HTTPS, and no viewer `Host` forwarding.
+
+### Bundled MinIO origin
+
+Bundled storage needs three distinct hostnames:
+
+```text
+updates.example.com                 A/AAAA  <server-ip>  # API
+storage-updates.example.com         A/AAAA  <server-ip>  # viewer, initially
+origin-storage-updates.example.com  A/AAAA  <server-ip>  # CloudFront origin
+```
+
+Keep the viewer record on the server throughout install. Create the
+distribution with the origin hostname, add the custom origin header
+`X-Codemagic-Patch-Origin-Verify: <random-secret>`, and set the alternate name
+to the viewer hostname. Then install:
+
+```bash
+./scripts/selfhost/install.sh \
+  --api-domain updates.example.com \
+  --storage-domain storage-updates.example.com \
+  --storage-origin-domain origin-storage-updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id <client-id> \
+  --github-oauth-client-secret <client-secret> \
+  --cloudfront \
+  --cloudfront-distribution-id <distribution-id> \
+  --cloudfront-access-key-id <purge-access-key-id> \
+  --cloudfront-secret-access-key <purge-secret-access-key> \
+  --cloudfront-origin-verify-secret <random-secret>
+```
+
+Omit both access-key flags to use an EC2/ECS role. Before changing DNS, fetch a
+real manifest through the distribution domain and expect `200` plus
+`x-cache: Miss from cloudfront`. Then test the final viewer hostname against
+that distribution without changing DNS; this must pass normal TLS certificate
+verification and return `200` plus an `x-cache` header:
+
+```bash
+curl -fsSI \
+  --connect-to "storage-updates.example.com:443:d111111abcdef8.cloudfront.net:443" \
+  "https://storage-updates.example.com/codemagic-patch/<deployment-key>/meta.json" \
+  | grep -Ei '^(HTTP/|x-cache:)'
+```
+
+Do not add `-k` or `--insecure`. Finally, fetch the same path directly from the
+origin hostname without the custom header and expect `403`. Only after all
+three checks pass should you change the viewer record to a CNAME targeting
+CloudFront and confirm Miss then Hit.
+
+The generated env uses `SELFHOST_STORAGE_ORIGIN_MODE=cdn-origin` and keeps
+no `CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS` outside a rotation. To rotate
+without a 403 window: set current=new, add previous=old, rerun install; update
+CloudFront and wait for **Deployed**; delete the previous line and rerun. After
+viewer DNS
+cutover, Caddy HTTP-01 renewal warnings for the no-longer-routed viewer
+certificate are expected; the origin certificate still renews normally.
+
+### External S3/GCS origin
+
+External storage keeps `SELFHOST_STORAGE_ORIGIN_MODE=direct` and uses no origin
+hostname or verification secret:
+
+- AWS S3: choose the bucket as an S3 origin with **Origin access: Public**.
+- GCS: custom HTTPS origin `storage.googleapis.com`, Origin path
+  `/<public-bucket>`.
+- Other S3-compatible storage: custom HTTPS origin at `S3_ENDPOINT`, with any
+  provider-required bucket path.
+
+Set `--public-base-url` to the viewer domain and pass the CloudFront flags. If
+the old value was a raw bucket URL, existing binaries and already-published
+manifests keep their old absolute URLs; changing the value does not rewrite
+them immediately, so keep the bucket public during migration.
+
+S3 Origin Access Control is safe only if `PUBLIC_BASE_URL` has always been a
+custom viewer domain. Otherwise privatizing the bucket breaks old binaries and
+old manifest artifact URLs. A naive OAC allow can also expose `_internal/*` to
+the CloudFront service principal; use
+[`deploy/selfhost/aws-s3-bucket-policy.cloudfront-oac.example.json`](../deploy/selfhost/aws-s3-bucket-policy.cloudfront-oac.example.json),
+which explicitly denies that prefix.
+
+The complete console settings, pre-cutover commands, adoption flow, IAM policy,
+and rotation checklist live in
+[`docs-site/docs/setup/cloudfront.mdx`](../docs-site/docs/setup/cloudfront.mdx).
