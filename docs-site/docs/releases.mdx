@@ -19,6 +19,95 @@ Patch ships three versioned surfaces on independent tags. To upgrade each one, r
 | CLI | `npm install -g @codemagic/patch-cli@latest` |
 | Server (self-host) | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
 
+## Version 0.4.0
+
+*14th September 2026*
+
+Try an OTA update with a guided demo, diagnose your SDK setup, and
+configure external storage and DNS from the install wizard.
+
+Includes CLI 0.4.0, React Native SDK 0.4.0, and Server / Dashboard 0.4.0.
+
+### CLI 0.4.0
+
+#### Watch an OTA fix apply
+
+After starting the local evaluation stack, run `cmpatch demo` to try
+Patch with the bundled app on an iOS simulator or Android emulator.
+
+The wizard checks prerequisites, prepares and builds the app, and walks
+you through a catalog bug and its fix. After you approve publication,
+it waits for the release to publish and automatically resumes the app
+to trigger the update download, installation, and reload.
+
+#### Diagnose setup before your first release
+
+`cmpatch doctor` now checks native SDK configuration, integration
+evidence, authentication, app and deployment settings, and download
+connectivity across React Native and Expo projects.
+
+Add `--verify-delivery` to probe the manifest and artifact delivery path.
+Reports distinguish confirmed failures from checks that could not be
+completed, with setup and delivery coverage available in JSON for CI.
+These checks do not replace installation testing on a device.
+
+An optional `--fix --server-url <url>` can create a missing CLI
+configuration file after a readiness check and confirmation.
+
+#### Set up external storage and DNS from the wizard
+
+`cmpatch selfhost install` now offers Cloudflare R2, Amazon S3, and
+Google Cloud Storage alongside bundled MinIO, with automatic resource
+setup or guided console instructions.
+
+Setup verifies storage access, public downloads, and private-object
+protection. DNS setup supports Cloudflare and Domain Connect where the
+provider supports Patch's templates, with manual instructions available
+as a fallback.
+
+These options configure new installations; they do not automatically
+migrate data from an existing storage provider.
+
+### React Native SDK 0.4.0
+
+#### Check whether an update is ready to activate
+
+The new `isNextVersionReady()` API returns whether a different OTA
+package is installed and waiting for the next reload. Use it to show an
+“Update ready” prompt without confusing the installed update with the
+bundle currently running.
+
+A staged return to the embedded bundle is not reported by this API.
+
+### Server and Dashboard 0.4.0
+
+#### Separate public artifacts from private storage
+
+S3-compatible storage now supports a separate private bucket for
+internal uploads and worker artifacts through `S3_INTERNAL_BUCKET`.
+Leaving it unset preserves the existing single-bucket routing.
+
+#### Choose your dashboard theme
+
+The dashboard adds light, dark, and system themes, alongside refreshed
+Patch branding across navigation, forms, dialogs, and tables.
+
+#### Clearer update delivery metrics
+
+Dashboard metrics now focus on update delivery outcomes. Success counts
+show successful installations, rather than implying how many users are
+currently running a version.
+
+Active metrics have been removed from release details. Deployment
+summaries now show successful installs, and release history shows
+downloads alongside successes and failures.
+
+#### Run a localhost installation without TLS
+
+The direct self-host installer adds `--allow-http` for localhost
+testing without TLS. Its published service ports bind to loopback;
+production installation continues to use HTTPS.
+
 ## Version 0.3.0
 
 *7th September 2026*

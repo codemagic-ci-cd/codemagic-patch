@@ -256,7 +256,6 @@ export function TokensPage() {
         confirmationText={revokeTarget?.displayName ?? ""}
         title="Revoke token"
         description="Any CLI or CI using this token will stop working immediately."
-        icon={<TrashIcon />}
         confirmLabel="Revoke token"
         busy={revoke.isPending}
         error={
@@ -355,7 +354,6 @@ function CreateTokenModal({ onClose, onCreated }: CreateTokenModalProps) {
       onClose={requestClose}
       title="Create API token"
       description="The full token is shown only once after creation."
-      icon={<KeyIcon />}
       footer={
         <>
           <button
@@ -479,8 +477,6 @@ function TokenSecretModal({ secret, onDone }: TokenSecretModalProps) {
       disableEscapeClose
       title="Copy your new token"
       description="This is the only time the full token is shown."
-      icon={<KeyIcon />}
-      tone="green"
       initialFocusRef={copyButtonRef}
       footer={
         <button
@@ -611,15 +607,6 @@ function AlertIcon() {
       <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12" y2="17" />
-    </IconSvg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <IconSvg>
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </IconSvg>
   );
 }

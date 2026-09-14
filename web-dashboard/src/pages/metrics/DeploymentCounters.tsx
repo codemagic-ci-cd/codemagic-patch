@@ -19,7 +19,7 @@ import {
   useDeploymentMetrics,
   useDeploymentTimeseries,
 } from "../../api/hooks/metrics";
-import { formatCount } from "../../model/format";
+import { formatCount, formatSuccessRate } from "../../model/format";
 import {
   activeVersionDistribution,
   aggregateMetrics,
@@ -177,7 +177,7 @@ export function DeploymentCounters({
               "—"
             ) : (
               <>
-                {(rate * 100).toFixed(1)}
+                {formatSuccessRate(rate)}
                 <small>%</small>
               </>
             )}
@@ -207,12 +207,7 @@ export function DeploymentCounters({
       <div className="grid-cols-[1fr_360px] items-start gap-[22px] [display:grid] max-cols:grid-cols-[1fr]">
         <div className={`${CARD} ${CARD_PAD}`}>
           <div className="mb-[18px] flex items-center justify-between gap-3.5">
-            <div className={SECTION_TITLE}>
-              <span className="size-[18px] text-blue" aria-hidden="true">
-                <LayersIcon />
-              </span>{" "}
-              Active version distribution
-            </div>
+            <div className={SECTION_TITLE}>Active version distribution</div>
             <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
               grouped by package hash
             </span>
@@ -253,12 +248,7 @@ export function DeploymentCounters({
 
           <div className="my-5 h-px bg-border" />
           <div className="mb-[18px] flex items-center justify-between gap-3.5">
-            <div className={SECTION_TITLE}>
-              <span className="size-[18px] text-blue" aria-hidden="true">
-                <ActivityIcon />
-              </span>{" "}
-              Adoption over time
-            </div>
+            <div className={SECTION_TITLE}>Adoption over time</div>
             <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
               daily active devices · last 30 days
             </span>
@@ -421,16 +411,6 @@ function AlertIcon() {
       <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12" y2="17" />
-    </IconSvg>
-  );
-}
-
-function LayersIcon() {
-  return (
-    <IconSvg>
-      <path d="m12 2 9 5-9 5-9-5 9-5z" />
-      <path d="m3 12 9 5 9-5" />
-      <path d="m3 17 9 5 9-5" />
     </IconSvg>
   );
 }

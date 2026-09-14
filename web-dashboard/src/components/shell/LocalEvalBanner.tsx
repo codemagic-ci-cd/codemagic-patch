@@ -25,7 +25,7 @@ export function LocalEvalBanner() {
 
   return (
     <div
-      className="sticky top-0 z-50 truncate bg-yellow-tint px-4 text-center text-[12.5px] font-semibold text-[#8a5414]"
+      className="sticky top-0 z-50 truncate bg-yellow-tint px-4 text-center text-[12.5px] font-semibold text-tone-warn"
       role="status"
       style={{
         height: EVAL_BANNER_HEIGHT_PX,

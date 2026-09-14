@@ -9,6 +9,8 @@
 import { Readable, Transform, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { isInternalKey } from "./internal-key";
+
 import type {
   GetResult,
   HeadResult,
@@ -255,9 +257,6 @@ export class GcsStorageAdapter implements StorageAdapter {
   }
 }
 
-function isInternalKey(keyOrPrefix: string): boolean {
-  return keyOrPrefix === "_internal" || keyOrPrefix.startsWith("_internal/");
-}
 
 function makeWriteOptions(options: PutOptions | undefined): GcsSaveOptions {
   return {

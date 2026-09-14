@@ -1,8 +1,15 @@
+# Site addresses take their scheme from CODEMAGIC_PATCH_SITE_SCHEME. The base
+# compose file leaves it unset, so the addresses stay bare and Caddy serves
+# them over automatic HTTPS with Let's Encrypt. The plain-HTTP overlay
+# (deploy/selfhost/compose.http.yml, selected by SELFHOST_SCHEME=http) sets it
+# to "http://". install.sh refuses that combination for a CloudFront
+# deployment, so on this file the placeholder is expected to stay empty; it is
+# threaded through anyway so the three Caddyfiles share one site-address rule.
 {
 	email {$ACME_EMAIL}
 }
 
-{$CODEMAGIC_PATCH_API_DOMAIN} {
+{$CODEMAGIC_PATCH_SITE_SCHEME}{$CODEMAGIC_PATCH_API_DOMAIN} {
 	encode zstd gzip
 
 	handle /v1/* {
@@ -29,21 +36,25 @@
 			# attributes; img-src data:: app.css embeds data:image/svg+xml
 			# backgrounds (modal icons, select chevrons).
 			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-			Strict-Transport-Security "max-age=31536000; includeSubDomains"
 			-Server
 		}
+		# HSTS only on TLS responses: browsers ignore the header over plain
+		# HTTP and RFC 6797 forbids sending it there. Over HTTPS every request
+		# matches, so the https stack's behavior is unchanged.
+		@https protocol https
+		header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 }
 
 # Keep the viewer site during and after cutover. It makes a first install and
 # an adoption zero-downtime while DNS moves from this host to CloudFront.
-{$CODEMAGIC_PATCH_STORAGE_DOMAIN} {
+{$CODEMAGIC_PATCH_SITE_SCHEME}{$CODEMAGIC_PATCH_STORAGE_DOMAIN} {
 	encode zstd gzip
 
 	reverse_proxy minio:9000
 }
 
-{$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN} {
+{$CODEMAGIC_PATCH_SITE_SCHEME}{$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN} {
 	# Both slots must expand to a non-empty value: a value-less `header` matcher
 	# is a Caddyfile adapt error, which would fail the entire file — API and
 	# dashboard sites included — not just this site. Outside a rotation the

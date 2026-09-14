@@ -53,6 +53,8 @@ function requestUrl(request) {
 
 async function resolveS3ProbeUrls({
   bucket,
+  internalBucket,
+  internalKey = INTERNAL_PROBE_KEY,
   endpoint,
   forcePathStyle,
   region = "us-east-1",
@@ -106,14 +108,21 @@ async function resolveS3ProbeUrls({
 
   try {
     const internalUrl = await capture(
-      new GetObjectCommand({ Bucket: bucket, Key: INTERNAL_PROBE_KEY }),
+      new GetObjectCommand({ Bucket: internalBucket || bucket, Key: internalKey }),
       "GetObject",
     );
     const listUrl = await capture(
       new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }),
       "ListObjectsV2",
     );
-    return { internalUrl, listUrls: [listUrl] };
+    const listUrls = [listUrl];
+    if (internalBucket && internalBucket !== bucket) {
+      listUrls.push(await capture(
+        new ListObjectsV2Command({ Bucket: internalBucket, MaxKeys: 1 }),
+        "internal ListObjectsV2",
+      ));
+    }
+    return { internalUrl, listUrls };
   } finally {
     client.destroy();
   }

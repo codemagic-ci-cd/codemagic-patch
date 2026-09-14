@@ -84,8 +84,11 @@ fi
 # one provider, and each configured provider's id/secret pair). Older GitHub
 # installs may still predate the redirect allowlist; backfill it here.
 if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_ALLOWED_REDIRECT_URIS:-}" ]; then
-  set_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "https://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
-  warn_selfhost "GITHUB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to https://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
+  # The callback follows the stack's scheme (SELFHOST_SCHEME), exactly as
+  # install.sh derives it.
+  upgrade_scheme="$(selfhost_scheme_from_env_file)"
+  set_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
+  warn_selfhost "GITHUB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
 fi
 
 if [ -z "${CODEMAGIC_PATCH_CADDY_IMAGE:-}" ]; then

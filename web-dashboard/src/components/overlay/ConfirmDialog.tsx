@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 
 import { Modal } from "./Modal";
 import { buttonVariants } from "../ui/Button";
-import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../ui/callout";
+import { CALLOUT, CALLOUT_TONE } from "../ui/callout";
 import { FIELD, FIELD_LABEL, INPUT, INPUT_STATE } from "../ui/form";
 import { SUMMARY, SUMMARY_KEY, SUMMARY_ROW, SUMMARY_VALUE } from "../ui/summary";
 
@@ -42,8 +42,6 @@ interface ConfirmDialogBaseProps {
   onConfirm: () => void;
   title: ReactNode;
   description?: ReactNode;
-  /** Optional .modal__ico SVG; tinted red for destructive dialogs. */
-  icon?: ReactNode;
   confirmLabel: ReactNode;
   cancelLabel?: ReactNode;
   /** Pending state: spinner on confirm, all dismissal paths disabled. */
@@ -89,7 +87,6 @@ function ConfirmDialogContent(props: ConfirmDialogProps) {
     onConfirm,
     title,
     description,
-    icon,
     confirmLabel,
     cancelLabel = "Cancel",
     busy = false,
@@ -116,8 +113,6 @@ function ConfirmDialogContent(props: ConfirmDialogProps) {
       onClose={requestClose}
       title={title}
       description={description}
-      icon={icon}
-      tone={destructive ? "danger" : "default"}
       initialFocusRef={
         props.variant === "typeToConfirm" ? confirmationInputRef : undefined
       }
@@ -175,7 +170,7 @@ function ConfirmDialogContent(props: ConfirmDialogProps) {
         </label>
       )}
       {error !== undefined && error !== null ? (
-        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK}`} role="alert">
+        <div className={`${CALLOUT} ${CALLOUT_TONE.danger}`} role="alert">
           <AlertIcon />
           <div>{error}</div>
         </div>

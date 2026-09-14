@@ -12,6 +12,8 @@ import { findZoneApex } from "../../selfhostDns";
 import {
   buildRepairEnv,
   deriveStorageDomain,
+  describeDomainProblem,
+  type InstallAnswers,
   type DeliverySelection,
   type RepairValues,
 } from "../../selfhostInstall";
@@ -70,21 +72,26 @@ export function deliveryFlagsComplete(
     return (
       apiToken !== undefined &&
       apiToken.length > 0 &&
-      readStringFlag(parsed, "--cloudflare-zone-id") !== undefined
+      supplied(deps, parsed, { flag: "--cloudflare-zone-id", env: "CLOUDFLARE_ZONE_ID" })?.value !== undefined
     );
   }
 
-  return readStringFlag(parsed, "--cloudfront-distribution-id") !== undefined;
+  return supplied(deps, parsed, { flag: "--cloudfront-distribution-id", env: "CLOUDFRONT_DISTRIBUTION_ID" })?.value !== undefined;
 }
 
 // ---------------------------------------------------------------------------
 // Answers, from flags and the environment
 // ---------------------------------------------------------------------------
 
-export async function readInstallAnswers(deps: CommandDeps, parsed: ParsedArgs) {
+export async function readInstallAnswers(
+  deps: CommandDeps,
+  parsed: ParsedArgs,
+): Promise<InstallAnswers> {
   // Asked in the order the wizard will ask them, so a flags-only run is told
   // about the first thing it is missing rather than an arbitrary one.
   const apiDomain = required(parsed, "--api-domain", "the server's domain");
+  const apiProblem = describeDomainProblem(apiDomain);
+  if (apiProblem) throw new UsageError(apiProblem);
   const adminEmail = required(parsed, "--email", "the admin's email address");
   const githubClientId = required(
     parsed,
@@ -104,18 +111,29 @@ export async function readInstallAnswers(deps: CommandDeps, parsed: ParsedArgs) 
     );
   }
 
+  const external = Boolean(
+    readStringFlag(parsed, "--storage-mode") &&
+    readStringFlag(parsed, "--storage-mode") !== "bundled",
+  );
+  const storageDomain = external
+    ? ""
+    : (readStringFlag(parsed, "--storage-domain") ??
+      (await suggestStorageDomain(deps, apiDomain)));
+  if (!external) {
+    const problem = describeDomainProblem(storageDomain);
+    if (problem) throw new UsageError(problem);
+    if (storageDomain.toLowerCase() === apiDomain.toLowerCase())
+      throw new UsageError("The API and download hostnames must differ.");
+  }
   return {
     adminEmail,
     apiDomain,
-    delivery: readDelivery(deps, parsed),
+    delivery: external ? { kind: "none" } : readDelivery(deps, parsed),
     githubClientId,
     githubClientSecret,
-    storageDomain:
-      readStringFlag(parsed, "--storage-domain") ??
-      (await suggestStorageDomain(deps, apiDomain)),
+    storageDomain,
   };
 }
-
 /**
  * The download-domain default, with the zone apex resolved first.
  *
@@ -157,7 +175,7 @@ export function readDelivery(
     return {
       apiToken,
       kind: "cloudflare",
-      zoneId: required(parsed, "--cloudflare-zone-id", "the Cloudflare zone id"),
+      zoneId: requiredSource(deps, parsed, "--cloudflare-zone-id", "CLOUDFLARE_ZONE_ID", "the Cloudflare zone id"),
     };
   }
 
@@ -167,12 +185,12 @@ export function readDelivery(
       flag: "--cloudfront-secret-access-key",
     })?.value;
     const accessKeyId = suppliedAccessKeyId(deps, parsed);
+    if (Boolean(accessKeyId) !== Boolean(secretAccessKey))
+      throw new UsageError("Supply both CloudFront runtime access key ID and secret access key, or omit both to use an instance role.");
 
     return {
-      distributionId: required(
-        parsed,
-        "--cloudfront-distribution-id",
-        "the CloudFront distribution id",
+      distributionId: requiredSource(
+        deps, parsed, "--cloudfront-distribution-id", "CLOUDFRONT_DISTRIBUTION_ID", "the CloudFront distribution id",
       ),
       kind: "cloudfront",
       // Both or neither: half a pair is a hard failure in install.sh, and
@@ -355,4 +373,10 @@ function missingAnswer(
       `See ${SELFHOST_DOCS_URL} for what each value is.`,
     ].join("\n"),
   );
+}
+
+function requiredSource(deps: CommandDeps, parsed: ParsedArgs, flag: string, env: string, what: string): string {
+  const value = supplied(deps, parsed, { flag, env })?.value;
+  if (!value) throw missingAnswer(flag, what, env);
+  return value;
 }

@@ -6,7 +6,8 @@
    (border-* sets a width; the style must already be solid). All existing rules
    use `border: 1px solid …` shorthands, which override both — visually inert. */
 *,*::before,*::after{box-sizing:border-box;border:0 solid}
-html{-webkit-text-size-adjust:100%;font-family:var(--font-sans)}
+html{-webkit-text-size-adjust:100%;font-family:var(--font-sans);color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
 body{
   margin:0;font-family:var(--font-sans);background:var(--color-canvas);color:var(--color-fg);
   font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;

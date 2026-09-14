@@ -500,7 +500,7 @@ function readPublicAddressFacts(
   return {
     cloudProvider:
       cloud !== undefined && CLOUD_PROVIDERS.includes(cloud) ? cloud : null,
-    publicIp: publicOrNull(emptyToNull(values.public_ip)),
+    publicIp: publicIpv4OrNull(emptyToNull(values.public_ip)),
   };
 }
 
@@ -539,9 +539,10 @@ function readInstallFacts(values: Record<string, string>): RemoteInstallFacts {
  * router) is a private one — an address no public DNS record can usefully
  * carry, and the DNS step would otherwise both print it as the value to add
  * and wait for it. Dropping it here lets the caller fall back to the address
- * the user actually reached the host by.
+ * the user actually reached the host by. The DNS step applies the same test
+ * to an address the user types or that the ssh hostname resolves to.
  */
-function publicOrNull(address: string | null): string | null {
+export function publicIpv4OrNull(address: string | null): string | null {
   if (address === null) {
     return null;
   }

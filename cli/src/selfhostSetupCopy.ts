@@ -16,11 +16,15 @@ import {
 } from "./branding";
 import { PLAIN_PALETTE, type Palette } from "./output";
 import { ORIGIN_VERIFY_HEADER } from "./providers/cloudfront";
-import type {
-  CnameDiagnosis,
-  DnsProvider,
-  RecordDiagnosis,
+import {
+  DEFAULT_POLL_INTERVAL_MILLISECONDS,
+  DEFAULT_POLL_TIMEOUT_MILLISECONDS,
+  type CnameDiagnosis,
+  type DnsProvider,
+  type RecordDiagnosis,
 } from "./selfhostDns";
+import { isIP } from "node:net";
+import { publicIpv4OrNull } from "./selfhostRemote";
 
 // ---------------------------------------------------------------------------
 // Before the first question
@@ -132,7 +136,56 @@ export function renderDnsIntro(input: {
     lines.push("Add these where you manage your domain's DNS records:");
   }
 
+  // The cadence and the cap, said before the wait rather than at its end.
+  lines.push(
+    "",
+    `Each record is checked every ${String(DEFAULT_POLL_INTERVAL_MILLISECONDS / 1_000)} seconds, for up to ${String(DEFAULT_POLL_TIMEOUT_MILLISECONDS / 60_000)} minutes.`,
+  );
+
   return lines;
+}
+
+// ---------------------------------------------------------------------------
+// The server's public address, when the server itself cannot say
+// ---------------------------------------------------------------------------
+
+/**
+ * Said before the address is asked for. The survey reads it from the cloud's
+ * metadata service or the interface, and both come back empty on a host
+ * behind NAT (Oracle Cloud, a VM behind a router) or one that is IPv6-only —
+ * and without it the records cannot be printed or checked.
+ */
+export function renderPublicAddressQuestion(input: {
+  /** The hostname part of the ssh target — the thing that resolves. */
+  host: string;
+  resolvedFromTarget: string | null;
+  sshTarget: string;
+}): string[] {
+  return [
+    `Could not work out ${input.sshTarget}'s public IP address from the server itself — it reports no public address of its own, which is usual behind NAT (Oracle Cloud, a VM behind a router) or on an IPv6-only host.`,
+    "The DNS records need it, so enter it here. It is on your provider's console page for this server.",
+    ...(input.resolvedFromTarget === null
+      ? []
+      : [
+          `${input.host} resolves to ${input.resolvedFromTarget} from this machine; press Enter if that is the server's public address.`,
+        ]),
+  ];
+}
+
+/** The check behind the public-address prompt. Null when the value is usable. */
+export function describePublicAddressProblem(value: string): string | null {
+  if (isIP(value) !== 4) {
+    return "Enter the server's public IPv4 address, in the form 203.0.113.7.";
+  }
+
+  return publicIpv4OrNull(value) === null
+    ? `${value} is a private address. The records need the address people reach the server at from the internet.`
+    : null;
+}
+
+/** A scripted run has nobody to ask, so it names the flag that answers instead. */
+export function renderPublicAddressRequired(sshTarget: string): string {
+  return `Could not work out ${sshTarget}'s public IP address, and the DNS records cannot be created or checked without it. Pass --public-ip <address> and run the command again.`;
 }
 
 /** The records to add, one numbered block each. */
@@ -148,32 +201,31 @@ export function renderDnsRecords(
 }
 
 /**
- * Never a bare "verification failed": each cause has a different fix, and the
- * one the wizard is most likely to meet — an old A record left in place — looks
- * identical to "not added yet" unless the found value is printed.
+ * What a wait has found that the user can act on, said the first time it is
+ * seen rather than when the wait gives up. Each cause has a different fix, and
+ * the two the wizard is most likely to meet — an old A record left in place,
+ * and Cloudflare's orange cloud on by default for a record added minutes ago —
+ * look identical to "not added yet" from the spinner line alone. Null for
+ * the kinds with nothing to explain: no answer yet, or the answer wanted.
  */
-export function renderRecordDiagnosis(
+export function renderRecordExplanation(
   hostname: string,
   expected: string,
   diagnosis: RecordDiagnosis,
-): string[] {
+): string[] | null {
   switch (diagnosis.kind) {
     case "match":
-      return [`${hostname} points at this server.`];
     case "missing":
-      return [
-        `${hostname} does not resolve yet.`,
-        "That is normal for the first few minutes after adding a record. Leave this running; it checks again every 10 seconds.",
-      ];
+      return null;
     case "different":
       return [
         `${hostname} resolves to ${diagnosis.found.join(", ")}, not to this server (${expected}).`,
-        "If you just changed the record, it can take a few minutes. If it has been longer, check for an older record for the same name — replacing the value is not the same as adding a second record.",
+        "If you just changed the record, it can take a few minutes. If it has been longer, check for an older record for the same name — replacing the value is not the same as adding a second record. This keeps checking meanwhile.",
       ];
     case "cloudflare-proxied":
       return [
         `${hostname} is going through Cloudflare's proxy (the orange cloud) rather than straight to this server.`,
-        "Turn the proxy off for this record for now — click the orange cloud so it turns grey. The server needs a direct connection to get its HTTPS certificate; you can turn the proxy back on afterwards.",
+        "Turn the proxy off for this record for now — click the orange cloud so it turns grey. The server needs a direct connection to get its HTTPS certificate; you can turn the proxy back on afterwards. This keeps checking meanwhile.",
       ];
   }
 }
@@ -181,19 +233,31 @@ export function renderRecordDiagnosis(
 /**
  * The last word of a record wait that ran its full course.
  *
- * A proxied record is not a wrong record — it already points at the right
- * place, just through Cloudflare — so "fix the record" sends the user hunting
- * for a typo that is not there, past the one thing left to do. Cloudflare
- * turns the cloud on by default for a record added minutes ago, so this is
- * the likelier of the two timeouts, and it names the toggle by sight.
+ * Named by what was found, not a bare "still does not point here": a proxied
+ * record is not a wrong record — it already points at the right place, just
+ * through Cloudflare — so "fix the record" sends the user hunting for a typo
+ * that is not there, and an old record needs replacing where a missing one
+ * needs adding. The explanation for the found value was printed when it was
+ * first seen, so this only says what to do next.
  */
 export function renderRecordWaitTimeout(
   hostname: string,
+  expected: string,
   diagnosis: RecordDiagnosis,
+  /** The wait moved to the system resolver, whose cached "no record" can outlast the wait. */
+  fellBack = false,
 ): string {
-  return diagnosis.kind === "cloudflare-proxied"
-    ? `The record for ${hostname} exists and points at Cloudflare — turn the orange cloud next to it grey (DNS only), then run the same command again.`
-    : `${hostname} still does not point at this server. Fix the record and run the same command again.`;
+  switch (diagnosis.kind) {
+    case "cloudflare-proxied":
+      return `The record for ${hostname} exists and points at Cloudflare — turn the orange cloud next to it grey (DNS only), then run the same command again.`;
+    case "different":
+      return `${hostname} still points at ${diagnosis.found.join(", ")}, not at this server (${expected}). Replace the old record with the value above, then run the same command again.`;
+    case "match":
+    case "missing":
+      return `${hostname} still does not resolve — the record was not added, or was added under a different name (some consoles double the domain when the Name field is given the whole hostname)${
+        fellBack ? ", or your network's resolver is still caching the old answer" : ""
+      }. ${fellBack ? "Check the record, wait a little, and" : "Add it, then"} run the same command again.`;
+  }
 }
 
 /**
@@ -568,7 +632,7 @@ export function renderProxiedCheckProblem(
     case "not-proxied-at-authority":
       return [
         // The first line reports only what the poll last saw, branched the
-        // way renderRecordDiagnosis is: "still the direct address" would be
+        // way renderRecordExplanation is: "still the direct address" would be
         // false over a timeout that ended on another value or no answer.
         // The answer is deliberately not attributed to the zone's own
         // nameservers by name — the lookup prefers them but falls back to
@@ -1485,4 +1549,57 @@ export function renderCloudFrontNextSteps(input: {
     // CloudFront, so HTTP-01 renewal for that name can no longer complete.
     `Your server's logs will warn that it cannot renew a certificate for ${input.storageDomain}. That is expected now that the name points at CloudFront, and it is harmless.`,
   ];
+}
+
+export function renderGuidedStorage(input: {
+  kind: "r2" | "s3" | "gcs"; publicBucket: string; internalBucket: string;
+  region: string; project?: string; accountId?: string; downloadDomain?: string;
+}): { buckets: string[]; credentials: string[]; verification: string } {
+  const pair = `public: ${input.publicBucket}; internal: ${input.internalBucket}`;
+  if (input.kind === "r2") return {
+    buckets: [
+      `1. Open https://dash.cloudflare.com/${input.accountId}/r2/overview. Enable R2 if needed, then create or select these buckets: ${pair}.`,
+      `2. Under ${input.publicBucket} → Settings → Custom Domains, connect ${input.downloadDomain} in this account's active Cloudflare zone. Wait for Active. Disable r2.dev on both buckets; leave the internal bucket without any custom domain.`,
+      `3. In the download zone → Rules → Cache Rules, create a hostname rule for http.host eq "${input.downloadDomain}". Choose Eligible for cache and respect origin Cache-Control and Browser TTL; do not override Edge TTL.`,
+    ],
+    credentials: [
+      `4. Create or reuse one account-owned runtime API token at https://dash.cloudflare.com/${input.accountId}/api-tokens. Include Account → Workers R2 Storage → Read, Account → Workers R2 Storage Bucket Item → Write for both buckets, Zone → Zone → Read and Zone → Cache Purge for the download zone. The link pre-fills R2 Read, Zone Read and Cache Purge; add Bucket Item Write manually. R2 Read also allows reading objects across this account. Paste the token once; the wizard derives its S3 credentials and reuses it for zone/privacy verification and cache purge. Keep this runtime token; it is saved for the server and is not revoked after installation. Existing explicit S3 keys are still accepted.`,
+    ],
+    verification: "5. After you finish these steps, the wizard writes and reads test objects, verifies download/cache purge, and checks private access. Correct console settings and retry here if a check fails. Existing bucket policies are never changed automatically.",
+  };
+  if (input.kind === "s3") return {
+    buckets: [
+      `1. Open https://s3.console.aws.amazon.com/s3/buckets?region=${input.region}. Create or select ${pair}, in ${input.region}. Public object reads must be allowed by your account/organization. Do not disable account-wide Block Public Access.`,
+      `2. For ${input.publicBucket}, keep BlockPublicAcls and IgnorePublicAcls enabled; disable only bucket-level BlockPublicPolicy and RestrictPublicBuckets. In Permissions → Bucket policy, allow anonymous s3:GetObject on arn:aws:s3:::${input.publicBucket}/* and deny it on arn:aws:s3:::${input.publicBucket}/_internal/*. Do not grant anonymous ListBucket. The exact policy is printed below.`,
+      `3. For ${input.internalBucket}, keep all four Block Public Access settings enabled. No public-read policy, website or public CDN should expose it.`,
+    ],
+    credentials: [
+      "4. At https://console.aws.amazon.com/iam/home#/users, create/select a dedicated runtime user. Attach the printed bucket-scoped policy. Under Security credentials → Create access key, copy the access key ID and secret when prompted. Use a permanent key, not an expiring SSO/STS credential.",
+    ],
+    verification: "5. The wizard verifies both runtime read/write paths, public downloads and anonymous access restrictions. Console corrections can be reverified without starting again.",
+  };
+  return {
+    buckets: [
+      `1. Open https://console.cloud.google.com/storage/browser?project=${input.project}. Create or select ${pair}, location ${input.region}, Uniform bucket-level access enabled. Project/organization Public Access Prevention must allow the public bucket; existing keys do not bypass it.`,
+      `2. For ${input.publicBucket}, keep Public Access Prevention inherited (not enforced). Under Permissions → Grant access, grant allUsers the role Storage Legacy Object Reader (roles/storage.legacyObjectReader). This permits storage.objects.get without listing. Do not use Storage Object Viewer, which includes listing.`,
+      `3. For ${input.internalBucket}, enforce Public Access Prevention and remove any allUsers/allAuthenticatedUsers grant.`,
+    ],
+    credentials: [
+      `4. At https://console.cloud.google.com/iam-admin/serviceaccounts?project=${input.project}, create/select a runtime service account. On each of the two buckets, grant it Storage Object Admin. Do not grant project-wide object access.`,
+      "5. Under the service account → Keys → Add key → JSON, download its runtime key and give the wizard the local file path. If key creation is prohibited, obtain an administrator-approved exception or an existing usable runtime key; the console cannot bypass the policy.",
+    ],
+    verification: "6. The wizard verifies runtime read/write, public downloads and private/listing restrictions. Correct console settings and retry here if needed.",
+  };
+}
+
+export function renderCloudConnectorStorageSetup(input: { zone: string; domain: string; origin: string; provider: string }): string {
+  return `Cloud Connector (Beta), console setup:\n1. At https://dash.cloudflare.com → ${input.zone} → Rules → Cloud Connector, create a rule named Patch ${input.domain}. Provider: ${input.provider}. Bucket endpoint: ${input.origin}. Match expression: http.host eq "${input.domain}". Deploy the rule; keep object paths unchanged.\n2. Accept Cloud Connector's offer to create a proxied DNS record for ${input.domain}. If it is not offered, use DNS → Records → CNAME: name ${input.domain}, target ${input.origin}, Proxied. Wait for Universal SSL to cover ${input.domain}.\n3. Under Rules → Cache Rules, create a separate rule for http.host eq "${input.domain}". Set Eligible for cache, respect origin Cache-Control and Browser TTL, and do not override Edge TTL.\n4. The following runtime token needs only Zone Read and Cache Purge. The object verification checks delivery, cache hit, purge freshness, internal privacy and listing denial after these settings are deployed. Cloud Connector itself does not add a bucket prefix or URL rewrite.`;
+}
+
+export function renderR2SetupCredential(accountId: string): string {
+  return `Create a disposable account-owned API token in account ${accountId}. The link pre-fills Account API Tokens / Edit, Workers R2 Storage / Edit, Zone / Cache Rules / Edit, Zone / Read and Cache Purge. Before creating it, also add Account → Workers R2 Storage Bucket Item → Write. Review all permissions and restrict zone resources to the download zone. Enable R2 billing before continuing. Do not use a user token or the runtime purge token. This setup token will be revoked after setup and verification finish.`;
+}
+
+export function renderGcpSetupCredential(project: string): string {
+  return `At https://console.cloud.google.com/iam-admin/serviceaccounts?project=${project}, select a dedicated setup service account → Keys → Add key → JSON. It needs Storage Admin, Service Account Admin and Service Account Key Admin for setup, plus permission to read relevant organization policy. Supply an explicitly disposable key; it will be revoked. A key-creation policy block requires administrator action, not a console workaround.`;
 }

@@ -24,6 +24,7 @@
  * - `ask.ts` — the prompt-side helpers all of the above share.
  */
 
+import { createDnsSetup, DNS_FLAGS, dnsMode } from "./dnsSetup";
 import {
   CLOUDFRONT_DOCS_URL,
   PRODUCT_NAME,
@@ -43,6 +44,7 @@ import {
   type RecoveryEdge,
 } from "../../selfhostInstall";
 import {
+  describePublicAddressProblem,
   renderBeforeYouStart,
   renderCloudflareRemaining,
 } from "../../selfhostSetupCopy";
@@ -88,10 +90,20 @@ import {
   collectRepairValues,
 } from "./wizard";
 
+import { STORAGE_FLAGS, storageMode } from "./storage";
+
 export { DOCKER_BOOTSTRAP_DISTROS } from "./hostBootstrap";
 
 const INSTALL_FLAGS = {
   ...COMMON_FLAGS,
+  ...STORAGE_FLAGS,
+  ...DNS_FLAGS,
+  /**
+   * Recognised only to be refused with directions: install.sh's plain-HTTP
+   * mode serves the machine the stack runs on alone, which an ssh install
+   * of a server other machines reach can never be. See runInstall.
+   */
+  "--allow-http": "boolean",
   "--api-domain": "value",
   "--cloudflare": "boolean",
   "--cloudflare-api-token": "value",
@@ -109,6 +121,8 @@ const INSTALL_FLAGS = {
   "--install-curl": "boolean",
   "--install-docker": "boolean",
   "--install-git": "boolean",
+  /** The address the DNS records point at, when the server cannot report it. */
+  "--public-ip": "value",
   "--remote-path": "value",
   "--repair": "boolean",
   "--resume": "boolean",
@@ -160,6 +174,9 @@ export async function runInstall(
   const parsed = parseArgs(argv, INSTALL_FLAGS);
   const sshTarget = takeSingleTarget(parsed, "install");
   const requestedEdge = readRequestedEdge(parsed);
+  storageMode(parsed);
+  dnsMode(parsed);
+  const publicIp = readPublicIp(parsed);
   const remotePath = readStringFlag(parsed, "--remote-path");
   // Rejected before anything connects: install.sh refuses the pair too, but
   // twenty minutes and one pairing later.
@@ -169,6 +186,23 @@ export async function runInstall(
   ) {
     throw new UsageError(
       "Cloudflare and CloudFront are alternative CDNs; pass only one of --cloudflare or --cloudfront.",
+    );
+  }
+
+  // Plain HTTP (install.sh --allow-http) serves the machine the stack runs on
+  // alone — the API site is localhost — while this command sets up, over ssh,
+  // a server other machines reach. The two never meet: a localhost-only
+  // server on a remote host is unreachable from here, and a server other
+  // machines reach needs the certificate, DNS, and open ports the https
+  // install is built around. Refused before anything connects, naming the
+  // two commands that do cover the local case.
+  if (readBooleanFlag(parsed, "--allow-http")) {
+    throw new UsageError(
+      [
+        "--allow-http is not available here: plain HTTP serves only the machine the stack runs on (as localhost), and cmpatch selfhost install sets up a server other machines reach — which needs HTTPS.",
+        "",
+        "To run the real self-host stack on this machine over plain HTTP, run scripts/selfhost/install.sh --allow-http from a clone here. For a quick evaluation with no OAuth app, use cmpatch selfhost local-eval.",
+      ].join("\n"),
     );
   }
 
@@ -184,6 +218,7 @@ export async function runInstall(
     ...(deps.stderr !== undefined ? { stderr: deps.stderr } : {}),
   });
 
+  let dnsSetup: ReturnType<typeof createDnsSetup> | undefined;
   try {
     // Before the ssh question, so the list of what the run will need from
     // outside this terminal is read before any of it is asked for. Not on a
@@ -255,11 +290,18 @@ export async function runInstall(
     }
 
     const interactive = canAsk(deps, parsed);
+    dnsSetup = createDnsSetup(deps, parsed, interactive, session.progress);
+    session.dnsSetup = dnsSetup;
 
     // Before the recovery question, not after: the host checks are the same
     // whichever edge is taken, one of them can end the run outright, and the
     // start-over edge below cannot remove a stack without a working Docker.
     await runHostPreflight(deps, session, parsed);
+    // The flag wins over the survey: it exists for the hosts whose survey
+    // answer is wrong or empty, and the DNS step reads the address from here.
+    if (publicIp !== undefined && session.facts.install !== undefined) {
+      session.facts.install.publicIp = publicIp;
+    }
     await ensureCheckout(deps, session);
 
     let edge: RecoveryEdge | null =
@@ -320,6 +362,7 @@ export async function runInstall(
       "--skip-cloudflare-check",
       "--skip-cloudfront-check",
       "--skip-public-check",
+      "--skip-storage-check",
     ] as const) {
       if (readBooleanFlag(parsed, flag)) {
         args.push(flag);
@@ -400,6 +443,7 @@ export async function runInstall(
       removeFinishHook();
     }
 
+    dnsSetup.dispose();
     session.progress.stop("Install complete.");
     return {
       ...(answers === null ? {} : { adminEmail: answers.adminEmail }),
@@ -411,7 +455,28 @@ export async function runInstall(
     // this message when the failure is this command's to name.
     progress.fail("Install failed.");
     throw error;
+  } finally {
+    dnsSetup?.dispose();
   }
+}
+
+/**
+ * `--public-ip`, held to the same check the typed answer gets, before anything
+ * connects: a scripted run that passes a private or malformed address would
+ * otherwise print it into the records and wait for it.
+ */
+function readPublicIp(parsed: ParsedArgs): string | undefined {
+  const value = readStringFlag(parsed, "--public-ip");
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const problem = describePublicAddressProblem(value);
+  if (problem !== null) {
+    throw new UsageError(`${problem}\n\nCorrect the value passed as --public-ip and run the command again.`);
+  }
+
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +534,10 @@ async function finishDelivery(
     phase: FinishPhase;
   },
 ): Promise<string[]> {
+  if (input.answers?.storage && input.answers.storage.kind !== "bundled") {
+    const storage = input.answers.storage;
+    return [...(input.answers.storageWarnings ?? []), `Storage: ${storage.kind.toUpperCase()}; public bucket ${storage.publicBucket}; internal bucket ${storage.internalBucket}.`, `Verified download URL: ${storage.publicBaseUrl}`, "Storage, delivery and privacy probes passed. After signing in and creating a token, run ./scripts/selfhost/smoke.sh on the server with CODEMAGIC_PATCH_TOKEN set to verify an authenticated release."];
+  }
   const delivery = input.answers?.delivery;
   if (delivery === undefined) {
     // The resume and repair edges collect no answers, so there is no selection

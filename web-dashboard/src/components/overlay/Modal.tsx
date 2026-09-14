@@ -18,8 +18,10 @@ import type { ReactNode, RefObject } from "react";
 /** Tint of the icon tile; ports the legacy .modal__ico modifiers. */
 export type ModalTone = "default" | "danger" | "warn" | "green";
 
-// Icon-tile literals (legacy `.modal__ico`) — exported for the one screen
-// that borrows the tile outside a dialog (CallbackPage's sign-in-failed art).
+// Icon-tile literals (legacy `.modal__ico`). Dialog headers no longer render
+// the tile (the brand pass dropped icons beside headings); the literals stay
+// for the one screen that draws the tile as page art (CallbackPage's
+// sign-in-failed state).
 export const MODAL_ICON =
   "grid size-[42px] flex-none place-items-center rounded-[12px] [&_svg]:size-[21px]";
 
@@ -40,9 +42,6 @@ export interface ModalProps {
   title: ReactNode;
   /** Secondary line in the header (wired to aria-describedby). */
   description?: ReactNode;
-  /** Inline SVG for the .modal__ico tile; the tile is omitted when absent. */
-  icon?: ReactNode;
-  tone?: ModalTone;
   /** Non-scrolling banner rendered between the header and scrollable body. */
   notice?: ReactNode;
   /** .modal.wide (620px instead of 520px). */
@@ -110,8 +109,6 @@ export function Modal({
   onClose,
   title,
   description,
-  icon,
-  tone = "default",
   notice,
   wide = false,
   disableEscapeClose = false,
@@ -234,7 +231,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex animate-fade items-center justify-center overflow-auto bg-[rgba(10,14,34,.5)] p-6 backdrop-blur-[4px]"
+      className="fixed inset-0 z-[100] flex animate-fade items-center justify-center overflow-auto bg-overlay p-6"
       onMouseDown={(event) => {
         mouseDownOnOverlayRef.current = event.target === event.currentTarget;
       }}
@@ -262,14 +259,6 @@ export function Modal({
         tabIndex={-1}
       >
         <div className="flex items-start gap-3.5 px-6 pb-4 pt-[22px]">
-          {icon !== undefined ? (
-            <div
-              className={`${MODAL_ICON} ${MODAL_ICON_TONE[tone]}`}
-              aria-hidden="true"
-            >
-              {icon}
-            </div>
-          ) : null}
           <div>
             <h3
               id={titleId}

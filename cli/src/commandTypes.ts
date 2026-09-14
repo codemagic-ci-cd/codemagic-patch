@@ -518,6 +518,11 @@ export type InitCommand = {
   kind: "init";
 };
 
+export type DemoCommand = {
+  argv: string[];
+  kind: "demo";
+};
+
 /**
  * One command kind with internal subcommand dispatch, like `config` and
  * `init`: `parseFlags` rejects positional arguments, and
@@ -596,6 +601,15 @@ export type DebugCommand = {
 };
 
 export type DoctorCommand = {
+  unboundSelectors?: boolean;
+  fix?: boolean;
+  yes?: boolean;
+  nonInteractive?: boolean;
+  fixServerUrl?: string;
+  verifyDelivery?: boolean;
+  plistFile?: string;
+  androidStringsFile?: string;
+  gradleFile?: string;
   app?: string;
   appId?: string;
   bundler?: string;
@@ -633,6 +647,7 @@ export type CliCommand =
   | DeploymentRenameCommand
   | DeploymentRemoveCommand
   | DebugCommand
+  | DemoCommand
   | DoctorCommand
   | FingerprintCommand
   | InitCommand

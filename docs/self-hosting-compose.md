@@ -27,6 +27,122 @@ Related material:
   [local quickstart](../README.md#quickstart--try-it-locally) instead of
   deploying.
 
+## External storage in the install wizard
+
+Run `cmpatch selfhost install` and choose where update files should live. Bundled
+MinIO remains the default. R2 is offered when the API domain uses Cloudflare DNS;
+S3 and GCS are also available. `--storage-mode r2` explicitly selects R2 with
+other API DNS, but still requires an active download zone in the R2 account.
+
+Each external provider uses two different buckets: publicly readable artifacts
+and private `_internal/` objects. The wizard proposes editable bucket names and
+asks for account/project and location before creating anything. Choose automatic
+setup for new buckets and runtime credentials, or guided setup to
+create/select resources in the console. The guided instructions include the
+exact bucket names, policy values, console navigation and verification steps.
+
+- **R2:** enable R2 billing and supply a disposable account-owned setup token.
+  Automatic setup creates both buckets, a public custom download domain, a
+  hostname Cache Rule, and runtime object/purge credentials. Neither bucket
+  uses `r2.dev`; the internal bucket has no public custom domain.
+- **S3:** explicitly select a named AWS profile (including SSO), or a disposable
+  IAM access key. Public object reads must be permitted by account/organization
+  policy. The wizard changes only its newly created buckets, never account-wide
+  Block Public Access. Runtime credentials are a dedicated bucket-scoped IAM
+  user key, not an expiring SSO/STS session.
+- **GCS:** select a gcloud account and project, or a disposable service-account
+  JSON file. Public Access Prevention must permit the public bucket, and
+  service-account key creation must be allowed. Runtime access is granted on
+  the two buckets, not the whole project. The runtime key is transported over
+  SSH as base64, written with mode `0600`, and copied into container tmpfs before
+  the server drops to its unprivileged account.
+
+S3/GCS can use direct storage, guided CloudFront, or guided Cloudflare Cloud
+Connector (Beta). CloudFront needs a certificate, public bucket origin,
+restricted invalidation key and DNS changes. Cloud Connector needs a rule
+matching only the download hostname, a proxied record and a separate Cache Rule
+respecting origin Cache-Control. Neither option bypasses public-access policy.
+The wizard supplies the console steps and verifies the final URL before install.
+
+Automatic setup obtains setup credentials only after collecting the other
+installation answers. Existing AWS profiles and gcloud logins are not changed
+or revoked. Disposable setup credentials are revoked in an awaited cleanup path
+on completion or handled failure/cancellation. Failed cleanup prints the
+credential ID and manual revoke link and remains in the closing summary. Hard
+termination or network loss cannot guarantee revocation. Only runtime secrets
+reach the installer; never use the setup token as a runtime purge token.
+
+Verification writes and reads a unique object in each bucket, checks anonymous
+internal access and listing denial, and compares a public download through the
+final `PUBLIC_BASE_URL`. A selected CDN must also demonstrate cache hit and fresh
+content after purge, before the probe can expire naturally. Respect origin
+Cache-Control; CloudFront maximum TTL must be at least 3600 seconds. Probes are
+deleted; failed deletion reports the object to remove. Readiness waits display progress and support Ctrl+C. Guided verification
+can be retried without provisioning again or re-entering completed answers.
+
+After the installer reports a healthy server, sign in and run
+`./scripts/selfhost/smoke.sh` on the server with `CODEMAGIC_PATCH_TOKEN` set to
+verify an authenticated release. Storage probes alone do not prove release or
+device behavior.
+
+### Existing configuration and recovery
+
+A complete runtime configuration skips provisioning. For an unattended S3
+install, export `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and
+`GITHUB_OAUTH_CLIENT_SECRET`, then use:
+
+```sh
+cmpatch selfhost install user@vps --non-interactive \
+  --api-domain updates.example.com --email admin@example.com \
+  --github-oauth-client-id Iv1.example \
+  --storage-mode s3 --s3-bucket patch-public --s3-internal-bucket patch-private \
+  --s3-region us-east-1 \
+  --public-base-url https://patch-public.s3.us-east-1.amazonaws.com
+```
+
+For GCS use `--storage-mode gcs`, `--gcs-public-bucket`,
+`--gcs-internal-bucket` and `--gcs-credentials-file /secure/runtime.json`.
+For R2 use `--storage-mode r2`, the two S3 bucket flags,
+`--s3-endpoint https://ACCOUNT_ID.r2.cloudflarestorage.com`, and a custom-domain
+`--public-base-url`. Supply `--cloudflare-zone-id` and a runtime
+`CLOUDFLARE_API_TOKEN` using one account-owned runtime token with object-write
+access on both buckets, **Workers R2 Storage / Read** on the account, and
+**Zone / Read** plus **Cache Purge** on the download zone. Automatic setup
+creates this combined token. Account-level R2 Read also permits reading objects
+in other buckets in that account. The remote installer requires this permission
+on the saved runtime token even when separate S3 keys or a local
+`--r2-setup-token` verification override are supplied.
+
+Explicit S3-compatible configuration supports `--s3-endpoint` and
+`--s3-force-path-style true|false`. For path-style delivery, include the public
+bucket prefix in `--public-base-url`, or configure and verify the CDN rewrite.
+These custom mappings are outside the ordinary guided console walkthrough.
+External modes reject `--storage-domain` and host-origin secrets; use
+`--download-domain` for a guided CDN or `--public-base-url` for completed settings.
+
+If setup fails before deployment, inspect the printed resources and reuse them:
+
+```sh
+cmpatch selfhost install user@vps --storage-mode s3 --storage-setup guided \
+  --s3-bucket patch-public --s3-internal-bucket patch-private
+```
+
+This re-verifies existing resources; it does not resume provisioning at an API
+step. Buckets, policies and runtime keys are not rolled back or deleted by
+start-over. After the server env exists, existing resume behavior applies. To
+replace storage credentials, back up and edit the runtime values in the server's
+`.env.selfhost` (or replace its GCS key file with mode `0600`), recreate the server
+with the same Compose overlays, and rerun storage/release checks. Storage keys
+are outside `--repair-env`.
+
+The target source checkout must contain the matching two-bucket server, overlays
+and installer. The CLI checks the external-storage capability marker before
+provisioning or passing configuration. Publish that source before the matching
+CLI. Direct `scripts/selfhost/install.sh` users retain the optional
+`S3_INTERNAL_BUCKET` legacy fallback and an explicit `--skip-storage-check`
+escape hatch. The CLI always performs its own pre-install verification; that
+flag only skips the subsequent on-server script check.
+
 ## Requirements
 
 Prepare everything below **before** running the installer. The pieces span two
@@ -39,7 +155,10 @@ differ.
 - A publicly reachable **Linux host with a public IP** — *not* behind NAT. Caddy
   obtains Let's Encrypt certificates over HTTP, so the host must be reachable from
   the internet on ports 80/443. A laptop behind NAT or a home router will fail at
-  the certificate step.
+  the certificate step. (A host that cannot meet this — an intranet, a tailnet,
+  a laptop — can run the stack over plain HTTP instead; see
+  [Plain HTTP (no TLS)](#plain-http-no-tls). That mode has none of the DNS,
+  certificate, or port 443 requirements below.)
 - Sizing: at runtime the stack (the server, Caddy, and — with the default
   bundled modes — PostgreSQL and MinIO in one Compose project) fits in roughly
   **2 GB RAM** plus a few GB of disk that grows
@@ -68,6 +187,10 @@ differ.
   - **The Cloudflare API** — only if you enable the CDN.
 
 ### DNS — must resolve before you install
+
+When using `cmpatch selfhost install`, the [DNS setup step](#dns-setup-in-the-cli-wizard)
+can create these records and wait for them before starting the remote installer.
+The prerequisite below applies directly when running the shell installer yourself.
 
 Point two records at the host and **let them propagate before running the
 installer**: Caddy's certificate challenge needs them live, or the install stalls
@@ -121,7 +244,10 @@ From your own machine, `cmpatch selfhost install user@vps` runs this same
 installer over SSH and guides you through DNS, the OAuth app, and an optional
 CDN, checking each step; it covers the default bundled Postgres/MinIO stack
 (see [Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine)
-for the day-2 commands). The rest of this section is the on-server path.
+for the day-2 commands). It does not take `--allow-http`: the
+[plain-HTTP shape](#plain-http-no-tls) serves the machine the stack runs on
+alone, which is not what an install over ssh produces. The rest of this
+section is the on-server path.
 
 If you are not already on the server, one command gets you there and starts the
 installer:
@@ -321,6 +447,91 @@ after the browser sign-in. The user's
 Bitbucket primary email must be **confirmed**; sign-in fails otherwise with a
 "confirm the primary email" error.
 
+## Plain HTTP (no TLS)
+
+`install.sh --allow-http` runs the same stack — the same server image, Caddy,
+the bundled PostgreSQL and MinIO, OAuth sign-in — over **plain HTTP on port
+80** with no certificates, **for the machine it runs on alone**. It exists to
+evaluate the real self-host stack on a laptop: the API site is `localhost` and
+the bundled storage site is `localhost:9110`, so nothing in the
+[Requirements](#requirements) about a public IP, DNS records, Let's Encrypt,
+open ports, or firewalls applies. That is also the boundary: a server other
+machines reach — an intranet host, a VPS, anything with a hostname or an IP —
+needs exactly that infrastructure, and with it the certificate the HTTPS
+install obtains, so the installer refuses any name but `localhost` here rather
+than half-supporting a deployment over plain HTTP.
+
+```bash
+./scripts/selfhost/install.sh --allow-http \
+  --email admin@example.com \
+  --github-oauth-client-id <client-id> \
+  --github-oauth-client-secret <client-secret>
+```
+
+`--api-domain` and `--storage-domain` are optional with the flag and default
+to `localhost` and `localhost:9110`; passing them may only repeat `localhost`,
+or name another `localhost:<port>` for storage.
+
+`cmpatch selfhost install` does not take the flag: it installs a server other
+machines reach, over ssh, and refuses `--allow-http` with the two commands
+that cover the local case — this script, run from a clone on the machine
+itself, and `cmpatch selfhost local-eval` for a quick look that needs no
+OAuth app.
+
+What changes, compared with the default HTTPS install:
+
+- **Domains.** The API domain is `localhost`; the bundled storage domain is
+  `localhost:<port>` (default `9110`; not 80 or 443), because Caddy needs two
+  distinct site addresses and on one machine a second port is the only way to
+  get one. Any other hostname or IP is refused with the flag — and `localhost`
+  is refused without it. With external storage (`--storage-mode s3`/`gcs`) an
+  `http://` `--public-base-url` is accepted only on `localhost` too; storage
+  other machines reach is an `https://` bucket.
+- **URLs.** `SERVER_URL`, `PUBLIC_BASE_URL`, and the OAuth redirect allowlist
+  are written as `http://localhost…`. Register the OAuth App (or Bitbucket
+  consumer) with the callback URL `http://localhost/auth/callback` accordingly.
+- **Reach.** Port 80 and the storage port are bound to the loopback
+  interface (`127.0.0.1`) only, so connections can come from this machine
+  alone: a browser on it, an iOS simulator, or any client that resolves
+  `localhost` to it. Another machine on the network cannot connect, whatever
+  `Host` header it sends — Caddy's `localhost` site address matches the
+  request's `Host` header, not the address the connection arrived on, so the
+  binding is the boundary, not the site address. Port 443 is not published.
+- **The app.** Point `CodemagicPatchApiUrl` and `CodemagicPatchDownloadBaseUrl`
+  at the `http://` URLs the installer prints, and allow cleartext traffic to
+  them (Android `android:usesCleartextTraffic` or a network security config;
+  iOS App Transport Security exceptions). Traffic to this server is
+  unencrypted: use it on a network you trust.
+- **Compose.** `.env.selfhost` records `SELFHOST_SCHEME=http`, which selects
+  the `deploy/selfhost/compose.http.yml` overlay (see
+  [Mode flags and compose overlays](#mode-flags-and-compose-overlays)). The
+  overlay hands Caddy an `http://` site scheme and replaces the base file's
+  port list (`ports: !override`) with `127.0.0.1:80:80` and the storage port
+  recorded in `SELFHOST_HTTP_STORAGE_PORT`, also on `127.0.0.1`; 443 is not
+  published, so it need not be free. The replacement matters: a plain
+  `ports:` list would merge with the base file's `80:80` and leave port 80
+  reachable from every interface. The same applies to a
+  `docker-compose.selfhost.override.yml`, which is merged after this overlay:
+  a `ports:` entry there must bind to `127.0.0.1` (or use `!override`), and
+  every selfhost script refuses to render or start an http stack whose merged
+  configuration publishes a port on every interface. `ACME_EMAIL` is still
+  written (the admin email): Caddy's `email` option rejects an empty value
+  even when no certificate is issued.
+- **Not combinable with a CDN.** `--cloudflare` and `--cloudfront` are refused
+  together with `--allow-http`, and so is an env file edited to pair
+  `SELFHOST_SCHEME=http` with a CDN adapter: both CDNs serve `https://` viewer
+  URLs and pull from an origin they can verify.
+- **Fixed at install time**, like the database and storage modes. Moving a
+  deployment between HTTPS and plain HTTP changes every URL its clients and
+  its OAuth provider were given, so it is a reinstall (remove `.env.selfhost`
+  and install again), not a rerun; `--allow-http` on an existing HTTPS
+  deployment is ignored with a warning, and `--repair-env` does not change it.
+  `--repair-env --storage-domain <host:port>` does keep `PUBLIC_BASE_URL` and
+  the storage port in step, as it does for the other derived values.
+
+Backup, restore, upgrade, and smoke work unchanged: they read the scheme from
+`.env.selfhost` the way they read the mode flags.
+
 ## External database and external storage
 
 The Compose stack runs in one of four shapes, selected by two flags in
@@ -358,6 +569,7 @@ storage each ship as a mode overlay in `deploy/selfhost/`:
 | `SELFHOST_STORAGE_MODE=bundled` (or absent) | `deploy/selfhost/compose.bundled-storage.yml` |
 | `SELFHOST_STORAGE_MODE=s3` | `deploy/selfhost/compose.external-storage-s3.yml` |
 | `SELFHOST_STORAGE_MODE=gcs` | `deploy/selfhost/compose.external-storage-gcs.yml` |
+| `SELFHOST_SCHEME=http` (`https` or absent selects nothing) | `deploy/selfhost/compose.http.yml`, after the storage overlay — see [Plain HTTP (no TLS)](#plain-http-no-tls) |
 
 Compose commands run by hand need the overlays matching the env file's flags,
 with `docker-compose.selfhost.override.yml` last when the deployment uses one.
@@ -368,6 +580,9 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
   -f docker-compose.selfhost.yml -f deploy/selfhost/compose.bundled-db.yml \
   -f deploy/selfhost/compose.bundled-storage.yml up -d
 ```
+
+A plain-HTTP deployment adds `-f deploy/selfhost/compose.http.yml` after the
+storage overlay.
 
 Omitting the overlays does not fail. The base file alone is a valid Compose
 file describing only Caddy and the server, so it starts with no database and
@@ -444,6 +659,44 @@ EC2/ECS instance roles).
   --public-base-url https://my-ota-bucket.s3.eu-central-1.amazonaws.com
 ```
 
+For a new two-bucket setup, also pass `--s3-internal-bucket my-private-bucket`
+(or set `S3_INTERNAL_BUCKET`). The server routes `_internal/` keys, including
+both sides of copies, to that private bucket. Names must differ. Keep all
+public access blocked on the internal bucket and grant runtime credentials
+object access to both buckets. Without this setting, existing one-bucket
+routing remains unchanged.
+
+The CLI R2 wizard verifies privacy through Cloudflare's management API:
+`r2.dev` must be disabled for both buckets, and the internal bucket must have
+no enabled custom domains. The authenticated S3 endpoint's anonymous response
+is not a test of these public settings. Automatic setup retains its disposable
+setup token until verification (including retries) finishes, then revokes it.
+Automatic R2 setup generates one runtime token combining object writes on the
+two buckets, **Workers R2 Storage / Read** on the account, and **Zone / Read**
+plus **Cache Purge** on the download zone. The account-level read permission
+also allows reading objects in other buckets in that account.
+
+For guided/configured R2, reuse that combined token or create one account-owned
+token with the same permissions. Supply it as `CLOUDFLARE_API_TOKEN` or through
+the wizard's password prompt. The CLI derives S3 credentials from this token
+when explicit S3 keys are absent and reuses it for zone/privacy verification
+and cache purge. Keep this token: it is saved in the server configuration.
+Existing explicit S3 keys are still supported. For older installations,
+`--r2-setup-token` / `CMPATCH_R2_SETUP_TOKEN` is an optional privacy-verification
+override; this override is not saved or revoked automatically.
+
+S3 and GCS automatic setup check both bucket names before creating either
+bucket. Existing names or inconclusive permission checks stop provisioning;
+use guided setup to review and reuse existing buckets.
+
+Before starting the stack, the installer writes and reads a unique object in
+each configured bucket, checks anonymous internal reads and bucket listings
+are denied, and compares a public download through `PUBLIC_BASE_URL` with the
+uploaded content. Probe objects are deleted afterward. Failures stop with
+correction guidance; `--skip-storage-check` explicitly skips these checks.
+This does not replace the authenticated release smoke test. Backup preserves
+the internal bucket setting but does not back up external bucket contents.
+
 **Bucket policy.** The bucket serves public OTA artifacts anonymously and
 keeps the `_internal/*` staging prefix private.
 [`deploy/selfhost/aws-s3-bucket-policy.example.json`](../deploy/selfhost/aws-s3-bucket-policy.example.json)
@@ -486,6 +739,13 @@ can see. The `PUBLIC_BASE_URL` probes run as well, as delivery-path checks
 (see [Smoke](#smoke)).
 
 #### GCS (`--storage-mode gcs`)
+
+For SSH automation, `GCS_CREDENTIALS_JSON_BASE64` can carry the base64-encoded
+runtime service-account JSON instead of `--gcs-credentials-file`. The installer
+writes it with private file permissions; do not put setup credentials in this
+input. Runtime key replacement remains a manual operation: replace
+`gcs-service-account.json` with mode `0600` and rerun the installer.
+
 
 GCS uses two buckets instead of one bucket with a private prefix:
 `--gcs-public-bucket` holds the public OTA artifacts, `--gcs-internal-bucket`
@@ -847,7 +1107,7 @@ fingerprint disagrees with the value already recorded for the explicit target
 binary version. If a developer approves that disagreement, the release still
 targets that binary version and can be delivered to its devices.
 
-If an update never arrives, `cmpatch doctor --app MyApp --deployment Staging`
+If an update never arrives, `cmpatch doctor --platform ios --app MyApp --deployment Staging`
 checks the local and deployment configuration, and
 `cmpatch fingerprint --platform <ios|android>` prints the fingerprint the CLI
 computes for the project. In **CI**, authenticate with a token instead of
@@ -1245,11 +1505,16 @@ when Cloudflare is enabled.
 Purge does nothing unless Cloudflare is actually caching the manifest/meta JSON.
 After proxying the storage domain, add a Cloudflare **Cache Rule** that makes the
 `manifest.json` / `meta.json` paths eligible for caching — for example, a rule
-for the storage hostname with cache status **Eligible for cache** and Edge TTL
-set to **Use cache-control header if present, bypass cache if not**. This rule
-is still needed because Cloudflare does not cache JSON by default. Do not add a
-second Edge TTL override — and **delete** the two-hour `.json` Edge TTL rule if
-an earlier version of this guide had you create one: Cloudflare Origin Cache
+for the storage hostname with cache status **Eligible for cache**, Edge TTL
+set to **Use cache-control header if present, bypass cache if not**, and
+Browser TTL set to **Respect origin TTL**. This rule is still needed because
+Cloudflare does not cache JSON by default. The Browser TTL setting matters too:
+Cloudflare's zone default (four hours on the Free plan) otherwise rewrites the
+origin's `max-age=0` to `max-age=14400`, and iOS devices would then keep a
+stale manifest for up to four hours after a release — a purge cannot reach a
+device cache. Do not add a second Edge TTL override — and **delete** the
+two-hour `.json` Edge TTL rule if an earlier version of this guide had you
+create one: Cloudflare Origin Cache
 Control respects the five-minute `s-maxage` default, while the Free-plan
 two-hour floor applies only to an explicit Edge TTL override, which takes
 precedence over `s-maxage` when present. Releases purge the mutable paths
@@ -1366,3 +1631,47 @@ which explicitly denies that prefix.
 The complete console settings, pre-cutover commands, adoption flow, IAM policy,
 and rotation checklist live in
 [`docs-site/docs/setup/cloudfront.mdx`](../docs-site/docs/setup/cloudfront.mdx).
+
+### DNS setup in the CLI wizard
+
+The install wizard can create DNS records with a Cloudflare API token, or open
+a Domain Connect approval page when your DNS provider advertises the Patch
+template. Manual record creation remains available. Choose once per DNS zone;
+the wizard checks propagation after setup and keeps the existing ACM and
+CloudFront readiness checks.
+
+Use `--dns-setup manual` to keep all DNS changes manual. The default `auto` asks
+in interactive installs when the wizard can add the records for you — a zone on
+Cloudflare, or a provider that advertises the Patch Domain Connect template —
+and otherwise prints the records to add without asking; unattended installs
+leave DNS manual. `--dns-setup cloudflare` explicitly enables Cloudflare record
+creation; existing records that need replacement still require interactive
+review.
+
+The records point at the server's public IPv4 address, which the wizard reads
+from the server itself. A server that cannot report one — behind NAT (Oracle
+Cloud, a VM behind a router), or IPv6-only — is asked for it, with the address
+the ssh hostname resolves to offered as the default; `--public-ip <address>`
+supplies it without a prompt, and a scripted run with `--dns-setup cloudflare`
+must pass it. While a record is
+being waited for, the wizard explains what it found the first time it sees an
+old record or a Cloudflare-proxied one, and keeps checking.
+
+For Cloudflare, create a separate temporary token with **Zone / Zone / Read**
+and **Zone / DNS / Edit**, scoped to the zones you will configure. Enter it at
+the password prompt, or supply `CMPATCH_DNS_CLOUDFLARE_API_TOKEN` through your
+shell's secret-input mechanism. The wizard retains it through the final DNS
+change, does not save it in the server or CLI configuration, and reminds you to
+revoke it after the run. Runtime cache-purge credentials are separate.
+
+Initial records and CloudFront/ACM records use DNS-only mode. Existing matching
+records are reused; replacements show the old and new values for approval.
+Multiple conflicting records require manual resolution. If a request loses
+its response, inspect the provider's current record before retrying.
+
+Domain Connect availability depends on provider onboarding of the Patch
+record templates; the option is offered only after the wizard has found the
+template advertised for your zone, and a zone without it uses the manual
+records for the rest of the run. Opening the approval page does not establish
+that the record changed; the wizard still waits for DNS or download
+verification.

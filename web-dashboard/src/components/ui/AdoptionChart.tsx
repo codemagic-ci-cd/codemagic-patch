@@ -10,7 +10,7 @@
 
 import { useMemo, useRef, useState } from "react";
 
-import { formatCount } from "../../model/format";
+import { formatCompactCount, formatCount } from "../../model/format";
 import {
   dayBucketStarts,
   isPartialBucket,
@@ -148,7 +148,11 @@ export function AdoptionChart({
           {gridValues.map((value) => (
             <g key={value}>
               <line
-                className="stroke-border [stroke-dasharray:3_4] [stroke-width:1]"
+                className={
+                  value === 0
+                    ? "stroke-border-strong [stroke-width:1]"
+                    : "stroke-border [stroke-dasharray:3_4] [stroke-width:1]"
+                }
                 x1={PLOT.left}
                 y1={y(value)}
                 x2={VIEW_W - PLOT.right}
@@ -160,7 +164,7 @@ export function AdoptionChart({
                 y={y(value) + 3.5}
                 textAnchor="end"
               >
-                {formatCount(value)}
+                {formatCompactCount(value)}
               </text>
             </g>
           ))}
@@ -183,20 +187,27 @@ export function AdoptionChart({
 
           {rows.map((row) => {
             const solidEnd = lastIsPartial ? lastIndex - 1 : lastIndex;
-            const solidPoints = row.values
-              .slice(0, solidEnd + 1)
-              .map((value, index) => `${x(index)},${y(value)}`)
-              .join(" ");
+            const first = row.values.findIndex((value) => value > 0);
+            const from = first > 0 ? first - 1 : first;
+            const solidPoints =
+              first === -1 || from > solidEnd
+                ? ""
+                : row.values
+                    .slice(from, solidEnd + 1)
+                    .map((value, offset) => `${x(from + offset)},${y(value)}`)
+                    .join(" ");
             return (
               <g key={row.key}>
-                <polyline
-                  fill="none"
-                  stroke={row.color}
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  points={solidPoints}
-                />
+                {solidPoints ? (
+                  <polyline
+                    fill="none"
+                    stroke={row.color}
+                    strokeWidth={2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    points={solidPoints}
+                  />
+                ) : null}
                 {lastIsPartial ? (
                   <line
                     stroke={row.color}

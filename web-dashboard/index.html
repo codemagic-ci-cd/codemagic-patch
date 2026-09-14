@@ -9,6 +9,31 @@
     />
     <title>Codemagic Patch Dashboard</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem(
+            "codemagic-patch.dashboard.theme",
+          );
+          var preference =
+            stored === "light" || stored === "dark" || stored === "system"
+              ? stored
+              : "system";
+          var dark =
+            preference === "dark" ||
+            (preference === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch (err) {
+          var fallbackDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme = fallbackDark
+            ? "dark"
+            : "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

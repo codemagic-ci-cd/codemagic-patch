@@ -40,8 +40,3 @@ export const FIRST_RELEASE_DOCS_URL = `${PATCH_DOCS_SITE_URL}/setup/first-releas
 // How to see the Cloudflare cache at work. Needs a published release, which
 // the install summary that used to print the check inline never had.
 export const CLOUDFLARE_VERIFY_DOCS_URL = `${PATCH_DOCS_SITE_URL}/setup/cloudflare#verify`;
-
-// The on-device demo, on the public repo: the local evaluation stack's ready
-// banner points here rather than at the CLI's own checkout, whose path is an
-// implementation detail; the demo's README says where that checkout is.
-export const ON_DEVICE_DEMO_URL = `${SOURCE_REPO_URL}/tree/main/examples/on-device-demo`;

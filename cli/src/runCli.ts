@@ -396,7 +396,7 @@ export async function runCli(
   // who is present, and explicit-json runs already force them into the --yes
   // requirement via withJsonNonInteractiveMode. Commands whose whole point is
   // a guided session keep their prompts and their own interactivity gates.
-  const promptDrivenKinds = new Set(["config", "init", "login", "selfhost"]);
+  const promptDrivenKinds = new Set(["config", "demo", "init", "login", "selfhost"]);
   const executionDeps =
     !promptDrivenKinds.has(commandForExecution.kind) &&
     (effectiveOutput.format === "json" || declinesInteraction(argv))

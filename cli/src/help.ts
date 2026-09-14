@@ -32,6 +32,7 @@ const TOP_LEVEL_SECTIONS: readonly {
       ["init", `Set up ${PRODUCT_NAME} for this project`],
       ["login", "Sign in to the update server"],
       ["doctor", "Diagnose local setup and OTA readiness"],
+      ["demo", "Watch an OTA update apply on a simulator"],
     ],
     title: "Getting started",
   },

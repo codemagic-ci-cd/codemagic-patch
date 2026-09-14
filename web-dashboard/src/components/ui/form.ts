@@ -14,8 +14,8 @@ export const FIELD_LABEL = "mb-[7px] block text-[14px] font-semibold text-fg";
 
 export const FIELD_HINT = "mt-[7px] text-[13px] text-fg-3";
 
-export const FIELD_ERR =
-  "mt-[7px] flex items-center gap-[5px] text-[13px] text-red [&_svg]:size-[13px]";
+/** Validation message: plain red text directly under its field, no icon. */
+export const FIELD_ERR = "mt-[7px] block text-[13px] text-red";
 
 export const INPUT =
   "w-full rounded-control border bg-surface px-[13px] py-2.5 text-[15px] text-fg [font-family:inherit] [transition:.15s] placeholder:text-fg-faint focus:outline-none";
@@ -44,7 +44,7 @@ export const TOGGLE =
 export const TOGGLE_INPUT = "peer absolute opacity-0";
 
 export const TOGGLE_TRACK =
-  "relative h-6 w-[42px] flex-none rounded-pill bg-border-strong [transition:.2s] after:absolute after:left-[3px] after:top-[3px] after:size-[18px] after:rounded-pill after:bg-white after:shadow-sm after:content-[''] after:[transition:.2s] peer-checked:bg-blue peer-checked:after:translate-x-[18px] peer-focus-visible:shadow-glow";
+  "relative h-6 w-[42px] flex-none rounded-pill bg-border-strong [transition:.2s] after:absolute after:left-[3px] after:top-[3px] after:size-[18px] after:rounded-pill after:bg-thumb after:shadow-sm after:content-[''] after:[transition:.2s] peer-checked:bg-blue peer-checked:after:translate-x-[18px] peer-focus-visible:shadow-glow";
 
 // Range slider (legacy `.slider`). The track properties convert; the WebKit
 // thumb (::-webkit-slider-thumb) and the Firefox thumb (::-moz-range-thumb)

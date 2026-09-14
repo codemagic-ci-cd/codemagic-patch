@@ -2,6 +2,7 @@ export { checkForUpdate } from "./checkForUpdate";
 export { downloadUpdate } from "./downloadUpdate";
 export { getRunningBundleUpdateMetadata } from "./getRunningBundleUpdateMetadata";
 export { installUpdate } from "./installUpdate";
+export { isNextVersionReady } from "./isNextVersionReady";
 export { notifyAppReady } from "./notifyAppReady";
 export { sync } from "./sync";
 export {

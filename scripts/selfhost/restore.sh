@@ -102,6 +102,13 @@ if [ "${BACKUP_ENV_STORAGE_MODE:-bundled}" != "$BACKUP_STORAGE_MODE" ]; then
   fail_selfhost "${BACKUP_MANIFEST_FILE} records storage_mode=${BACKUP_STORAGE_MODE} but the backup's own env.selfhost sets SELFHOST_STORAGE_MODE=${BACKUP_ENV_STORAGE_MODE:-bundled}. backup.sh writes these from the same source, so this backup was edited or assembled by hand — do not restore it until the inconsistency is resolved."
 fi
 
+if [ -f "$BACKUP_MANIFEST_FILE" ] && grep -q '^s3_internal_bucket=' "$BACKUP_MANIFEST_FILE"; then
+  backup_internal_bucket="$(backup_manifest_value s3_internal_bucket)"
+  env_internal_bucket="$(SELFHOST_ENV_FILE="${BACKUP_DIR}/env.selfhost" selfhost_mode_from_env_file S3_INTERNAL_BUCKET)"
+  [ "$backup_internal_bucket" = "$env_internal_bucket" ] ||
+    fail_selfhost "backup manifest and env disagree on S3_INTERNAL_BUCKET; correct the backup before restoring"
+fi
+
 if [ "$BACKUP_DB_MODE" = "bundled" ]; then
   [ -f "${BACKUP_DIR}/postgres.dump" ] || fail_selfhost "missing ${BACKUP_DIR}/postgres.dump"
 fi

@@ -1,7 +1,7 @@
 ---
 title: CLI command reference
 description: 'Reference for cmpatch commands, flags, and release workflows.'
-llmsDescription: 'cmpatch commands and flags — init, selfhost, release-react, promote, rollback, doctor.'
+llmsDescription: 'cmpatch commands and flags — init, selfhost, demo, release-react, promote, rollback, doctor.'
 ---
 
 # CLI command reference
@@ -18,21 +18,66 @@ Install with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then run `c
 | `cmpatch init` | Link a project to a server and write `codemagic-patch.config.json`; interactively install a server or enter an existing URL, sign in after a new install, and create or select an app for each platform |
 | `cmpatch context` | Show the effective resolved context; add `--remote` to include server SDK configuration (`downloadBaseUrl`) |
 
-## Self-hosting
+## Local evaluation and self-hosting {#self-hosting}
 
-`local-eval` runs the evaluation stack on this machine. The other commands run
+`local-eval` runs the evaluation stack on this machine. If you want to try an OTA
+with a ready-made app first, run `cmpatch demo` to build the bundled app and watch an OTA fix apply; the demo
+handles local sign-in and setup. See [Local quickstart](/docs/) for the full walkthrough.
+The install, upgrade, backup, and restore commands run
 the repository's authoritative self-host scripts over SSH. The guided installer
-creates the bundled Postgres and MinIO stack; external database or S3/GCS
-installs use the direct `install.sh` path described in [Infrastructure
-adapters](/docs/setup/infrastructure).
+defaults to bundled Postgres and MinIO; external R2/S3/GCS storage supports
+automatic and guided first-install setup. External database setup still uses
+the direct `install.sh` path in [Infrastructure adapters](/docs/setup/infrastructure).
 
 | Command | Description |
 | --- | --- |
 | `cmpatch selfhost local-eval [up\|down\|status]` | Start, stop, or inspect the localhost evaluation stack; `up` is the default |
+| `cmpatch demo [--platform ios\|android] [--checkout <path>]` | Run the guided OTA demo against the local evaluation stack; reuse its checkout, sign in, build the app, and publish a fix after confirmation |
 | `cmpatch selfhost install [user@vps]` | Check and prepare a server, then run the guided install with DNS, GitHub OAuth, and optional CDN setup |
 | `cmpatch selfhost upgrade [user@vps]` | Fast-forward the server checkout and run the guarded backup-and-update workflow |
 | `cmpatch selfhost backup [user@vps]` | Take a mode-aware backup; add `--download` to copy it to this machine |
 | `cmpatch selfhost restore [backup] [user@vps]` | Select or upload a backup, take a safety backup, and restore the components it contains |
+
+### DNS setup
+
+`--dns-setup auto|manual|cloudflare|domain-connect` selects setup-time DNS handling.
+Interactive `auto` offers to add the records for you where it can — on
+Cloudflare, or through Domain Connect when your DNS provider advertises the
+Patch templates — with a manual alternative; where it cannot, it prints the
+records without asking. Unattended `auto` uses manual DNS. For Cloudflare,
+supply a setup-only token through `CMPATCH_DNS_CLOUDFLARE_API_TOKEN` with Zone
+Read and DNS Edit permissions. Existing records require interactive approval
+before replacement. Domain Connect requires browser approval.
+
+`--public-ip <address>` supplies the public IPv4 address the DNS records point
+at, for a server that cannot report its own — one behind NAT (Oracle Cloud, a
+VM behind a router) or IPv6-only. The wizard asks for it when it needs it; a
+scripted run with `--dns-setup cloudflare` must pass the flag.
+
+### External storage install flags
+
+| Flags | Purpose |
+| --- | --- |
+| `--storage-mode bundled\|r2\|s3\|gcs` | Storage choice; bundled is the default |
+| `--storage-setup automatic\|guided` | Create new resources or use console instructions; complete runtime settings skip provisioning |
+| `--download-domain` | Viewer domain for guided delivery; external modes reject `--storage-domain` |
+| `--s3-bucket`, `--s3-internal-bucket`, `--s3-region` | S3/R2 public/private buckets and region |
+| `--s3-endpoint`, `--s3-force-path-style true\|false` | Explicit S3-compatible addressing |
+| `--s3-access-key-id`, `--s3-secret-access-key` | Runtime credentials; prefer `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` environment values |
+| `--gcs-public-bucket`, `--gcs-internal-bucket`, `--gcs-credentials-file` | GCS buckets and local runtime JSON path |
+| `--gcp-project`, `--gcs-location`, `--gcp-account` | Interactive GCS setup context |
+| `--aws-profile`, `--cloudflare-account-id` | Explicit setup account selection |
+| `--public-base-url` | Final anonymous download URL, including any required bucket prefix |
+| `--cloudflare`, `--cloudfront` | Delivery; CloudFront uses the existing distribution/purge-key flags |
+| `--skip-storage-check` | Skip only the subsequent on-server check; CLI pre-install verification still runs |
+
+Setup-only credentials use `CMPATCH_R2_SETUP_TOKEN`,
+`CMPATCH_AWS_SETUP_ACCESS_KEY_ID` / `CMPATCH_AWS_SETUP_SECRET_ACCESS_KEY`, or
+`CMPATCH_GCP_SETUP_CREDENTIALS_FILE`. Their flag equivalents are
+`--r2-setup-token`, `--aws-setup-access-key-id`, `--aws-setup-secret-access-key`
+and `--gcp-setup-credentials-file`; prefer environment/file inputs. These are
+explicitly disposable and are never installer runtime values. See
+[Install](/docs/install#choose-storage) for prerequisites and recovery.
 
 ## Apps and deployments
 
@@ -60,7 +105,7 @@ adapters](/docs/setup/infrastructure).
 | Command | Description |
 | --- | --- |
 | `cmpatch member add \| invite \| provision \| list \| remove …` | Team membership and invitations |
-| `cmpatch doctor` | Check local readiness before publishing |
+| `cmpatch doctor` | Diagnose RN/Expo setup on configured platforms; optionally verify delivery with `--verify-delivery` |
 | `cmpatch fingerprint --platform ios\|android` | Compute the native fingerprint |
 
 List/metrics commands accept `--format table|json`.

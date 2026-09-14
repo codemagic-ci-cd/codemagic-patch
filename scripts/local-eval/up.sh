@@ -28,6 +28,14 @@ COMPOSE_FILE="${REPO_ROOT}/docker-compose.dev.yml"
 # flag outranks a COMPOSE_PROJECT_NAME in the caller's shell, so the stack
 # can never land under, or tear down, some other project's name.
 COMPOSE_PROJECT_NAME_PINNED="codemagic-patch-local-eval"
+PROJECT_STATE="${CODEMAGIC_PATCH_HOME:-${HOME}/.codemagic-patch}/local-eval/project-name"
+if [ -f "${PROJECT_STATE}" ]; then
+  COMPOSE_PROJECT_NAME_PINNED="$(cat "${PROJECT_STATE}")"
+  [[ "${COMPOSE_PROJECT_NAME_PINNED}" =~ ^codemagic-patch-local-eval(-[a-f0-9]{12})?$ ]] || {
+    echo "Invalid local evaluation project state: ${PROJECT_STATE}" >&2
+    exit 1
+  }
+fi
 COMPOSE=(docker compose --project-name "${COMPOSE_PROJECT_NAME_PINNED}" -f "${COMPOSE_FILE}")
 
 DASHBOARD_URL="http://localhost:8080"
@@ -128,7 +136,7 @@ DEADLINE=$(( $(date +%s) + READY_TIMEOUT_SECONDS ))
 until curl -fsS "${DASHBOARD_URL}/health/ready" 2>/dev/null | grep -q '"ok":true'; do
   if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
     printf '\n'
-    fail "stack did not become ready within ${READY_TIMEOUT_SECONDS}s — inspect with: docker compose -f docker-compose.dev.yml logs server dashboard"
+    fail "stack did not become ready within ${READY_TIMEOUT_SECONDS}s — inspect with: docker compose -p ${COMPOSE_PROJECT_NAME_PINNED} -f docker-compose.dev.yml logs server dashboard"
   fi
   printf '.'
   sleep 2
@@ -138,7 +146,7 @@ printf '\n'
 # `docker compose wait` cannot see already-exited one-shots, so poll the seed
 # container's state directly until it has exited, then assert exit code 0.
 SEED_IDS="$("${COMPOSE[@]}" ps -aq seed)"
-[ -n "${SEED_IDS}" ] || fail "the seed container was not created — inspect with: docker compose -f docker-compose.dev.yml ps -a"
+[ -n "${SEED_IDS}" ] || fail "the seed container was not created — inspect with: docker compose -p ${COMPOSE_PROJECT_NAME_PINNED} -f docker-compose.dev.yml ps -a"
 # `ps -aq` can list more than one container for the service (e.g. a leftover
 # one-off `compose run seed`) — watch the newest one, not a raw multi-line id.
 SEED_ID="$(printf '%s\n' "${SEED_IDS}" | xargs docker inspect -f '{{.Created}} {{.Id}}' | sort | tail -n 1 | awk '{print $2}')"
@@ -147,10 +155,10 @@ while :; do
   SEED_STATE="$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "${SEED_ID}")"
   case "${SEED_STATE}" in
     "exited 0") break ;;
-    exited*) fail "the seed service exited with status ${SEED_STATE#exited } — inspect with: docker compose -f docker-compose.dev.yml logs seed" ;;
+    exited*) fail "the seed service exited with status ${SEED_STATE#exited } — inspect with: docker compose -p ${COMPOSE_PROJECT_NAME_PINNED} -f docker-compose.dev.yml logs seed" ;;
   esac
   if [ "$(date +%s)" -ge "${SEED_DEADLINE}" ]; then
-    fail "the seed service did not finish within 60s — inspect with: docker compose -f docker-compose.dev.yml logs seed"
+    fail "the seed service did not finish within 60s — inspect with: docker compose -p ${COMPOSE_PROJECT_NAME_PINNED} -f docker-compose.dev.yml logs seed"
   fi
   sleep 1
 done
@@ -217,11 +225,13 @@ cat <<EOF
    Dashboard sample data:
      Example Data → Staging / Production (releases + metrics; not downloadable)
 
-   See it on a device (OTA update applying on an emulator):
-     examples/on-device-demo/
+   Optional: try an OTA update on a simulator or emulator:
+     cmpatch demo
+     Includes sign-in, setup, and the guided walkthrough.
+     Details: examples/on-device-demo/
 
    Re-print     ./scripts/local-eval/up.sh --skip-cli
-   Tear down    docker compose -f docker-compose.dev.yml down -v
+   Tear down    docker compose -p ${COMPOSE_PROJECT_NAME_PINNED} -f docker-compose.dev.yml down -v
 
    ⚠ Local evaluation mode — authentication is disabled.
      All ports bind to 127.0.0.1; never expose this stack.

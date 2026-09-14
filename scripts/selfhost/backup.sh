@@ -227,6 +227,7 @@ fi
 {
   printf 'database_mode=%s\n' "$DB_MODE"
   printf 'storage_mode=%s\n' "$STORAGE_MODE"
+  printf 's3_internal_bucket=%s\n' "$(selfhost_mode_from_env_file S3_INTERNAL_BUCKET)"
 } >"${backup_dir_abs}/backup-manifest"
 
 # CMP-60: with BOTH components external there is nothing to dump — this is a

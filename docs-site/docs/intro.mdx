@@ -3,19 +3,19 @@ sidebar_position: 1
 slug: /
 title: Local quickstart
 description: >-
-  Run Patch on your laptop with one command, then watch an OTA update apply in
-  the on-device demo.
+  Run Patch on your laptop, connect your own app, or try the optional
+  on-device OTA demo.
 llmsDescription: >-
   Local Patch evaluation via cmpatch selfhost local-eval (or
-  scripts/local-eval/up.sh from a clone), then examples/on-device-demo on
-  simulator or emulator.
+  scripts/local-eval/up.sh from a clone), with optional cmpatch demo on a
+  simulator or emulator, dashboard exploration, and integration with your own app.
 ---
 
 import CopyLlmsFullLink from '@site/src/components/CopyLlmsFullLink';
 
 # Local quickstart
 
-Evaluate the full Codemagic Patch service on your machine before provisioning domains or OAuth. The **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. Then use the bundled [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) to watch an OTA update apply on a simulator or emulator.
+Evaluate the full Codemagic Patch service on your machine before provisioning domains or OAuth. The **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. If you want to see an OTA update before integrating your own app, try the optional [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) to watch an OTA update apply on a simulator or emulator.
 
 :::info Using these docs with AI
 Use this button to send your AI assistant to the full markdown index.
@@ -28,7 +28,7 @@ Use this button to send your AI assistant to the full markdown index.
 - macOS, Linux, or WSL 2 on Windows — the command runs a bash script, so a native Windows shell is not supported
 - Node.js `20.19+` or `22.12+` for the `cmpatch` CLI, plus `git` and `curl` (the CLI downloads its copy of the repository and runs its bootstrap script)
 - [Docker](https://docs.docker.com/get-docker/) with Compose v2 — if it is missing or not running, the CLI offers to install or start it
-- For the demo app: an **iOS Simulator** (macOS + Xcode) and/or an **Android emulator** (`adb` on `PATH`), plus Node.js `≥ 22.20` and Yarn via [Corepack](https://nodejs.org/api/corepack.html)
+- Only if you want to run the demo app: an **iOS Simulator** (macOS, Xcode, and CocoaPods or the Bundler version required by the demo lockfile) and/or an **Android emulator** (Android SDK, Java, and `adb` on `PATH`), plus Node.js `≥ 22.20` and Yarn via [Corepack](https://nodejs.org/api/corepack.html)
 
 ## 1. Start the stack
 
@@ -44,6 +44,8 @@ When it finishes you get:
 - **Dashboard** — [http://localhost:8080](http://localhost:8080) (sign in as `local-admin@example.com`, prefilled, one click; the CLI offers to open it)
 - **API** — [http://localhost:3000](http://localhost:3000); the CLI makes it the default when no higher-precedence project or environment setting overrides it
 - Seeded `demo-app-ios` / `demo-app-android` for the on-device demo, plus **Example Data** (Staging / Production releases and metrics) so the dashboard looks populated before you publish
+
+You can now [connect your own app](#5-try-it-with-your-own-app), [explore the dashboard](#4-confirm-in-the-dashboard-optional), or [try the demo](#3-watch-an-update-apply-on-device-demo) if you want to see an OTA update on a ready-made app first.
 
 `cmpatch selfhost local-eval status` prints everything else about the stack whenever you need it: the services and their state, the MinIO console, the seeded API token, and a sample publish command.
 
@@ -64,70 +66,59 @@ cd codemagic-patch
 Evaluation only, not a production install. Authentication is disabled and all ports bind to localhost. To deploy with your own domains, follow [Install](/docs/install).
 :::
 
-## 2. Sign in with the CLI
+## 2. Try it with your own app {#5-try-it-with-your-own-app}
+
+You can start here as soon as the stack is running; the demo is optional. To use Patch in your project, wire the SDK against localhost:
+
+| Config key | Local value |
+| --- | --- |
+| `CodemagicPatchApiUrl` | `http://localhost:3000` |
+| `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
+| `CodemagicPatchDeploymentKey` | from `cmpatch deployment list` for your app |
+
+Run `cmpatch init --server-url http://localhost:3000` from your project root. The command creates one app per platform (do not reuse `demo-app-*` unless you only need the bundled demo) and links the project. The iOS Simulator can use these localhost URLs directly. For an Android emulator or a USB-connected Android device, keep both URLs above and forward the API and download ports with `adb` (use `-s <serial>` if multiple devices are connected):
 
 ```bash
-cmpatch login
+adb reverse tcp:3000 tcp:3000
+adb reverse tcp:9100 tcp:9100
 ```
 
-`cmpatch login` opens the dashboard in your browser and finishes over a localhost redirect; the local stack approves the sign-in automatically.
+Repeat the forwarding after restarting the device or adb server. The guided demo handles it automatically. The evaluation stack binds only to your laptop's loopback interface, so replacing localhost with a LAN IP does not make it reachable from an iPhone or another machine. For those devices, use a reachable server from the [Install guide](/docs/install).
 
-:::note
-If `cmpatch` already had a different default server when you started the stack, the CLI asked before replacing it. A `CODEMAGIC_PATCH_SERVER_URL` environment variable or project config can also override that default. When localhost is not the effective server, the command's ready output shows the exact `cmpatch login --server-url http://localhost:3000` form; add the same flag to every command below.
-:::
+- [Native setup](/docs/setup/native-setup) for bare React Native or the Expo config plugin
+- Coming from Expo Updates: [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) (local PoC path first)
+- Coming from a CodePush fork: [Migrating from CodePush](/docs/migration/migrating-from-codepush)
 
-## 3. Watch an update apply (on-device demo)
+## Optional: watch an update apply (on-device demo) {#3-watch-an-update-apply-on-device-demo}
 
-[`examples/on-device-demo`](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) is a React Native demo storefront preconfigured against this stack. The checked-in app starts broken on purpose: you flip one line, publish a release, and watch the running app install the fix over the air. That fix arriving is Patch replacing the JS bundle.
-
-Use an editable clone of the public repository for the demo app (skip the clone
-command if you already have one):
+If you would like to try Patch with a ready-made app, run the guided walkthrough:
 
 ```bash
-git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
-cd codemagic-patch/examples/on-device-demo
-yarn install
-yarn demo:setup:ios   # iOS only — installs pods
-
-yarn demo:ios         # iOS Simulator
-# or
-yarn demo:android     # Android emulator (also sets up adb reverse for localhost)
+cmpatch demo
 ```
 
-Both commands build **Release** with `--no-packager`, so the app boots from its embedded bundle (the one OTA replaces). On launch you see a mock storefront. Tap **Add to cart** on any product: checkout fails with *"Payment failed"* / *"Error 418: intentional bug"*.
+It uses the evaluation checkout, so you do not need a separate clone, a prior `cmpatch login`, or manual dependency installation. If you started the stack from your own clone, run the command inside that clone or pass `--checkout /path/to/codemagic-patch`. Use `--platform ios` or `--platform android` to choose a platform explicitly.
 
-Edit `App.tsx` and change the marked line:
+The command checks the demo prerequisites, signs you in to the local stack if needed, installs dependencies, and builds and launches a **Release** app. The first native build can take several minutes. This build boots from its embedded JavaScript bundle, which the OTA update will replace.
 
-```ts
-const CHECKOUT_BROKEN = true;   // change to false
-```
+1. Look at the running storefront: its product cards should show *"Couldn't load product"* / *"Invalid product response"*.
+2. The CLI shows the one-line fix it will make automatically and asks whether to publish it. Approve after you have seen the error. You do not need to edit any source files.
+3. The CLI publishes the JavaScript fix, waits for publication, then backgrounds and returns to the same app. On iOS, Settings briefly appears; on Android, the Home screen appears. The app downloads the update and reloads automatically, without rebuilding or reinstalling the native app.
+4. Confirm that the product cards now load and **Add to cart** confirms the order. The CLI then offers to open the release in the dashboard.
 
-Publish from the same directory:
+If automatic app switching fails, follow the CLI's instructions to background the app and bring it back manually. A published release alone does not confirm that the device applied it; check the storefront after it reloads.
 
-```bash
-# iOS
-cmpatch release-react \
-  --app demo-app-ios --deployment staging \
-  --platform ios
+For prerequisites, troubleshooting, or the optional walkthrough by hand, see the [on-device demo README](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo).
 
-# Android
-cmpatch release-react \
-  --app demo-app-android --deployment staging \
-  --platform android
-```
+## Optional: explore the dashboard {#4-confirm-in-the-dashboard-optional}
 
-Background the app and bring it back (or relaunch). The demo checks for updates on resume, downloads the release, and shows an **Update Available** alert. Tap **Install Now**: the app reloads into the new bundle, and **Add to cart** now confirms the order.
+Open [http://localhost:8080](http://localhost:8080) and sign in as `local-admin@example.com` to browse **Example Data**, including sample releases and metrics. These sample releases are not downloadable. If you ran the demo, open **demo-app-ios** or **demo-app-android** and its `staging` deployment to see the release you published.
 
-Full detail and troubleshooting: [on-device demo README](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo).
-
-## 4. Confirm in the dashboard (optional)
-
-Open [http://localhost:8080](http://localhost:8080), sign in as `local-admin@example.com`, then open **demo-app-ios** or **demo-app-android** and its `staging` deployment. You should see the release you just published. **Example Data** is separate sample catalog data for browsing metrics; those releases are not downloadable.
-
-Without a simulator, you can still publish the bundled fixture from the root of that clone (it uses the seeded `cli-smoke-test` deployment so it does not collide with the on-device demo):
+If you have an editable repository clone, you can also sign in with `cmpatch login --server-url http://localhost:3000` and publish the bundled fixture from its root (it uses the seeded `cli-smoke-test` deployment so it does not collide with the on-device demo):
 
 ```bash
 cmpatch release create \
+  --server-url http://localhost:3000 \
   --app demo-app-ios \
   --deployment cli-smoke-test \
   --bundle-path examples/local-dev/bundles/ios-hermes-v1.zip \
@@ -136,22 +127,6 @@ cmpatch release create \
   --release-notes "Local quickstart" \
   --yes
 ```
-
-## 5. Try it with your own app
-
-The demo proves the loop. To see Patch on your project, keep this stack running and wire the SDK against localhost:
-
-| Config key | Local value |
-| --- | --- |
-| `CodemagicPatchApiUrl` | `http://localhost:3000` |
-| `CodemagicPatchDownloadBaseUrl` | `http://localhost:9100/codemagic-patch` |
-| `CodemagicPatchDeploymentKey` | from `cmpatch deployment list` for your app |
-
-Run `cmpatch init` from your project root: while the stack runs it is the default server, so the command creates one app per platform (do not reuse `demo-app-*` unless you only need the bundled demo) and links the project. Physical devices and Android emulators cannot reach your laptop's `localhost` the same way the iOS Simulator does; use your machine's LAN IP (or `10.0.2.2` on the Android emulator) for both URLs. The on-device demo uses `adb reverse` for the Android emulator.
-
-- [Native setup](/docs/setup/native-setup) for bare React Native or the Expo config plugin
-- Coming from Expo Updates: [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) (local PoC path first)
-- Coming from a CodePush fork: [Migrating from CodePush](/docs/migration/migrating-from-codepush)
 
 ## Tear down
 

@@ -28,6 +28,7 @@ DATABASE_URL="${DATABASE_URL:-}"
 STORAGE_MODE="${SELFHOST_STORAGE_MODE:-}"
 PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-}"
 S3_BUCKET="${S3_BUCKET:-}"
+S3_INTERNAL_BUCKET="${S3_INTERNAL_BUCKET:-}"
 S3_REGION="${S3_REGION:-}"
 S3_ENDPOINT="${S3_ENDPOINT:-}"
 S3_FORCE_PATH_STYLE="${S3_FORCE_PATH_STYLE:-}"
@@ -36,6 +37,7 @@ S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-}"
 GCS_PUBLIC_BUCKET="${GCS_PUBLIC_BUCKET:-}"
 GCS_INTERNAL_BUCKET="${GCS_INTERNAL_BUCKET:-}"
 GCS_CREDENTIALS_FILE="${GCS_CREDENTIALS_FILE:-}"
+GCS_CREDENTIALS_JSON_BASE64="${GCS_CREDENTIALS_JSON_BASE64:-}"
 USE_CLOUDFLARE=0
 case "${CLOUDFLARE_ENABLED:-}" in
   1 | true | yes) USE_CLOUDFLARE=1 ;;
@@ -48,7 +50,22 @@ esac
 SKIP_CLOUDFRONT_CHECK=0
 ASSUME_YES=0
 SKIP_PUBLIC_CHECK=0
+SKIP_STORAGE_CHECK=0
 REPAIR_ENV=0
+# --allow-http (or SELFHOST_SCHEME=http in the environment): serve the API and
+# storage sites over plain HTTP on port 80 with no certificates — for THIS
+# machine only. The API domain is localhost and the storage site is
+# localhost:<port>, so the deployment is a laptop evaluation of the real
+# stack; a server other machines reach needs public DNS and the certificate
+# the https install obtains, and is refused here rather than half-supported
+# with firewall and DNS guidance. Part of the stack shape: fixed at install
+# time and recorded as SELFHOST_SCHEME, which the env file then owns on every
+# rerun. SCHEME is the resolved value every derived URL uses.
+ALLOW_HTTP=0
+case "${SELFHOST_SCHEME:-}" in
+  http) ALLOW_HTTP=1 ;;
+esac
+SCHEME=https
 
 usage() {
   cat <<'USAGE'
@@ -59,9 +76,12 @@ default bundled storage, the storage domain) pointing at this host, ports
 80/443 open to the internet (Let's Encrypt), and at least one
 OAuth sign-in provider — a GitHub OAuth App and/or a Bitbucket OAuth
 consumer. Create it (with Authorization callback URL
-https://<api-domain>/auth/callback) before running, and pass its client ID
-and a generated client secret. The admin signs in via the web dashboard or
-`cmpatch login`; the first sign-in by --email creates the admin account.
+https://<api-domain>/auth/callback, or http:// with --allow-http) before
+running, and pass its client ID and a generated client secret. The admin
+signs in via the web dashboard or `cmpatch login`; the first sign-in by
+--email creates the admin account. With --allow-http the stack serves this
+machine alone (localhost) over plain HTTP on port 80, so none of the DNS,
+port 443, or certificate prerequisites apply (see the option below).
 
 Options:
   --api-domain <domain>        Public API domain, for example updates.example.com.
@@ -75,6 +95,22 @@ Options:
                                protected origin. Defaults to
                                origin-<storage-domain> with --cloudfront;
                                rejected for s3/gcs storage.
+  --allow-http                 Serve this machine alone over plain HTTP on
+                               port 80 instead of HTTPS: a laptop evaluation
+                               of the real stack, with no certificate, no
+                               public DNS, and no port 443 involved. The API
+                               domain is localhost (the default; an explicit
+                               --api-domain may only repeat it) and the
+                               bundled storage site is localhost:<port>
+                               (default localhost:9110; not 80 or 443). Every
+                               URL — SERVER_URL, PUBLIC_BASE_URL, the OAuth
+                               callback the provider must allow — becomes
+                               http://localhost..., and the app must permit
+                               cleartext traffic to them. A server other
+                               machines reach needs the https install: run
+                               without this flag. Not combinable with
+                               --cloudflare or --cloudfront. Fixed at install
+                               time (SELFHOST_SCHEME=http in .env.selfhost).
   --email <email>              Admin and ACME email. Must match the verified
                                primary email of the admin's GitHub or
                                Bitbucket account.
@@ -95,8 +131,9 @@ Options:
   --bitbucket-oauth-client-secret <secret>
                                OPTIONAL. Bitbucket OAuth consumer secret. The
                                consumer needs callback URL
-                               https://<api-domain>/auth/callback and the
-                               account + email scopes (set on the consumer).
+                               https://<api-domain>/auth/callback (http://
+                               with --allow-http) and the account + email
+                               scopes (set on the consumer).
   --database-mode <mode>       bundled (default) runs Postgres inside the
                                stack; external connects the server to an
                                existing PostgreSQL via --database-url. Fixed
@@ -119,7 +156,8 @@ Options:
                                Required with --storage-mode s3/gcs; rejected
                                with bundled storage (there it is derived
                                from the storage domain).
-  --s3-bucket <name>           S3 bucket name (required with --storage-mode s3).
+  --s3-bucket <name>           S3 public bucket (required with --storage-mode s3).
+  --s3-internal-bucket <name>  Separate private bucket; omit for legacy one-bucket routing.
   --s3-region <region>         S3 region (optional; the server defaults to
                                us-east-1).
   --s3-endpoint <url>          S3 endpoint URL for S3-compatible providers
@@ -141,7 +179,8 @@ Options:
                                GCS service-account JSON key file; copied to
                                <repo root>/gcs-service-account.json and
                                mounted into the server container (required
-                               with --storage-mode gcs). GCE metadata-server
+                               with --storage-mode gcs, unless runtime key content is
+                               supplied as GCS_CREDENTIALS_JSON_BASE64). GCE metadata-server
                                ADC is not supported by the Compose path; a
                                docker-compose.selfhost.override.yml is the
                                escape hatch.
@@ -171,6 +210,7 @@ Options:
                                distribution's X-Codemagic-Patch-Origin-Verify
                                custom origin header. Generated when omitted.
   --skip-cloudfront-check      Do not submit the preflight invalidation.
+  --skip-storage-check         Skip external runtime read/write, download and privacy checks.
   --skip-public-check          Do not wait for public HTTPS DNS/TLS readiness.
   --repair-env                 Rewrite ONLY the values supplied in this
                                invocation into an existing .env.selfhost,
@@ -204,6 +244,7 @@ while [ "$#" -gt 0 ]; do
     --database-url) DATABASE_URL="${2:-}"; shift 2 ;;
     --storage-mode) STORAGE_MODE="${2:-}"; shift 2 ;;
     --public-base-url) PUBLIC_BASE_URL="${2:-}"; shift 2 ;;
+    --s3-internal-bucket) S3_INTERNAL_BUCKET="${2:-}"; shift 2 ;;
     --s3-bucket) S3_BUCKET="${2:-}"; shift 2 ;;
     --s3-region) S3_REGION="${2:-}"; shift 2 ;;
     --s3-endpoint) S3_ENDPOINT="${2:-}"; shift 2 ;;
@@ -224,13 +265,19 @@ while [ "$#" -gt 0 ]; do
     --cloudfront-secret-access-key) CLOUDFRONT_SECRET_ACCESS_KEY="${2:-}"; shift 2 ;;
     --cloudfront-origin-verify-secret) CLOUDFRONT_ORIGIN_VERIFY_SECRET="${2:-}"; shift 2 ;;
     --skip-cloudfront-check) SKIP_CLOUDFRONT_CHECK=1; shift ;;
+    --skip-storage-check) SKIP_STORAGE_CHECK=1; shift ;;
     --skip-public-check) SKIP_PUBLIC_CHECK=1; shift ;;
+    --allow-http) ALLOW_HTTP=1; shift ;;
     --repair-env) REPAIR_ENV=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail_selfhost "unknown option: $1" ;;
   esac
 done
+
+if [ "$ALLOW_HTTP" -eq 1 ]; then
+  SCHEME=http
+fi
 
 prompt_required() {
   local var_name="$1"
@@ -252,7 +299,7 @@ prompt_required() {
 
 # DR3: reject malformed domains early. A scheme, path/slash, or whitespace here
 # silently breaks the Caddy site address and the OAuth redirect allowlist (which
-# is built as https://<domain>/auth/callback).
+# is built as <scheme>://<domain>/auth/callback).
 validate_domain() {
   local label="$1"
   local value="$2"
@@ -262,13 +309,81 @@ validate_domain() {
     */*) fail_selfhost "${label} must be a bare domain without a path or slash (got ${value})" ;;
     *[[:space:]]*) fail_selfhost "${label} must not contain whitespace (got '${value}')" ;;
   esac
+  # Plain http serves this machine alone, so the only name it takes is
+  # localhost: a hostname or an IP other machines could reach would make this
+  # a deployment, and a deployment needs the certificate the https install
+  # obtains — along with the DNS and firewall setup that come with it, none
+  # of which this script pretends to cover over http.
+  if [ "$SCHEME" = "http" ] && [ "$value" != "localhost" ]; then
+    fail_selfhost "${label} must be localhost with --allow-http (got ${value}): plain HTTP serves this machine only. A server other machines reach needs HTTPS — run without --allow-http, with a public domain."
+  fi
+  # A public CA issues nothing for a single-label name, so https needs a
+  # fully-qualified domain; localhost, the one name http accepts, is exempt.
   case "$value" in
     *.*) ;;
-    *) fail_selfhost "${label} must be a fully-qualified domain like updates.example.com (got ${value})" ;;
+    *)
+      if [ "$SCHEME" != "http" ]; then
+        if [ "$value" = "localhost" ]; then
+          fail_selfhost "${label} localhost is only accepted with --allow-http (plain HTTP on this machine); a deployment needs a fully-qualified domain like updates.example.com"
+        fi
+        fail_selfhost "${label} must be a fully-qualified domain like updates.example.com (got ${value})"
+      fi
+      ;;
   esac
   case "$value" in
     .* | *.) fail_selfhost "${label} must not start or end with a dot (got ${value})" ;;
     *[!A-Za-z0-9.-]*) fail_selfhost "${label} may contain only letters, digits, dots, and hyphens (got ${value})" ;;
+  esac
+}
+
+# Bundled storage's site address. Over https it is a second hostname. Over
+# plain http it is localhost:<port> — on the one machine the stack serves, a
+# port is the only way to give the storage site an address distinct from the
+# API's — so the port is split off here and checked on its own: numeric, in
+# range, and neither 80 (the API site's port, where Caddy would see one
+# ambiguous site) nor 443 (reserved for the TLS install, which publishes it). The
+# host half faces validate_domain, which over http accepts localhost alone.
+# Over https a colon simply fails validate_domain's character rule, as
+# before.
+validate_storage_domain() {
+  local label="$1"
+  local value="$2"
+  local host="$value"
+  local port=""
+  if [ "$SCHEME" = "http" ]; then
+    case "$value" in
+      *:*)
+        host="${value%%:*}"
+        port="${value#*:}"
+        [ -n "$port" ] || fail_selfhost "${label} has an empty port (got ${value})"
+        ;;
+    esac
+  fi
+  validate_domain "$label" "$host"
+  [ -n "$port" ] || return 0
+  case "$port" in
+    *[!0-9]*) fail_selfhost "${label} port must be numeric (got ${value})" ;;
+  esac
+  # Bound the digit count before the arithmetic test: `[ -lt ]` on a value
+  # past bash's integer range fails with exit 2 instead of comparing, which
+  # would let a 20-digit "port" through to the env file.
+  if [ "${#port}" -gt 5 ] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    fail_selfhost "${label} port must be between 1 and 65535 (got ${value})"
+  fi
+  if [ "$port" -eq 80 ] || [ "$port" -eq 443 ]; then
+    fail_selfhost "${label} must not use port ${port}: 80 is the API site's port and 443 stays reserved for TLS. Pick another port, for example ${host}:9110"
+  fi
+}
+
+# The port the bundled storage site listens on: the host:port suffix of the
+# storage domain in plain-http mode, else 80. The plain-HTTP compose overlay
+# publishes it as SELFHOST_HTTP_STORAGE_PORT, which write_env_file and
+# --repair-env record next to the domain so the two cannot drift apart.
+storage_port_from_domain() {
+  local value="$1"
+  case "$value" in
+    *:*) printf '%s' "${value#*:}" ;;
+    *) printf '80' ;;
   esac
 }
 
@@ -349,13 +464,18 @@ url_host() {
 # anything that is not an https URL with a real host early — an http:// value
 # would point OTA downloads at plain HTTP, and an authority-less value like
 # https:///path passes a bare scheme check while every derived URL (and the
-# Cloudflare purge hostname) comes out empty.
+# Cloudflare purge hostname) comes out empty. A plain-http deployment
+# (--allow-http) is the one place an http:// download URL is a decision
+# rather than a slip, so it is accepted there and only there.
 validate_public_base_url() {
   local label="$1"
   local value="$2"
   case "$value" in
     https://?*) ;;
-    http://*) fail_selfhost "${label} must be an https:// URL, not http:// (got ${value})" ;;
+    http://?*)
+      [ "$SCHEME" = "http" ] ||
+        fail_selfhost "${label} must be an https:// URL, not http:// (got ${value}); a plain-http download URL is only accepted with --allow-http"
+      ;;
     *) fail_selfhost "${label} must be an https:// URL like https://cdn.example.com/codemagic-patch (got ${value})" ;;
   esac
   case "$value" in
@@ -376,6 +496,14 @@ validate_public_base_url() {
     '') fail_selfhost "${label} must include a host after https:// (got ${value})" ;;
     *[!A-Za-z0-9.-]*) fail_selfhost "${label} host may contain only letters, digits, dots, and hyphens (got '${host}')" ;;
     .* | *.) fail_selfhost "${label} host must not start or end with a dot (got ${host})" ;;
+  esac
+  # A plain-http download URL stays on this machine, like everything else
+  # --allow-http serves; storage other machines reach is an https bucket.
+  case "$value" in
+    http://*)
+      [ "$host" = "localhost" ] ||
+        fail_selfhost "${label} over plain http must be on localhost (got ${value}): --allow-http serves this machine only. Storage other machines reach needs an https:// URL."
+      ;;
   esac
   if [ -n "$port" ]; then
     case "$port" in
@@ -404,14 +532,14 @@ validate_gcs_credentials_file() {
 }
 
 s3_values_given() {
-  [ -n "$S3_BUCKET" ] || [ -n "$S3_REGION" ] || [ -n "$S3_ENDPOINT" ] ||
+  [ -n "$S3_BUCKET" ] || [ -n "$S3_INTERNAL_BUCKET" ] || [ -n "$S3_REGION" ] || [ -n "$S3_ENDPOINT" ] ||
     [ -n "$S3_FORCE_PATH_STYLE" ] || [ -n "$S3_ACCESS_KEY_ID" ] ||
     [ -n "$S3_SECRET_ACCESS_KEY" ]
 }
 
 gcs_values_given() {
   [ -n "$GCS_PUBLIC_BUCKET" ] || [ -n "$GCS_INTERNAL_BUCKET" ] ||
-    [ -n "$GCS_CREDENTIALS_FILE" ]
+    [ -n "$GCS_CREDENTIALS_FILE" ] || [ -n "$GCS_CREDENTIALS_JSON_BASE64" ]
 }
 
 cloudfront_values_given() {
@@ -456,7 +584,14 @@ prompt_storage() {
       if [ -n "$PUBLIC_BASE_URL" ]; then
         fail_selfhost "--public-base-url (or the PUBLIC_BASE_URL environment variable) is set but the storage mode is bundled; bundled storage derives PUBLIC_BASE_URL from the storage domain — pass --storage-mode s3 or gcs to set it directly, or unset it"
       fi
-      prompt_required STORAGE_DOMAIN "Public storage domain" "$STORAGE_DOMAIN"
+      if [ "$SCHEME" = "http" ]; then
+        # This machine's own name on a second port; an explicit
+        # --storage-domain may only name another localhost:<port> (main()
+        # validates it).
+        STORAGE_DOMAIN="${STORAGE_DOMAIN:-localhost:9110}"
+      else
+        prompt_required STORAGE_DOMAIN "Public storage domain" "$STORAGE_DOMAIN"
+      fi
       ;;
     s3 | gcs)
       # External storage has no storage domain: caddy serves only the API
@@ -470,6 +605,9 @@ prompt_storage() {
   case "$STORAGE_MODE" in
     s3)
       prompt_required S3_BUCKET "S3 bucket name" "$S3_BUCKET"
+      if [ "$S3_BUCKET" = "$S3_INTERNAL_BUCKET" ]; then
+        fail_selfhost "S3_BUCKET and S3_INTERNAL_BUCKET must differ; internal objects must remain private"
+      fi
       # Static credentials are all-or-nothing: the server requires the key id
       # and secret to be set together (both empty means the SDK's default
       # credential chain), so catch a half pair here, not at server boot.
@@ -488,9 +626,15 @@ prompt_storage() {
       if [ "$GCS_PUBLIC_BUCKET" = "$GCS_INTERNAL_BUCKET" ]; then
         fail_selfhost "--gcs-public-bucket and --gcs-internal-bucket must differ (the public bucket is world-readable, the internal one must not be); got ${GCS_PUBLIC_BUCKET} for both"
       fi
-      prompt_required GCS_CREDENTIALS_FILE \
-        "GCS service-account JSON key file path" "$GCS_CREDENTIALS_FILE"
-      validate_gcs_credentials_file "$GCS_CREDENTIALS_FILE"
+      if [ -n "$GCS_CREDENTIALS_JSON_BASE64" ]; then
+        [ -z "$GCS_CREDENTIALS_FILE" ] || fail_selfhost "Supply GCS_CREDENTIALS_JSON_BASE64 or a key file, not both"
+        printf '%s' "$GCS_CREDENTIALS_JSON_BASE64" | base64 --decode >/dev/null 2>&1 ||
+          fail_selfhost "GCS_CREDENTIALS_JSON_BASE64 is invalid base64"
+      else
+        prompt_required GCS_CREDENTIALS_FILE \
+          "GCS service-account JSON key file path" "$GCS_CREDENTIALS_FILE"
+        validate_gcs_credentials_file "$GCS_CREDENTIALS_FILE"
+      fi
       ;;
   esac
 
@@ -505,16 +649,24 @@ prompt_storage() {
 # The gcs overlay bind-mounts <repo root>/gcs-service-account.json into the
 # server container; copy the operator's key there. GCE metadata-server ADC is
 # not supported by the Compose path — a compose override is the escape hatch.
-install_gcs_credentials() {
+install_gcs_credentials() (
   [ "$STORAGE_MODE" = "gcs" ] || return 0
-  local dest="$SELFHOST_GCS_KEY_FILE"
-  # Subshell umask so the copy is never world-readable, even for an instant;
-  # the chmod normalizes a pre-existing destination's mode too.
-  (umask 077 && cp "$GCS_CREDENTIALS_FILE" "$dest") ||
-    fail_selfhost "could not copy ${GCS_CREDENTIALS_FILE} to ${dest}"
-  chmod 600 "$dest"
+  local dest="$SELFHOST_GCS_KEY_FILE" key_tmp
+  umask 077
+  key_tmp="$(mktemp "${dest}.XXXXXX")"
+  trap 'rm -f "$key_tmp"' EXIT
+  if [ -n "$GCS_CREDENTIALS_JSON_BASE64" ]; then
+    printf '%s' "$GCS_CREDENTIALS_JSON_BASE64" | base64 --decode >"$key_tmp" ||
+      fail_selfhost "could not decode the GCS runtime key"
+  else
+    cp "$GCS_CREDENTIALS_FILE" "$key_tmp" ||
+      fail_selfhost "could not copy the GCS runtime key"
+  fi
+  validate_gcs_credentials_file "$key_tmp"
+  chmod 600 "$key_tmp"
+  mv -f "$key_tmp" "$dest"
   log_selfhost "copied GCS service-account key to ${dest}"
-}
+)
 
 prompt_github_oauth() {
   # At least one OAuth provider (GitHub or Bitbucket) is mandatory. Bitbucket
@@ -572,8 +724,11 @@ prompt_cloudflare() {
   fi
 
   # DR27: -y/--yes takes the default ("no") for this non-destructive prompt
-  # without asking, matching the documented flag behavior.
-  if [ "$USE_CLOUDFLARE" -eq 0 ] && [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
+  # without asking, matching the documented flag behavior. A plain-http
+  # install is never offered a CDN: main() refuses the combination, so
+  # asking would only invite an answer that fails a step later.
+  if [ "$USE_CLOUDFLARE" -eq 0 ] && [ "$ALLOW_HTTP" -eq 0 ] &&
+    [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
     if prompt_yes_no \
       "Front ${cdn_desc} with Cloudflare CDN (enables automatic cache purge on release)?" \
       no; then
@@ -764,6 +919,28 @@ check_tooling() {
 # domain resolves to Cloudflare, not this host, so a "points here?" check would
 # false-positive).
 print_prerequisites() {
+  # Plain HTTP has none of the DNS/certificate prerequisites; what it needs
+  # instead is reachability on port 80 and an OAuth callback over http.
+  if [ "$ALLOW_HTTP" -eq 1 ]; then
+    cat <<'EOF'
+[selfhost] Plain-HTTP install (--allow-http): this machine only. Before continuing, make sure:
+  - Port 80 and the storage port (9110 unless --storage-domain names another)
+    are free on this machine. No public DNS, no certificate, and no port 443
+    are needed (the stack does not publish 443), and nothing has to be opened
+    in a firewall: both ports are bound to 127.0.0.1, so only this machine
+    can connect.
+  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
+    OAuth consumer — with an Authorization callback URL
+    http://localhost/auth/callback and a generated client secret.
+  - Traffic is unencrypted and the server is reached only as localhost — from
+    a browser here, an iOS simulator, or a client that resolves localhost to
+    this machine. Allow cleartext HTTP in the app (Android
+    usesCleartextTraffic, iOS ATS) for its URLs. A server other machines
+    reach needs the https install: run without --allow-http.
+EOF
+    return 0
+  fi
+
   # Runs before the prompts, so the storage mode is only known when it came in
   # via flags/environment: name just the API domain for a known-external mode,
   # and otherwise note the storage domain is a bundled-storage-only need.
@@ -834,7 +1011,7 @@ write_env_file() {
   # Bundled storage derives the public download URL from the storage domain;
   # external modes record the operator's --public-base-url instead.
   if [ "$STORAGE_MODE" = "bundled" ]; then
-    PUBLIC_BASE_URL="https://${STORAGE_DOMAIN}/codemagic-patch"
+    PUBLIC_BASE_URL="${SCHEME}://${STORAGE_DOMAIN}/codemagic-patch"
   fi
 
   # Every value written single-quoted below must be representable (see
@@ -875,8 +1052,21 @@ ACME_EMAIL=${ADMIN_EMAIL}
 SELFHOST_DATABASE_MODE=${DATABASE_MODE}
 SELFHOST_STORAGE_MODE=${STORAGE_MODE}
 SELFHOST_STORAGE_ORIGIN_MODE=${storage_origin_mode}
+# https: Caddy obtains certificates. http: plain HTTP on port 80, no
+# certificates (--allow-http); every URL below follows it, and so does the
+# OAuth callback the provider must allow. Changing it is a reinstall.
+SELFHOST_SCHEME=${SCHEME}
+EOF
+  # The plain-HTTP overlay publishes the storage site's port. It is derived
+  # from the storage domain (host:port, else 80) and written next to the
+  # scheme so a hand-edited domain is caught by the rerun check rather than
+  # silently left unpublished.
+  if [ "$SCHEME" = "http" ] && [ "$STORAGE_MODE" = "bundled" ]; then
+    printf 'SELFHOST_HTTP_STORAGE_PORT=%s\n' "$(storage_port_from_domain "$STORAGE_DOMAIN")" >>"$env_tmp"
+  fi
+  cat >>"$env_tmp" <<EOF
 
-SERVER_URL=https://${API_DOMAIN}
+SERVER_URL=${SCHEME}://${API_DOMAIN}
 PUBLIC_BASE_URL='${PUBLIC_BASE_URL}'
 
 CODEMAGIC_PATCH_SERVER_IMAGE=codemagic-patch-server:selfhost
@@ -949,6 +1139,7 @@ EOF
       # to the s3 overlay's own defaults.
       {
         printf '\nS3_BUCKET=%s\n' "$S3_BUCKET"
+        printf 'S3_INTERNAL_BUCKET=%s\n' "$S3_INTERNAL_BUCKET"
         if [ -n "$S3_REGION" ]; then
           printf 'S3_REGION=%s\n' "$S3_REGION"
         fi
@@ -1017,7 +1208,7 @@ EOF
 GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
 GITHUB_OAUTH_CLIENT_SECRET='${GITHUB_OAUTH_CLIENT_SECRET}'
 GITHUB_OAUTH_SCOPES="${GITHUB_OAUTH_SCOPES:-read:user user:email}"
-GITHUB_OAUTH_ALLOWED_REDIRECT_URIS=https://${API_DOMAIN}/auth/callback
+GITHUB_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
 EOF
   fi
 
@@ -1028,7 +1219,7 @@ EOF
 
 BITBUCKET_OAUTH_CLIENT_ID=${BITBUCKET_OAUTH_CLIENT_ID}
 BITBUCKET_OAUTH_CLIENT_SECRET='${BITBUCKET_OAUTH_CLIENT_SECRET}'
-BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS=https://${API_DOMAIN}/auth/callback
+BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
 EOF
   fi
 
@@ -1104,17 +1295,29 @@ repair_env_file() {
   storage_mode="${storage_mode:-bundled}"
   storage_origin_mode="$(selfhost_env_value_from_file SELFHOST_STORAGE_ORIGIN_MODE)"
   storage_origin_mode="${storage_origin_mode:-direct}"
+  # The scheme is the file's, never this invocation's: every URL repaired
+  # below is derived with it, and the flag itself is not repairable (guarded
+  # right after, with the other stack-shape flags). Validate the file's
+  # stack-shape flags first: the reader returns the raw value, and deriving
+  # SERVER_URL from an unrecognized scheme would write it before the rerun's
+  # own validation gets to refuse it — the half-repaired file this function
+  # exists to never produce.
+  validate_selfhost_stack_shape
+  SCHEME="$(selfhost_scheme_from_env_file)"
 
   # The stack shape is fixed at install time. --repair-env must not become a
   # way around that: the file's own refusal to rewrite these on rerun is what
   # stops a live stack from being switched under its data.
   if [ -n "$DATABASE_MODE" ] || [ -n "$DATABASE_URL" ] || [ -n "$STORAGE_MODE" ] ||
     [ -n "$PUBLIC_BASE_URL" ] || s3_values_given || gcs_values_given ||
-    [ -n "$GCS_CREDENTIALS_FILE" ]; then
+    [ -n "$GCS_CREDENTIALS_FILE" ] || [ -n "$GCS_CREDENTIALS_JSON_BASE64" ]; then
     fail_selfhost "--repair-env does not change the database or storage mode (SELFHOST_DATABASE_MODE=$(selfhost_env_value_from_file SELFHOST_DATABASE_MODE), SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE}); switching either is a manual data migration these scripts do not perform. Drop the mode/storage flags and rerun."
   fi
   if [ "$USE_CLOUDFLARE" -eq 1 ] || [ "$USE_CLOUDFRONT" -eq 1 ]; then
     fail_selfhost "--repair-env does not switch the delivery adapter (DELIVERY_ADAPTER=${adapter} in ${SELFHOST_ENV_FILE}); it only corrects that adapter's own values. Drop --cloudflare/--cloudfront and pass just the values to fix."
+  fi
+  if [ "$ALLOW_HTTP" -eq 1 ] && [ "$SCHEME" != "http" ]; then
+    fail_selfhost "--repair-env does not switch the scheme (SELFHOST_SCHEME=${SCHEME} in ${SELFHOST_ENV_FILE}): moving between https and plain http changes every URL clients and the OAuth provider were given, so it is a reinstall — remove the env file and install again with --allow-http. Drop --allow-http and pass just the values to fix."
   fi
 
   if [ -n "$API_DOMAIN" ]; then
@@ -1122,12 +1325,12 @@ repair_env_file() {
     plan_selfhost_env_value CODEMAGIC_PATCH_API_DOMAIN "$API_DOMAIN"
     # Derived, not independent: keeping these in step with the domain is the
     # whole reason repair belongs in this script.
-    plan_selfhost_env_value SERVER_URL "https://${API_DOMAIN}"
+    plan_selfhost_env_value SERVER_URL "${SCHEME}://${API_DOMAIN}"
     if [ -n "$(selfhost_env_value_from_file GITHUB_OAUTH_CLIENT_ID)" ]; then
-      plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "https://${API_DOMAIN}/auth/callback"
+      plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
     fi
     if [ -n "$(selfhost_env_value_from_file BITBUCKET_OAUTH_CLIENT_ID)" ]; then
-      plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "https://${API_DOMAIN}/auth/callback"
+      plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
     fi
     repaired=1
   fi
@@ -1136,11 +1339,15 @@ repair_env_file() {
   if [ -n "$STORAGE_DOMAIN" ]; then
     [ "$storage_mode" = "bundled" ] ||
       fail_selfhost "--storage-domain does not apply to this deployment: SELFHOST_STORAGE_MODE=${storage_mode} has no storage domain on this host"
-    validate_domain "storage domain" "$STORAGE_DOMAIN"
+    validate_storage_domain "storage domain" "$STORAGE_DOMAIN"
     plan_selfhost_env_value CODEMAGIC_PATCH_STORAGE_DOMAIN "$STORAGE_DOMAIN"
     # Bundled storage derives the download URL from the storage domain
-    # (write_env_file), so the pair moves together or not at all.
-    plan_selfhost_env_literal PUBLIC_BASE_URL "https://${STORAGE_DOMAIN}/codemagic-patch"
+    # (write_env_file), so the pair moves together or not at all — and on
+    # plain http, so does the port the overlay publishes for it.
+    plan_selfhost_env_literal PUBLIC_BASE_URL "${SCHEME}://${STORAGE_DOMAIN}/codemagic-patch"
+    if [ "$SCHEME" = "http" ]; then
+      plan_selfhost_env_value SELFHOST_HTTP_STORAGE_PORT "$(storage_port_from_domain "$STORAGE_DOMAIN")"
+    fi
     repaired=1
   fi
 
@@ -1168,7 +1375,7 @@ repair_env_file() {
     validate_env_file_literal "--github-oauth-client-secret" "$GITHUB_OAUTH_CLIENT_SECRET"
     plan_selfhost_env_value GITHUB_OAUTH_CLIENT_ID "$GITHUB_OAUTH_CLIENT_ID"
     plan_selfhost_env_literal GITHUB_OAUTH_CLIENT_SECRET "$GITHUB_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "https://${api_domain}/auth/callback"
+    plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${api_domain}/auth/callback"
     repaired=1
   fi
 
@@ -1178,7 +1385,7 @@ repair_env_file() {
     validate_env_file_literal "--bitbucket-oauth-client-secret" "$BITBUCKET_OAUTH_CLIENT_SECRET"
     plan_selfhost_env_value BITBUCKET_OAUTH_CLIENT_ID "$BITBUCKET_OAUTH_CLIENT_ID"
     plan_selfhost_env_literal BITBUCKET_OAUTH_CLIENT_SECRET "$BITBUCKET_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "https://${api_domain}/auth/callback"
+    plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${api_domain}/auth/callback"
     repaired=1
   fi
 
@@ -1253,6 +1460,11 @@ main() {
   check_port_hint 443
 
   if [ ! -f "$SELFHOST_ENV_FILE" ]; then
+    if [ "$ALLOW_HTTP" -eq 1 ]; then
+      # Plain http serves this machine alone, so its name is not a question;
+      # an explicit --api-domain may only repeat it (validate_domain).
+      API_DOMAIN="${API_DOMAIN:-localhost}"
+    fi
     prompt_required API_DOMAIN "CodemagicPatch API domain" "$API_DOMAIN"
     prompt_required ADMIN_EMAIL "Admin email" "$ADMIN_EMAIL"
     # Validate Bitbucket first: prompt_github_oauth skips the GitHub prompts
@@ -1266,11 +1478,19 @@ main() {
     prompt_storage
     prompt_cloudflare
     prompt_cloudfront
+    # A CDN serves https viewer URLs and pulls from an origin it can verify,
+    # and the plain-http stack obtains no certificate: the two describe
+    # different deployments, so refuse the pair instead of writing a stack
+    # that purges a cache nothing is allowed to fill.
+    if [ "$ALLOW_HTTP" -eq 1 ] &&
+      { [ "$USE_CLOUDFLARE" -eq 1 ] || [ "$USE_CLOUDFRONT" -eq 1 ]; }; then
+      fail_selfhost "--allow-http cannot be combined with --cloudflare or --cloudfront (or their values): a CDN in front of storage needs the https stack. Drop --allow-http for a CDN deployment, or drop the CDN flags for a plain-http one."
+    fi
     # DR3/DR4: validate before writing so we never persist a broken env file that
     # the reuse path would then keep loading.
     validate_domain "API domain" "$API_DOMAIN"
     if [ "$STORAGE_MODE" = "bundled" ]; then
-      validate_domain "storage domain" "$STORAGE_DOMAIN"
+      validate_storage_domain "storage domain" "$STORAGE_DOMAIN"
       if [ "$API_DOMAIN" = "$STORAGE_DOMAIN" ]; then
         fail_selfhost "the API domain and storage domain must differ (they map to separate Caddy sites); got ${API_DOMAIN} for both"
       fi
@@ -1283,6 +1503,7 @@ main() {
       fi
     fi
     install_gcs_credentials
+    GCS_CREDENTIALS_JSON_BASE64=""
     write_env_file
   elif [ "$REPAIR_ENV" -eq 1 ]; then
     log_selfhost "repairing existing ${SELFHOST_ENV_FILE}"
@@ -1315,10 +1536,18 @@ main() {
       warn_selfhost "ignoring --storage-mode/--public-base-url/--s3-*/--gcs-*; the storage mode is only written on initial install"
       warn_selfhost "SELFHOST_STORAGE_MODE in ${SELFHOST_ENV_FILE} stays authoritative — switching between the bundled MinIO and external object storage is a manual data migration the selfhost scripts do not perform"
     fi
+    # Passing --allow-http again on a plain-http deployment is harmless and
+    # silent; only a flag that disagrees with the file is worth a warning.
+    if [ "$ALLOW_HTTP" -eq 1 ] && [ "$(selfhost_scheme_from_env_file)" != "http" ]; then
+      warn_selfhost "ignoring --allow-http; the scheme is only written on initial install"
+      warn_selfhost "SELFHOST_SCHEME in ${SELFHOST_ENV_FILE} stays authoritative — moving a deployment between https and plain http changes every URL clients and the OAuth provider were given, so it is a reinstall (remove the env file and install again), not a rerun"
+    fi
   fi
 
   # Reset so detection below reflects the env file, not flags or the ambient
   # environment. load_selfhost_env repopulates them from the file.
+  ALLOW_HTTP=0
+  SCHEME=https
   GITHUB_OAUTH_CLIENT_ID=""
   GITHUB_OAUTH_CLIENT_SECRET=""
   BITBUCKET_OAUTH_CLIENT_ID=""
@@ -1338,6 +1567,7 @@ main() {
   STORAGE_MODE=""
   PUBLIC_BASE_URL=""
   S3_BUCKET=""
+  S3_INTERNAL_BUCKET=""
   S3_REGION=""
   S3_ENDPOINT=""
   S3_FORCE_PATH_STYLE=""
@@ -1355,10 +1585,24 @@ main() {
   STORAGE_MODE="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
   STORAGE_ORIGIN_MODE="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
   validate_selfhost_stack_shape
+  # Validated to be https or http just above; from here on every URL and
+  # domain rule follows the file's scheme, not the flag's.
+  SCHEME="$(selfhost_scheme_from_env_file)"
+  if [ "$SCHEME" = "http" ]; then
+    ALLOW_HTTP=1
+  fi
   # install.sh is the only caller that also judges delivery configuration:
   # compose_selfhost deliberately skips it so a CloudFront misconfiguration
   # cannot abort backup.sh/restore.sh/upgrade.sh on an otherwise sound stack.
   validate_selfhost_delivery_config
+  # Same refusal as the initial install, for a hand-edited file: the CDN
+  # adapters and the protected CloudFront origin site all assume the https
+  # stack.
+  if [ "$SCHEME" = "http" ] &&
+    { [ "${DELIVERY_ADAPTER:-base-url}" != "base-url" ] ||
+      [ "${STORAGE_ORIGIN_MODE:-direct}" = "cdn-origin" ]; }; then
+    fail_selfhost "SELFHOST_SCHEME=http in ${SELFHOST_ENV_FILE} cannot be combined with DELIVERY_ADAPTER=${DELIVERY_ADAPTER:-base-url} or SELFHOST_STORAGE_ORIGIN_MODE=${STORAGE_ORIGIN_MODE:-direct}: a CDN in front of storage needs the https stack. Set DELIVERY_ADAPTER=base-url and SELFHOST_STORAGE_ORIGIN_MODE=direct (removing the CDN values), or reinstall for https, and rerun."
+  fi
 
   # DR29: a reused or hand-edited env file may be missing required values (e.g.
   # truncated by an interrupted write). Assert them before building so the install
@@ -1388,6 +1632,9 @@ main() {
       ;;
     s3)
       require_selfhost_env_var S3_BUCKET
+      if [ "$S3_BUCKET" = "$S3_INTERNAL_BUCKET" ]; then
+        fail_selfhost "S3_BUCKET and S3_INTERNAL_BUCKET in the saved env must differ"
+      fi
       validate_public_base_url "PUBLIC_BASE_URL in ${SELFHOST_ENV_FILE}" "$PUBLIC_BASE_URL"
       ;;
     gcs)
@@ -1416,9 +1663,24 @@ main() {
   # storage domain — caddy serves the API domain alone.
   validate_domain "CODEMAGIC_PATCH_API_DOMAIN" "$CODEMAGIC_PATCH_API_DOMAIN"
   if [ "${STORAGE_MODE:-bundled}" = "bundled" ]; then
-    validate_domain "CODEMAGIC_PATCH_STORAGE_DOMAIN" "$CODEMAGIC_PATCH_STORAGE_DOMAIN"
+    validate_storage_domain "CODEMAGIC_PATCH_STORAGE_DOMAIN" "$CODEMAGIC_PATCH_STORAGE_DOMAIN"
     if [ "$CODEMAGIC_PATCH_API_DOMAIN" = "$CODEMAGIC_PATCH_STORAGE_DOMAIN" ]; then
       fail_selfhost "CODEMAGIC_PATCH_API_DOMAIN and CODEMAGIC_PATCH_STORAGE_DOMAIN must differ (they map to separate Caddy sites). Edit ${SELFHOST_ENV_FILE} (or rerun with distinct --api-domain/--storage-domain) and retry."
+    fi
+    # The plain-HTTP overlay publishes the storage site's port from this key;
+    # a storage domain edited to another localhost:<port> without it would
+    # leave the new port unpublished and the site unreachable.
+    if [ "$SCHEME" = "http" ]; then
+      local expected_storage_port
+      expected_storage_port="$(storage_port_from_domain "$CODEMAGIC_PATCH_STORAGE_DOMAIN")"
+      if [ "${SELFHOST_HTTP_STORAGE_PORT:-}" != "$expected_storage_port" ]; then
+        fail_selfhost "SELFHOST_HTTP_STORAGE_PORT=${SELFHOST_HTTP_STORAGE_PORT:-<unset>} in ${SELFHOST_ENV_FILE} does not match the port of CODEMAGIC_PATCH_STORAGE_DOMAIN=${CODEMAGIC_PATCH_STORAGE_DOMAIN} (${expected_storage_port}); the plain-HTTP overlay publishes the storage site on that port. Set it to ${expected_storage_port}, or rerun with --repair-env --storage-domain <host:port>, and retry."
+      fi
+      # Same hint 80 and 443 get at the top of main(): the storage port is
+      # only known once the env file is, so it is checked here.
+      if [ "$expected_storage_port" != "80" ]; then
+        check_port_hint "$expected_storage_port"
+      fi
     fi
     if [ "${STORAGE_ORIGIN_MODE:-direct}" = "cdn-origin" ]; then
       validate_domain "CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN" "$CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN"
@@ -1467,6 +1729,17 @@ main() {
   log_selfhost "building images ${CODEMAGIC_PATCH_SERVER_IMAGE:-codemagic-patch-server:selfhost} and ${CODEMAGIC_PATCH_CADDY_IMAGE:-codemagic-patch-caddy:selfhost}"
   compose_selfhost build server caddy
   verify_cloudfront
+  if [ "${STORAGE_MODE:-bundled}" != "bundled" ]; then
+    if [ "$SKIP_STORAGE_CHECK" -eq 1 ]; then
+      warn_selfhost "skipping external storage read/write, delivery and privacy verification"
+    else
+      log_selfhost "verifying external storage read/write, delivery and privacy"
+      compose_selfhost run --rm --no-deps \
+        -v "${SELFHOST_SCRIPT_DIR}/lib:/app/storage-verification:ro" \
+        server node /app/storage-verification/verify-storage.cjs ||
+        fail_selfhost "external storage verification failed; correct runtime credentials or bucket/delivery policy and rerun. --skip-storage-check explicitly skips this verification"
+    fi
+  fi
 
   log_selfhost "starting self-host stack"
   compose_selfhost up -d
@@ -1483,27 +1756,42 @@ main() {
   fi
   wait_for_selfhost_service server
 
+  # The label names what is being waited for: certificates over https, bare
+  # reachability over http.
+  local scheme_label=HTTPS
+  if [ "$SCHEME" = "http" ]; then
+    scheme_label=HTTP
+  fi
   if [ "$SKIP_PUBLIC_CHECK" -eq 0 ]; then
-    log_selfhost "waiting for public HTTPS; Caddy must obtain Let's Encrypt certificates first,"
-    log_selfhost "which usually takes 1-2 minutes (longer if rate limited) before the next step"
-    wait_for_selfhost_http "${SERVER_URL}/health" "API HTTPS"
-    # The storage HTTPS wait (and the DNS-only-until-certificate guidance) is
+    if [ "$SCHEME" = "http" ]; then
+      log_selfhost "waiting for the API and storage sites over plain HTTP (no certificates to obtain)"
+    else
+      log_selfhost "waiting for public HTTPS; Caddy must obtain Let's Encrypt certificates first,"
+      log_selfhost "which usually takes 1-2 minutes (longer if rate limited) before the next step"
+    fi
+    wait_for_selfhost_http "${SERVER_URL}/health" "API ${scheme_label}"
+    # The storage wait (and the DNS-only-until-certificate guidance) is
     # bundled-only: external storage has no storage domain on this host.
     if [ "${STORAGE_MODE:-bundled}" = "bundled" ]; then
       if [ "$USE_CLOUDFLARE" -eq 1 ]; then
         log_selfhost "Cloudflare enabled: keep ${CODEMAGIC_PATCH_STORAGE_DOMAIN} DNS-only until Caddy obtains a certificate, then switch it to proxied"
       fi
-      wait_for_selfhost_http "https://${CODEMAGIC_PATCH_STORAGE_DOMAIN}/minio/health/ready" "storage HTTPS"
+      wait_for_selfhost_http "${SCHEME}://${CODEMAGIC_PATCH_STORAGE_DOMAIN}/minio/health/ready" "storage ${scheme_label}"
     fi
   else
-    warn_selfhost "skipping public HTTPS readiness checks"
+    warn_selfhost "skipping public ${scheme_label} readiness checks"
   fi
 
   log_selfhost "OAuth sign-in enforced; the admin account is created on first sign-in by ${ACME_EMAIL}"
 
   printf '\nCodemagicPatch self-host is ready.\n\n'
+  if [ "$SCHEME" = "http" ]; then
+    printf 'Plain HTTP (SELFHOST_SCHEME=http): this machine only, no TLS on any URL\n'
+    printf 'below. The server is bound to 127.0.0.1 as localhost; allow cleartext HTTP in the app\n'
+    printf '(Android usesCleartextTraffic, iOS ATS) for these URLs.\n\n'
+  fi
   printf 'Server URL (app config: CodemagicPatchApiUrl):\n  %s\n\n' "$SERVER_URL"
-  printf 'Dashboard URL:\n  https://%s/\n\n' "$CODEMAGIC_PATCH_API_DOMAIN"
+  printf 'Dashboard URL:\n  %s://%s/\n\n' "$SCHEME" "$CODEMAGIC_PATCH_API_DOMAIN"
   printf 'Public base URL (app config: CodemagicPatchDownloadBaseUrl):\n  %s\n\n' "$PUBLIC_BASE_URL"
   if [ "$USE_CLOUDFLARE" -eq 1 ]; then
     printf 'CDN:\n  Cloudflare cache purge enabled (DELIVERY_ADAPTER=cloudflare).\n'
@@ -1530,7 +1818,7 @@ main() {
   fi
   printf 'Next:\n'
   printf '  1. Store .env.selfhost securely.\n'
-  printf '  2. Sign in as the admin via the dashboard at https://%s/\n' "$CODEMAGIC_PATCH_API_DOMAIN"
+  printf '  2. Sign in as the admin via the dashboard at %s://%s/\n' "$SCHEME" "$CODEMAGIC_PATCH_API_DOMAIN"
   printf "     (no CLI needed), or install the CLI from this repo's root and sign in:\n"
   printf '       yarn install && yarn cli:install-global\n'
   printf '       cmpatch login --server-url %s\n' "$SERVER_URL"

@@ -1,8 +1,14 @@
+# Site addresses take their scheme from CODEMAGIC_PATCH_SITE_SCHEME. The base
+# compose file leaves it unset, so the address stays bare and Caddy serves it
+# over automatic HTTPS with Let's Encrypt. The plain-HTTP overlay
+# (deploy/selfhost/compose.http.yml, selected by SELFHOST_SCHEME=http) sets it
+# to "http://", which makes the site plain HTTP on port 80 with no certificate
+# and no HTTP->HTTPS redirect.
 {
 	email {$ACME_EMAIL}
 }
 
-{$CODEMAGIC_PATCH_API_DOMAIN} {
+{$CODEMAGIC_PATCH_SITE_SCHEME}{$CODEMAGIC_PATCH_API_DOMAIN} {
 	encode zstd gzip
 
 	handle /v1/* {
@@ -29,8 +35,12 @@
 			# attributes; img-src data:: app.css embeds data:image/svg+xml
 			# backgrounds (modal icons, select chevrons).
 			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-			Strict-Transport-Security "max-age=31536000; includeSubDomains"
 			-Server
 		}
+		# HSTS only on TLS responses: browsers ignore the header over plain
+		# HTTP and RFC 6797 forbids sending it there. Over HTTPS every request
+		# matches, so the https stack's behavior is unchanged.
+		@https protocol https
+		header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 }

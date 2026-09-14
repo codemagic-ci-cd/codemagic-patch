@@ -14,11 +14,29 @@ When an update does not install or behaves unexpectedly, the cause is usually a 
 
 ### `cmpatch doctor`
 
-Check local readiness before publishing:
+Run the read-only setup checks from your React Native or Expo project:
 
 ```bash
-cmpatch doctor --app MyApp-iOS --deployment Staging --verbose
+cmpatch doctor
+cmpatch doctor --platform ios --app MyApp-iOS --deployment Staging --verbose
 ```
+
+Doctor inspects both configured platforms by default: SDK settings, native/JS integration signals, control-plane access, and the configured download endpoint. No published release is required. Passing source checks do not establish that a device executed those paths.
+
+To also inspect published delivery manifests and advertised bundle/patch accessibility:
+
+```bash
+cmpatch doctor --verify-delivery
+cmpatch doctor --verify-delivery --platform ios --target-binary-version 1.2.3
+```
+
+Add `--current-package-hash <hash>` only with `--verify-delivery` to follow the lookup for an installed OTA baseline. No eligible release or an instruction to use the embedded bundle leaves artifact verification incomplete; it does not indicate an installation failure. These probes do not validate signatures, file integrity, or installation on a device.
+
+The report separates setup and delivery coverage. Exit code **0** means no confirmed failure; unresolved checks can still leave coverage incomplete. Exit **1** indicates a confirmed diagnostic failure or a failed requested configuration fix. Usage errors return **2**, and interruption returns **130** (SIGINT) or **143** (SIGTERM). In CI, inspect `coverage.setup` and `coverage.delivery` in `--format json` as well as the exit code.
+
+If native target selection is ambiguous, use `--platform ios --plist-file <path>` or `--platform android --android-strings-file <path>` to inspect a specific file. `--platform android --gradle-file <module>/build.gradle` selects a custom Android module. Dynamic Expo configuration, final Gradle merging, full Xcode build-setting evaluation, and custom JS aliases may remain unresolved. Doctor does not execute project configuration or run prebuild. A resolved Android resource check may include an informational notice that the final Gradle build was not evaluated; that notice alone does not make setup incomplete.
+
+The optional `--fix --server-url https://patch.example.com` workflow can create a **missing** `codemagic-patch.config.json` with that explicit server URL after a successful readiness check. It previews the file and value, asks for confirmation, and reruns diagnostics. Existing files and package-level server settings are preserved. JSON, redirected output and CI never prompt; add `--yes` to apply this limited fix. This saves a CLI default; native SDK edits, login, installation and publication remain separate actions.
 
 ### Server logs
 

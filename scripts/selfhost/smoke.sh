@@ -66,7 +66,8 @@ fi
 # the real policy surface: in gcs mode `_internal/*` lives in the separate
 # internal bucket (never reachable through PUBLIC_BASE_URL), and behind a CDN
 # the listing probe can degrade into a plain object GET. Probe the bucket
-# endpoints directly, requiring an explicit anonymous-access DENIAL (401/403):
+# endpoints directly (R2 uses its public-domain management API instead),
+# requiring an explicit anonymous-access DENIAL (401/403) for S3/GCS:
 # a 404 would mean "not found in a bucket anonymous readers CAN see" — the
 # public-read misconfiguration these checks exist to catch.
 SMOKE_STORAGE_MODE="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
@@ -108,13 +109,14 @@ compose_selfhost run --rm --no-deps \
   -e SMOKE_TIMEOUT_SECONDS="$SMOKE_TIMEOUT_SECONDS" \
   -e SMOKE_TARGET_BINARY_VERSION="$TARGET_BINARY_VERSION" \
   -e SMOKE_STORAGE_MODE="$SMOKE_STORAGE_MODE" \
+  -e SMOKE_S3_INTERNAL_BUCKET="${S3_INTERNAL_BUCKET:-}" \
   -e SMOKE_S3_BUCKET="${S3_BUCKET:-}" \
   -e SMOKE_S3_REGION="${S3_REGION:-us-east-1}" \
   -e SMOKE_S3_ENDPOINT="${S3_ENDPOINT:-}" \
   -e SMOKE_S3_FORCE_PATH_STYLE="${S3_FORCE_PATH_STYLE:-false}" \
   -e SMOKE_EXT_INTERNAL_PROBE_URL="$EXT_INTERNAL_PROBE_URL" \
   -e SMOKE_EXT_LIST_PROBE_URLS="$EXT_LIST_PROBE_URLS" \
-  -v "${SELFHOST_SCRIPT_DIR}/lib/resolve-s3-probe-urls.cjs:/app/resolve-s3-probe-urls.cjs:ro" \
+  -v "${SELFHOST_SCRIPT_DIR}/lib:/app/storage-verification:ro" \
   ${BUNDLE_MOUNT_ARGS[@]+"${BUNDLE_MOUNT_ARGS[@]}"} \
   --entrypoint node \
   server - <<'NODE'
@@ -302,15 +304,28 @@ async function pollRelease(releaseId) {
     // Resolve through the same AWS SDK used by the server. Besides honoring
     // S3_FORCE_PATH_STYLE, this preserves SDK behavior for IP endpoints,
     // dotted bucket names, custom ports, and endpoint path prefixes.
-    const { resolveS3ProbeUrls } = require("/app/resolve-s3-probe-urls.cjs");
-    const resolved = await resolveS3ProbeUrls({
-      bucket: process.env.SMOKE_S3_BUCKET,
-      endpoint: process.env.SMOKE_S3_ENDPOINT || undefined,
-      forcePathStyle: process.env.SMOKE_S3_FORCE_PATH_STYLE,
-      region: process.env.SMOKE_S3_REGION || "us-east-1",
-    });
-    extInternalProbeUrl = resolved.internalUrl;
-    extListProbeUrls = resolved.listUrls;
+    const { r2Account, verifyR2Privacy } = require("/app/storage-verification/r2-privacy.cjs");
+    const account = r2Account(process.env.SMOKE_S3_ENDPOINT);
+    if (account) {
+      await verifyR2Privacy({
+        account,
+        publicBucket: process.env.SMOKE_S3_BUCKET,
+        internalBucket: process.env.SMOKE_S3_INTERNAL_BUCKET,
+        apiToken: process.env.CLOUDFLARE_API_TOKEN,
+      });
+      log("R2 public-domain privacy settings verified");
+    } else {
+      const { resolveS3ProbeUrls } = require("/app/storage-verification/resolve-s3-probe-urls.cjs");
+      const resolved = await resolveS3ProbeUrls({
+        bucket: process.env.SMOKE_S3_BUCKET,
+        internalBucket: process.env.SMOKE_S3_INTERNAL_BUCKET,
+        endpoint: process.env.SMOKE_S3_ENDPOINT || undefined,
+        forcePathStyle: process.env.SMOKE_S3_FORCE_PATH_STYLE,
+        region: process.env.SMOKE_S3_REGION || "us-east-1",
+      });
+      extInternalProbeUrl = resolved.internalUrl;
+      extListProbeUrls = resolved.listUrls;
+    }
   }
   if (extInternalProbeUrl) {
     log(`checking anonymous _internal access is denied at ${extInternalProbeUrl}`);

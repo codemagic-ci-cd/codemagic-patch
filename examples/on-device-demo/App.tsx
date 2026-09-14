@@ -23,13 +23,8 @@ import {
 } from '@codemagic/react-native-patch';
 
 // ---------------------------------------------------------------------------
-// Demo toggles. Change values, then rebuild or publish an OTA.
+// Update settings. Change values, then rebuild or publish an OTA.
 // ---------------------------------------------------------------------------
-
-// THIS is the line the walkthrough asks you to edit. Set CHECKOUT_BROKEN to
-// false, publish with `cmpatch release-react`, relaunch the app, and Add to
-// cart stops failing with the intentional bug.
-const CHECKOUT_BROKEN = true;
 
 /**
  * When the app looks for an update.
@@ -41,7 +36,7 @@ const CHECK_CONDITION: string = 'both';
  * true  = show Later / Install Now after download
  * false = install with no confirm UI (uses sync())
  */
-const INSTALL_CONFIRMATION = true;
+const INSTALL_CONFIRMATION = false;
 
 /**
  * How the install is staged once it runs.
@@ -70,6 +65,14 @@ const PRODUCTS = [
     stars: 4,
   },
 ];
+
+// A local catalog response keeps the walkthrough independent of network availability.
+function loadProducts(): typeof PRODUCTS | null {
+  const response = {products: PRODUCTS};
+  // The response wraps the array in `products`; the walkthrough fixes this lookup.
+  const products = response;
+  return Array.isArray(products) ? products : null;
+}
 
 function shouldCheck(trigger: 'launch' | 'resume'): boolean {
   if (CHECK_CONDITION === 'both') {
@@ -157,7 +160,7 @@ function App(): React.JSX.Element {
       return;
     }
 
-    Alert.alert('Update Available', 'A new JS bundle is ready to install.', [
+    Alert.alert('Update Available', 'An update is ready to install.', [
       {
         text: 'Later',
         style: 'cancel',
@@ -183,11 +186,9 @@ function App(): React.JSX.Element {
     ]);
   }, [updateReady]);
 
+  const products = loadProducts();
+
   const onBuy = (productName: string) => {
-    if (CHECKOUT_BROKEN) {
-      Alert.alert('Payment failed', 'Error 418: intentional bug');
-      return;
-    }
     Alert.alert('Order confirmed', `Your ${productName} is on the way.`);
   };
 
@@ -217,32 +218,48 @@ function App(): React.JSX.Element {
         </View>
 
         <View style={styles.productGrid}>
-          {PRODUCTS.map(product => (
-            <View key={product.id} style={styles.productCard}>
-              {product.badge ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{product.badge}</Text>
-                </View>
-              ) : null}
+          {(products ?? [null, null]).map((product, index) => (
+            <View key={product?.id ?? index} style={styles.productCard}>
+              {!product ? (
+                <>
+                  <View style={[styles.productImage, styles.productImageBroken]}>
+                    <Text style={styles.brokenMark}>!</Text>
+                  </View>
+                  <Text style={styles.brokenTitle}>Couldn't load product</Text>
+                  <Text style={styles.brokenBody}>
+                    Invalid product response
+                  </Text>
+                </>
+              ) : (
+                <>
+                  {product.badge ? (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{product.badge}</Text>
+                    </View>
+                  ) : null}
 
-              <View style={styles.productImage}>
-                <Text style={styles.productEmoji}>{product.emoji}</Text>
-              </View>
+                  <View style={styles.productImage}>
+                    <Text style={styles.productEmoji}>{product.emoji}</Text>
+                  </View>
 
-              <Text style={styles.productName}>{product.name}</Text>
-              <Text style={styles.stars}>
-                {'★'.repeat(product.stars)}
-                {'☆'.repeat(5 - product.stars)}
-              </Text>
-              <Text style={styles.productDescription}>{product.description}</Text>
-              <Text style={styles.price}>{product.price}</Text>
+                  <Text style={styles.productName}>{product.name}</Text>
+                  <Text style={styles.stars}>
+                    {'★'.repeat(product.stars)}
+                    {'☆'.repeat(5 - product.stars)}
+                  </Text>
+                  <Text style={styles.productDescription}>
+                    {product.description}
+                  </Text>
+                  <Text style={styles.price}>{product.price}</Text>
 
-              <Pressable
-                style={styles.buyButton}
-                onPress={() => onBuy(product.name)}
-                accessibilityRole="button">
-                <Text style={styles.buyButtonText}>Add to cart</Text>
-              </Pressable>
+                  <Pressable
+                    style={styles.buyButton}
+                    onPress={() => onBuy(product.name)}
+                    accessibilityRole="button">
+                    <Text style={styles.buyButtonText}>Add to cart</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           ))}
         </View>
@@ -351,6 +368,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
     alignSelf: 'center',
+  },
+  productImageBroken: {
+    backgroundColor: '#fef2f2',
+  },
+  brokenMark: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#b91c1c',
+  },
+  brokenTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#b91c1c',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  brokenBody: {
+    fontSize: 14,
+    color: '#7f1d1d',
+    textAlign: 'center',
   },
   productEmoji: {
     fontSize: 44,

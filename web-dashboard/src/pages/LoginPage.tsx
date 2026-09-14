@@ -24,6 +24,7 @@ import {
 } from "../auth/webConfig";
 import { PRODUCT_NAME } from "../branding";
 import { PatchBrand } from "../components/brand/PatchBrand";
+import { AUTH_CARD, AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import type { OAuthWebConfigProvider } from "../api/types";
@@ -158,17 +159,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="auth-art relative min-h-screen place-items-center overflow-hidden bg-[radial-gradient(120%_80%_at_50%_-10%,#0d122b,var(--color-sb-bg)_60%)] p-6 [display:grid]">
-      <span
-        className="absolute -left-[120px] -top-[180px] size-[560px] rounded-full bg-blue opacity-35 blur-[90px]"
-        aria-hidden="true"
-      />
-      <span
-        className="absolute -bottom-[220px] -right-[140px] size-[560px] rounded-full bg-magenta opacity-22 blur-[90px]"
-        aria-hidden="true"
-      />
-
-      <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
+    <AuthBackdrop>
+      <main className={AUTH_CARD}>
         <PatchBrand decorative className="mx-auto mb-5 h-8 w-auto" />
         <h1 className="text-[23px] font-semibold tracking-[-.02em] text-fg">
           Sign in to {PRODUCT_NAME}
@@ -183,7 +175,7 @@ export function LoginPage() {
           <CheckIcon /> {window.location.origin}
         </div>
       </main>
-    </div>
+    </AuthBackdrop>
   );
 }
 

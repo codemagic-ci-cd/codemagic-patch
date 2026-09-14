@@ -28,7 +28,7 @@ import type { TeamStatus } from "../model/team";
 import { useTeamRole } from "../rbac/useTeamRole";
 import { buttonVariants } from "../components/ui/Button";
 import { SUMMARY_ROW } from "../components/ui/summary";
-import { CHIP, CHIP_TONE } from "../components/ui/chip";
+import { CHIP, CHIP_TONE, roleChipClass } from "../components/ui/chip";
 import { SECTION_TITLE } from "../components/ui/typography";
 import {
   STAT,
@@ -130,7 +130,7 @@ function TeamOverview({ teamId }: { teamId: string }) {
                 to={`/teams/${teamId}/members`}
                 icon={<UsersIcon />}
                 iconBackground="var(--color-aqua-tint)"
-                iconColor="#007a99"
+                iconColor="var(--color-tone-aqua)"
                 title="Members"
                 subtitle="Roles & access"
               />
@@ -339,7 +339,7 @@ function TeamRoleBadge({ teamId }: { teamId: string }) {
   if (role === null) {
     return null;
   }
-  return <span className={`role role-${role}`}>{ROLE_LABELS[role]}</span>;
+  return <span className={roleChipClass(role)}>{ROLE_LABELS[role]}</span>;
 }
 
 function TeamStatusChip({ status }: { status: TeamStatus }) {

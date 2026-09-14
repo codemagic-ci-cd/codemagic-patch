@@ -28,7 +28,7 @@ import { Skeleton } from "../../../components/ui/Skeleton";
 import type { ProblemBehavior } from "../../../api/problem";
 import type { Release } from "../../../model/release";
 import { buttonVariants } from "../../../components/ui/Button";
-import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../../../components/ui/callout";
+import { CALLOUT, CALLOUT_TONE } from "../../../components/ui/callout";
 import {
   INPUT,
   INPUT_STATE,
@@ -176,8 +176,6 @@ function RollbackModalContent({
       onClose={requestClose}
       title={`Rollback ${deploymentName ?? "deployment"}`}
       description="Republishes a previous release as a new release at 100%."
-      icon={<RollbackIcon />}
-      tone="warn"
       footer={
         <>
           <button
@@ -325,7 +323,7 @@ function RollbackModalContent({
           </>
         )}
         {errorMessage !== null ? (
-          <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`} role="alert">
+          <div className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-[18px]`} role="alert">
             <AlertIcon />
             <div>{errorMessage}</div>
           </div>
@@ -377,15 +375,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function RollbackIcon() {
-  return (
-    <IconSvg>
-      <polyline points="9 14 4 9 9 4" />
-      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
-    </IconSvg>
   );
 }
 

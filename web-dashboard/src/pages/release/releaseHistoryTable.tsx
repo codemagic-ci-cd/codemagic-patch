@@ -132,7 +132,7 @@ export function ReleaseHistoryTableHead({
       <th className={releaseHistoryCol.th.data}>Status</th>
       <th className={releaseHistoryCol.th.data}>Rollout</th>
       <th className={releaseHistoryCol.th.data}>Target</th>
-      <th className={releaseHistoryCol.th.data}>Active</th>
+      <th className={releaseHistoryCol.th.data}>Downloads</th>
       <th className={releaseHistoryCol.th.data}>Success</th>
       <th className={releaseHistoryCol.th.data}>Failed</th>
       <th

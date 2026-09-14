@@ -578,6 +578,15 @@ const fingerprintSchema: Record<string, FlagSchema> = {
 const debugSchema: Record<string, FlagSchema> = {};
 
 const doctorSchema: Record<string, FlagSchema> = {
+  fix: BOOLEAN_FLAG,
+  yes: BOOLEAN_FLAG,
+  nonInteractive: BOOLEAN_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
+  verifyDelivery: BOOLEAN_FLAG,
+  plistFile: STRING_FLAG,
+  androidStringsFile: STRING_FLAG,
+  gradleFile: STRING_FLAG,
   app: STRING_FLAG,
   appId: STRING_FLAG,
   bundler: STRING_FLAG,
@@ -1752,6 +1761,12 @@ export function parseDoctor(
     };
   }
 
+  if (parsedFlags.flags.currentPackageHash !== undefined && parsedFlags.flags.verifyDelivery !== true) {
+    return { ok: false, error: "--current-package-hash requires --verify-delivery", showHelp: true };
+  }
+  const plistFile = readStringFlag(parsedFlags.flags, "plistFile");
+  const androidStringsFile = readStringFlag(parsedFlags.flags, "androidStringsFile");
+  const gradleFile = readStringFlag(parsedFlags.flags, "gradleFile");
   const app = readStringFlag(parsedFlags.flags, "app");
   const appId = readStringFlag(parsedFlags.flags, "appId");
   const bundler = readStringFlag(parsedFlags.flags, "bundler");
@@ -1774,6 +1789,9 @@ export function parseDoctor(
   const token = readStringFlag(parsedFlags.flags, "token");
 
   const blankSelectorError =
+    emptyStringFlagError(plistFile, "plist-file") ??
+    emptyStringFlagError(androidStringsFile, "android-strings-file") ??
+    emptyStringFlagError(gradleFile, "gradle-file") ??
     emptyStringFlagError(serverUrl, "server-url") ??
     emptyStringFlagError(team, "team") ??
     emptyStringFlagError(teamId, "team-id") ??
@@ -1833,6 +1851,17 @@ export function parseDoctor(
     };
   }
 
+  if (
+    (plistFile !== undefined && platform !== "ios") ||
+    ((androidStringsFile !== undefined || gradleFile !== undefined) && platform !== "android")
+  ) {
+    return {
+      ok: false,
+      error: "Native file selectors require the matching --platform ios or --platform android",
+      showHelp: true,
+    };
+  }
+
   const format = parseOutputFormat(parsedFlags.flags);
   if (isParseError(format)) {
     return format;
@@ -1841,6 +1870,14 @@ export function parseDoctor(
   return {
     command: {
       kind: "doctor",
+      ...(parsedFlags.flags.fix === true ? { fix: true } : {}),
+      ...(parsedFlags.flags.yes === true ? { yes: true } : {}),
+      ...(parsedFlags.flags.nonInteractive === true ? { nonInteractive: true } : {}),
+      ...(parsedFlags.flags.fix === true && args.some((arg) => arg === "--server-url" || arg.startsWith("--server-url=")) && serverUrl ? { fixServerUrl: serverUrl } : {}),
+      ...(parsedFlags.flags.verifyDelivery === true ? { verifyDelivery: true } : {}),
+      ...(plistFile !== undefined ? { plistFile } : {}),
+      ...(androidStringsFile !== undefined ? { androidStringsFile } : {}),
+      ...(gradleFile !== undefined ? { gradleFile } : {}),
       ...(app !== undefined ? { app } : {}),
       ...(appId !== undefined ? { appId } : {}),
       ...(bundler !== undefined ? { bundler } : {}),
@@ -4494,7 +4531,7 @@ export function parseDeploymentHistory(
 
 export function parseRawArgvCommand(
   args: string[],
-  kind: "config" | "init" | "selfhost",
+  kind: "config" | "demo" | "init" | "selfhost",
 ): ParseCliResult {
   const stripped = stripGlobalFormatArgs(args);
 

@@ -36,9 +36,8 @@ The server never serves OTA artifacts from the API domain; clients fetch from yo
 - `PUBLIC_BASE_URL` on your storage domain, e.g. `https://storage-updates.example.com/codemagic-patch`
 - Compose hardcodes `MODE=all` (API and release worker in one process)
 
-The install script can instead select external S3/GCS storage, and the guided
-`cmpatch selfhost install` wizard offers Cloudflare or CloudFront delivery on a
-first install. Splitting `MODE=api` / `MODE=worker` still requires a custom
+The `cmpatch selfhost install` wizard can prepare R2, S3 or GCS storage
+automatically or guide you through console setup, including the selected CDN. Splitting `MODE=api` / `MODE=worker` still requires a custom
 deployment; the supported Compose topology runs `MODE=all`.
 
 ## Storage adapter
@@ -59,7 +58,8 @@ Key variables (full list in [Configuration reference](/docs/reference/configurat
 
 | Variable | Role |
 | --- | --- |
-| `S3_BUCKET` | Bucket name (required when `STORAGE_ADAPTER=s3`) |
+| `S3_BUCKET` | Public bucket name (required when `STORAGE_ADAPTER=s3`) |
+| `S3_INTERNAL_BUCKET` | Optional distinct private bucket for `_internal/` keys, including copy source and destination; unset retains one-bucket routing |
 | `S3_ENDPOINT` | Custom endpoint for MinIO or S3-compatible services |
 | `S3_FORCE_PATH_STYLE` | `true` for MinIO; often `false` for AWS |
 | `S3_REGION` | AWS region (default `us-east-1`) |
@@ -68,9 +68,10 @@ Key variables (full list in [Configuration reference](/docs/reference/configurat
 `PUBLIC_BASE_URL` must point at the publicly readable viewer URL for artifacts:
 the storage domain in a default install, or the CDN domain when fronted.
 
-External S3-compatible storage is selected at first install by running
-`scripts/selfhost/install.sh` directly with its `--storage-mode s3` flags — the
-guided `cmpatch selfhost install` wizard sets up bundled MinIO only. Changing
+Choose S3/R2 in `cmpatch selfhost install`, or pass a complete runtime
+configuration with `--storage-mode s3|r2`. New wizard installs require distinct
+public and internal buckets; unset `S3_INTERNAL_BUCKET` preserves legacy
+one-bucket server routing. Changing
 only `STORAGE_ADAPTER` in an existing `.env.selfhost` is not a migration and
 does not move stored objects.
 
@@ -81,8 +82,8 @@ Set `STORAGE_ADAPTER=gcs` with:
 - `GCS_PUBLIC_BUCKET`: artifacts clients download
 - `GCS_INTERNAL_BUCKET`: staged uploads (`_internal/*`); must be a different bucket
 
-Select it at first install by running `scripts/selfhost/install.sh` directly
-with `--storage-mode gcs` and separate public and internal buckets. The Compose
+Select GCS in `cmpatch selfhost install` with automatic or guided setup,
+or pass `--storage-mode gcs` with a complete two-bucket runtime configuration. The Compose
 path mounts the service-account JSON supplied with `--gcs-credentials-file`.
 
 ## Delivery adapter

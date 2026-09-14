@@ -4,6 +4,8 @@
  * the server is up.
  */
 
+import { PromptAbortError } from "../../prompt";
+import { applyDnsRecord } from "./dnsSetup";
 import { CLOUDFRONT_DOCS_URL } from "../../branding";
 import {
   buildPurgePolicy,
@@ -114,6 +116,7 @@ export async function collectCloudFront(
     (await askDomain(deps, {
       initial: deriveStorageOriginDomain(context.storageDomain),
       message: "What hostname should CloudFront fetch from?",
+      differentFrom: [context.apiDomain, context.storageDomain],
       purpose:
         "CloudFront needs a second address for your server that it alone talks to. The suggested one is fine.",
     }));
@@ -130,7 +133,7 @@ export async function collectCloudFront(
 
   // `origin-storage.` and `storage.` are one word apart and are routinely
   // transposed; install.sh rejects a collision, but only after the build.
-  const hostnames = new Set([context.apiDomain, context.storageDomain, originDomain]);
+  const hostnames = new Set([context.apiDomain, context.storageDomain, originDomain].map(domain => domain.toLowerCase()));
   if (hostnames.size !== 3) {
     throw new UsageError(
       `The three hostnames must all differ: ${context.apiDomain}, ${context.storageDomain}, and ${originDomain}.`,
@@ -167,12 +170,14 @@ export async function collectCloudFront(
   // Record 3, and it has to be in place *before* the install: the origin
   // Caddy site obtains its own certificate during the run, and it cannot do
   // that for a hostname that does not resolve here yet.
+  // Interactive by construction: the walkthrough is only ever entered from
+  // the first-install wizard.
   await runDnsStep(deps, session, [
     {
       hostname: originDomain,
       purpose: "The address CloudFront fetches from — this one stays put",
     },
-  ]);
+  ], true);
 
   await walkThroughConsole(deps, session, {
     originDomain,
@@ -392,7 +397,7 @@ async function walkThroughConsole(
  * end gates for real: the distribution screen cannot attach a certificate
  * that has not reached Issued.
  */
-async function watchAcmValidation(
+export async function watchAcmValidation(
   deps: CommandDeps,
   session: SelfhostSession,
   input: {
@@ -430,7 +435,10 @@ async function watchAcmValidation(
   noteBlock(deps, "Validation record", validation.record);
   notice(deps, validation.after);
 
-  if (input.provider !== null) {
+  const applied = await applyDnsRecord(session, {
+    type: "CNAME", hostname: bare, value,
+  });
+  if (!applied && input.provider !== null) {
     await offerBrowserOpen(deps, {
       message: `Open ${input.provider.name} in your browser?`,
       url: input.provider.consoleUrl,
@@ -609,11 +617,24 @@ export async function finishCloudFront(
     ),
   );
 
-  const moved = await confirmFinishStep(
-    deps,
-    { initial: true, message: "Record changed?" },
-    input.phase,
-  );
+  let moved = false;
+  try {
+    const applied = !input.phase.stopped() && await applyDnsRecord(
+      session,
+      { type: "CNAME", hostname: input.storageDomain, value: distributionDomain },
+      input.phase,
+    );
+    moved = !input.phase.stopped() && (applied || await confirmFinishStep(
+      deps,
+      { initial: true, message: "Record changed?" },
+      input.phase,
+    ));
+  } catch (error) {
+    if (!(error instanceof PromptAbortError) && !(error instanceof UsageError)) {
+      throw error;
+    }
+    if (error instanceof UsageError) notice(deps, error.message);
+  }
   if (!moved) {
     return [
       `Last step: point ${input.storageDomain} at ${distributionDomain} with a CNAME.`,

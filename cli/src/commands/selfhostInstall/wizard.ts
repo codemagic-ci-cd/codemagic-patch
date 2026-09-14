@@ -20,6 +20,7 @@ import { detectDnsProvider, findZoneApex } from "../../selfhostDns";
 import {
   buildRepairEnv,
   defaultRecoveryEdge,
+  describeDomainProblem,
   type DeliverySelection,
   type InstallAnswers,
   type InstallState,
@@ -41,7 +42,7 @@ import {
   type ParsedArgs,
   type SelfhostSession,
 } from "../selfhostSession";
-import { type CommandDeps } from "../shared";
+import { UsageError, type CommandDeps } from "../shared";
 import {
   askChecked,
   askDomain,
@@ -63,6 +64,7 @@ import {
 import { collectCloudflare, repairCloudflare } from "./cloudflare";
 import { collectCloudFront } from "./cloudfront";
 import { runDnsStep } from "./dns";
+import { chooseStorage, prepareExternalStorage } from "./storage";
 
 // ---------------------------------------------------------------------------
 // The wizard: picking up an install that did not finish
@@ -106,7 +108,19 @@ export async function collectAnswers(
   interactive: boolean,
 ): Promise<InstallAnswers> {
   if (!interactive) {
-    return readInstallAnswers(deps, parsed);
+    const answers = await readInstallAnswers(deps, parsed);
+    const plan = await chooseStorage(deps, session, parsed, answers.apiDomain, false);
+    if (readStringFlag(parsed, "--dns-setup") === "cloudflare") {
+      await runDnsStep(deps, session, [
+        { hostname: answers.apiDomain, purpose: "API and dashboard" },
+        ...(plan === null ? [{ hostname: answers.storageDomain, purpose: "Downloads" }] : []),
+        ...(plan === null && answers.delivery.kind === "cloudfront" && answers.delivery.storageOriginDomain
+          ? [{ hostname: answers.delivery.storageOriginDomain, purpose: "CloudFront origin" }] : []),
+      ], false);
+    }
+    if (plan === null) return answers;
+    const external = await prepareExternalStorage(deps, session, parsed, plan, false);
+    return { ...answers, ...external, storageDomain: "" };
   }
 
   session.progress.settle();
@@ -119,26 +133,42 @@ export async function collectAnswers(
         "This is the address your apps check for updates, and where you sign in to the dashboard. A subdomain of a domain you own works well: updates.example.com.",
     }));
 
-  const storageDomain =
+  const apiProblem = describeDomainProblem(apiDomain);
+  if (apiProblem) throw new UsageError(apiProblem);
+
+  const storagePlan = await chooseStorage(deps, session, parsed, apiDomain, true);
+
+  const storageDomain = storagePlan !== null ? "" :
     readStringFlag(parsed, "--storage-domain") ??
     (await askDomain(deps, {
       initial: await suggestStorageDomain(deps, apiDomain),
       message: "What domain should downloads use?",
+      differentFrom: [apiDomain],
       purpose:
         "Update files are served from a second address, so they can be cached separately from the server itself. The suggested one is fine unless you have a reason to change it.",
     }));
 
-  const adminEmail =
-    readStringFlag(parsed, "--email") ?? (await askAdminEmail(deps));
+  if (storagePlan === null) {
+    const problem = describeDomainProblem(storageDomain);
+    if (problem) throw new UsageError(problem);
+    if (apiDomain.toLowerCase() === storageDomain.toLowerCase())
+      throw new UsageError("The API and download hostnames must differ.");
+  }
 
   await runDnsStep(deps, session, [
     { hostname: apiDomain, purpose: "The address your apps and dashboard use" },
-    {
+    ...(storagePlan === null ? [{
       hostname: storageDomain,
       purpose: "The address update files are downloaded from",
-    },
-  ]);
+    }] : []),
+  ], true);
 
+  // The GitHub pair and the administrator email come before storage
+  // provisioning and the CDN walkthrough: provisioning creates cloud
+  // resources, and the runtime secret it generates lives only in memory until
+  // install.sh writes the env file, so no question may sit between the two —
+  // a rerun after an interruption there finds no env file and provisions
+  // again.
   const flagClientId = readStringFlag(parsed, "--github-oauth-client-id");
   const flagClientSecret = supplied(deps, parsed, {
     env: "GITHUB_OAUTH_CLIENT_SECRET",
@@ -151,19 +181,25 @@ export async function collectAnswers(
       ? { clientId: flagClientId, clientSecret: flagClientSecret }
       : await collectGithubPair(deps, apiDomain);
 
+  const adminEmail =
+    readStringFlag(parsed, "--email") ?? (await askAdminEmail(deps));
+
+  const storageAnswers = storagePlan !== null
+    ? {
+        ...await prepareExternalStorage(deps, session, parsed, storagePlan, true),
+        storageDomain: "",
+      }
+    : {
+        delivery: await chooseDelivery(deps, session, parsed, apiDomain, storageDomain),
+        storageDomain,
+      };
+
   return {
+    ...storageAnswers,
     adminEmail,
     apiDomain,
-    delivery: await chooseDelivery(
-      deps,
-      session,
-      parsed,
-      apiDomain,
-      storageDomain,
-    ),
     githubClientId: github.clientId,
     githubClientSecret: github.clientSecret,
-    storageDomain,
   };
 }
 
@@ -403,10 +439,12 @@ export async function collectRepairValues(
       message: "What domain should your server use?",
       purpose: "This is the one to correct if the server was never reachable.",
     });
-    values.storageDomain = await askDomain(deps, {
-      initial: await suggestStorageDomain(deps, values.apiDomain),
-      message: "What domain should downloads use?",
-    });
+    if (session.facts.storageMode !== "s3" && session.facts.storageMode !== "gcs") {
+      values.storageDomain = await askDomain(deps, {
+        initial: await suggestStorageDomain(deps, values.apiDomain),
+        message: "What domain should downloads use?",
+      });
+    }
   }
 
   if (scope === "all" || scope === "oauth") {

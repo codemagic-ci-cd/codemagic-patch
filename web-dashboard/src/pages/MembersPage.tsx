@@ -59,7 +59,7 @@ import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ConfirmDialog } from "../components/overlay/ConfirmDialog";
 import { Modal } from "../components/overlay/Modal";
 import { useToast } from "../components/overlay/ToastProvider";
-import { avatarClassFor } from "../components/ui/avatar";
+import { avatarClass } from "../components/ui/avatar";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
@@ -79,11 +79,12 @@ import type {
 } from "../model/iam";
 import { formatDate } from "../model/format";
 import { buttonVariants } from "../components/ui/Button";
-import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../components/ui/callout";
+import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { CELL_APP, CELL_MAIN, CELL_SUB } from "../components/ui/cell";
-import { CHIP, CHIP_TONE } from "../components/ui/chip";
+import { CHIP, CHIP_TONE, roleChipClass } from "../components/ui/chip";
 import {
   FIELD,
+  FIELD_ERR,
   FIELD_HINT,
   FIELD_LABEL,
   INPUT,
@@ -206,7 +207,7 @@ function MembersScreen({ teamId }: { teamId: string }) {
       <>
         {lastOwnerBlocked ? (
           <div
-            className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mb-4`}
+            className={`${CALLOUT} ${CALLOUT_TONE.danger} mb-4`}
             role="alert"
           >
             <AlertIcon />
@@ -280,7 +281,6 @@ function MembersScreen({ teamId }: { teamId: string }) {
         open={pendingRemoval !== null}
         variant="summary"
         destructive
-        icon={<TrashIcon />}
         title="Remove member"
         description="They immediately lose access to this team's apps and releases."
         summary={
@@ -428,7 +428,6 @@ function ManagedMembersTable({
         open={pendingRevoke !== null}
         variant="summary"
         destructive
-        icon={<TrashIcon />}
         title="Revoke invitation"
         description="They will no longer be able to accept this invitation."
         summary={
@@ -567,7 +566,7 @@ function MemberTable({
                     <td className={TBL_TD}>
                       <div className={CELL_APP}>
                         <span
-                          className={avatarClassFor(row.binding.user.id, "sm")}
+                          className={avatarClass("sm")}
                           aria-hidden="true"
                         >
                           {initialsOf(
@@ -589,7 +588,7 @@ function MemberTable({
                       </div>
                     </td>
                     <td className={TBL_TD}>
-                      <span className={`role role-${row.binding.role.key}`}>
+                      <span className={roleChipClass(row.binding.role.key)}>
                         {row.binding.role.key}
                       </span>
                     </td>
@@ -662,7 +661,7 @@ function InvitationRow({
         </div>
       </td>
       <td className={TBL_TD}>
-        <span className={`role role-${invitation.role.key}`}>
+        <span className={roleChipClass(invitation.role.key)}>
           {invitation.role.key}
         </span>
       </td>
@@ -898,7 +897,6 @@ function ChangeRoleDialog({
     <ConfirmDialog
       open
       variant="summary"
-      icon={<ShieldIcon />}
       title="Change role"
       description="The new role takes effect immediately, on their next request."
       summary={[
@@ -907,14 +905,14 @@ function ChangeRoleDialog({
           label: "Role",
           value: (
             <>
-              <span className={`role role-${binding.role.key}`}>
+              <span className={roleChipClass(binding.role.key)}>
                 {binding.role.key}
               </span>
               <span className={SUMMARY_ARROW}>→</span>
               {selectedRole === undefined ? (
                 <span className="text-fg-3">…</span>
               ) : (
-                <span className={`role role-${selectedRole.key}`}>
+                <span className={roleChipClass(selectedRole.key)}>
                   {selectedRole.key}
                 </span>
               )}
@@ -1008,7 +1006,12 @@ function AddMemberModalContent({
   const [mintToken, setMintToken] = useState(false);
   const [tokenName, setTokenName] = useState("");
   const [tokenExpires, setTokenExpires] = useState(""); // PAT expiry: 1–3650
+  // Server-side problems (409 conflict, 422 handle-not-found, …). Client-side
+  // validation never lands here: it renders under its field and gates submit.
   const [formError, setFormError] = useState<string | null>(null);
+  // The identifier's "required" message waits for a blur so an untouched
+  // modal does not open covered in red; format errors show as you type.
+  const [identifierTouched, setIdentifierTouched] = useState(false);
   // Set on provision 409 user-exists — renders the add-without-token callout.
   const [tokenConflictEmail, setTokenConflictEmail] = useState<string | null>(
     null,
@@ -1034,6 +1037,37 @@ function AddMemberModalContent({
     createInvitation.isPending ||
     provisionMember.isPending;
 
+  // Field validation, recomputed per render. Each message belongs to one
+  // field (plain red text under it, Codemagic login-page style) and the
+  // primary CTA stays disabled until every relevant field is valid.
+  const trimmedIdentifier = identifier.trim();
+  const identifierError: string | null =
+    target === "githubHandle"
+      ? trimmedIdentifier.replace(/^@/, "") === ""
+        ? "Enter a GitHub handle."
+        : null
+      : trimmedIdentifier === ""
+        ? "Enter an email or user ID."
+        : mintToken && !trimmedIdentifier.includes("@")
+          ? "Minting a token creates the account, so an email address is required."
+          : null;
+  const showIdentifierError =
+    identifierError !== null && (trimmedIdentifier !== "" || identifierTouched);
+  const provisioning = mintToken && target === "email";
+  const inviteExpiresError =
+    !provisioning && parseDays(inviteExpires, 90) === "invalid"
+      ? "Enter a whole number between 1 and 90."
+      : null;
+  const tokenExpiresError =
+    provisioning && parseDays(tokenExpires, 3650) === "invalid"
+      ? "Enter a whole number between 1 and 3650."
+      : null;
+  const formValid =
+    identifierError === null &&
+    inviteExpiresError === null &&
+    tokenExpiresError === null &&
+    selectedRoleId !== null;
+
   const requestClose = () => {
     if (!busy) {
       onClose();
@@ -1046,6 +1080,7 @@ function AddMemberModalContent({
     }
     setTarget(next);
     setIdentifier("");
+    setIdentifierTouched(false);
     setFormError(null);
     setTokenConflictEmail(null);
   };
@@ -1066,8 +1101,7 @@ function AddMemberModalContent({
   ) => {
     const expires = parseDays(inviteExpires, 90);
     if (expires === "invalid") {
-      setFormError("Expiry must be a whole number between 1 and 90 days.");
-      return;
+      return; // unreachable: formValid gates submit
     }
     const cached = queryClient.getQueryData<TeamInvitation[]>(
       iamKeys.invitationList(teamId, "all"),
@@ -1125,17 +1159,7 @@ function AddMemberModalContent({
   /** Email/user-ID path: role binding first, invitation fallback on the 404. */
   const submitViaRoleBinding = (roleIdValue: string) => {
     const trimmed = identifier.trim();
-    if (trimmed === "") {
-      setFormError("Enter an email or user ID.");
-      return;
-    }
     const isEmail = trimmed.includes("@");
-    // The fallback's expiry validates up front — failing AFTER the 404 would
-    // waste the round trip.
-    if (isEmail && parseDays(inviteExpires, 90) === "invalid") {
-      setFormError("Expiry must be a whole number between 1 and 90 days.");
-      return;
-    }
     // Exactly one selector — values containing @ are emails.
     const body: IamRoleBindingCreateBody = isEmail
       ? { teamId, roleId: roleIdValue, email: trimmed }
@@ -1183,18 +1207,9 @@ function AddMemberModalContent({
   /** Mint-token path (`POST /iam/users`) — new accounts only, email required. */
   const submitWithToken = (roleIdValue: string) => {
     const trimmedEmail = identifier.trim();
-    if (!trimmedEmail.includes("@")) {
-      setFormError(
-        "Minting a token creates the account, so an email address is required.",
-      );
-      return;
-    }
     const expires = parseDays(tokenExpires, 3650);
     if (expires === "invalid") {
-      setFormError(
-        "Token expiry must be a whole number between 1 and 3650 days.",
-      );
-      return;
+      return; // unreachable: formValid gates submit
     }
     const body: IamUserProvisionBody = {
       teamId,
@@ -1231,17 +1246,14 @@ function AddMemberModalContent({
     event.preventDefault();
     setFormError(null);
     setTokenConflictEmail(null);
-    if (selectedRoleId === null) {
-      setFormError("Choose a role.");
+    // The CTA is disabled while invalid; this catches programmatic submits.
+    if (!formValid || selectedRoleId === null) {
+      setIdentifierTouched(true);
       return;
     }
     if (target === "githubHandle") {
       // A leading @ on a handle is absorbed defensively.
       const handle = identifier.trim().replace(/^@/, "");
-      if (handle === "") {
-        setFormError("Enter a GitHub handle.");
-        return;
-      }
       submitInvitation({ githubHandle: handle }, `@${handle}`, selectedRoleId);
     } else if (mintToken) {
       submitWithToken(selectedRoleId);
@@ -1271,7 +1283,6 @@ function AddMemberModalContent({
       open={open}
       onClose={requestClose}
       wide
-      icon={<Users2Icon />}
       title="Add member"
       description="Existing accounts get access immediately; everyone else shows up as pending and gets access on their first sign-in."
       footer={
@@ -1288,7 +1299,7 @@ function AddMemberModalContent({
             type="submit"
             form={formId}
             className={buttonVariants({ intent: "primary" })}
-            disabled={busy || roles === undefined}
+            disabled={busy || roles === undefined || !formValid}
             aria-busy={busy || undefined}
           >
             {busy ? <span className="spinner sm" aria-hidden="true" /> : null}
@@ -1326,42 +1337,62 @@ function AddMemberModalContent({
           <label className={FIELD}>
             <span className={FIELD_LABEL}>Email or user ID</span>
             <input
-              className={`${INPUT} ${INPUT_STATE.normal}`}
+              className={`${INPUT} ${
+                showIdentifierError ? INPUT_STATE.invalid : INPUT_STATE.normal
+              }`}
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
+              onBlur={() => setIdentifierTouched(true)}
               placeholder={
                 mintToken
                   ? "ci-bot@example.com"
                   : "teammate@example.com or usr_xxxxx"
               }
               autoComplete="off"
+              aria-invalid={showIdentifierError || undefined}
               disabled={busy}
             />
-            <span className={FIELD_HINT}>
-              {mintToken
-                ? "The new account is created with this email."
-                : oauthProviderNames === ""
-                  ? "Use the verified primary email of the account they sign in with."
-                  : `Use the verified primary email of their ${oauthProviderNames} account — that's what matches them on sign-in.`}
-            </span>
+            {showIdentifierError ? (
+              <span className={FIELD_ERR} role="alert">
+                {identifierError}
+              </span>
+            ) : (
+              <span className={FIELD_HINT}>
+                {mintToken
+                  ? "The new account is created with this email."
+                  : oauthProviderNames === ""
+                    ? "Use the verified primary email of the account they sign in with."
+                    : `Use the verified primary email of their ${oauthProviderNames} account — that's what matches them on sign-in.`}
+              </span>
+            )}
           </label>
         ) : (
           <label className={FIELD}>
             <span className={FIELD_LABEL}>GitHub handle</span>
             <input
-              className={`${INPUT} ${INPUT_STATE.normal}`}
+              className={`${INPUT} ${
+                showIdentifierError ? INPUT_STATE.invalid : INPUT_STATE.normal
+              }`}
               type="text"
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
+              onBlur={() => setIdentifierTouched(true)}
               placeholder="octocat"
               autoComplete="off"
+              aria-invalid={showIdentifierError || undefined}
               disabled={busy}
             />
-            <span className={FIELD_HINT}>
-              GitHub accounts only — resolved to the account&apos;s id right
-              away, so later renames don&apos;t matter. Add Bitbucket users
-              by email instead.
-            </span>
+            {showIdentifierError ? (
+              <span className={FIELD_ERR} role="alert">
+                {identifierError}
+              </span>
+            ) : (
+              <span className={FIELD_HINT}>
+                GitHub accounts only — resolved to the account&apos;s id right
+                away, so later renames don&apos;t matter. Add Bitbucket users
+                by email instead.
+              </span>
+            )}
           </label>
         )}
         <RoleField
@@ -1375,19 +1406,30 @@ function AddMemberModalContent({
           <label className={FIELD}>
             <span className={FIELD_LABEL}>Invitation expires in (days)</span>
             <input
-              className={`${INPUT} ${INPUT_STATE.normal}`}
+              className={`${INPUT} ${
+                inviteExpiresError !== null
+                  ? INPUT_STATE.invalid
+                  : INPUT_STATE.normal
+              }`}
               type="number"
               min={1}
               max={90}
               value={inviteExpires}
               onChange={(event) => setInviteExpires(event.target.value)}
               placeholder="30"
+              aria-invalid={inviteExpiresError !== null || undefined}
               disabled={busy}
             />
-            <span className={FIELD_HINT}>
-              Only used when they don&apos;t have an account yet. Leave empty
-              for the server default; maximum 90 days.
-            </span>
+            {inviteExpiresError !== null ? (
+              <span className={FIELD_ERR} role="alert">
+                {inviteExpiresError}
+              </span>
+            ) : (
+              <span className={FIELD_HINT}>
+                Only used when they don&apos;t have an account yet. Leave
+                empty for the server default; maximum 90 days.
+              </span>
+            )}
           </label>
         )}
         {target === "email" ? (
@@ -1424,19 +1466,30 @@ function AddMemberModalContent({
                 <label className={FIELD}>
                   <span className={FIELD_LABEL}>Token expires in (days)</span>
                   <input
-                    className={`${INPUT} ${INPUT_STATE.normal}`}
+                    className={`${INPUT} ${
+                      tokenExpiresError !== null
+                        ? INPUT_STATE.invalid
+                        : INPUT_STATE.normal
+                    }`}
                     type="number"
                     min={1}
                     max={3650}
                     value={tokenExpires}
                     onChange={(event) => setTokenExpires(event.target.value)}
                     placeholder="365"
+                    aria-invalid={tokenExpiresError !== null || undefined}
                     disabled={busy}
                   />
-                  <span className={FIELD_HINT}>
-                    Optional — leave empty for the server default. Maximum 3650
-                    days.
-                  </span>
+                  {tokenExpiresError !== null ? (
+                    <span className={FIELD_ERR} role="alert">
+                      {tokenExpiresError}
+                    </span>
+                  ) : (
+                    <span className={FIELD_HINT}>
+                      Optional — leave empty for the server default. Maximum
+                      3650 days.
+                    </span>
+                  )}
                 </label>
                 <div className={`${CALLOUT} ${CALLOUT_TONE.warn}`}>
                   <AlertIcon />
@@ -1474,7 +1527,7 @@ function AddMemberModalContent({
         ) : null}
         {formError !== null ? (
           <div
-            className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-3.5`}
+            className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-3.5`}
             role="alert"
           >
             <AlertIcon />
@@ -1570,8 +1623,6 @@ function ProvisionedTokenModal({
       // Unreachable: disableEscapeClose also removes overlay-click and the X.
       onClose={onAcknowledge}
       disableEscapeClose
-      icon={<KeyIcon />}
-      tone="green"
       title="Copy the personal access token"
       description={`${result.user.email} was provisioned as ${result.roleBinding.role.key}. This is the only time the full token is shown.`}
       footer={
@@ -1585,7 +1636,7 @@ function ProvisionedTokenModal({
       }
     >
       <div
-        className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK} mb-3.5`}
+        className={`${CALLOUT} ${CALLOUT_TONE.warn} mb-3.5`}
         role="alert"
       >
         <AlertIcon />
@@ -1768,16 +1819,6 @@ function MailIcon({ className }: { className?: string }) {
   );
 }
 
-function Users2Icon() {
-  return (
-    <Glyph>
-      <circle cx="9" cy="8" r="3.5" />
-      <path d="M3 20v-1a5 5 0 0 1 10 0v1" />
-      <path d="M16 5.5a3.5 3.5 0 0 1 0 6.9M21 20v-1a5 5 0 0 0-3.5-4.75" />
-    </Glyph>
-  );
-}
-
 function PlusIcon() {
   return (
     <Glyph>
@@ -1798,8 +1839,6 @@ function MoreIcon() {
 }
 
 function TrashIcon() {
-  // 17px in menu rows; the ConfirmDialog icon-tile usage is re-sized to 21px
-  // by MODAL_ICON's higher-specificity [&_svg] rule.
   return (
     <Glyph className={MENU_ICON}>
       <polyline points="3 6 5 6 21 6" />
@@ -1809,19 +1848,9 @@ function TrashIcon() {
 }
 
 function ShieldIcon() {
-  // Menu-row sibling of TrashIcon; MODAL_ICON re-sizes it in the dialog tile.
   return (
     <Glyph className={MENU_ICON}>
       <path d="M12 2 4 5v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V5l-8-3z" />
-    </Glyph>
-  );
-}
-
-function KeyIcon() {
-  return (
-    <Glyph>
-      <circle cx="7.5" cy="15.5" r="4.5" />
-      <path d="m10.7 12.3 8.8-8.8M16 6l3 3M14 8l2 2" />
     </Glyph>
   );
 }

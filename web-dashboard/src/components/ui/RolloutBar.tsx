@@ -1,5 +1,5 @@
 // Rollout percentage bar (release rows). Visual contract: the `.rollout`
-// markup — track + fill (full-green gradient at 100%) + the mono numeric
+// markup — track + fill (solid blue, solid green at 100%) + the mono numeric
 // label, ported to utility literals. The literals are exported because
 // MetricsPage, ReleaseDetailPage and RolloutModal render bespoke track/fill
 // geometry (custom height, slider echo) that a fixed component can't carry.
@@ -17,12 +17,10 @@ export const ROLLOUT_TRACK =
 export const ROLLOUT_TRACK_COMPACT =
   "h-[7px] w-[22px] shrink-0 overflow-hidden rounded-pill bg-surface-3";
 
-export const ROLLOUT_FILL =
-  "h-full rounded-pill bg-[linear-gradient(90deg,var(--color-blue),var(--color-aqua))]";
+export const ROLLOUT_FILL = "h-full rounded-pill bg-blue";
 
-/** 100%-rollout fill (legacy `.rollout__fill.full`) — swaps the gradient. */
-export const ROLLOUT_FILL_FULL =
-  "h-full rounded-pill bg-[linear-gradient(90deg,var(--color-green),#34d399)]";
+/** 100%-rollout fill (legacy `.rollout__fill.full`) — swaps to the status green. */
+export const ROLLOUT_FILL_FULL = "h-full rounded-pill bg-green";
 
 export interface RolloutBarProps {
   /** Rollout percentage; clamped to 0–100 and rounded for display. */

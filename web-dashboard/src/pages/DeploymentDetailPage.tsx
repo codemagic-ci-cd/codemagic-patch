@@ -44,11 +44,7 @@ import { ErrorState } from "../components/ui/ErrorState";
 import { RolloutBar } from "../components/ui/RolloutBar";
 import { Skeleton } from "../components/ui/Skeleton";
 import { StatusChip } from "../components/ui/StatusChip";
-import {
-  activeVersionDistribution,
-  aggregateMetrics,
-  successRate,
-} from "../model/metrics";
+import { aggregateMetrics, successRate } from "../model/metrics";
 import {
   canDisable,
   canEnable,
@@ -67,7 +63,12 @@ import type { ReleaseListItem } from "../api/types";
 import type { Deployment } from "../model/deployment";
 import type { ReleaseMetrics } from "../model/metrics";
 import type { Release } from "../model/release";
-import { formatCount, formatDate, formatRelativeTime } from "../model/format";
+import {
+  formatCount,
+  formatDate,
+  formatRelativeTime,
+  formatSuccessRate,
+} from "../model/format";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { CELL_MAIN, CELL_SUB } from "../components/ui/cell";
@@ -321,9 +322,6 @@ function DeploymentDetail({
   const historyCard = (
     <div className={CARD}>
       <div className={CARD_HEAD}>
-        <span className="size-[18px] text-blue" aria-hidden="true">
-          <ActivityIcon />
-        </span>
         <h3>Release history</h3>
         {total !== undefined ? (
           <div className={CARD_HEAD_RIGHT}>
@@ -633,7 +631,7 @@ function MetricsSummaryStrip({ deploymentId }: { deploymentId: string }) {
     // Independent failure: "—" cards + retry; header/table stay usable.
     return (
       <>
-        <StatCards totals={null} rate={null} activeVersionCount={null} />
+        <StatCards totals={null} rate={null} />
         <div className={`${CALLOUT} ${CALLOUT_TONE.warn} mb-[18px]`} role="alert">
           <AlertIcon />
           <div>
@@ -658,33 +656,17 @@ function MetricsSummaryStrip({ deploymentId }: { deploymentId: string }) {
   const entries = metricsQuery.data.releases;
   const totals = aggregateMetrics(entries.map((entry) => entry.metrics));
   const rate = successRate(totals);
-  const activeVersionCount = activeVersionDistribution(
-    entries.map((entry) => ({
-      label: entry.releaseLabel,
-      // A null hash (not yet processed) is its own group — key it by release.
-      targetPackageHash: entry.targetPackageHash ?? `release:${entry.releaseId}`,
-      metrics: entry.metrics,
-    })),
-  ).filter((share) => share.active > 0).length;
 
-  return (
-    <StatCards
-      totals={totals}
-      rate={rate}
-      activeVersionCount={activeVersionCount}
-    />
-  );
+  return <StatCards totals={totals} rate={rate} />;
 }
 
 /** The `.stat` strip; null totals render the "—" degraded variant. */
 function StatCards({
   totals,
   rate,
-  activeVersionCount,
 }: {
   totals: ReleaseMetrics | null;
   rate: number | null;
-  activeVersionCount: number | null;
 }) {
   return (
     <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
@@ -692,27 +674,21 @@ function StatCards({
         className={STAT}
         style={
           {
-            "--accent": "var(--color-aqua)",
-            "--accent-tint": "var(--color-aqua-tint)",
+            "--accent": "var(--color-green)",
+            "--accent-tint": "var(--color-green-tint)",
           } as CSSProperties
         }
       >
         <div className={STAT_TOP}>
           <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
-            <Users2Icon />
+            <CheckCircleIcon />
           </span>{" "}
-          Active users
+          Success
         </div>
         <div className={STAT_VAL}>
-          {totals === null ? "—" : formatCount(totals.active)}
+          {totals === null ? "—" : formatCount(totals.success)}
         </div>
-        <div className={STAT_META}>
-          {activeVersionCount === null
-            ? "metrics unavailable"
-            : `on ${activeVersionCount} active ${
-                activeVersionCount === 1 ? "version" : "versions"
-              }`}
-        </div>
+        <div className={STAT_META}>successful installs</div>
       </div>
       <div
         className={STAT}
@@ -750,7 +726,7 @@ function StatCards({
             "—"
           ) : (
             <>
-              {(rate * 100).toFixed(1)}
+              {formatSuccessRate(rate)}
               <small>%</small>
             </>
           )}
@@ -911,7 +887,7 @@ function ReleaseRow({
         {metrics === undefined ? (
           <span className="text-fg-3">—</span>
         ) : (
-          formatCount(metrics.active)
+          formatCount(metrics.downloaded)
         )}
       </td>
       <td className={releaseHistoryCol.td.data}>
@@ -1206,16 +1182,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function Users2Icon() {
-  return (
-    <IconSvg>
-      <circle cx="9" cy="8" r="3.5" />
-      <path d="M3 20v-1a5 5 0 0 1 10 0v1" />
-      <path d="M16 5.5a3.5 3.5 0 0 1 0 6.9M21 20v-1a5 5 0 0 0-3.5-4.75" />
-    </IconSvg>
   );
 }
 

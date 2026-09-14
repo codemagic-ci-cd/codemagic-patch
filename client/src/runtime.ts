@@ -30,6 +30,7 @@ export function createInitialRuntimeState(): RuntimeState {
     confirmedPackage: null,
     previousPackage: null,
     pendingPackage: null,
+    pendingEmbeddedRevert: false,
     pendingInstallMode: null,
     pendingMinimumBackgroundDuration: 0,
     lastBackgroundedAtMs: null,
@@ -296,11 +297,15 @@ function backgroundDurationMs(): number {
   return Math.max(0, nowMs() - state.lastBackgroundedAtMs);
 }
 
+function hasPendingActivation(): boolean {
+  return state.pendingPackage !== null || state.pendingEmbeddedRevert;
+}
+
 function canActivateForLifecycle(
   installMode: InstallMode,
   backgroundDurationMs: number,
 ): boolean {
-  if (!state.pendingPackage || state.pendingInstallMode !== installMode) {
+  if (!hasPendingActivation() || state.pendingInstallMode !== installMode) {
     return false;
   }
 
@@ -328,7 +333,7 @@ async function activateForLifecycle(
 }
 
 export async function activatePendingPackageOrReload(): Promise<boolean> {
-  if (!state.pendingPackage) {
+  if (!hasPendingActivation()) {
     return false;
   }
 
@@ -338,7 +343,7 @@ export async function activatePendingPackageOrReload(): Promise<boolean> {
 }
 
 function activatePendingPackageOrScheduleReload(): boolean {
-  if (!state.pendingPackage) {
+  if (!hasPendingActivation()) {
     return false;
   }
 
@@ -352,7 +357,7 @@ function activatePendingPackageOrScheduleReload(): boolean {
 export function scheduleSuspendActivationIfDue(): void {
   clearSuspendActivationTimer();
 
-  if (!state.pendingPackage || state.pendingInstallMode !== "ON_NEXT_SUSPEND") {
+  if (!hasPendingActivation() || state.pendingInstallMode !== "ON_NEXT_SUSPEND") {
     return;
   }
 
@@ -376,11 +381,11 @@ export function scheduleSuspendActivationIfDue(): void {
 export async function restartApp(onlyIfUpdateIsPending = false): Promise<void> {
   await ensureHydrated();
 
-  if (onlyIfUpdateIsPending && !state.pendingPackage) {
+  if (onlyIfUpdateIsPending && !hasPendingActivation()) {
     return;
   }
 
-  if (state.pendingPackage) {
+  if (hasPendingActivation()) {
     if (state.restartSuppressed) {
       state.blockedActivation = true;
       return;
@@ -400,7 +405,7 @@ export function disallowRestart(): void {
 export function allowRestart(): void {
   state.restartSuppressed = false;
 
-  if (state.pendingPackage && state.blockedActivation) {
+  if (hasPendingActivation() && state.blockedActivation) {
     activatePendingPackageOrScheduleReload();
   }
 }

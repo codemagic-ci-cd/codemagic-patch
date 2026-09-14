@@ -37,7 +37,7 @@ import type { ReleasePromoteBody } from "../../../api/types";
 import type { ProblemBehavior } from "../../../api/problem";
 import type { Release } from "../../../model/release";
 import { buttonVariants } from "../../../components/ui/Button";
-import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../../../components/ui/callout";
+import { CALLOUT, CALLOUT_TONE } from "../../../components/ui/callout";
 import {
   FIELD,
   FIELD_ERR,
@@ -177,7 +177,7 @@ function PromoteModalContent({
     const error = promoteMutation.error;
     if (behavior === "duplicate-release") {
       errorSlot = (
-        <div className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK} mt-[18px]`} role="alert">
+        <div className={`${CALLOUT} ${CALLOUT_TONE.warn} mt-[18px]`} role="alert">
           <AlertIcon />
           <div>
             <b>The destination already has this content.</b> Promoting again
@@ -200,7 +200,7 @@ function PromoteModalContent({
       const conflictRollout = conflictRolloutFrom(error);
       const destPath = `/teams/${teamId}/apps/${appId}/deployments/${submittedDestId ?? effectiveDestId}`;
       errorSlot = (
-        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`} role="alert">
+        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-[18px]`} role="alert">
           <AlertIcon />
           <div>
             An active rollout blocks this
@@ -224,7 +224,7 @@ function PromoteModalContent({
       );
     } else if (behavior === "blocking-job") {
       errorSlot = (
-        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`} role="alert">
+        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-[18px]`} role="alert">
           <AlertIcon />
           <div>
             <BlockingJobNotice />
@@ -235,7 +235,7 @@ function PromoteModalContent({
       // Includes the 400 signature-required path (destination app requires
       // code signing) — surfaced inline via the problem detail + errors[].
       errorSlot = (
-        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`} role="alert">
+        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-[18px]`} role="alert">
           <AlertIcon />
           <div>
             {describeProblem(error)}
@@ -261,7 +261,6 @@ function PromoteModalContent({
       onClose={requestClose}
       title={`Promote ${release.releaseLabel}`}
       description="Copy this release into another deployment."
-      icon={<RocketIcon />}
       wide
       footer={
         <>
@@ -354,7 +353,6 @@ function PromoteModalContent({
             />
             {rollout === null ? (
               <span className={FIELD_ERR} role="alert">
-                <AlertIcon />
                 Enter a whole number between 1 and 100.
               </span>
             ) : (
@@ -378,7 +376,6 @@ function PromoteModalContent({
             />
             {targetInvalid ? (
               <span className={FIELD_ERR} role="alert">
-                <AlertIcon />
                 Enter a target binary version.
               </span>
             ) : null}
@@ -599,16 +596,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function RocketIcon() {
-  return (
-    <IconSvg>
-      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
-      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-    </IconSvg>
   );
 }
 

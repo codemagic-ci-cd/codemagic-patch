@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useWebConfig } from "../api/hooks/webConfig";
 import { callbackRedirectUri, isLocalDevMode } from "../auth/webConfig";
 import { PRODUCT_NAME } from "../branding";
+import { AUTH_CARD, AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { FIELD, FIELD_LABEL, INPUT, INPUT_STATE } from "../components/ui/form";
@@ -50,7 +51,7 @@ export function LocalConsentPage() {
   if (configQuery.isError || !isLocalDevMode(configQuery.data)) {
     return (
       <AuthBackdrop>
-        <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
+        <main className={AUTH_CARD}>
           <h1 className="text-[23px] font-semibold tracking-[-.02em]">
             Page not found
           </h1>
@@ -68,7 +69,7 @@ export function LocalConsentPage() {
   if (state === null || redirectUri === null) {
     return (
       <AuthBackdrop>
-        <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
+        <main className={AUTH_CARD}>
           <h1 className="text-[23px] font-semibold tracking-[-.02em]">
             Nothing to approve here
           </h1>
@@ -103,7 +104,7 @@ export function LocalConsentPage() {
 
   return (
     <AuthBackdrop>
-      <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
+      <main className={AUTH_CARD}>
         <h1 className="text-[23px] font-semibold tracking-[-.02em]">
           Local evaluation sign-in
         </h1>
@@ -154,21 +155,4 @@ export function LocalConsentPage() {
  */
 function sanitizeRedirectUri(value: string | null): string | null {
   return value === callbackRedirectUri() ? value : null;
-}
-
-/** The starfield auth backdrop shared by the login/callback pages. */
-function AuthBackdrop({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="auth-art relative min-h-screen place-items-center overflow-hidden bg-[radial-gradient(120%_80%_at_50%_-10%,#0d122b,var(--color-sb-bg)_60%)] p-6 [display:grid]">
-      <span
-        className="absolute -left-[120px] -top-[180px] size-[560px] rounded-full bg-blue opacity-35 blur-[90px]"
-        aria-hidden="true"
-      />
-      <span
-        className="absolute -bottom-[220px] -right-[140px] size-[560px] rounded-full bg-magenta opacity-22 blur-[90px]"
-        aria-hidden="true"
-      />
-      {children}
-    </div>
-  );
 }

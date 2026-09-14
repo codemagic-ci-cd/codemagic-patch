@@ -8,6 +8,7 @@
  * never updated.
  */
 
+import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { SOURCE_REPO_URL } from "../../branding";
@@ -18,6 +19,8 @@ import { readStringFlag, type ParsedArgs } from "../selfhostSession";
 import { RemoteScriptFailure } from "../scriptRunner";
 import { UsageError, type CommandDeps } from "../shared";
 import { captureLocal } from "./process";
+
+type SourceDeps = Pick<CommandDeps, "env" | "stat" | "runProcess">;
 
 export type Checkout = {
   /** Kept and updated by the CLI, as opposed to one the user pointed at. */
@@ -38,12 +41,39 @@ export const COMPOSE_FILE = "docker-compose.dev.yml";
  */
 export const COMPOSE_PROJECT = "codemagic-patch-local-eval";
 
-/** `docker compose ...` addressed at the stack of `checkoutPath`. */
-export function composeArgs(checkoutPath: string): string[] {
+export function projectStatePath(
+  env: Record<string, string | undefined>,
+): string {
+  return join(resolveConfigHome(env), "local-eval", "project-name");
+}
+
+export function composeProject(
+  env: Record<string, string | undefined>,
+): string {
+  let name: string;
+  try {
+    name = readFileSync(projectStatePath(env), "utf8").trim();
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT")
+      return COMPOSE_PROJECT;
+    throw error;
+  }
+  if (!/^codemagic-patch-local-eval(?:-[a-f0-9]{12})?$/u.test(name)) {
+    throw new UsageError(
+      `Invalid local evaluation project state: ${projectStatePath(env)}`,
+    );
+  }
+  return name;
+}
+
+export function composeArgs(
+  checkoutPath: string,
+  env: Record<string, string | undefined> = process.env,
+): string[] {
   return [
     "compose",
     "--project-name",
-    COMPOSE_PROJECT,
+    composeProject(env),
     "-f",
     join(checkoutPath, COMPOSE_FILE),
   ];
@@ -55,7 +85,10 @@ export function managedCheckoutPath(
   return join(resolveConfigHome(env), "local-eval", "codemagic-patch");
 }
 
-export function resolveCheckout(deps: CommandDeps, parsed: ParsedArgs): Checkout {
+export function resolveCheckout(
+  deps: SourceDeps,
+  parsed: ParsedArgs,
+): Checkout {
   const explicit = readStringFlag(parsed, "--checkout");
   if (explicit !== undefined) {
     return {
@@ -69,7 +102,7 @@ export function resolveCheckout(deps: CommandDeps, parsed: ParsedArgs): Checkout
 
 /** Whether `path` holds a checkout `up.sh` can run from. */
 export async function isCheckout(
-  deps: CommandDeps,
+  deps: SourceDeps,
   path: string,
 ): Promise<boolean> {
   try {
@@ -79,7 +112,7 @@ export async function isCheckout(
   }
 }
 
-async function exists(deps: CommandDeps, path: string): Promise<boolean> {
+async function exists(deps: SourceDeps, path: string): Promise<boolean> {
   try {
     await deps.stat(path);
     return true;
@@ -97,7 +130,7 @@ async function exists(deps: CommandDeps, path: string): Promise<boolean> {
  * the way a real server is.
  */
 export async function ensureCheckout(
-  deps: CommandDeps,
+  deps: SourceDeps,
   progress: Progress,
   checkout: Checkout,
 ): Promise<void> {
@@ -128,7 +161,7 @@ export async function ensureCheckout(
 }
 
 async function cloneCheckout(
-  deps: CommandDeps,
+  deps: SourceDeps,
   progress: Progress,
   path: string,
 ): Promise<void> {
@@ -164,7 +197,7 @@ async function cloneCheckout(
 }
 
 async function updateCheckout(
-  deps: CommandDeps,
+  deps: SourceDeps,
   progress: Progress,
   path: string,
 ): Promise<void> {
@@ -186,11 +219,14 @@ async function updateCheckout(
     return;
   }
 
-  // Told apart from a diverged checkout below: a detached HEAD or a branch
-  // with nothing to track (a clone of a bundle that carried only HEAD) has
-  // nothing to fast-forward to, which is not the same as having moved away.
-  const upstream = await git(["rev-parse", "--abbrev-ref", "@{upstream}"]);
-  if (upstream.exitCode !== 0) {
+  // A bundle clone may have no upstream, or an origin pointing at an old
+  // temporary file. Resolve the snapshot from the CLI running now instead.
+  const bundle = sourceBundlePath(deps);
+  const upstream =
+    bundle === null
+      ? await git(["rev-parse", "--abbrev-ref", "@{upstream}"])
+      : null;
+  if (upstream !== null && upstream.exitCode !== 0) {
     progress.warn(
       `${path} has no upstream branch to update from, so it was not updated; using it as it is.`,
     );
@@ -198,7 +234,11 @@ async function updateCheckout(
   }
 
   const before = (await git(["rev-parse", "--short", "HEAD"])).output.trim();
-  const fetched = await git(["fetch", "--quiet", "origin"]);
+  const fetched = await git(
+    bundle === null
+      ? ["fetch", "--quiet", "origin"]
+      : ["fetch", "--quiet", bundle, "HEAD"],
+  );
   if (fetched.exitCode !== 0) {
     progress.warn(
       "Could not reach the source repository to check for updates; using the copy already here.",
@@ -208,7 +248,12 @@ async function updateCheckout(
 
   // --ff-only is the guard: a checkout that diverged from its upstream is
   // left alone rather than merged into something nobody reviewed.
-  const merged = await git(["merge", "--ff-only", "--quiet", "@{upstream}"]);
+  const merged = await git([
+    "merge",
+    "--ff-only",
+    "--quiet",
+    bundle === null ? "@{upstream}" : "FETCH_HEAD",
+  ]);
   if (merged.exitCode !== 0) {
     progress.warn(
       `${path} has diverged from the source repository, so it was not updated; using it as it is.`,

@@ -1,4 +1,4 @@
-import { formatCount } from "../../model/format";
+import { formatCount, formatSuccessRate } from "../../model/format";
 import type { MetricsRollup } from "./useMetricsRollup";
 import { ICON_BTN } from "../../components/ui/iconButton";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -53,13 +53,13 @@ export function MetricsRollupCells({
   const { totals, rate } = rollup;
   return (
     <>
-      <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(totals.active)}</td>
+      <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(totals.success)}</td>
       <td className={`${TBL_TD} ${TBL_NUM}`}>
         {formatCount(totals.downloaded)}
       </td>
       <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(totals.failed)}</td>
       <td className={`${TBL_TD} ${TBL_NUM}`}>
-        {rate === null ? "—" : `${(rate * 100).toFixed(1)}%`}
+        {rate === null ? "—" : `${formatSuccessRate(rate)}%`}
       </td>
     </>
   );

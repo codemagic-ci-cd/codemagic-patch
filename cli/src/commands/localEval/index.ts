@@ -14,7 +14,7 @@
 
 import { join } from "node:path";
 
-import { ON_DEVICE_DEMO_URL, PRODUCT_NAME } from "../../branding";
+import { PRODUCT_NAME } from "../../branding";
 import {
   loadCliConfig,
   loadProjectConfig,
@@ -39,10 +39,12 @@ import {
 import { runRenderedScript } from "../scriptRunner";
 import { UsageError, type CommandDeps } from "../shared";
 import { ensureDocker, probeDocker } from "./docker";
+import { recoverMissingContainers } from "./recovery";
 import { captureLocal } from "./process";
 import { checkPorts, EVAL_PORTS } from "./ports";
 import {
   composeArgs,
+  composeProject,
   ensureCheckout,
   isCheckout,
   resolveCheckout,
@@ -140,33 +142,55 @@ async function runUp(deps: CommandDeps, parsed: ParsedArgs): Promise<string> {
 
     const checkout = resolveCheckout(deps, parsed);
     await ensureCheckout(deps, progress, checkout);
+    await recoverMissingContainers(deps, progress, checkout);
     await checkPorts(deps, progress, checkout.path);
 
-    await runRenderedScript(deps, {
-      interruptNotice: (logPath) => [
-        "The stack may be partly started.",
-        ...(logPath !== undefined ? [`Full log: ${logPath}`] : []),
-        "Run the same command again to finish, or `cmpatch selfhost local-eval down` to stop it.",
-      ],
-      launch: (onOutput) =>
-        deps.runProcess({
-          // --skip-cli: the script's last step installs the CLI from the
-          // checkout, which for the CLI running it would mean replacing
-          // itself. --no-banner: the banner is rendered below, with commands
-          // written for a CLI user rather than for the clone-and-run path.
-          args: [join(checkout.path, UP_SCRIPT), "--skip-cli", "--no-banner"],
-          command: "bash",
-          onOutput,
-        }),
-      milestones: LOCAL_EVAL_UP_MILESTONES,
-      name: "local-eval",
-      prefix: "[local-eval] ",
-      progress,
-      wording: {
-        subject: "the bring-up script",
-        tailHeading: "Last output:",
-      },
-    });
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await runRenderedScript(deps, {
+          interruptNotice: (logPath) => [
+            "The stack may be partly started.",
+            ...(logPath !== undefined ? [`Full log: ${logPath}`] : []),
+            "Run the same command again to finish, or `cmpatch selfhost local-eval down` to stop it.",
+          ],
+          launch: (onOutput) =>
+            deps.runProcess({
+              // --skip-cli: the script's last step installs the CLI from the
+              // checkout, which for the CLI running it would mean replacing
+              // itself. --no-banner: the banner is rendered below, with commands
+              // written for a CLI user rather than for the clone-and-run path.
+              args: [
+                join(checkout.path, UP_SCRIPT),
+                "--skip-cli",
+                "--no-banner",
+              ],
+              command: "bash",
+              env: {
+                ...deps.env,
+                COMPOSE_PROJECT_NAME: composeProject(deps.env),
+              },
+              onOutput,
+            }),
+          milestones: LOCAL_EVAL_UP_MILESTONES,
+          name: "local-eval",
+          prefix: "[local-eval] ",
+          progress,
+          wording: {
+            subject: "the bring-up script",
+            tailHeading: "Last output:",
+          },
+        });
+        break;
+      } catch (error) {
+        if (
+          attempt > 0 ||
+          !(error instanceof Error) ||
+          !/no such (?:object|container)/iu.test(error.message) ||
+          !(await recoverMissingContainers(deps, progress, checkout))
+        )
+          throw error;
+      }
+    }
     started = true;
 
     // The stack is up; what is left are questions, and they belong inside
@@ -369,10 +393,8 @@ async function effectiveServerUrl(deps: CommandDeps): Promise<string | undefined
 
 /**
  * What the user needs right after the stack is up, and nothing else: where
- * it is, the one next thing to do, where the demo is, how to stop it. The
- * demo earns its line because it is what the stack is for — an update
- * applying on a running app — and it is linked on the public repo rather
- * than in the CLI's checkout, whose path is an implementation detail.
+ * it is, how to run the guided demo, how to sign in separately, and how to
+ * stop it. The demo handles sign-in and uses the evaluation checkout.
  * Everything else up.sh's banner prints — MinIO, the seeded token, the
  * sample release command — is reference material, and `status` is where it
  * lives. The spinner has already said the stack is ready, so there is no
@@ -390,8 +412,8 @@ export function renderBanner(input: { defaulted: boolean }): string {
     `Dashboard  ${DASHBOARD_URL}  (sign in as ${LOCAL_ADMIN_EMAIL}, one click)`,
     `API        ${SERVER_URL}  (${serverNote})`,
     "",
-    `Next: ${login}`,
-    `Demo: ${ON_DEVICE_DEMO_URL}  (watch an update apply on a simulator or emulator)`,
+    "Optional demo: cmpatch demo  (watch an update apply on a simulator or emulator; includes sign-in)",
+    `CLI sign-in: ${login}`,
     "Stop: cmpatch selfhost local-eval down",
     "",
     "Evaluation only — no authentication, localhost only.",
@@ -429,7 +451,7 @@ async function runDown(deps: CommandDeps, parsed: ParsedArgs): Promise<string> {
       launch: (onOutput) =>
         deps.runProcess({
           args: [
-            ...composeArgs(checkout.path),
+            ...composeArgs(checkout.path, deps.env),
             "down",
             ...(deleteData ? ["--volumes"] : []),
           ],
@@ -531,8 +553,9 @@ async function runStatus(deps: CommandDeps, parsed: ParsedArgs): Promise<string>
     `    --bundle-path ${bundle} \\`,
     "    --target-binary-version 1.0.0 --fingerprint local-dev-fingerprint",
     "",
-    "See an update apply on a device (simulator / emulator)",
-    `  ${join(checkout.path, "examples/on-device-demo")}/`,
+    "Optional: see an update apply on a device (simulator / emulator)",
+    "  cmpatch demo  (includes sign-in, setup, and the OTA walkthrough)",
+    `  Source: ${join(checkout.path, "examples/on-device-demo")}/`,
     "",
     "Stop: cmpatch selfhost local-eval down",
   ].join("\n");
@@ -544,7 +567,7 @@ async function listServices(
 ): Promise<Array<{ name: string; status: string }>> {
   const listing = await captureLocal(deps, {
     args: [
-      ...composeArgs(checkout.path),
+      ...composeArgs(checkout.path, deps.env),
       "ps",
       "--format",
       "{{.Service}}\t{{.Status}}",

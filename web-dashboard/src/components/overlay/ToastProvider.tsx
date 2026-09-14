@@ -151,7 +151,7 @@ export function useToast(): ToastApi {
 // dismiss icon was tinted too (and stayed tinted on hover — a direct color
 // always beats the button's inherited hover color). Ported verbatim.
 const KIND_TINT: Record<ToastKind, string> = {
-  success: "text-[#34d399]",
+  success: "text-green",
   error: "text-[#ff6b8a]",
   info: "text-aqua",
   warning: "text-[#fbbf24]",
@@ -220,7 +220,7 @@ function ToastItem({
   return (
     <div
       data-toast
-      className="flex animate-[rise_.2s_ease_both] items-start gap-[11px] rounded-md bg-ink px-4 py-3.5 text-[13.5px] text-white shadow-lg"
+      className="flex animate-[rise_.2s_ease_both] items-start gap-[11px] rounded-md bg-inverse px-4 py-3.5 text-[13.5px] text-white shadow-lg"
       onMouseEnter={pause}
       onMouseLeave={resume}
       onFocus={pause}
@@ -230,7 +230,7 @@ function ToastItem({
       <div>
         <div className="font-bold">{toast.message}</div>
         {toast.description !== undefined ? (
-          <div className="mt-[2px] text-[12.5px] text-[#aeb4cf]">
+          <div className="mt-[2px] text-[12.5px] text-inverse-muted">
             {toast.description}
           </div>
         ) : null}

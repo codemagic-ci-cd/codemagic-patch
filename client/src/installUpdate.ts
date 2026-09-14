@@ -176,19 +176,14 @@ export async function installUpdate(
 
     state.confirmedPackage = null;
     state.pendingPackage = null;
-    state.pendingInstallMode = null;
+    state.pendingEmbeddedRevert = true;
+    state.pendingInstallMode = options?.installMode ?? DEFAULT_INSTALL_MODE;
     state.previousPackage = null;
     state.pendingMinimumBackgroundDuration = options?.minimumBackgroundDuration ?? 0;
     clearSuspendActivationTimer();
     state.blockedActivation = false;
 
-    if ((options?.installMode ?? DEFAULT_INSTALL_MODE) === "IMMEDIATE") {
-      if (state.restartSuppressed) {
-        state.blockedActivation = true;
-      } else {
-        await NativeCodemagicPatch.reloadBundle();
-      }
-    }
+    await activateInstalledUpdate();
 
     return;
   }
@@ -212,6 +207,7 @@ export async function installUpdate(
 
   const runtimePackage = createRuntimePackage(installedLocalPackage, downloadedRemotePackage);
 
+  state.pendingEmbeddedRevert = false;
   state.pendingPackage = runtimePackage;
   state.pendingInstallMode = installMode;
   state.pendingMinimumBackgroundDuration = options?.minimumBackgroundDuration ?? 0;
@@ -221,6 +217,10 @@ export async function installUpdate(
 
   state.events.push(nativeInstallResult.installedEvent);
 
+  await activateInstalledUpdate();
+}
+
+async function activateInstalledUpdate(): Promise<void> {
   if (state.pendingInstallMode === "ON_NEXT_SUSPEND" && isCurrentlyBackgrounded()) {
     scheduleSuspendActivationIfDue();
   }

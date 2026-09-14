@@ -32,7 +32,11 @@ export type ProcessRunResult = {
 export type ProcessRunOptions = {
   args: readonly string[];
   command: string;
+  /** Working directory for the child. Yarn and the React Native CLI resolve the project from here. */
+  cwd?: string;
   env?: Record<string, string | undefined>;
+  /** Kill a short-lived command if it exceeds this deadline. */
+  timeoutMs?: number;
   /**
    * Hand the child the parent's stdio instead of capturing it. The bootstrap
    * ssh connection needs this: host-key confirmation and DigitalOcean's forced
@@ -511,6 +515,7 @@ export function runProcessWithSpawn(
 ): Promise<ProcessRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(options.command, [...options.args], {
+      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
       env: {
         ...process.env,
         ...options.env,
@@ -520,6 +525,13 @@ export function runProcessWithSpawn(
         : ["pipe", "pipe", "pipe"],
     });
 
+    let timedOut = false;
+    const timer = options.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, options.timeoutMs);
     let settled = false;
     const settle = (outcome: () => void) => {
       if (settled) {
@@ -527,6 +539,7 @@ export function runProcessWithSpawn(
       }
 
       settled = true;
+      clearTimeout(timer);
       outcome();
     };
 
@@ -548,7 +561,11 @@ export function runProcessWithSpawn(
     });
     child.on("close", (exitCode, signal) => {
       settle(() => {
-        resolve({ exitCode, signal });
+        if (timedOut) {
+          reject(new Error(`${options.command} timed out after ${options.timeoutMs}ms`));
+        } else {
+          resolve({ exitCode, signal });
+        }
       });
     });
 

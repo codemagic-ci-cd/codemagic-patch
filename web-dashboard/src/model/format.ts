@@ -58,6 +58,50 @@ export function formatCount(value: number): string {
   return COUNT_FORMAT.format(value);
 }
 
+/**
+ * Short count for tight UI (chart axes): 999 stays "999", then "1.5k",
+ * "10k", "1.2M", "3B". Hover and tables keep {@link formatCount}.
+ */
+export function formatCompactCount(value: number): string {
+  const abs = Math.abs(value);
+  if (abs < 1_000) {
+    return COUNT_FORMAT.format(value);
+  }
+  if (abs < 1_000_000) {
+    return formatScaled(value, 1_000, "k");
+  }
+  if (abs < 1_000_000_000) {
+    return formatScaled(value, 1_000_000, "M");
+  }
+  return formatScaled(value, 1_000_000_000, "B");
+}
+
+function formatScaled(
+  value: number,
+  divisor: number,
+  suffix: string,
+): string {
+  const rounded = Math.round((value / divisor) * 10) / 10;
+  const body = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `${body}${suffix}`;
+}
+
+/**
+ * Format a 0..1 install success rate as a percent with two decimals
+ * ("99.98"), without a % suffix. `100.00` only when the rate is exactly 1 —
+ * leftover failures must not round into a perfect score.
+ */
+export function formatSuccessRate(rate: number): string {
+  if (rate >= 1) {
+    return "100.00";
+  }
+  if (rate <= 0) {
+    return "0.00";
+  }
+  const rounded = Math.round(rate * 10_000) / 100;
+  return Math.min(rounded, 99.99).toFixed(2);
+}
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;

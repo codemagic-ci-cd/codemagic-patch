@@ -148,6 +148,7 @@ export function readBooleanFlag(parsed: ParsedArgs, name: string): boolean {
 // ---------------------------------------------------------------------------
 
 export type SelfhostSession = {
+  dnsSetup?: import("../providers/dns").DnsRecordWriter;
   coverage: BackupCoverage;
   facts: RemoteHostFacts;
   identityFile: string;

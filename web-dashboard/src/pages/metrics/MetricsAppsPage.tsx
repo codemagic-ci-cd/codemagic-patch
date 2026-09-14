@@ -3,7 +3,7 @@
 import { Link, useNavigate, useParams } from "react-router";
 
 import { useApps } from "../../api/hooks/apps";
-import { gradientFor, initialsFor } from "../../lib/appTile";
+import { initialsFor } from "../../lib/appTile";
 import type { App } from "../../model/app";
 import { buttonVariants } from "../../components/ui/Button";
 import { APP_ICO, CELL_APP, CELL_MAIN } from "../../components/ui/cell";
@@ -109,7 +109,6 @@ function AppRow({ teamId, app }: { teamId: string; app: App }) {
         <div className={CELL_APP}>
           <span
             className={APP_ICO}
-            style={{ background: gradientFor(app.id) }}
             aria-hidden="true"
           >
             {initialsFor(app.name)}

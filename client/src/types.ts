@@ -301,6 +301,7 @@ export interface RuntimeState {
   confirmedPackage: RuntimePackage | null;
   previousPackage: RuntimePackage | null;
   pendingPackage: RuntimePackage | null;
+  pendingEmbeddedRevert: boolean;
   pendingInstallMode: InstallMode | null;
   pendingMinimumBackgroundDuration: number;
   lastBackgroundedAtMs: number | null;

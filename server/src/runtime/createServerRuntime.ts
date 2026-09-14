@@ -1112,7 +1112,11 @@ function createStorageAdapter(config: RuntimeConfig): StorageAdapter {
       region: config.s3.region,
     });
 
-    return new S3StorageAdapter({ bucket: config.s3.bucket, client });
+    return new S3StorageAdapter({
+      bucket: config.s3.bucket,
+      internalBucket: config.s3.internalBucket,
+      client,
+    });
   }
 
   if (config.storageAdapter === "gcs") {

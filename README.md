@@ -39,7 +39,15 @@ Either way the stack comes up with a seeded demo app:
 - **API** — <http://localhost:3000>; the CLI makes it the default when no higher-precedence project or environment setting overrides it, and prints `--server-url` guidance otherwise
 - `cmpatch selfhost local-eval status` shows the rest: services, the MinIO console, the seeded API token, and a sample publish command
 
-To see an update **apply on a running app** (iOS simulator / Android emulator), continue with the [on-device demo](examples/on-device-demo).
+The stack is ready to use with [your own app](https://patch.codemagic.io/docs/#5-try-it-with-your-own-app). If you would like to see an update **apply on a ready-made app** first, try the optional guided demo:
+
+```bash
+cmpatch demo
+```
+
+It signs you in if needed, builds and launches the demo app, then asks you to approve publishing a fix. It makes the source change and switches the app automatically so the update downloads and applies over the air. After `cmpatch selfhost local-eval`, it uses the evaluation checkout without a separate clone. If you started the stack from your own clone, run `cmpatch demo` inside it or pass `--checkout /path/to/codemagic-patch`. You need Node.js ≥ 22.20, Yarn (via Corepack), and either Xcode with an iOS Simulator on macOS or an Android SDK with a running emulator and `adb` on PATH. See the [on-device demo](examples/on-device-demo) for prerequisites and the manual walkthrough.
+
+After the app reloads, confirm that its product cards load, then open the release in the dashboard when the CLI offers. Keep the local stack running if you want to continue with your own app.
 
 The evaluation stack is defined in `docker-compose.dev.yml` (not the self-host compose file). Tear everything down with `cmpatch selfhost local-eval down` (data is kept for the next start; add `--delete-data` to drop it too), or from a clone:
 
@@ -218,6 +226,8 @@ scripts/selfhost/install.sh \
 
 For Cloudflare, add `--cloudflare --cloudflare-api-token <cf_cache_purge_token> --cloudflare-zone-id <cf_zone_id>` (a token with the single permission *Zone → Cache Purge → Purge*, and the zone's ID from its Overview page).
 
+To evaluate this same stack on your own machine over plain HTTP — real OAuth sign-in, no certificate, no DNS — add `--allow-http` and drop the domain flags: the server becomes `http://localhost` and downloads `http://localhost:9110`, for that machine alone (any other hostname or IP is refused; a server other machines reach needs HTTPS). See [Plain HTTP (no TLS)](docs/self-hosting-compose.md#plain-http-no-tls) for what changes.
+
 </details>
 
 Either way, the installer:
@@ -225,7 +235,7 @@ Either way, the installer:
 - writes `.env.selfhost` with **strong random secrets** for Postgres, MinIO, the worker, and OAuth (it refuses to overwrite an existing file),
 - builds the server and Caddy (dashboard) images,
 - starts the Compose stack under project name `codemagic-patch-selfhost`,
-- waits for Caddy to obtain Let's Encrypt certificates (1–2 min) by polling `/health` and storage health, and
+- waits for Caddy to obtain Let's Encrypt certificates (1–2 min) by polling `/health` and storage health (a `--allow-http` install polls the same endpoints over plain HTTP, with no certificate to wait for), and
 - prepares the single fixed **`default-team`** on first boot.
 
 When it finishes you'll have:
@@ -326,8 +336,12 @@ Alternatively, build it from this repo (requires Node.js `>=22.20.0`):
 ```bash
 corepack enable
 yarn install
-yarn cli:install-global   # builds and installs the `cmpatch` binary globally
+npm run cli:install-global   # builds and replaces the global `cmpatch` with this checkout
 ```
+
+`yarn cli:install-global` runs the same script. Run it again after changing the
+CLI source. With nvm, global commands belong to the active Node version; use
+the same Node version in the terminal where you run `cmpatch`.
 
 Sign in as the admin (GitHub sign-in and approval complete in the browser):
 
@@ -682,6 +696,7 @@ allowRestart();
 | `installUpdate(target, options?)` | Stages/applies a downloaded package using an `installMode`. |
 | `notifyAppReady()` | Confirms the running bundle as good (rollback protection). |
 | `getRunningBundleUpdateMetadata()` | Returns `{ label, packageHash, releaseNotes }` for the running OTA bundle, or `null` for the embedded bundle. |
+| `isNextVersionReady()` | Returns `true` when a newer package is installed and takes over on the next reload. |
 | `restartApp(onlyIfUpdateIsPending?)` | Reloads the JS bundle to apply a pending update. |
 | `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
 
@@ -940,7 +955,7 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
 **Check local readiness before publishing**
 
 ```bash
-cmpatch doctor --app MyApp-iOS --deployment Staging --verbose
+cmpatch doctor --platform ios --app MyApp-iOS --deployment Staging --verbose
 ```
 
 ---
@@ -971,7 +986,7 @@ The SDK reads these objects under your **Download base** URL:
 | --------------------------------- | ------------------------------------------------------------------------ |
 | `CODEMAGIC_PATCH_API_DOMAIN`      | API/dashboard domain (no scheme/path)                                    |
 | `CODEMAGIC_PATCH_STORAGE_DOMAIN`  | Storage domain (bundled storage only; must differ from the API domain)   |
-| `ACME_EMAIL`                      | Email for Let's Encrypt certificates                                     |
+| `ACME_EMAIL`                      | Email for Let's Encrypt certificates (still required with `SELFHOST_SCHEME=http`: Caddy rejects an empty value) |
 | `SERVER_URL`                      | Public API URL, e.g. `https://updates.example.com`                       |
 | `PUBLIC_BASE_URL`                 | Public artifact base — `https://<storage-domain>/codemagic-patch` with bundled storage, operator-set (the bucket or CDN URL) with external storage |
 | `POSTGRES_DB` / `_USER` / `_PASSWORD` | PostgreSQL credentials (bundled database only)                       |

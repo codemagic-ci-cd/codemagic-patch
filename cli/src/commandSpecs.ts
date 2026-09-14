@@ -75,6 +75,7 @@ import {
   executeContextCommand,
   executeInitCommand,
 } from "./commands/localConfig";
+import { executeDemoCommand } from "./commands/demo";
 import { executeSelfhostCommand } from "./commands/selfhost";
 import {
   executeMemberAdd,
@@ -483,10 +484,11 @@ const helpGroups: readonly CommandHelpGroup[] = [
       "cmpatch selfhost backup",
       "cmpatch selfhost upgrade ubuntu@203.0.113.7",
       "cmpatch selfhost local-eval",
+      "cmpatch demo",
     ],
     name: "selfhost",
     summary: "Install and maintain your own update server.",
-    topics: ["selfhost"],
+    topics: ["selfhost", "demo"],
   },
   {
     examples: [
@@ -599,6 +601,36 @@ const commandSpecs: RunnableCommandSpec[] = [
     routes: [{ path: ["init"] }],
   }),
   commandSpec({
+    commandName: "demo",
+    defaults: false,
+    execute: executeDemoCommand,
+    kind: "demo",
+    help: [
+      {
+        description:
+          "Build the on-device demo against the local evaluation stack, then publish an OTA fix you watch apply on a simulator or emulator.",
+        examples: ["cmpatch demo", "cmpatch demo --platform ios --checkout ."],
+        flags: [
+          {
+            flags: [
+              {
+                flag: "--checkout <path>",
+                summary:
+                  "Use the demo app in this checkout instead of discovering one",
+              },
+              flagHelp.platform,
+              flagHelp.nonInteractive,
+            ],
+          },
+        ],
+        group: "selfhost",
+        usage: "cmpatch demo [flags]",
+      },
+    ],
+    parse: (args) => parseRawArgvCommand(args, "demo"),
+    routes: [{ path: ["demo"] }],
+  }),
+  commandSpec({
     aliases: [
       "selfhost backup",
       "selfhost install",
@@ -671,6 +703,42 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               flagHelp.sshKey,
               flagHelp.nonInteractive,
+            ],
+          },
+          {
+            title: "DNS setup",
+            flags: [
+              { flag: "--dns-setup <auto|manual|cloudflare|domain-connect>", summary: "Choose DNS automation; auto offers Cloudflare, or Domain Connect where the provider advertises the Patch template, and stays manual without prompts. Cloudflare uses CMPATCH_DNS_CLOUDFLARE_API_TOKEN." },
+              { flag: "--public-ip <address>", summary: "The public IPv4 address the DNS records point at, for a server that cannot report its own (behind NAT, IPv6-only)." },
+            ],
+          },
+          {
+            title: "External storage (first install)",
+            flags: [
+              { flag: "--storage-mode <bundled|r2|s3|gcs>", summary: "Storage provider (default bundled); R2 uses a Cloudflare custom domain" },
+              { flag: "--storage-setup <automatic|guided>", summary: "Create new resources or follow console setup; complete runtime settings skip creation" },
+              { flag: "--download-domain <domain>", summary: "External CDN viewer hostname" },
+              { flag: "--s3-bucket <name>", summary: "Public S3/R2 bucket (or S3_BUCKET)" },
+              { flag: "--s3-internal-bucket <name>", summary: "Distinct private S3/R2 bucket (or S3_INTERNAL_BUCKET)" },
+              { flag: "--s3-region <region>", summary: "S3 region (or S3_REGION); R2 uses auto" },
+              { flag: "--s3-endpoint <url>", summary: "Explicit S3-compatible HTTPS endpoint (or S3_ENDPOINT)" },
+              { flag: "--s3-force-path-style <true|false>", summary: "Explicit S3 addressing (or S3_FORCE_PATH_STYLE)" },
+              { flag: "--s3-access-key-id <id>", summary: "Runtime object access key (prefer S3_ACCESS_KEY_ID)" },
+              { flag: "--s3-secret-access-key <secret>", summary: "Runtime object secret (prefer S3_SECRET_ACCESS_KEY)" },
+              { flag: "--gcs-public-bucket <name>", summary: "Public GCS bucket (or GCS_PUBLIC_BUCKET)" },
+              { flag: "--gcs-internal-bucket <name>", summary: "Private GCS bucket (or GCS_INTERNAL_BUCKET)" },
+              { flag: "--gcs-credentials-file <path>", summary: "Runtime service-account JSON (or GCS_CREDENTIALS_FILE)" },
+              { flag: "--gcp-project <id>", summary: "Project for interactive GCS setup (or GOOGLE_CLOUD_PROJECT)" },
+              { flag: "--gcs-location <location>", summary: "New GCS bucket location (or GCS_LOCATION)" },
+              { flag: "--gcp-account <email>", summary: "Explicit gcloud setup account (or CMPATCH_GCP_ACCOUNT)" },
+              { flag: "--aws-profile <name>", summary: "Explicit AWS setup profile (or AWS_PROFILE)" },
+              { flag: "--cloudflare-account-id <id>", summary: "R2 setup account (or CLOUDFLARE_ACCOUNT_ID)" },
+              { flag: "--r2-setup-token <token>", summary: "Disposable account token (prefer CMPATCH_R2_SETUP_TOKEN)" },
+              { flag: "--aws-setup-access-key-id <id>", summary: "Disposable IAM key (prefer CMPATCH_AWS_SETUP_ACCESS_KEY_ID)" },
+              { flag: "--aws-setup-secret-access-key <secret>", summary: "Disposable IAM secret (prefer CMPATCH_AWS_SETUP_SECRET_ACCESS_KEY)" },
+              { flag: "--gcp-setup-credentials-file <path>", summary: "Disposable JSON key (or CMPATCH_GCP_SETUP_CREDENTIALS_FILE)" },
+              { flag: "--public-base-url <url>", summary: "Complete final download URL (or PUBLIC_BASE_URL)" },
+              { flag: "--skip-storage-check", summary: "Skip the on-server script check; CLI verification still runs" },
             ],
           },
           {
@@ -1212,13 +1280,21 @@ const commandSpecs: RunnableCommandSpec[] = [
               ...deploymentSelectorFlagHelp,
               flagHelp.platform,
               flagHelp.projectRoot,
+              { flag: "--plist-file <path>", summary: "Inspect an explicit iOS app plist (requires --platform ios)" },
+              { flag: "--android-strings-file <path>", summary: "Inspect an Android SDK resource file (requires --platform android)" },
+              { flag: "--gradle-file <path>", summary: "Select the Android module and version source (requires --platform android)" },
               flagHelp.format,
               { flag: "--verbose", summary: "Show every check, not just failures" },
+              { flag: "--fix", summary: "Offer to save a verified explicit --server-url in a missing project config, then recheck" },
+              { flag: "--yes", summary: "Apply the supported configuration fix without prompting" },
               ...serverFlagHelp,
             ],
           },
           {
             flags: [
+              {
+                flag: "--verify-delivery", summary: "Verify manifests and advertised artifact accessibility",
+              },
               {
                 flag: "--deployment-key <key>",
                 summary: "Check a specific deployment key",
@@ -1230,7 +1306,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               {
                 flag: "--current-package-hash <hash>",
-                summary: "Simulate a device that already runs this package",
+                summary: "Simulate an installed package (requires --verify-delivery)",
               },
             ],
             title: "Update-check flags",

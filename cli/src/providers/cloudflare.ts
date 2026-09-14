@@ -1,3 +1,5 @@
+import { r2Account } from "../../../scripts/selfhost/lib/r2-privacy.cjs";
+export { r2Account };
 /**
  * The Cloudflare calls the setup wizard makes, as pure input → typed-result
  * functions. No prompting and no user-facing copy.
@@ -7,6 +9,10 @@
  * at runtime to purge the edge cache after each release. Nothing is stored on
  * this side.
  */
+
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { ProviderHttpError } from "./providerError";
 
 export const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com/client/v4";
 
@@ -34,6 +40,42 @@ export function buildTokenTemplateUrl(input: { name: string }): string {
   });
 
   return `https://dash.cloudflare.com/profile/api-tokens?${query.toString()}`;
+}
+
+export function buildDnsTokenTemplateUrl(input: { name: string }): string {
+  const query = new URLSearchParams({
+    accountId: "*",
+    name: input.name,
+    permissionGroupKeys: JSON.stringify([
+      { key: "zone", type: "read" },
+      { key: "dns", type: "edit" },
+    ]),
+    // The zone ID is not available until the user supplies a token.
+    zoneId: "all",
+  });
+  return `https://dash.cloudflare.com/profile/api-tokens?${query.toString()}`;
+}
+
+export function buildR2TokenTemplateUrl(input: {
+  name: string;
+  runtime?: boolean;
+}): string {
+  const query = new URLSearchParams({
+    to: "/:account/api-tokens",
+    name: input.name,
+    permissionGroupKeys: JSON.stringify([
+      ...(input.runtime
+        ? [{ key: "workers_r2", type: "read" }]
+        : [
+            { key: "account_api_tokens", type: "edit" },
+            { key: "workers_r2", type: "edit" },
+            { key: "cache_settings", type: "write" },
+          ]),
+      { key: "zone", type: "read" },
+      { key: "cache", type: "purge" },
+    ]),
+  });
+  return `https://dash.cloudflare.com/?${query.toString()}`;
 }
 
 export type ZoneLookup =
@@ -203,4 +245,154 @@ function sameTarget(location: string, requestUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Account-owned tokens use the account API family throughout their lifetime. */
+export async function cloudflareRequest<T>(input: {
+  fetch: typeof fetch;
+  apiToken: string;
+  path: string;
+  method?: string;
+  body?: unknown;
+}): Promise<T> {
+  const response = await input.fetch(
+    `${CLOUDFLARE_API_BASE_URL}${input.path}`,
+    {
+      method: input.method ?? "GET",
+      headers: {
+        authorization: `Bearer ${input.apiToken}`,
+        "content-type": "application/json",
+      },
+      ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  const operation = `Cloudflare ${input.method ?? "GET"} ${input.path.split("?")[0]}`;
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ProviderHttpError(operation, response.status);
+  }
+  let body: { result: T; success: boolean } | null;
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    throw new ProviderHttpError(operation, response.status);
+  }
+  if (!body?.success) throw new ProviderHttpError(operation, response.status);
+  return body.result;
+}
+
+export class R2CacheRuleConflict extends Error {}
+
+type R2CacheInput = {
+  fetch: typeof fetch;
+  apiToken: string;
+  zoneId: string;
+  domain: string;
+};
+type CacheRuleset = {
+  id: string;
+  rules?: {
+    expression: string;
+    action?: string;
+    enabled?: boolean;
+    action_parameters?: Record<string, unknown>;
+  }[];
+};
+const R2_CACHE_PARAMETERS = {
+  cache: true,
+  browser_ttl: { mode: "respect_origin" },
+};
+
+export async function checkR2CacheRule(
+  input: R2CacheInput,
+): Promise<CacheRuleset | undefined> {
+  let ruleset: CacheRuleset;
+  try {
+    ruleset = await cloudflareRequest({
+      ...input,
+      path: `/zones/${input.zoneId}/rulesets/phases/http_request_cache_settings/entrypoint`,
+    });
+  } catch (error) {
+    if (error instanceof ProviderHttpError && error.status === 404)
+      return undefined;
+    throw error;
+  }
+  for (const rule of ruleset.rules ?? []) {
+    if (rule.expression.trim() !== `http.host eq "${input.domain}"`) continue;
+    const differences: string[] = [];
+    if (rule.enabled !== true) differences.push("the rule must be enabled");
+    if (rule.action !== "set_cache_settings")
+      differences.push("action must be set_cache_settings");
+    if (!isDeepStrictEqual(rule.action_parameters, R2_CACHE_PARAMETERS))
+      differences.push(
+        "action_parameters must contain only cache: true and browser_ttl: { mode: respect_origin }",
+      );
+    if (differences.length > 0)
+      throw new R2CacheRuleConflict(
+        `A cache rule for ${input.domain} already exists with incompatible settings: ${differences.join("; ")}. Review it in Cloudflare and use guided setup to reuse existing resources; automatic setup will not change it or add another hostname rule.`,
+      );
+  }
+  return ruleset;
+}
+
+export async function createR2CacheRule(input: R2CacheInput): Promise<void> {
+  const path = `/zones/${input.zoneId}/rulesets`;
+  const rule = {
+    action: "set_cache_settings",
+    expression: `http.host eq "${input.domain}"`,
+    description: `Patch downloads ${input.domain}`,
+    enabled: true,
+    action_parameters: R2_CACHE_PARAMETERS,
+  };
+  const ruleset = await checkR2CacheRule(input);
+  if (
+    ruleset?.rules?.some(
+      (existing) => existing.expression.trim() === rule.expression,
+    )
+  )
+    return;
+  if (!ruleset) {
+    await cloudflareRequest({
+      ...input,
+      path,
+      method: "POST",
+      body: {
+        name: "Patch download cache",
+        kind: "zone",
+        phase: "http_request_cache_settings",
+        rules: [rule],
+      },
+    });
+    return;
+  }
+  await cloudflareRequest({
+    ...input,
+    path: `${path}/${ruleset.id}/rules`,
+    method: "POST",
+    body: rule,
+  });
+}
+
+
+export async function deriveR2Credentials(
+  fetcher: typeof fetch,
+  endpoint: string,
+  token: string,
+): Promise<{ accessKeyId: string; secretAccessKey: string }> {
+  const account = r2Account(endpoint);
+  if (!account)
+    throw new Error("R2 requires the default-jurisdiction account endpoint.");
+  const verified = await cloudflareRequest<{ id: string; status: string }>({
+    fetch: fetcher,
+    apiToken: token,
+    path: `/accounts/${account}/tokens/verify`,
+  });
+  if (!verified.id || verified.status !== "active")
+    throw new Error("The combined R2 account token is not active.");
+  return {
+    accessKeyId: verified.id,
+    secretAccessKey: createHash("sha256").update(token).digest("hex"),
+  };
 }

@@ -26,7 +26,7 @@ import type { ReleaseMetadataPatch } from "../../../api/hooks/releases";
 import type { ProblemBehavior } from "../../../api/problem";
 import type { Release } from "../../../model/release";
 import { buttonVariants } from "../../../components/ui/Button";
-import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../../../components/ui/callout";
+import { CALLOUT, CALLOUT_TONE } from "../../../components/ui/callout";
 import {
   FIELD,
   FIELD_ERR,
@@ -118,7 +118,6 @@ function EditMetadataModalContent({
       onClose={requestClose}
       title="Edit metadata"
       description={`Mandatory, notes, and target binary version for ${release.releaseLabel} — only changed fields are sent.`}
-      icon={<PencilIcon />}
       footer={
         <>
           <button
@@ -185,7 +184,6 @@ function EditMetadataModalContent({
           />
           {targetInvalid ? (
             <span className={FIELD_ERR} role="alert">
-              <AlertIcon />
               Enter a target binary version.
             </span>
           ) : (
@@ -196,7 +194,7 @@ function EditMetadataModalContent({
           )}
         </label>
         {patchMutation.isError ? (
-          <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK}`} role="alert">
+          <div className={`${CALLOUT} ${CALLOUT_TONE.danger}`} role="alert">
             <AlertIcon />
             <div>
               {behavior === "blocking-job" ? (
@@ -262,14 +260,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <IconSvg>
-      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-    </IconSvg>
   );
 }
 

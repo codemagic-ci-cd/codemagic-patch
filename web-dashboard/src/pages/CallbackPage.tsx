@@ -29,6 +29,7 @@ import {
   providerDisplayName,
 } from "../auth/webConfig";
 import { buttonVariants } from "../components/ui/Button";
+import { AUTH_CARD, AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { MODAL_ICON, MODAL_ICON_TONE } from "../components/overlay/Modal";
 
@@ -90,17 +91,8 @@ export function CallbackPage() {
 
   if (errorMessage !== null) {
     return (
-      <div className="auth-art relative min-h-screen place-items-center overflow-hidden bg-[radial-gradient(120%_80%_at_50%_-10%,#0d122b,var(--color-sb-bg)_60%)] p-6 [display:grid]">
-        <span
-          className="absolute -left-[120px] -top-[180px] size-[560px] rounded-full bg-blue opacity-35 blur-[90px]"
-          aria-hidden="true"
-        />
-        <span
-          className="absolute -bottom-[220px] -right-[140px] size-[560px] rounded-full bg-magenta opacity-22 blur-[90px]"
-          aria-hidden="true"
-        />
-
-        <main className="relative z-[2] w-full max-w-[430px] rounded-xl bg-surface p-[38px] text-center shadow-lg [animation:rise_.3s_ease_both]">
+      <AuthBackdrop>
+        <main className={AUTH_CARD}>
           <div
             className={`${MODAL_ICON} ${MODAL_ICON_TONE.danger} mx-auto mb-[18px]`}
             // size/radius OVERRIDE MODAL_ICON's size-[42px]/rounded-[12px];
@@ -128,21 +120,12 @@ export function CallbackPage() {
             <ChevronLeftIcon /> Back to sign-in
           </Link>
         </main>
-      </div>
+      </AuthBackdrop>
     );
   }
 
   return (
-    <div className="auth-art relative min-h-screen place-items-center overflow-hidden bg-[radial-gradient(120%_80%_at_50%_-10%,#0d122b,var(--color-sb-bg)_60%)] p-6 [display:grid]">
-      <span
-        className="absolute -left-[120px] -top-[180px] size-[560px] rounded-full bg-blue opacity-35 blur-[90px]"
-        aria-hidden="true"
-      />
-      <span
-        className="absolute -bottom-[220px] -right-[140px] size-[560px] rounded-full bg-magenta opacity-22 blur-[90px]"
-        aria-hidden="true"
-      />
-
+    <AuthBackdrop>
       <main className="relative z-[2] text-center text-white" role="status">
         <div className="spinner" aria-hidden="true" />
         <h2 className="text-[20px] font-semibold tracking-[-.02em]">
@@ -152,7 +135,7 @@ export function CallbackPage() {
           Exchanging the authorization code for a session.
         </p>
       </main>
-    </div>
+    </AuthBackdrop>
   );
 }
 

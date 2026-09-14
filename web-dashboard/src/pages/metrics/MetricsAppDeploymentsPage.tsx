@@ -25,7 +25,7 @@ import { metricsDeploymentPath } from "./metricsPaths";
 import { useDeploymentMetricsRollup } from "./useMetricsRollup";
 
 const METRIC_COLUMNS = [
-  "Active",
+  "Success",
   "Downloads",
   "Failed",
   "Success rate",

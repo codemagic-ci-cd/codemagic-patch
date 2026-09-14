@@ -31,7 +31,7 @@ export async function checkPorts(
   checkoutPath: string,
 ): Promise<void> {
   const running = await captureLocal(deps, {
-    args: [...composeArgs(checkoutPath), "ps", "-q"],
+    args: [...composeArgs(checkoutPath, deps.env), "ps", "-q"],
     command: "docker",
   });
   if (running.exitCode === 0 && running.output.trim().length > 0) {

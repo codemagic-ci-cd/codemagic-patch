@@ -20,6 +20,7 @@ services:
     environment:
       STORAGE_ADAPTER: s3
       S3_BUCKET: ${S3_BUCKET}
+      S3_INTERNAL_BUCKET: ${S3_INTERNAL_BUCKET:-}
       S3_REGION: ${S3_REGION:-us-east-1}
       # Optional, for S3-compatible providers (MinIO, R2, ...); empty = AWS.
       S3_ENDPOINT: ${S3_ENDPOINT:-}

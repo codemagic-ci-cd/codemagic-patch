@@ -10,8 +10,18 @@ llmsDescription: >-
 
 # CloudFront setup
 
+For external S3/GCS, the install wizard offers a separate **bucket-origin**
+walkthrough. It guides ACM DNS validation in `us-east-1`, a distribution using
+the public bucket origin, a distribution-scoped invalidation key and viewer DNS.
+Use minimum cache TTL 0 and respect origin Cache-Control. GCS uses the custom
+HTTPS origin `storage.googleapis.com` with Origin path `/PUBLIC_BUCKET`; S3 uses
+its regional public bucket endpoint. No API-host origin hostname or verification
+secret is used. Public-access policy must allow reads; this flow does not create
+an OAC exception. The wizard verifies content, cache hit and purge freshness
+before installing. See [Install](/docs/install#choose-storage).
+
 :::tip Set this up while installing
-On an uninterrupted `cmpatch selfhost install`, the CloudFront step prints the
+For bundled MinIO, on an uninterrupted `cmpatch selfhost install`, the CloudFront step prints the
 exact values for each AWS Console screen, generates the origin secret, watches
 the certificate validation record, and runs equivalent pre-cutover probes before
 it tells you to move the DNS record. It creates nothing in AWS and never asks
@@ -296,6 +306,7 @@ scripts/selfhost/install.sh \
   --github-oauth-client-secret <github_client_secret> \
   --storage-mode s3 \
   --s3-bucket my-patch-public-bucket \
+  --s3-internal-bucket my-patch-internal-bucket \
   --s3-region eu-west-1 \
   --public-base-url https://cdn.example.com \
   --cloudfront \

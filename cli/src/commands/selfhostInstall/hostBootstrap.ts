@@ -754,7 +754,7 @@ async function confirmPackageBootstrap(
  * regenerates dist/ from scratch (scripts/build.mjs deletes it first), and
  * prepublishOnly refuses a tree where one survived anyway.
  */
-export function sourceBundlePath(deps: CommandDeps): string | null {
+export function sourceBundlePath(deps: Pick<CommandDeps, "env">): string | null {
   const named = deps.env.CMPATCH_SOURCE_BUNDLE;
   if (named !== undefined && named !== "") {
     return named;

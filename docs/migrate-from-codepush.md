@@ -121,7 +121,7 @@ API mapping:
 | `codePush.notifyAppReady()` / `notifyApplicationReady()` | `notifyAppReady()` | `sync()` still calls it internally |
 | `codePush.restartApp(onlyIfUpdateIsPending?)` | `restartApp(onlyIfUpdateIsPending?)` | |
 | `codePush.allowRestart()` / `disallowRestart()` | `allowRestart()` / `disallowRestart()` | |
-| `codePush.getUpdateMetadata(updateState?)` | `getRunningBundleUpdateMetadata()` | Returns only `{ label, packageHash, releaseNotes }` for the running OTA bundle (`null` on the embedded bundle). No `UpdateState` argument — `PENDING` / `LATEST` lookups are not exposed; `checkForUpdate()` / `sync()` results carry remote package metadata |
+| `codePush.getUpdateMetadata(updateState?)` | `getRunningBundleUpdateMetadata()` | Returns only `{ label, packageHash, releaseNotes }` for the running OTA bundle (`null` on the embedded bundle). No `UpdateState` argument — `PENDING` / `LATEST` lookups are not exposed; `isNextVersionReady()` tells whether an installed update is waiting for the next reload, and `checkForUpdate()` / `sync()` results carry remote package metadata |
 | `codePush.clearUpdates()` | — | The server-driven `embedded-revert` action covers "return the fleet to the binary bundle" |
 | JS-side key/server config (`setDeploymentKey`, sync `deploymentKey` option) | — | Configuration is native-resource-only ([§1.2](#12-replace-native-configuration-resources)) |
 

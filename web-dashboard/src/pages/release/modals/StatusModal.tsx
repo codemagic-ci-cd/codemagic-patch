@@ -93,7 +93,6 @@ function StatusModalContent({
           ? `Clients stop receiving ${label}.`
           : `Resume serving ${label} to clients.`
       }
-      icon={variant === "disable" ? <PauseIcon /> : <PlayIcon />}
       confirmLabel={
         behavior === "blocking-job"
           ? "Retry"
@@ -179,23 +178,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function PauseIcon() {
-  return (
-    <IconSvg>
-      <rect x="6" y="5" width="4" height="14" rx="1" />
-      <rect x="14" y="5" width="4" height="14" rx="1" />
-    </IconSvg>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <IconSvg>
-      <polygon points="7 5 19 12 7 19 7 5" />
-    </IconSvg>
   );
 }
 

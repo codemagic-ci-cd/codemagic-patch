@@ -33,15 +33,20 @@ export const buttonVariants = cva(
           "active:scale-[0.97]",
         ],
         ghost:
-          "border-border-strong bg-surface text-fg hover:border-blue hover:text-blue hover:shadow-xs",
+          "border-border-strong bg-surface text-fg hover:border-blue hover:text-blue",
         subtle:
           "border-transparent bg-surface-2 text-fg-2 hover:bg-surface-3 hover:text-fg",
+        // Flat like primary: solid fill, one ramp step darker on hover, no glow.
         danger: [
-          "border-transparent bg-red text-white shadow-[0_6px_16px_-6px_rgba(236,12,67,.55)]",
-          "hover:brightness-[1.05] hover:shadow-[0_8px_22px_-6px_rgba(236,12,67,.6)]",
+          "border-transparent bg-red text-white",
+          "hover:bg-red-hover",
+          "active:scale-[0.97]",
         ],
-        dangerGhost: "border-transparent bg-red-tint text-red hover:bg-[#fbd3dd]",
-        gh: "border-[#1b1f2e] bg-[#1b1f2e] text-white hover:bg-black hover:shadow-md",
+        // Destructive actions at rest look like a default (ghost) button and
+        // only turn red — border and text — on hover, per the brand review.
+        dangerGhost:
+          "border-border-strong bg-surface text-fg hover:border-red hover:text-red",
+        gh: "border-gh bg-gh text-gh-fg hover:bg-gh-hover",
       },
       size: {
         // No explicit leading here ON PURPOSE: <button> does not inherit the

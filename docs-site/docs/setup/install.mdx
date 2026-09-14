@@ -31,6 +31,122 @@ Docker bootstrap covers the distributions Docker's own install script supports
 Amazon Linux 2023; on anything else, install Docker Engine with the Compose
 plugin yourself and run the command again.
 
+## Choose storage
+
+Run `cmpatch selfhost install` and choose where update files should live. Bundled
+MinIO remains the default. R2 is offered when the API domain uses Cloudflare DNS;
+S3 and GCS are also available. `--storage-mode r2` explicitly selects R2 with
+other API DNS, but still requires an active download zone in the R2 account.
+
+Each external provider uses two different buckets: publicly readable artifacts
+and private `_internal/` objects. The wizard proposes editable bucket names and
+asks for account/project and location before creating anything. Choose automatic
+setup for new buckets and bucket-scoped runtime credentials, or guided setup to
+create/select resources in the console. The guided instructions include the
+exact bucket names, policy values, console navigation and verification steps.
+
+- **R2:** enable R2 billing and supply a disposable account-owned setup token.
+  Automatic setup creates both buckets, a public custom download domain, a
+  hostname Cache Rule, and runtime object/purge credentials. Neither bucket
+  uses `r2.dev`; the internal bucket has no public custom domain.
+- **S3:** explicitly select a named AWS profile (including SSO), or a disposable
+  IAM access key. Public object reads must be permitted by account/organization
+  policy. The wizard changes only its newly created buckets, never account-wide
+  Block Public Access. Runtime credentials are a dedicated bucket-scoped IAM
+  user key, not an expiring SSO/STS session.
+- **GCS:** select a gcloud account and project, or a disposable service-account
+  JSON file. Public Access Prevention must permit the public bucket, and
+  service-account key creation must be allowed. Runtime access is granted on
+  the two buckets, not the whole project. The runtime key is transported over
+  SSH as base64, written with mode `0600`, and copied into container tmpfs before
+  the server drops to its unprivileged account.
+
+S3/GCS can use direct storage, guided CloudFront, or guided Cloudflare Cloud
+Connector (Beta). CloudFront needs a certificate, public bucket origin,
+restricted invalidation key and DNS changes. Cloud Connector needs a rule
+matching only the download hostname, a proxied record and a separate Cache Rule
+respecting origin Cache-Control. Neither option bypasses public-access policy.
+The wizard supplies the console steps and verifies the final URL before install.
+
+Automatic setup obtains setup credentials only after collecting the other
+installation answers. Existing AWS profiles and gcloud logins are not changed
+or revoked. Disposable setup credentials are revoked in an awaited cleanup path
+on completion or handled failure/cancellation. Failed cleanup prints the
+credential ID and manual revoke link and remains in the closing summary. Hard
+termination or network loss cannot guarantee revocation. Only runtime secrets
+reach the installer; never use the setup token as a runtime purge token.
+
+Verification writes and reads a unique object in each bucket, checks anonymous
+internal access and listing denial, and compares a public download through the
+final `PUBLIC_BASE_URL`. A selected CDN must also demonstrate cache hit and fresh
+content after purge, before the probe can expire naturally. Respect origin
+Cache-Control; CloudFront maximum TTL must be at least 3600 seconds. Probes are
+deleted; failed deletion reports the object to remove. Readiness waits display progress and support Ctrl+C. Guided verification
+can be retried without provisioning again or re-entering completed answers.
+
+After the installer reports a healthy server, sign in and run
+`./scripts/selfhost/smoke.sh` on the server with `CODEMAGIC_PATCH_TOKEN` set to
+verify an authenticated release. Storage probes alone do not prove release or
+device behavior.
+
+### Existing configuration and recovery
+
+A complete runtime configuration skips provisioning. For an unattended S3
+install, export `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and
+`GITHUB_OAUTH_CLIENT_SECRET`, then use:
+
+```sh
+cmpatch selfhost install user@vps --non-interactive \
+  --api-domain updates.example.com --email admin@example.com \
+  --github-oauth-client-id Iv1.example \
+  --storage-mode s3 --s3-bucket patch-public --s3-internal-bucket patch-private \
+  --s3-region us-east-1 \
+  --public-base-url https://patch-public.s3.us-east-1.amazonaws.com
+```
+
+For GCS use `--storage-mode gcs`, `--gcs-public-bucket`,
+`--gcs-internal-bucket` and `--gcs-credentials-file /secure/runtime.json`.
+For R2 use `--storage-mode r2`, the two S3 bucket flags,
+`--s3-endpoint https://ACCOUNT_ID.r2.cloudflarestorage.com`, and a custom-domain
+`--public-base-url`. Supply `--cloudflare-zone-id` and a runtime
+`CLOUDFLARE_API_TOKEN` using one account-owned runtime token with object-write
+access on both buckets, **Workers R2 Storage / Read** on the account, and
+**Zone / Read** plus **Cache Purge** on the download zone. Automatic setup
+creates this combined token. Account-level R2 Read also permits reading objects
+in other buckets in that account. The remote installer requires this permission
+on the saved runtime token even when separate S3 keys or a local
+`--r2-setup-token` verification override are supplied.
+
+Explicit S3-compatible configuration supports `--s3-endpoint` and
+`--s3-force-path-style true|false`. For path-style delivery, include the public
+bucket prefix in `--public-base-url`, or configure and verify the CDN rewrite.
+These custom mappings are outside the ordinary guided console walkthrough.
+External modes reject `--storage-domain` and host-origin secrets; use
+`--download-domain` for a guided CDN or `--public-base-url` for completed settings.
+
+If setup fails before deployment, inspect the printed resources and reuse them:
+
+```sh
+cmpatch selfhost install user@vps --storage-mode s3 --storage-setup guided \
+  --s3-bucket patch-public --s3-internal-bucket patch-private
+```
+
+This re-verifies existing resources; it does not resume provisioning at an API
+step. Buckets, policies and runtime keys are not rolled back or deleted by
+start-over. After the server env exists, existing resume behavior applies. To
+replace storage credentials, back up and edit the runtime values in the server's
+`.env.selfhost` (or replace its GCS key file with mode `0600`), recreate the server
+with the same Compose overlays, and rerun storage/release checks. Storage keys
+are outside `--repair-env`.
+
+The target source checkout must contain the matching two-bucket server, overlays
+and installer. The CLI checks the external-storage capability marker before
+provisioning or passing configuration. Publish that source before the matching
+CLI. Direct `scripts/selfhost/install.sh` users retain the optional
+`S3_INTERNAL_BUCKET` legacy fallback and an explicit `--skip-storage-check`
+escape hatch. The CLI always performs its own pre-install verification; that
+flag only skips the subsequent on-server script check.
+
 ## Machine size
 
 The default Compose install runs Caddy, the API and release worker, Postgres, and MinIO on one host. You need Docker + Docker Compose v2, with ports 80 and 443 open.
@@ -135,11 +251,24 @@ To sign in with Bitbucket Cloud instead of (or as well as) GitHub, pass
 `--bitbucket-oauth-client-id` / `--bitbucket-oauth-client-secret`; at least one
 provider is required.
 
+To run this same stack on your own machine over plain HTTP — a laptop
+evaluation with real OAuth sign-in but no certificate, DNS, or open ports —
+add `--allow-http` to the script. It serves the machine it runs on alone: the
+server is `http://localhost`, downloads are `http://localhost:9110`, the OAuth
+callback is `http://localhost/auth/callback`, and the app must allow cleartext
+traffic to those URLs. Any other hostname or IP is refused with the flag,
+because a server other machines reach needs the HTTPS install; for the same
+reason `cmpatch selfhost install`, which installs over ssh, does not take it.
+See the
+[full guide](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#plain-http-no-tls)
+for what changes.
+
 Either way, the installer writes `.env.selfhost` with strong random secrets
 (it refuses to overwrite an existing file), builds the server and Caddy images,
 starts the Compose stack under project name `codemagic-patch-selfhost`, waits
-for Caddy to obtain Let's Encrypt certificates, and prepares the single fixed
-`default-team` on first boot.
+for Caddy to obtain Let's Encrypt certificates (a `--allow-http` install
+instead waits for the sites to answer over plain HTTP), and prepares the
+single fixed `default-team` on first boot.
 
 </details>
 

@@ -23,6 +23,7 @@ import { SECTION_TITLE } from "../components/ui/typography";
 import { formatDate } from "../model/format";
 import type { User } from "../model/user";
 import { buttonVariants } from "../components/ui/Button";
+import { ThemeSwitch } from "../theme/ThemeSwitch";
 
 export function ProfilePage() {
   const meQuery = useMe();
@@ -101,15 +102,19 @@ export function ProfilePage() {
         </button>
       </div>
 
+      <div className="mb-[18px] rounded-lg border border-border bg-surface p-[22px] shadow-sm">
+        <div className={`${SECTION_TITLE} mb-[18px]`}>Appearance</div>
+        <p className="text-fg-2 mb-4 text-[13px]">
+          Light, Dark, or match the operating system. The choice is stored in
+          this browser only.
+        </p>
+        <ThemeSwitch />
+      </div>
+
       <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
         <div className="flex items-center justify-between gap-3.5">
           <div>
-            <div className={`${SECTION_TITLE} mb-1`}>
-              <span className="size-4 text-blue" aria-hidden="true">
-                <KeyIcon />
-              </span>{" "}
-              API tokens
-            </div>
+            <div className={`${SECTION_TITLE} mb-1`}>API tokens</div>
             <p className="text-fg-3 mt-1 text-[13px]">
               Create and manage personal access tokens for CLI and CI use.
             </p>
@@ -130,7 +135,7 @@ function IdentityCard({ user }: { user: User }) {
   return (
     <div className="mb-[18px] rounded-lg border border-border bg-surface p-[22px] shadow-sm">
       <div className="mb-5 flex items-center gap-4">
-        <span className={avatarClass("blue", "lg")} aria-hidden="true">
+        <span className={avatarClass("lg")} aria-hidden="true">
           {initials(user)}
         </span>
         <div>
@@ -235,15 +240,6 @@ function LogoutIcon() {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16 17 21 12 16 7" />
       <line x1="21" y1="12" x2="9" y2="12" />
-    </IconSvg>
-  );
-}
-
-function KeyIcon() {
-  return (
-    <IconSvg>
-      <circle cx="7.5" cy="15.5" r="4.5" />
-      <path d="m10.7 12.3 8.8-8.8M16 6l3 3M14 8l2 2" />
     </IconSvg>
   );
 }

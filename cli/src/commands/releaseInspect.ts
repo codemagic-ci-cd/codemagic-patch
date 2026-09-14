@@ -1,7 +1,7 @@
 import type { ReleaseInspectCommand } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
 import { isRecord, readCell } from "../output";
-import { createProgress } from "../progress";
+import { createProgress, type Progress } from "../progress";
 import { buildApiUrl, type CommandDeps, UsageError, ValidationError } from "./shared";
 import { resolveReleaseId } from "./resolveNames";
 
@@ -28,6 +28,8 @@ const FAILED_RELEASE_STATUSES = new Set(["failed"]);
 export async function executeReleaseInspect(
   command: ReleaseInspectCommand,
   deps: CommandDeps,
+  // `cmpatch demo` already has a tree open; lifecycle stays with the owner.
+  sharedProgress?: Progress,
 ): Promise<unknown> {
   if (command.logs) {
     throw new UsageError(
@@ -42,17 +44,24 @@ export async function executeReleaseInspect(
     deps,
   );
   const deadline = deps.now() + command.timeoutSeconds * 1000;
+  const ownsProgress = sharedProgress === undefined;
   // Only opened by --wait: a spinner step per status change keeps the wait
   // visible without a scrollback line per 2-second poll.
-  const progress = createProgress({
-    label: "release inspect",
-    stderr: deps.stderr,
-  });
+  const progress =
+    sharedProgress ??
+    createProgress({
+      label: "release inspect",
+      stderr: deps.stderr,
+    });
   let lastReportedStatus: string | null = null;
 
   try {
     while (true) {
-      const result = await readReleaseInspection(command, deps, releaseId);
+      const result = await readReleaseInspection(deps, {
+        releaseId,
+        serverUrl: command.serverUrl,
+        token: command.token,
+      });
       const failure = describeFailure(result);
       if (!command.wait) {
         return result;
@@ -84,12 +93,16 @@ export async function executeReleaseInspect(
       );
     }
   } catch (error) {
-    // Marks the step in flight as failed; the finally below is then a no-op,
-    // so the tree is still closed exactly once on every path.
-    progress.fail();
+    if (ownsProgress) {
+      // Marks the step in flight as failed; the finally below is then a no-op,
+      // so the tree is still closed exactly once on every path.
+      progress.fail();
+    }
     throw error;
   } finally {
-    progress.stop();
+    if (ownsProgress) {
+      progress.stop();
+    }
   }
 }
 
@@ -120,17 +133,19 @@ export function renderReleaseInspectTable(result: unknown): string {
 }
 
 async function readReleaseInspection(
-  command: ReleaseInspectCommand,
   deps: CommandDeps,
-  releaseId: string,
+  input: { releaseId: string; serverUrl: string; token?: string },
 ): Promise<ReleaseInspectResult> {
   const response = await authenticatedRequest(deps, {
     init: {
       method: "GET",
     },
-    serverUrl: command.serverUrl,
-    token: command.token,
-    url: buildApiUrl(command.serverUrl, `/v1/releases/${encodeURIComponent(releaseId)}`),
+    serverUrl: input.serverUrl,
+    token: input.token,
+    url: buildApiUrl(
+      input.serverUrl,
+      `/v1/releases/${encodeURIComponent(input.releaseId)}`,
+    ),
   });
 
   if (!isRecord(response) || !isRecord(response.release)) {

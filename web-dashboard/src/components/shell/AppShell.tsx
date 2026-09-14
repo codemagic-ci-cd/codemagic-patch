@@ -112,9 +112,11 @@ export function AppShell() {
         would inject an 18px column gap between the sidebar and main column.
         `--eval-banner-h` reserves the sticky evaluation banner's height so
         the TopBar/Sidebar sticky offsets clear it instead of sliding under
-        it on scroll (0px whenever the banner is absent). */}
+        it on scroll (0px whenever the banner is absent); the grid's min
+        height subtracts it too, so the footer lands at the viewport bottom
+        instead of 34px below it. */}
     <div
-      className="group/app [display:grid] min-h-screen grid-cols-[var(--sb-w)_1fr] data-collapsed:[--sb-w:76px] max-shell:grid-cols-[1fr]"
+      className="group/app [display:grid] min-h-[calc(100vh-var(--eval-banner-h))] grid-cols-[var(--sb-w)_1fr] data-collapsed:[--sb-w:76px] max-shell:grid-cols-[1fr]"
       data-collapsed={collapsed || undefined}
       style={
         {
@@ -152,6 +154,11 @@ export function AppShell() {
           <Breadcrumbs />
           <Outlet />
         </div>
+        {/* Copyright sits under the content, centered, pinned to the bottom of
+            the viewport by the flex column (the content block is flex-1). */}
+        <footer className="px-7 py-4 text-center text-[12px] text-fg-3 max-shell:px-[18px]">
+          Codemagic © 2026
+        </footer>
       </main>
     </div>
     </>

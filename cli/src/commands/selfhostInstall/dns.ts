@@ -3,26 +3,39 @@
  * waits that watch for each one to go live.
  */
 
+import { applyDnsRecord } from "./dnsSetup";
 import {
   detectDnsProvider,
   findZoneApex,
   waitForDnsRecord,
   type DnsProvider,
+  type RecordDiagnosis,
 } from "../../selfhostDns";
+import { publicIpv4OrNull } from "../../selfhostRemote";
 import {
+  describePublicAddressProblem,
   renderDnsAbandoned,
   renderDnsIntro,
   renderDnsRecords,
   renderDnsWaitDetail,
   renderDnsWaitStep,
-  renderRecordDiagnosis,
+  renderPublicAddressQuestion,
+  renderPublicAddressRequired,
+  renderRecordExplanation,
   renderRecordWaitTimeout,
   renderResolverFallbackWarning,
   type DnsRecordRequest,
 } from "../../selfhostSetupCopy";
 import { type SelfhostSession } from "../selfhostSession";
 import { DeclinedError, UsageError, type CommandDeps } from "../shared";
-import { noteBlock, notice, offerBrowserOpen, onSignal, paletteFor } from "./ask";
+import {
+  askChecked,
+  noteBlock,
+  notice,
+  offerBrowserOpen,
+  onSignal,
+  paletteFor,
+} from "./ask";
 import { hostOf } from "./hostBootstrap";
 
 /** One record: the hostname, and what it is for in the user's terms. */
@@ -32,20 +45,9 @@ export async function runDnsStep(
   deps: CommandDeps,
   session: SelfhostSession,
   planned: readonly PlannedRecord[],
+  interactive: boolean,
 ): Promise<void> {
-  const address = session.facts.install?.publicIp ?? publicIpFromTarget(session);
-  if (address === null) {
-    // Honest rather than helpful-sounding: without the server's own address
-    // there is no value to print in the record, and a made-up one is worse
-    // than none.
-    notice(
-      deps,
-      `Could not work out ${session.sshTarget}'s public address, so the DNS records cannot be checked from here. Point ${planned
-        .map((record) => record.hostname)
-        .join(" and ")} at the server before it can be reached.`,
-    );
-    return;
-  }
+  const address = await resolvePublicAddress(deps, session, interactive);
 
   const records: DnsRecordRequest[] = planned.map((record) => ({
     ...record,
@@ -60,7 +62,12 @@ export async function runDnsStep(
   notice(deps, renderDnsIntro({ nameservers, provider }));
   noteBlock(deps, "Records to add", renderDnsRecords(records, zone, paletteFor(deps)));
 
-  if (provider !== null) {
+  let allApplied = true;
+  for (const record of records) {
+    if (!(await applyDnsRecord(session, record))) allApplied = false;
+  }
+
+  if (!allApplied && provider !== null) {
     await offerBrowserOpen(deps, {
       message: `Open ${provider.name} in your browser?`,
       url: provider.consoleUrl,
@@ -69,6 +76,69 @@ export async function runDnsStep(
 
   for (const record of records) {
     await waitForRecord(deps, session, record, records);
+  }
+}
+
+/**
+ * The address every record points at.
+ *
+ * The survey's answer when it has one, else the ssh target itself when that
+ * is already a public address. When neither can say — a host behind NAT, an
+ * IPv6-only host, a cloud whose metadata service the survey does not know —
+ * the user is asked, with whatever the ssh hostname resolves to offered as
+ * the default; a scripted run is refused naming `--public-ip`, because a
+ * name in front of a CDN or an old record resolves to exactly the wrong
+ * value to print into records unattended. The answer is kept on the session
+ * so the later record waits (the CloudFront origin, the proxy switch) read
+ * the same address.
+ */
+async function resolvePublicAddress(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  interactive: boolean,
+): Promise<string> {
+  const known = session.facts.install?.publicIp ?? publicIpFromTarget(session);
+  if (known !== null) {
+    return known;
+  }
+
+  if (!interactive) {
+    throw new UsageError(renderPublicAddressRequired(session.sshTarget));
+  }
+
+  const host = hostOf(session.sshTarget);
+  const resolvedFromTarget = await resolveTargetAddress(deps, host);
+  notice(
+    deps,
+    renderPublicAddressQuestion({ host, resolvedFromTarget, sshTarget: session.sshTarget }),
+  );
+  const address = await askChecked(deps, {
+    check: describePublicAddressProblem,
+    ...(resolvedFromTarget === null ? {} : { initial: resolvedFromTarget }),
+    message: "Public IP address of the server",
+    type: "text",
+  });
+
+  if (session.facts.install !== undefined) {
+    session.facts.install.publicIp = address;
+  }
+  return address;
+}
+
+/** What the ssh hostname resolves to, when that is one public IPv4 address. */
+async function resolveTargetAddress(
+  deps: CommandDeps,
+  host: string,
+): Promise<string | null> {
+  if (!host.includes(".")) {
+    return null;
+  }
+
+  try {
+    const found = await deps.dnsClient.resolveA(host);
+    return found.length === 1 ? publicIpv4OrNull(found[0] ?? null) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -108,6 +178,17 @@ async function waitForRecord(
     abandoned = true;
   });
 
+  // Each kind of finding is explained once, the first time it is seen, not
+  // at the end of the wait: the orange cloud is Cloudflare's default for a
+  // record added minutes ago, and half an hour of "still has the orange
+  // cloud on" told nobody what to click.
+  const explained = new Set<RecordDiagnosis["kind"]>();
+  // Remembered for the timeout message: after the move to the system
+  // resolver, a record that was added can still read as missing for as long
+  // as that resolver caches the old answer.
+  let fellBack = false;
+  const warnFallback = resolverFallbackWarning(session, stepLabel);
+
   try {
     const outcome = await waitForDnsRecord({
       client: deps.dnsClient,
@@ -115,11 +196,25 @@ async function waitForRecord(
       hostname: record.hostname,
       now: deps.now,
       onAttempt: (diagnosis) => {
+        const explanation = renderRecordExplanation(
+          record.hostname,
+          record.value,
+          diagnosis,
+        );
+        if (explanation !== null && !explained.has(diagnosis.kind)) {
+          explained.add(diagnosis.kind);
+          session.progress.settle();
+          notice(deps, explanation);
+          session.progress.write(stepLabel);
+        }
         session.progress.detail(
           renderDnsWaitDetail(record.hostname, diagnosis),
         );
       },
-      onFallback: resolverFallbackWarning(session, stepLabel),
+      onFallback: () => {
+        fellBack = true;
+        warnFallback();
+      },
       shouldAbandon: () => abandoned,
       sleep: deps.sleep,
     });
@@ -139,21 +234,15 @@ async function waitForRecord(
       throw new DeclinedError("Setup stopped before anything was installed.");
     }
 
-    notice(
-      deps,
-      renderRecordDiagnosis(record.hostname, record.value, outcome.last),
-    );
-
     throw new UsageError(
-      renderRecordWaitTimeout(record.hostname, outcome.last),
+      renderRecordWaitTimeout(record.hostname, record.value, outcome.last, fellBack),
     );
   } finally {
     removeHook();
   }
 }
 
-/** The ssh target's host part, when it is already a bare IPv4 address. */
+/** The ssh target's host part, when it is already a public IPv4 address. */
 export function publicIpFromTarget(session: SelfhostSession): string | null {
-  const host = hostOf(session.sshTarget);
-  return /^\d{1,3}(\.\d{1,3}){3}$/u.test(host) ? host : null;
+  return publicIpv4OrNull(hostOf(session.sshTarget));
 }

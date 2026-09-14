@@ -79,44 +79,6 @@
     opacity: 0.9;
   }
 
-  /* Role badges (MembersPage / TeamsPage / Invitations / TeamOverview): the
-     leading `::before` dot is a pseudo-element, so the whole family stays a
-     keep-list class (rendering it as a real <span> would change the DOM, and
-     the screenshot suite is the contract). The tone hexes have no @theme token
-     (legacy literals), so they stay hex; the tint fills map to @theme tints. */
-  .role {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 9px 3px 7px;
-    border-radius: 99px;
-    font-size: 11.5px;
-    font-weight: 700;
-  }
-  .role::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: 99px;
-    background: currentColor;
-  }
-  .role-owner {
-    color: #a417b8;
-    background: var(--color-magenta-tint);
-  }
-  .role-admin {
-    color: var(--color-blue);
-    background: var(--color-blue-tint);
-  }
-  .role-developer {
-    color: #007a99;
-    background: var(--color-aqua-tint);
-  }
-  .role-viewer {
-    color: #5a6480;
-    background: var(--color-slate-tint);
-  }
-
   /* toggle — NOT converted: inside the modal grid the legacy `.track` <span>
      renders collapsed (its width is shrunk away in the inline-flex/grid
      nesting), and the visual-contract baseline (modal-promote) captured that
@@ -153,7 +115,7 @@
     width: 18px;
     height: 18px;
     border-radius: 99px;
-    background: #fff;
+    background: var(--color-thumb);
     box-shadow: var(--shadow-sm);
     transition: 0.2s;
   }
@@ -177,6 +139,9 @@
     background-position: right 12px center;
     background-size: 16px;
   }
+  :root[data-theme="dark"] .select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C5CFE3' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
 
   /* Range-slider thumbs — ::-webkit-slider-thumb / ::-moz-range-thumb pseudo-
      elements can't be utilities. The track converts via form.ts SLIDER, which
@@ -187,7 +152,7 @@
     width: 22px;
     height: 22px;
     border-radius: 99px;
-    background: #fff;
+    background: var(--color-thumb);
     border: 3px solid var(--color-blue);
     box-shadow: var(--shadow-md);
     cursor: pointer;
@@ -196,7 +161,7 @@
     width: 22px;
     height: 22px;
     border-radius: 99px;
-    background: #fff;
+    background: var(--color-thumb);
     border: 3px solid var(--color-blue);
     box-shadow: var(--shadow-md);
     cursor: pointer;
@@ -262,8 +227,8 @@
     bottom: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--color-ink);
-    color: #fff;
+    background: var(--color-inverse);
+    color: var(--color-inverse-fg);
     font-size: 11.5px;
     font-weight: 500;
     padding: 6px 10px;
@@ -280,8 +245,8 @@
     z-index: 100;
     max-width: 38ch;
     padding: 7px 11px;
-    background: var(--color-ink);
-    color: #fff;
+    background: var(--color-inverse);
+    color: var(--color-inverse-fg);
     font-size: 11.5px;
     font-weight: 400;
     line-height: 1.45;

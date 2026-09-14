@@ -1,6 +1,6 @@
 // Embedded deployment list for the App detail screen.
 // Rows come from `useDeployments(appId)`; the three lazy cells
-// (Latest release / Active users / Downloads) come from ONE per-row
+// (Latest release / Successes / Downloads) come from ONE per-row
 // `useDeploymentMetrics(dep.id, { limit: 1 })` query so name/key render fast
 // and a metrics failure degrades to "—" + a small retry without failing the
 // table (per-region skeletons / cell-level failure). Actions follow the
@@ -240,7 +240,7 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
               <th className={TBL_TH}>Deployment</th>
               <th className={TBL_TH}>Deployment key</th>
               <th className={TBL_TH}>Latest release</th>
-              <th className={`${TBL_TH} ${TBL_RIGHT}`}>Active users</th>
+              <th className={`${TBL_TH} ${TBL_RIGHT}`}>Successes</th>
               <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloads</th>
               <th className={TBL_TH}>
                 <span className="sr-only">Actions</span>
@@ -271,11 +271,6 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
   return (
     <div className="mb-[18px] overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
       <div className={CARD_HEAD}>
-        <SvgIcon className="size-[18px] text-blue">
-          <path d="m12 2 9 5-9 5-9-5 9-5z" />
-          <path d="m3 12 9 5 9-5" />
-          <path d="m3 17 9 5 9-5" />
-        </SvgIcon>
         <h3>Deployments</h3>
         {deploymentsQuery.isSuccess ? (
           <span className={`${CHIP} ${CHIP_TONE.neutral} ml-1`}>
@@ -307,7 +302,6 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
         onConfirm={confirmClear}
         title="Clear deployment history"
         description="Deletes all releases in this deployment."
-        icon={<AlertIcon />}
         confirmLabel={clearBehavior === "blocking-job" ? "Retry" : "Clear history"}
         busy={clearMutation.isPending}
         error={
@@ -343,7 +337,6 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
             ? `Permanently removes ${deleteTarget.name}.`
             : undefined
         }
-        icon={<TrashIcon />}
         confirmLabel={
           deleteBehavior === "blocking-job" ? "Retry" : "Delete deployment"
         }
@@ -455,7 +448,7 @@ function DeploymentRow({
 
 /**
  * Lazy metric cells: one `limit: 1` deployment-metrics
- * query per row feeds Latest release + Active users + Downloads. Failure
+ * query per row feeds Latest release + Successes + Downloads. Failure
  * renders "—" with a small per-cell retry and never fails the table.
  */
 function MetricCells({ deployment }: { deployment: Deployment }) {
@@ -496,7 +489,7 @@ function MetricCells({ deployment }: { deployment: Deployment }) {
         <td className={`${TBL_TD} ${TBL_NUM}`}>
           <MetricCellRetry
             onRetry={retry}
-            ariaLabel={`Retry loading active users for ${deployment.name}`}
+            ariaLabel={`Retry loading successes for ${deployment.name}`}
           />
         </td>
         <td className={`${TBL_TD} ${TBL_NUM}`}>
@@ -532,7 +525,7 @@ function MetricCells({ deployment }: { deployment: Deployment }) {
         <b>{latest.releaseLabel}</b>
       </td>
       <td className={`${TBL_TD} ${TBL_NUM}`}>
-        {formatCount(latest.metrics.active)}
+        {formatCount(latest.metrics.success)}
       </td>
       <td className={`${TBL_TD} ${TBL_NUM}`}>
         {formatCount(latest.metrics.downloaded)}
@@ -817,8 +810,6 @@ function CreateDeploymentModalContent({
         onClose={onClose}
         title="Deployment created"
         description={`${created.name} is ready to use.`}
-        icon={<LayersIcon />}
-        tone="green"
         footer={
           <button type="button" className={buttonVariants({ intent: "primary" })} onClick={onClose}>
             Done
@@ -855,7 +846,6 @@ function CreateDeploymentModalContent({
       onClose={requestClose}
       title="New deployment"
       description="A fresh deployment key is generated and revealed after creation."
-      icon={<LayersIcon />}
       initialFocusRef={nameInputRef}
       footer={
         <>
@@ -901,7 +891,6 @@ function CreateDeploymentModalContent({
           />
           {fieldError !== null ? (
             <span className={FIELD_ERR} role="alert">
-              <AlertIcon />
               {fieldError}
             </span>
           ) : (
@@ -1003,7 +992,6 @@ function RenameDeploymentModalContent({
       description={
         deployment !== null ? `Renames ${deployment.name}.` : undefined
       }
-      icon={<LayersIcon />}
       initialFocusRef={nameInputRef}
       footer={
         <>
@@ -1048,7 +1036,6 @@ function RenameDeploymentModalContent({
           />
           {fieldError !== null ? (
             <span className={FIELD_ERR} role="alert">
-              <AlertIcon />
               {fieldError}
             </span>
           ) : (
@@ -1121,15 +1108,6 @@ function InfoIcon() {
   );
 }
 
-function TrashIcon() {
-  return (
-    <SvgIcon>
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </SvgIcon>
-  );
-}
-
 // --- Loading skeleton ----------------------------------------------------------
 
 function DeploymentTableSkeleton() {
@@ -1141,7 +1119,7 @@ function DeploymentTableSkeleton() {
             <th className={TBL_TH}>Deployment</th>
             <th className={TBL_TH}>Deployment key</th>
             <th className={TBL_TH}>Latest release</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Active users</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Successes</th>
             <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloads</th>
             <th className={TBL_TH} aria-hidden="true" />
           </tr>

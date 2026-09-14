@@ -56,12 +56,13 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000
 
-RUN addgroup -S codemagic-patch && adduser -S codemagic-patch -G codemagic-patch
+RUN apk add --no-cache su-exec && addgroup -S codemagic-patch && adduser -S codemagic-patch -G codemagic-patch
 
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/node_modules ./node_modules
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/server/dist ./dist
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/server/vendor ./vendor
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/server/package.json ./package.json
+COPY --from=builder /workspace/server/scripts/gcs-credentials-entrypoint.sh ./gcs-credentials-entrypoint.sh
 COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/web-dashboard/dist ./dashboard
 
 # Serve the bundled dashboard by default; unset to run API-only.

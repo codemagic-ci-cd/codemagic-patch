@@ -14,6 +14,13 @@ services:
       - ./deploy/selfhost/Caddyfile.api-only:/etc/caddy/Caddyfile:ro
 
   server:
+    # The entrypoint reads the 0600 host key, copies it into tmpfs, then drops
+    # to the image's normal unprivileged account before executing any command.
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/app/gcs-credentials-entrypoint.sh"]
+    command: ["node", "dist/main.js"]
+    tmpfs:
+      - /run/patch-gcs
     environment:
       STORAGE_ADAPTER: gcs
       GCS_PUBLIC_BUCKET: ${GCS_PUBLIC_BUCKET}

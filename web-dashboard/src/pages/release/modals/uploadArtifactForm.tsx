@@ -15,7 +15,6 @@ import { toastReleaseWarnings } from "./releaseWarnings";
 import { buttonVariants } from "../../../components/ui/Button";
 import {
   CALLOUT,
-  CALLOUT_BLOCK,
   CALLOUT_TONE,
 } from "../../../components/ui/callout";
 import {
@@ -265,7 +264,7 @@ export function useUploadArtifactForm({
           </button>
           {parseError !== null ? (
             <div
-              className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`}
+              className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-[18px]`}
               role="alert"
             >
               <AlertIcon />
@@ -335,7 +334,6 @@ export function useUploadArtifactForm({
                 </div>
                 {rolloutValue === null ? (
                   <span id={rolloutHintId} className={FIELD_ERR}>
-                    <AlertIcon />
                     Enter a whole number between 1 and 100.
                   </span>
                 ) : (
@@ -507,7 +505,7 @@ function ErrorSlot({
   if (isSignatureRequiredProblem(error)) {
     return (
       <div
-        className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK}`}
+        className={`${CALLOUT} ${CALLOUT_TONE.danger}`}
         role="alert"
       >
         <AlertIcon />
@@ -534,7 +532,7 @@ function ErrorSlot({
   if (conflict?.kind === "duplicate-release") {
     return (
       <div
-        className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK}`}
+        className={`${CALLOUT} ${CALLOUT_TONE.warn}`}
         role="alert"
       >
         <AlertIcon />
@@ -558,7 +556,7 @@ function ErrorSlot({
   if (conflict?.kind === "fingerprint-disagreement") {
     return (
       <div
-        className={`${CALLOUT} ${CALLOUT_TONE.warn} ${CALLOUT_BLOCK}`}
+        className={`${CALLOUT} ${CALLOUT_TONE.warn}`}
         role="alert"
       >
         <AlertIcon />
@@ -588,7 +586,7 @@ function ErrorSlot({
   }
   return (
     <div
-      className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK}`}
+      className={`${CALLOUT} ${CALLOUT_TONE.danger}`}
       role="alert"
     >
       <AlertIcon />

@@ -12,7 +12,7 @@
 // only, so Status can light independently. The chrome
 // renders immediately: nav needs only the route's teamId; on team-less
 // routes (/teams, /account/*) the shell passes the last-team fallback, and
-// with no team at all only brand/footer/collapse render. Collapse state is
+// with no team at all only brand/collapse render. Collapse state is
 // owned by AppShell (the wrapper's `data-collapsed` drives the
 // group-data-collapsed/app: variants here); the button reports the toggle.
 
@@ -37,7 +37,7 @@ const NAV_ITEM =
   "nav-active-bar relative flex items-center gap-3 whitespace-nowrap rounded-[10px] px-[9px] py-[9px] text-[15px] font-medium [transition:.15s] [&_svg]:size-[18px] [&_svg]:flex-none group-data-collapsed/app:justify-center group-data-collapsed/app:p-2.5 group-data-collapsed/app:[&_span]:hidden";
 
 const NAV_ITEM_IDLE =
-  "text-sb-text hover:bg-surface-2 hover:text-fg [&_svg]:opacity-85";
+  "text-sb-text hover:bg-surface-2 hover:text-fg [&_svg]:opacity-100";
 
 const NAV_ITEM_ACTIVE =
   "is-active bg-nav-active text-white shadow-xs [&_svg]:text-white [&_svg]:opacity-100";
@@ -84,7 +84,7 @@ export function SidebarBody({
   return (
     <>
       <Link
-        className="flex items-center px-[33px] pb-3 pt-5 group-data-collapsed/app:justify-center group-data-collapsed/app:px-2.5"
+        className="mb-2 flex items-center border-b border-sb-border px-[33px] pb-4 pt-5 group-data-collapsed/app:justify-center group-data-collapsed/app:px-2.5"
         to={teamId === null ? "/" : `/teams/${teamId}`}
         aria-label={PRODUCT_NAME}
         onClick={onNavigate}
@@ -117,9 +117,6 @@ export function SidebarBody({
           <span>Collapse</span>
         </button>
       )}
-      <div className="border-t border-sb-border p-3.5 text-[12px] text-fg-3">
-        Codemagic © 2026
-      </div>
     </>
   );
 }

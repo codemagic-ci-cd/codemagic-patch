@@ -32,7 +32,6 @@ import {
 } from "../../selfhostSetupCopy";
 import {
   readBooleanFlag,
-  readStringFlag,
   type ParsedArgs,
   type SelfhostSession,
 } from "../selfhostSession";
@@ -61,18 +60,6 @@ export async function collectCloudflare(
   const templateUrl = buildTokenTemplateUrl({
     name: `${PRODUCT_NAME} cache purge`,
   });
-  notice(
-    deps,
-    renderCloudflareTokenIntro(
-      {
-        storageDomain: context.storageDomain,
-        templateUrl,
-        zone: context.zone,
-      },
-      paletteFor(deps),
-    ),
-  );
-
   const suppliedToken = supplied(deps, parsed, {
     env: "CLOUDFLARE_API_TOKEN",
     flag: "--cloudflare-api-token",
@@ -80,6 +67,17 @@ export async function collectCloudflare(
   // Only when the token is about to be asked for: a run that already carries
   // it via flag or environment has nothing to do on that page.
   if (suppliedToken === undefined) {
+    notice(
+      deps,
+      renderCloudflareTokenIntro(
+        {
+          storageDomain: context.storageDomain,
+          templateUrl,
+          zone: context.zone,
+        },
+        paletteFor(deps),
+      ),
+    );
     await offerBrowserOpen(deps, {
       message: "Open Cloudflare in your browser?",
       url: templateUrl,
@@ -92,7 +90,7 @@ export async function collectCloudflare(
       (await askValue(deps, { message: "Cloudflare API token", type: "password" }));
 
     // The escape hatch for a token minted by hand without Zone > Read.
-    const suppliedZoneId = readStringFlag(parsed, "--cloudflare-zone-id");
+    const suppliedZoneId = supplied(deps, parsed, { flag: "--cloudflare-zone-id", env: "CLOUDFLARE_ZONE_ID" })?.value;
     if (suppliedZoneId !== undefined) {
       return { apiToken, kind: "cloudflare", zoneId: suppliedZoneId };
     }

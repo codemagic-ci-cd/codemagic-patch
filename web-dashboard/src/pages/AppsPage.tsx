@@ -30,7 +30,7 @@ import { useTeamRole } from "../rbac/useTeamRole";
 import { apiServerUrl } from "../lib/cliSnippet";
 import { formatDate } from "../model/format";
 import type { App } from "../model/app";
-import { gradientFor, initialsFor } from "../lib/appTile";
+import { initialsFor } from "../lib/appTile";
 import type { Deployment } from "../model/deployment";
 import type { FormEvent } from "react";
 import { buttonVariants } from "../components/ui/Button";
@@ -186,7 +186,6 @@ function AppTable({ teamId, apps }: { teamId: string; apps: App[] }) {
                   <div className={CELL_APP}>
                     <span
                       className={APP_ICO}
-                      style={{ background: gradientFor(app.id) }}
                       aria-hidden="true"
                     >
                       {initialsFor(app.name)}
@@ -389,7 +388,6 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
       onClose={handleClose}
       title="Create app"
       description="Staging and Production deployments are created automatically."
-      icon={<PackageIcon />}
       initialFocusRef={nameInputRef}
       footer={
         <>
@@ -434,7 +432,7 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
           />
           {nameError !== null ? (
             <span className={FIELD_ERR} id={nameErrorId} role="alert">
-              <AlertIcon /> {nameError}
+              {nameError}
             </span>
           ) : (
             <span className={FIELD_HINT}>

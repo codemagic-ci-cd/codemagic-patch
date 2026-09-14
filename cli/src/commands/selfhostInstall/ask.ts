@@ -121,10 +121,10 @@ export async function offerBrowserOpen(
   }
 
   if (!(await (deps.openBrowser ?? openBrowser)(input.url))) {
-    notice(
-      deps,
-      "A browser could not be opened here — open the link above yourself.",
-    );
+    notice(deps, [
+      "A browser could not be opened here. Open this URL yourself:",
+      `  ${input.url}`,
+    ]);
   }
 }
 
@@ -180,14 +180,18 @@ export async function askChecked(
 
 export async function askDomain(
   deps: CommandDeps,
-  input: { initial?: string; message: string; purpose?: string },
+  input: { initial?: string; message: string; purpose?: string; differentFrom?: readonly string[] },
 ): Promise<string> {
   if (input.purpose !== undefined) {
     notice(deps, input.purpose);
   }
 
   return askChecked(deps, {
-    check: describeDomainProblem,
+    check: value => describeDomainProblem(value) ?? (
+      input.differentFrom?.some(domain => domain.toLowerCase() === value.toLowerCase())
+        ? "Use a different hostname for the API, downloads and origin."
+        : null
+    ),
     ...(input.initial !== undefined ? { initial: input.initial } : {}),
     message: input.message,
     type: "text",

@@ -80,12 +80,13 @@ function BlockingJobNotice() {
 
 /** Page-title icon (40px tile, off-grid 12px radius). */
 const APP_ICON_CLASS =
-  "size-10 rounded-[12px] text-[15px] bg-[linear-gradient(135deg,var(--color-blue),var(--color-blue-bright))]";
+  "size-10 rounded-[12px] bg-blue text-[15px]";
 
-// Danger-zone row literals (legacy `.danger-zone__row` / `.dz-text`); the
-// first row drops its top divider (legacy `:first-of-type{border-top:0}`).
-const DANGER_ROW =
-  "flex items-center gap-4 border-t border-border px-5 py-[18px] first-of-type:border-t-0";
+// Danger-zone row literals (legacy `.danger-zone__row` / `.dz-text`). Rows
+// are separated by the wrapping `divide-y`; the panel itself is styled
+// like the neutral Settings card next to it — only the actions are red, and
+// only on hover.
+const DANGER_ROW = "flex items-center gap-4 px-[22px] py-[18px]";
 
 const DZ_TEXT =
   "flex-1 [&_b]:text-[13.5px] [&_b]:font-bold [&_p]:mt-0.5 [&_p]:text-[12.5px] [&_p]:text-fg-2";
@@ -293,7 +294,6 @@ export function AppDetailPage() {
           {editingName && renameError !== null ? (
             <div className="block mt-2">
               <span className={FIELD_ERR} role="alert">
-                <AlertIcon />
                 {renameError}
               </span>
             </div>
@@ -353,50 +353,51 @@ export function AppDetailPage() {
         </div>
 
         {/* Danger Zone: delete + transfer (both `app.manage`). */}
-        <div className="overflow-hidden rounded-lg border border-red-tint bg-surface shadow-sm">
-          <div className="flex items-center gap-2 bg-red-tint px-5 py-[14px] text-[13px] font-bold text-[#9a0a30]">
-            <AlertIcon className="size-4" />
+        <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+          <div className={`${SECTION_TITLE} px-[22px] pb-1 pt-[22px]`}>
             Danger zone
           </div>
-          {isMultiTeam && (
+          <div className="divide-y divide-border">
+            {isMultiTeam && (
+              <div className={DANGER_ROW}>
+                <div className={DZ_TEXT}>
+                  <b>Transfer app</b>
+                  <p>
+                    Move this app and its deployments to another team you can
+                    create apps in.
+                  </p>
+                </div>
+                <span className="tip" data-tip={manageTip}>
+                  <button
+                    type="button"
+                    className={buttonVariants({ intent: "ghost" })}
+                    disabled={!canManage}
+                    onClick={() => setTransferOpen(true)}
+                  >
+                    Transfer
+                  </button>
+                </span>
+              </div>
+            )}
             <div className={DANGER_ROW}>
               <div className={DZ_TEXT}>
-                <b>Transfer app</b>
+                <b>Delete app</b>
                 <p>
-                  Move this app and its deployments to another team you can
-                  create apps in.
+                  Permanently delete the app, deployments, and all release
+                  history.
                 </p>
               </div>
               <span className="tip" data-tip={manageTip}>
                 <button
                   type="button"
-                  className={buttonVariants({ intent: "ghost" })}
+                  className={buttonVariants({ intent: "dangerGhost" })}
                   disabled={!canManage}
-                  onClick={() => setTransferOpen(true)}
+                  onClick={() => setDeleteOpen(true)}
                 >
-                  Transfer
+                  Delete
                 </button>
               </span>
             </div>
-          )}
-          <div className={DANGER_ROW}>
-            <div className={DZ_TEXT}>
-              <b>Delete app</b>
-              <p>
-                Permanently delete the app, deployments, and all release
-                history.
-              </p>
-            </div>
-            <span className="tip" data-tip={manageTip}>
-              <button
-                type="button"
-                className={buttonVariants({ intent: "dangerGhost" })}
-                disabled={!canManage}
-                onClick={() => setDeleteOpen(true)}
-              >
-                Delete
-              </button>
-            </span>
           </div>
         </div>
       </div>
@@ -516,7 +517,6 @@ function TransferAppDialogContent({
       onConfirm={confirm}
       title="Transfer app"
       description="Requires manage on this app and create on the destination team."
-      icon={<ArrowRightIcon />}
       confirmLabel={blocking ? "Retry" : "Transfer app"}
       busy={transferMutation.isPending}
       error={errorNode}
@@ -532,7 +532,6 @@ function TransferAppDialogContent({
           <Skeleton height={38} />
         ) : teamsQuery.isError ? (
           <span className={FIELD_ERR} role="alert">
-            <AlertIcon />
             Couldn't load your teams — close the dialog and try again.
           </span>
         ) : destinations.length === 0 ? (
@@ -652,7 +651,6 @@ function DeleteAppDialogContent({
       onConfirm={confirm}
       title="Delete app"
       description={`Permanently removes ${app.name}.`}
-      icon={<TrashIcon />}
       confirmLabel={blocking ? "Retry" : "Delete app"}
       busy={deleteMutation.isPending}
       error={
@@ -767,24 +765,6 @@ function InfoIcon() {
       <circle cx="12" cy="12" r="9" />
       <line x1="12" y1="11" x2="12" y2="16" />
       <line x1="12" y1="8" x2="12" y2="8" />
-    </SvgIcon>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <SvgIcon>
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </SvgIcon>
-  );
-}
-
-function ArrowRightIcon() {
-  return (
-    <SvgIcon>
-      <line x1="5" y1="12" x2="19" y2="12" />
-      <polyline points="12 5 19 12 12 19" />
     </SvgIcon>
   );
 }

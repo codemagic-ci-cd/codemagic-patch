@@ -14,6 +14,7 @@
 import { Resolver } from "node:dns/promises";
 
 export type DnsClient = {
+  resolveTxt?: (hostname: string) => Promise<string[]>;
   /**
    * A records for `hostname`, resolved through `servers` when given.
    *
@@ -333,8 +334,8 @@ export type DnsWaitInput = {
   now: () => number;
 };
 
-const DEFAULT_POLL_INTERVAL_MILLISECONDS = 10_000;
-const DEFAULT_POLL_TIMEOUT_MILLISECONDS = 30 * 60 * 1_000;
+export const DEFAULT_POLL_INTERVAL_MILLISECONDS = 10_000;
+export const DEFAULT_POLL_TIMEOUT_MILLISECONDS = 30 * 60 * 1_000;
 
 /**
  * Polls until the hostname resolves to the server's address — or, when the
@@ -712,6 +713,11 @@ export function createDnsClient(): DnsClient {
   };
 
   return {
+    resolveTxt(hostname) {
+      return emptyUnlessUnreachable(async () =>
+        (await system.resolveTxt(hostname)).map((chunks) => chunks.join("")),
+      );
+    },
     async hasSoa(name) {
       try {
         await system.resolveSoa(name);

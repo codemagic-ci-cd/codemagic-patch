@@ -67,7 +67,7 @@ import { DL, DL_DD, DL_DT } from "../components/ui/dl";
 import { ICON_BTN } from "../components/ui/iconButton";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import { PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
-import { formatCount, formatDateTime } from "../model/format";
+import { formatCount, formatDateTime, formatSuccessRate } from "../model/format";
 
 /**
  * Lifecycle actions this screen can trigger; `release` is always THE viewed
@@ -420,9 +420,6 @@ function WorkerJobPanel({
   return (
     <div className={`${CARD} border-blue-tint-2`}>
       <div className={`${CARD_HEAD} bg-blue-tint border-b-blue-tint-2`}>
-        <span className="size-[18px] text-blue" aria-hidden="true">
-          <ServerIcon />
-        </span>
         <h3>Worker job</h3>
         <div className={CARD_HEAD_RIGHT}>
           <button
@@ -649,7 +646,6 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
   } else {
     const metrics = metricsQuery.data.metrics;
     const reported =
-      metrics.active +
       metrics.downloaded +
       metrics.installed +
       metrics.success +
@@ -676,7 +672,7 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
               className="font-semibold"
               style={{ color: rate === null ? undefined : "var(--color-green-deep)" }}
             >
-              {rate === null ? "—" : `${(rate * 100).toFixed(1)}%`}
+              {rate === null ? "—" : `${formatSuccessRate(rate)}%`}
             </span>
           </div>
           {rate !== null ? (
@@ -721,12 +717,7 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
   return (
     <div className={`${CARD} ${CARD_PAD}`}>
       <div className="mb-[18px] flex items-center justify-between gap-3.5">
-        <div className={SECTION_TITLE}>
-          <span className="size-[18px] text-blue" aria-hidden="true">
-            <ChartIcon />
-          </span>
-          Metrics
-        </div>
+        <div className={SECTION_TITLE}>Metrics</div>
         <span className={`${CHIP} ${CHIP_TONE.neutral}`}>grouped by package hash</span>
       </div>
       {body}
@@ -738,7 +729,6 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
 function CounterGrid({ metrics }: { metrics: ReleaseMetrics | null }) {
   return (
     <div className="grid-cols-[repeat(4,1fr)] gap-3 [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
-      <Counter label="Active" value={metrics === null ? null : metrics.active} />
       <Counter
         label="Downloaded"
         value={metrics === null ? null : metrics.downloaded}
@@ -847,17 +837,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function ServerIcon() {
-  return (
-    <IconSvg>
-      <rect x="3" y="4" width="18" height="7" rx="2" />
-      <rect x="3" y="13" width="18" height="7" rx="2" />
-      <line x1="7" y1="7.5" x2="7" y2="7.5" />
-      <line x1="7" y1="16.5" x2="7" y2="16.5" />
-    </IconSvg>
   );
 }
 

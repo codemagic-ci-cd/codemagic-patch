@@ -23,9 +23,9 @@ export type StatusTone =
 export const STATUS_TONE: Record<StatusTone, string> = {
   green: "bg-green-tint text-green-deep",
   blue: "bg-blue-tint text-blue",
-  slate: "bg-slate-tint text-[#5a6480]",
+  slate: "bg-slate-tint text-tone-slate",
   red: "bg-red-tint text-red",
-  muted: "bg-surface-3 text-[#5b6480]",
-  amber: "bg-yellow-tint text-[#7a675a]",
-  dead: "bg-[#7a0a25] text-white",
+  muted: "bg-surface-3 text-tone-muted",
+  amber: "bg-yellow-tint text-tone-amber",
+  dead: "bg-dead text-white",
 };

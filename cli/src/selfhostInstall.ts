@@ -9,6 +9,8 @@
 
 import { connect } from "node:net";
 
+import { buildStorageEnv, type StorageConfig } from "./storageConfig";
+
 import type { SelfhostPendingInstall } from "./configStore";
 import type { CloudProvider, RemoteHostFacts } from "./selfhostRemote";
 
@@ -354,10 +356,11 @@ export type DeliverySelection =
       distributionDomain?: string;
       distributionId: string;
       kind: "cloudfront";
-      originVerifySecret?: string;
       secretAccessKey?: string;
-      storageOriginDomain?: string;
-    }
+    } & (
+      | { origin?: "host"; originVerifySecret?: string; storageOriginDomain?: string }
+      | { origin: "bucket"; originVerifySecret?: never; storageOriginDomain?: never }
+    )
   | { kind: "none" };
 
 export type InstallAnswers = {
@@ -367,6 +370,8 @@ export type InstallAnswers = {
   githubClientId: string;
   githubClientSecret: string;
   storageDomain: string;
+  storage?: StorageConfig;
+  storageWarnings?: string[];
 };
 
 /**
@@ -375,11 +380,9 @@ export type InstallAnswers = {
  *
  * Env rather than argv is the whole point: the OAuth client secret and the CDN
  * credentials travel inside the script piped to the remote `bash -s`, where no
- * `ps` on the VPS can read them. Only the *stack shape* variables are
- * deliberately absent — this command installs the bundled database and bundled
- * storage, and naming `SELFHOST_DATABASE_MODE`/`SELFHOST_STORAGE_MODE` at all
- * would make a later `--repair-env` rerun fail its "does not change the
- * database or storage mode" guard.
+ * `ps` on the VPS can read them. A completed external StorageConfig carries
+ * only runtime credentials and maps R2 to the installer's S3 mode. Recovery
+ * still uses buildRepairEnv and does not change storage topology.
  */
 export function buildInstallEnv(
   answers: InstallAnswers,
@@ -387,7 +390,9 @@ export function buildInstallEnv(
   return {
     ACME_EMAIL: answers.adminEmail,
     CODEMAGIC_PATCH_API_DOMAIN: answers.apiDomain,
-    CODEMAGIC_PATCH_STORAGE_DOMAIN: answers.storageDomain,
+    ...buildStorageEnv(
+      answers.storage ?? { kind: "bundled", storageDomain: answers.storageDomain },
+    ),
     GITHUB_OAUTH_CLIENT_ID: answers.githubClientId,
     GITHUB_OAUTH_CLIENT_SECRET: answers.githubClientSecret,
     ...buildDeliveryEnv(answers.delivery),
@@ -412,10 +417,10 @@ function buildDeliveryEnv(delivery: DeliverySelection): Record<string, string> {
         ...(delivery.secretAccessKey !== undefined
           ? { CLOUDFRONT_SECRET_ACCESS_KEY: delivery.secretAccessKey }
           : {}),
-        ...(delivery.originVerifySecret !== undefined
+        ...(delivery.origin !== "bucket" && delivery.originVerifySecret !== undefined
           ? { CLOUDFRONT_ORIGIN_VERIFY_SECRET: delivery.originVerifySecret }
           : {}),
-        ...(delivery.storageOriginDomain !== undefined
+        ...(delivery.origin !== "bucket" && delivery.storageOriginDomain !== undefined
           ? {
               CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN:
                 delivery.storageOriginDomain,

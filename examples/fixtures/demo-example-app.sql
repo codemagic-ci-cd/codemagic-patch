@@ -141,8 +141,8 @@ VALUES
     false,
     'First production release of Example Data.',
     'published',
-    now() - interval '21 days',
-    now() - interval '21 days'
+    now() - interval '28 days',
+    now() - interval '28 days'
   ),
   (
     'rel_demo_ex_prd_v2',
@@ -157,8 +157,8 @@ VALUES
     false,
     'Promoted staging crash fix to production.',
     'published',
-    now() - interval '10 days',
-    now() - interval '10 days'
+    now() - interval '13 days',
+    now() - interval '13 days'
   ),
   (
     'rel_demo_ex_prd_v3',
@@ -195,13 +195,12 @@ DELETE FROM metric_event WHERE id LIKE 'me_demo_ex_%';
 -- emitted_at spreads across the last 14 days so a future time-series view has
 -- something to bucket; counters today only need the COUNT(*) totals.
 --
--- Staging ≈ 30-person internal team: most Active on latest (v3), a minority on
--- the previous (v2), a couple of stragglers on v1. v4 is disabled with failed
--- residue and no remaining Active. Lifetime funnel can exceed current Active.
---
--- Production ≈ 70k fleet: almost everyone Active on v2, ~10% canary on v3,
--- a few thousand stragglers still on v1. Older releases keep high lifetime
--- Success/Downloaded even when Active is low.
+-- Staging ≈ 30-person internal team. Healthy releases have no Failed rows
+-- (0.02% of ~30 devices rounds to zero). v4 is the disabled crash-rollback
+-- canary. Production ≈ 70k fleet, Failed ≈ 0.02% of Success+Failed, with a
+-- 10k-device Active occupancy grid so the adoption chart hands off v1 → v2 →
+-- v3 instead of stacking step-ups. v1 eases in from 28 days ago so the
+-- 30-day window is not mostly zeros; v2 takes over from day 13.
 
 -- Staging v1 (a couple of stragglers; high lifetime funnel)
 INSERT INTO metric_event (
@@ -214,7 +213,11 @@ SELECT
   'me_demo_ex_stg_v1_' || lower(e.event_name) || '_' || g,
   'evt_demo_ex_stg_v1_' || lower(e.event_name) || '_' || g,
   e.event_name,
-  now() - ((g % 14) * interval '1 day') - ((g % 17) * interval '1 hour'),
+  CASE
+    WHEN e.event_name = 'Active'
+      THEN date_trunc('day', now()) - ((10 + g) * interval '1 day') + interval '12 hours'
+    ELSE now() - ((g % 14) * interval '1 day') - ((g % 17) * interval '1 hour')
+  END,
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
   'deployment_demo_example_staging',
@@ -234,7 +237,6 @@ FROM (VALUES
   ('Downloaded'::text, 28),
   ('Installed', 26),
   ('Success', 25),
-  ('Failed', 1),
   ('Active', 2)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
@@ -250,7 +252,11 @@ SELECT
   'me_demo_ex_stg_v2_' || lower(e.event_name) || '_' || g,
   'evt_demo_ex_stg_v2_' || lower(e.event_name) || '_' || g,
   e.event_name,
-  now() - ((g % 10) * interval '1 day') - ((g % 13) * interval '1 hour'),
+  CASE
+    WHEN e.event_name = 'Active'
+      THEN date_trunc('day', now()) - ((2 + g) * interval '1 day') + interval '12 hours'
+    ELSE now() - ((g % 10) * interval '1 day') - ((g % 13) * interval '1 hour')
+  END,
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
   'deployment_demo_example_staging',
@@ -270,7 +276,6 @@ FROM (VALUES
   ('Downloaded'::text, 20),
   ('Installed', 18),
   ('Success', 17),
-  ('Failed', 1),
   ('Active', 6)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
@@ -286,7 +291,11 @@ SELECT
   'me_demo_ex_stg_v3_' || lower(e.event_name) || '_' || g,
   'evt_demo_ex_stg_v3_' || lower(e.event_name) || '_' || g,
   e.event_name,
-  now() - ((g % 3) * interval '1 day') - ((g % 11) * interval '1 hour'),
+  CASE
+    WHEN e.event_name = 'Active'
+      THEN date_trunc('day', now()) - ((g % 3) * interval '1 day') + interval '12 hours'
+    ELSE now() - ((g % 3) * interval '1 day') - ((g % 11) * interval '1 hour')
+  END,
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
   'deployment_demo_example_staging',
@@ -306,7 +315,6 @@ FROM (VALUES
   ('Downloaded'::text, 24),
   ('Installed', 23),
   ('Success', 22),
-  ('Failed', 1),
   ('Active', 22)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
@@ -341,8 +349,7 @@ SELECT
 FROM (VALUES
   ('Downloaded'::text, 8),
   ('Installed', 6),
-  ('Success', 2),
-  ('Failed', 5)
+  ('Success', 2)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
@@ -376,9 +383,7 @@ SELECT
 FROM (VALUES
   ('Downloaded'::text, 68000),
   ('Installed', 65000),
-  ('Success', 63500),
-  ('Failed', 1200),
-  ('Active', 2500)
+  ('Success', 63500)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
@@ -412,9 +417,7 @@ SELECT
 FROM (VALUES
   ('Downloaded'::text, 65000),
   ('Installed', 63000),
-  ('Success', 62000),
-  ('Failed', 1200),
-  ('Active', 61000)
+  ('Success', 62000)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
@@ -448,8 +451,201 @@ SELECT
 FROM (VALUES
   ('Downloaded'::text, 7200),
   ('Installed', 6900),
-  ('Success', 6700),
-  ('Failed', 130),
-  ('Active', 6500)
+  ('Success', 6700)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
+
+-- Production Active occupancy (10k device pool, one row per device per UTC
+-- day they were active). Day 0 is today. v1 smoothsteps in from day 28 so
+-- the 30-day chart is not a long zero run; v2 takes over from day 13 (its
+-- publish); v3 peels a 10% canary from day 3. Stragglers (devices 1–357)
+-- never leave v1. Daily cap is ~96% of the pool after the ramp, with a
+-- Saturday/Sunday dip and a small hash wobble so Total is not a flat line.
+-- Presence is hashed across device ids so the version mix stays proportional
+-- when the cap is below 10k.
+INSERT INTO metric_event (
+  id, event_id, event_name, emitted_at,
+  team_id, app_id, deployment_id, deployment_key,
+  binary_version, running_package_hash, target_package_hash,
+  device_id, sdk_version, platform, attributes
+)
+SELECT
+  'me_demo_ex_prd_active_' || d.day_offset || '_' || dev.n,
+  'evt_demo_ex_prd_active_' || d.day_offset || '_' || dev.n,
+  'Active',
+  date_trunc('day', now())
+    - (d.day_offset * interval '1 day')
+    + interval '12 hours',
+  (SELECT id FROM team WHERE name = 'default-team'),
+  'app_demo_example',
+  'deployment_demo_example_production',
+  'demo_example_production_deployment_key',
+  CASE ver.pkg
+    WHEN 'v3' THEN '1.0.1'
+    ELSE '1.0.0'
+  END,
+  CASE ver.pkg
+    WHEN 'v1' THEN 'demo_ex_prd_pkg_v1'
+    WHEN 'v2' THEN 'demo_ex_prd_pkg_v2'
+    ELSE 'demo_ex_prd_pkg_v3'
+  END,
+  CASE ver.pkg
+    WHEN 'v1' THEN 'demo_ex_prd_pkg_v1'
+    WHEN 'v2' THEN 'demo_ex_prd_pkg_v2'
+    ELSE 'demo_ex_prd_pkg_v3'
+  END,
+  'device_demo_prd_dau_' || dev.n,
+  '0.1.0',
+  CASE WHEN dev.n % 2 = 0 THEN 'ios' ELSE 'android' END,
+  NULL
+FROM generate_series(0, 28) AS d(day_offset)
+CROSS JOIN generate_series(1, 10000) AS dev(n)
+CROSS JOIN LATERAL (
+  SELECT GREATEST(0.0, LEAST(1.0, (28.0 - d.day_offset) / 9.0)) AS p
+) AS ramp
+CROSS JOIN LATERAL (
+  SELECT GREATEST(1, LEAST(10000,
+    round(
+      9600
+      * (0.18 + 0.82 * (3 * ramp.p * ramp.p - 2 * ramp.p * ramp.p * ramp.p))
+      * CASE EXTRACT(ISODOW FROM date_trunc('day', now())
+          - (d.day_offset * interval '1 day'))
+          WHEN 6 THEN 0.90
+          WHEN 7 THEN 0.86
+          WHEN 5 THEN 0.97
+          ELSE 1.0
+        END
+      * (1.0 + ((d.day_offset * 37 + 11) % 13 - 6) * 0.012)
+    )
+  ))::int AS n
+) AS daily
+CROSS JOIN LATERAL (
+  SELECT CASE
+    WHEN d.day_offset <= 3
+      AND dev.n > 9071
+      AND (dev.n - 9071) <= (929 * CASE d.day_offset
+        WHEN 3 THEN 40
+        WHEN 2 THEN 70
+        ELSE 100
+      END) / 100
+      THEN 'v3'
+    WHEN d.day_offset <= 13
+      AND dev.n > 357
+      AND (dev.n - 357) <= (9643 * CASE d.day_offset
+        WHEN 13 THEN 25
+        WHEN 12 THEN 55
+        WHEN 11 THEN 82
+        ELSE 100
+      END) / 100
+      THEN 'v2'
+    ELSE 'v1'
+  END AS pkg
+) AS ver
+WHERE ((dev.n * 7919 + d.day_offset * 104729) % 10000) < daily.n;
+
+-- Failed events: kind × count per release (one reason dominates, thin tail).
+INSERT INTO metric_event (
+  id, event_id, event_name, emitted_at,
+  team_id, app_id, deployment_id, deployment_key,
+  binary_version, running_package_hash, target_package_hash,
+  device_id, sdk_version, platform, attributes, failure_payload
+)
+SELECT
+  'me_demo_ex_' || f.cohort || '_failed_' || f.kind || '_' || g,
+  'evt_demo_ex_' || f.cohort || '_failed_' || f.kind || '_' || g,
+  'Failed',
+  now() - (g * f.offset_step),
+  (SELECT id FROM team WHERE name = 'default-team'),
+  'app_demo_example',
+  r.deployment_id,
+  r.deployment_key,
+  r.binary_version,
+  r.package_hash,
+  r.package_hash,
+  'device_demo_' || f.cohort || '_fail_' || f.kind || '_' || g,
+  '0.1.0',
+  plat.platform,
+  jsonb_strip_nulls(jsonb_build_object(
+    'reason', k.reason,
+    'delivery_type', r.delivery_type,
+    'failure_subtype', k.failure_subtype,
+    'payload', CASE
+      WHEN payload.obj IS NULL THEN NULL
+      ELSE payload.obj::text
+    END
+  )),
+  payload.obj
+FROM (VALUES
+  ('stg_v4'::text, 'crash'::text, 4, interval '2 hours'),
+  ('stg_v4', 'timeout', 1, interval '14 hours'),
+  ('prd_v1', 'timeout', 8, interval '1 day'),
+  ('prd_v1', 'dns', 2, interval '1 day'),
+  ('prd_v1', 'forbidden', 2, interval '1 day'),
+  ('prd_v1', 'crash', 1, interval '1 day'),
+  ('prd_v2', 'timeout', 8, interval '1 day'),
+  ('prd_v2', 'dns', 1, interval '36 hours'),
+  ('prd_v2', 'forbidden', 2, interval '12 hours'),
+  ('prd_v2', 'integrity', 1, interval '12 hours'),
+  ('prd_v3', 'timeout', 1, interval '2 days')
+) AS f(cohort, kind, n, offset_step)
+JOIN (VALUES
+  (
+    'stg_v4'::text,
+    'deployment_demo_example_staging',
+    'demo_example_staging_deployment_key',
+    '1.1.0', 'demo_ex_stg_pkg_v4', 'patch'
+  ),
+  (
+    'prd_v1',
+    'deployment_demo_example_production',
+    'demo_example_production_deployment_key',
+    '1.0.0', 'demo_ex_prd_pkg_v1', 'full_bundle'
+  ),
+  (
+    'prd_v2',
+    'deployment_demo_example_production',
+    'demo_example_production_deployment_key',
+    '1.0.0', 'demo_ex_prd_pkg_v2', 'full_bundle'
+  ),
+  (
+    'prd_v3',
+    'deployment_demo_example_production',
+    'demo_example_production_deployment_key',
+    '1.0.1', 'demo_ex_prd_pkg_v3', 'patch'
+  )
+) AS r(
+  cohort, deployment_id, deployment_key,
+  binary_version, package_hash, delivery_type
+) USING (cohort)
+JOIN (VALUES
+  ('crash'::text, 'install_fail', 'crash_rollback'),
+  ('timeout', 'network', NULL),
+  ('dns', 'network', NULL),
+  ('forbidden', 'network', NULL),
+  ('integrity', 'integrity', NULL)
+) AS k(kind, reason, failure_subtype) USING (kind)
+CROSS JOIN LATERAL generate_series(1, f.n) AS g
+CROSS JOIN LATERAL (
+  SELECT CASE WHEN g % 2 = 0 THEN 'ios' ELSE 'android' END AS platform
+) AS plat
+CROSS JOIN LATERAL (
+  SELECT CASE
+    WHEN f.kind = 'crash' AND plat.platform = 'ios' THEN NULL
+    WHEN f.kind = 'crash'
+      THEN '{"android_previous_process_exit":"REASON_CRASH"}'::jsonb
+    WHEN f.kind = 'timeout' AND plat.platform = 'android'
+      THEN '{"code":"0","message":"The request timed out.","android_previous_process_exit":"REASON_USER_REQUESTED"}'::jsonb
+    WHEN f.kind = 'timeout'
+      THEN '{"code":"0","message":"The request timed out."}'::jsonb
+    WHEN f.kind = 'dns' AND plat.platform = 'android'
+      THEN '{"code":"0","message":"Unable to resolve host d2example.cloudfront.net: No address associated with hostname","android_previous_process_exit":"REASON_USER_REQUESTED"}'::jsonb
+    WHEN f.kind = 'dns'
+      THEN '{"code":"0","message":"Unable to resolve host d2example.cloudfront.net: No address associated with hostname"}'::jsonb
+    WHEN f.kind = 'forbidden' AND plat.platform = 'android'
+      THEN '{"code":"403","message":"AccessDenied: Access Denied.","android_previous_process_exit":"REASON_USER_REQUESTED"}'::jsonb
+    WHEN f.kind = 'forbidden'
+      THEN '{"code":"403","message":"AccessDenied: Access Denied."}'::jsonb
+    WHEN f.kind = 'integrity'
+      THEN '{"android_previous_process_exit":"REASON_USER_REQUESTED"}'::jsonb
+  END AS obj
+) AS payload;

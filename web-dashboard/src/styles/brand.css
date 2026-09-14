@@ -18,6 +18,13 @@
   --cm-color-swwyellow: #ff9100;
   --cm-color-nativeorange: #ff4d13;
   --cm-color-red: #ec0c43;
+  /* Design-system ramp steps (Figma variables in the cm-brand skill) for the
+     semantic colors the marketing palette does not name. */
+  --cm-color-red-600: #bf0d3b; /* red-600: hover for filled red actions */
+  --cm-color-red-700: #920e34; /* red-700 */
+  --cm-color-status-success: #22dd4d; /* green-500 = --color-success-default */
+  --cm-color-green-100: #d3f8db; /* green-100: success tint */
+  --cm-color-green-800: #146230; /* green-800: text on the success tint (AA) */
 
   --cm-color-text-heading: #11285b;
   --cm-color-text-body: #3a4865;
@@ -59,8 +66,9 @@
   --color-yellow: var(--cm-color-swwyellow);
   --color-orange: var(--cm-color-nativeorange);
   --color-red: var(--cm-color-red);
-  --color-green: #15803d;
-  --color-green-deep: #166534;
+  --color-red-hover: var(--cm-color-red-600);
+  --color-green: var(--cm-color-status-success);
+  --color-green-deep: var(--cm-color-green-800);
 
   /* neutrals */
   --color-canvas: #ffffff;
@@ -89,11 +97,41 @@
   --color-blue-tint: #e8eefc;
   --color-blue-tint-2: #ceddff;
   --color-aqua-tint: #e6f9ff;
-  --color-green-tint: #f0fdf4;
+  --color-green-tint: var(--cm-color-green-100);
   --color-red-tint: #fde8ee;
   --color-yellow-tint: #fff2e0;
   --color-magenta-tint: #fde6ff;
   --color-slate-tint: #f6f7f9;
+
+  /* Tone text on tinted fills. Light values are the legacy hexes that were
+     picked for contrast on pale tints; dark remaps them to brand hues. */
+  --color-tone-aqua: #007a99;
+  --color-tone-yellow: #9a560f;
+  --color-tone-magenta: #a417b8;
+  --color-tone-warn: #8a5414;
+  --color-tone-danger: #9a0a30;
+  --color-tone-success: var(--color-green-deep);
+  --color-tone-slate: #5a6480;
+  --color-tone-muted: #5b6480;
+  --color-tone-amber: #7a675a;
+  --color-dead: var(--cm-color-red-700);
+
+  /* GitHub button: dark mark on light, inverted on dark. */
+  --color-gh: #1b1f2e;
+  --color-gh-fg: #ffffff;
+  --color-gh-hover: #000000;
+
+  /* Inverse chrome (toasts, codeblocks, tooltips): navy in light, lifted
+     card in dark so it does not collapse into canvas. */
+  --color-inverse: var(--cm-color-text-heading);
+  --color-inverse-fg: #cdd4f0;
+  --color-inverse-muted: #aeb4cf;
+  /* Dialog scrim: 95% white, per the Codemagic app; dark keeps a navy scrim
+     so a same-color dialog still separates from the canvas. */
+  --color-overlay: rgba(255, 255, 255, 0.95);
+  --color-thumb: #ffffff;
+  --color-code-str: #ffd479;
+  --color-code-ok: var(--color-green);
 
   /* shape */
   --radius-xs: 6px;
@@ -113,6 +151,70 @@
     0 6px 16px -6px rgba(10, 14, 34, 0.12);
   --shadow-glow: 0 0 0 4px rgba(9, 87, 255, 0.14);
   --shadow-glow-aqua: 0 0 0 4px rgba(0, 206, 255, 0.14);
+}
+
+/* Dark roles. Brand primitives (--cm-color-*, CTA blue) stay put. Product
+   chrome follows the Codemagic app: page, sidebar, and cards share `#12161D`
+   and separate with hairline borders. Nav labels stay white. Tints mix brand
+   hues onto `--color-canvas` so they stay opaque, including sticky chrome. */
+:root[data-theme="dark"] {
+  --dashboard-text-heading: #ffffff;
+  --dashboard-text-body: #d2dbee;
+  --dashboard-selection: rgba(9, 87, 255, 0.35);
+
+  --color-green: var(--cm-color-status-success);
+  --color-green-deep: var(--cm-color-status-success);
+
+  --color-canvas: #12161d;
+  --color-surface: #12161d;
+  --color-surface-2: #1a1f28;
+  --color-surface-3: #222830;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.14);
+  --color-ink: #ffffff;
+  --color-fg: #ffffff;
+  --color-fg-2: #e8edf6;
+  --color-fg-3: #c5cfe3;
+  --color-fg-faint: #c5cfe3;
+
+  --color-sb-bg: #12161d;
+  --color-sb-bg-2: #12161d;
+  --color-sb-text: #ffffff;
+  --color-sb-text-hi: #ffffff;
+  --color-sb-border: rgba(255, 255, 255, 0.1);
+
+  --color-blue-tint: color-mix(in srgb, var(--cm-color-cta-blue) 22%, var(--color-canvas));
+  --color-blue-tint-2: color-mix(in srgb, var(--cm-color-cta-blue) 35%, var(--color-canvas));
+  --color-aqua-tint: color-mix(in srgb, var(--cm-color-dashaqua) 18%, var(--color-canvas));
+  --color-green-tint: color-mix(in srgb, var(--cm-color-status-success) 18%, var(--color-canvas));
+  --color-red-tint: color-mix(in srgb, var(--cm-color-red) 22%, var(--color-canvas));
+  --color-yellow-tint: color-mix(in srgb, var(--cm-color-swwyellow) 18%, var(--color-canvas));
+  --color-magenta-tint: color-mix(in srgb, var(--cm-color-pinkmagic) 18%, var(--color-canvas));
+  --color-slate-tint: color-mix(in srgb, #c5cfe3 16%, var(--color-canvas));
+
+  --color-tone-aqua: var(--cm-color-dashaqua);
+  --color-tone-yellow: var(--cm-color-swwyellow);
+  --color-tone-magenta: var(--cm-color-pinkmagic);
+  --color-tone-warn: var(--cm-color-swwyellow);
+  --color-tone-danger: #ff6b8a;
+  --color-tone-success: var(--cm-color-status-success);
+  --color-tone-slate: #c5cfe3;
+  --color-tone-muted: #c5cfe3;
+  --color-tone-amber: #fbbf24;
+
+  --color-gh: #ffffff;
+  --color-gh-fg: var(--cm-color-text-heading);
+  --color-gh-hover: #d2dbee;
+
+  --color-inverse: #182238;
+  --color-overlay: rgba(1, 9, 26, 0.72);
+
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-glow: 0 0 0 4px rgba(9, 87, 255, 0.28);
+  --shadow-glow-aqua: 0 0 0 4px rgba(0, 206, 255, 0.28);
 }
 
 @layer components {

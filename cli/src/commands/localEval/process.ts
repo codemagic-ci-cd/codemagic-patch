@@ -18,14 +18,21 @@ export type CaptureResult = {
 };
 
 export async function captureLocal(
-  deps: CommandDeps,
-  input: { args: readonly string[]; command: string },
+  deps: Pick<CommandDeps, "runProcess">,
+  input: {
+    args: readonly string[];
+    command: string;
+    cwd?: string;
+    timeoutMs?: number;
+  },
 ): Promise<CaptureResult> {
   const chunks: string[] = [];
   try {
     const result = await deps.runProcess({
       args: input.args,
       command: input.command,
+      ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+      timeoutMs: input.timeoutMs,
       onOutput: (chunk) => {
         chunks.push(chunk);
       },

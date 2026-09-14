@@ -123,18 +123,27 @@ type ResolvedExpoCommand = {
 export async function executeReleaseReact(
   command: ReleaseReactCommand,
   deps: ReleaseReactDeps,
+  // `cmpatch demo` (and anything else that already has a tree open) reports
+  // onto it so one run does not animate two spinners. Lifecycle stays with
+  // the owner, matching `executeReleaseCreate`.
+  sharedProgress?: Progress,
 ): Promise<unknown> {
-  const progress = createProgress({ label: "release-react", stderr: deps.stderr });
+  const ownsProgress = sharedProgress === undefined;
+  const progress =
+    sharedProgress ??
+    createProgress({ label: "release-react", stderr: deps.stderr });
 
   try {
     return await runReleaseReact(command, deps, progress);
   } catch (error) {
-    // Marks the step in flight as failed; the finally below is then a no-op,
-    // so the tree is still closed exactly once on every path.
-    progress.fail();
+    if (ownsProgress) {
+      progress.fail();
+    }
     throw error;
   } finally {
-    progress.stop();
+    if (ownsProgress) {
+      progress.stop();
+    }
   }
 }
 

@@ -10,8 +10,26 @@ llmsDescription: >-
 
 # Cloudflare setup
 
+For **external storage**, choose R2 for automated Cloudflare storage/domain/cache
+setup, or S3/GCS plus **Cloud Connector (Beta)** for the guided console path. The
+external download record is proxied before storage verification, and never points
+to the API server. The grey-cloud-first instructions below apply to bundled MinIO.
+
+For S3/GCS, use Rules → Cloud Connector: choose the matching provider, a dot-free
+bucket endpoint (`BUCKET.s3.REGION.amazonaws.com` or
+`BUCKET.storage.googleapis.com`), and only `http.host eq "downloads.example.com"`.
+Accept the offered proxied DNS record; otherwise add a proxied CNAME to that
+endpoint. Add a separate Cache Rule for the same hostname, eligible for cache,
+respecting origin Cache-Control and Browser TTL with no Edge TTL override. Keep
+other hostnames outside both rules. No bucket prefix or rewrite is added by this
+flow. Public-read restrictions must already permit the origin. The wizard checks
+file content, cache hit, purge freshness and privacy before deploying.
+
+See [Install](/docs/install#choose-storage) for account prerequisites, guided
+reuse and the separate lifetime of setup and runtime tokens.
+
 :::tip Set this up while installing
-On an uninterrupted `cmpatch selfhost install`, the Cloudflare step opens a
+For bundled MinIO, on an uninterrupted `cmpatch selfhost install`, the Cloudflare step opens a
 pre-scoped token form, finds the zone id for you, and — after the server is up —
 walks you through the proxy switch and Cache Rule, checking each one. It is
 offered when your download domain is already on a Cloudflare account. Keep the
@@ -102,11 +120,13 @@ If a later certificate renewal fails while proxied, temporarily switch the recor
 
 Create **one** rule on [Cache Rules](https://dash.cloudflare.com/?to=/:account/:zone/caching/cache-rules) (**\<zone\> → Caching → Cache Rules** → **Create rule**):
 
-| Rule expression | Cache eligibility | Edge TTL |
-| --- | --- | --- |
-| `http.host eq "storage-updates.example.com"` | Eligible for cache | Use cache-control header if present, bypass cache if not |
+| Rule expression | Cache eligibility | Edge TTL | Browser TTL |
+| --- | --- | --- | --- |
+| `http.host eq "storage-updates.example.com"` | Eligible for cache | Use cache-control header if present, bypass cache if not | Respect origin TTL |
 
 The rule is still required because Cloudflare does not cache JSON by default. Once the hostname is eligible, Cloudflare Origin Cache Control (enabled by default on Free, Pro, and Business) respects the origin headers: bundles and patches are content-addressed and immutable for one year, while `meta.json` / `manifest.json` use `s-maxage=300`. The server requests a purge for mutable URLs after releases, and the five-minute shared-cache TTL bounds staleness if a purge fails. Do not add an Edge TTL override; the Free-plan two-hour minimum applies to that override, not to the respected `s-maxage` origin directive.
+
+**Browser TTL** must be set to *Respect origin TTL* as well. The zone-wide default (four hours on the Free plan) otherwise rewrites the origin's `max-age=0` to `max-age=14400`, and iOS devices would then keep a stale manifest for up to four hours after a release; a purge cannot reach a device cache. Setting **Caching → Configuration → Browser Cache TTL** to *Respect Existing Headers* for the whole zone has the same effect.
 
 :::warning Upgrading an existing zone
 Earlier versions of this page had you add a **second** rule matching `.json`
@@ -125,6 +145,10 @@ URL="https://storage-updates.example.com/codemagic-patch/${DEPLOYMENT_KEY}/meta.
 
 curl -sI "$URL" | grep -i cf-cache-status
 curl -sI "$URL" | grep -i cf-cache-status
+
+# Must print max-age=0 exactly as the origin sent it; max-age=14400 means
+# the Browser TTL setting is missing
+curl -sI "$URL" | grep -i cache-control
 ```
 
 After publishing a release, a successful purge makes the same URL briefly report `MISS` again. Purging is best-effort: a failed purge never fails the release. It is logged as a `delivery cache purge completed with failures` warning in the server logs. Watch for that warning if clients report stale updates.

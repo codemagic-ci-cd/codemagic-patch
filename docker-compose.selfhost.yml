@@ -15,7 +15,9 @@
 # or absent, compose.external-db.yml when it is "external". Storage:
 # compose.bundled-storage.yml when the flag is "bundled" or absent,
 # compose.external-storage-s3.yml or compose.external-storage-gcs.yml when it
-# is "s3" or "gcs". For the default bundled stack:
+# is "s3" or "gcs". Scheme: compose.http.yml after the storage overlay when
+# SELFHOST_SCHEME is "http" (plain HTTP, no certificates); nothing when it is
+# "https" or absent. For the default bundled stack:
 #   docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
 #     -f docker-compose.selfhost.yml -f deploy/selfhost/compose.bundled-db.yml \
 #     -f deploy/selfhost/compose.bundled-storage.yml up -d

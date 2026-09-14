@@ -29,6 +29,7 @@ const MIN_WORKER_SHARED_SECRET_LENGTH = 32;
 type RuntimeEnvironment = Record<string, string | undefined>;
 
 export interface S3StorageConfig {
+  internalBucket?: string;
   accessKeyId?: string;
   bucket: string;
   endpoint?: string;
@@ -664,6 +665,11 @@ function resolveS3Config(env: RuntimeEnvironment): S3StorageConfig {
     throw new Error("S3_BUCKET is required when STORAGE_ADAPTER=s3");
   }
 
+  const internalBucket = resolveOptionalString(env.S3_INTERNAL_BUCKET);
+  if (internalBucket === bucket) {
+    throw new Error("S3_BUCKET and S3_INTERNAL_BUCKET must be different");
+  }
+
   const accessKeyId = resolveOptionalString(env.S3_ACCESS_KEY_ID);
   const secretAccessKey = resolveOptionalString(env.S3_SECRET_ACCESS_KEY);
 
@@ -676,6 +682,7 @@ function resolveS3Config(env: RuntimeEnvironment): S3StorageConfig {
   return {
     accessKeyId,
     bucket,
+    internalBucket,
     endpoint: resolveOptionalString(env.S3_ENDPOINT),
     forcePathStyle: resolveBoolean(env.S3_FORCE_PATH_STYLE, false),
     region: resolveOptionalString(env.S3_REGION) ?? "us-east-1",

@@ -56,6 +56,8 @@ export type Progress = {
 export type IntroMode = "at-first-step" | "at-start" | "inherited";
 
 export type ProgressOptions = {
+  /** Completed diagnostic work is not necessarily a successful check. */
+  neutralSteps?: boolean;
   /**
    * When the step tree's opening bracket is drawn. `"at-first-step"` (the
    * default) draws it with the first step, so a command that reports no
@@ -330,6 +332,7 @@ function syncCancelIntercept(): void {
 
 export function createProgress({
   intro = "at-first-step",
+  neutralSteps = false,
   label,
   stderr,
   title = label,
@@ -370,7 +373,7 @@ export function createProgress({
     };
   }
 
-  return createSpinnerProgress(stderr, title, intro);
+  return createSpinnerProgress(stderr, title, intro, neutralSteps);
 }
 
 /**
@@ -405,6 +408,7 @@ function createSpinnerProgress(
   stderr: Writable & WritableStream,
   title: string,
   intro: IntroMode,
+  neutralSteps: boolean,
 ): Progress {
   let active: SpinnerResult | null = null;
   let activeMessage: string | null = null;
@@ -455,7 +459,12 @@ function createSpinnerProgress(
       return;
     }
 
-    finished.stop(label);
+    if (neutralSteps) {
+      finished.clear();
+      clackLog.info(label, { output: stderr });
+    } else {
+      finished.stop(label);
+    }
   };
 
   const close = (

@@ -20,6 +20,11 @@ SELFHOST_COMPOSE_BUNDLED_STORAGE_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/com
 SELFHOST_COMPOSE_BUNDLED_STORAGE_CDN_ORIGIN_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.bundled-storage-cdn-origin.yml"
 SELFHOST_COMPOSE_STORAGE_S3_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-storage-s3.yml"
 SELFHOST_COMPOSE_STORAGE_GCS_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.external-storage-gcs.yml"
+# Plain-HTTP overlay, appended after the storage overlays when the env file
+# records SELFHOST_SCHEME=http (see selfhost_scheme_from_env_file). It only
+# adds to the caddy service, so it comes after every Caddyfile-selecting
+# overlay and before the operator override.
+SELFHOST_COMPOSE_HTTP_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.http.yml"
 # GCS service-account key the gcs storage overlay bind-mounts into the server
 # container (gitignored). The overlay references the fixed repo-root path, so
 # like the operator override the file's presence is part of the deployment's
@@ -186,6 +191,19 @@ selfhost_mode_from_env_file() {
   selfhost_env_value_from_file "$1"
 }
 
+# The scheme the stack serves on, from the env FILE like the mode flags and
+# for the same reason: https (the default, and what an env file written
+# before the flag existed means — Caddy obtains certificates) or http (plain
+# HTTP on port 80, no certificates; written by `install.sh --allow-http`).
+# Prints the raw value; validate_selfhost_stack_shape rejects anything but
+# those two words before any compose invocation, so callers that run after
+# it may build URLs from the output directly.
+selfhost_scheme_from_env_file() {
+  local scheme
+  scheme="$(selfhost_env_value_from_file SELFHOST_SCHEME)"
+  printf '%s' "${scheme:-https}"
+}
+
 selfhost_env_file_has_key() {
   local flag="$1"
   [ -f "$SELFHOST_ENV_FILE" ] || return 1
@@ -200,13 +218,23 @@ selfhost_env_file_has_key() {
 # price worth paying only for the wrong-stack-against-live-data class that the
 # SELFHOST_*_MODE rules exist to prevent.
 validate_selfhost_stack_shape() {
-  local storage_mode origin_mode origin_domain origin_secret
+  local storage_mode origin_mode origin_domain origin_secret scheme
   storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
   origin_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
+  scheme="$(selfhost_scheme_from_env_file)"
 
   case "${origin_mode:-direct}" in
     direct | cdn-origin) ;;
     *) fail_selfhost "SELFHOST_STORAGE_ORIGIN_MODE=${origin_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: direct, cdn-origin. Fix the flag — falling back to direct here would drop the protected CloudFront origin site from the assembled stack." ;;
+  esac
+
+  # The scheme selects the plain-HTTP overlay, so an unrecognized value must
+  # fail here like the mode flags do: falling back to https would recreate a
+  # deployment installed for plain HTTP as one that tries to obtain
+  # certificates it cannot get, and take every URL clients were given with it.
+  case "$scheme" in
+    https | http) ;;
+    *) fail_selfhost "SELFHOST_SCHEME=${scheme} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: https, http. Fix the flag — falling back to https here would try to obtain certificates for a stack that was installed for plain HTTP." ;;
   esac
 
   [ "${origin_mode:-direct}" = "cdn-origin" ] || return 0
@@ -298,6 +326,27 @@ validate_selfhost_delivery_config() {
   fi
 }
 
+# Plain HTTP serves this machine alone, and that promise is a port binding:
+# the http overlay replaces the base file's port list with loopback ones
+# (`ports: !override`). Caddy's localhost site address is no boundary — it
+# matches the request's Host header, which any machine on the network can
+# send. Two things can quietly undo the binding after the overlay did its
+# job: the operator override, merged later, adding a plain `ports:` entry
+# (compose appends port lists, so `80:80` lands next to `127.0.0.1:80:80`),
+# and a compose release that does not know the `!override` tag and appends
+# instead of replacing. So the merged stack is rendered and refused when any
+# published port lacks host_ip 127.0.0.1. Takes the assembled -f arguments.
+validate_selfhost_http_loopback_only() {
+  local rendered published loopback
+  # A rendering error is left to the real invocation, which reports it.
+  rendered="$(docker compose --project-name "$SELFHOST_PROJECT_NAME" --env-file "$SELFHOST_ENV_FILE" "$@" config 2>/dev/null)" || return 0
+  published="$(printf '%s\n' "$rendered" | grep -c '^ *published:' || true)"
+  loopback="$(printf '%s\n' "$rendered" | grep -c '^ *host_ip: 127\.0\.0\.1$' || true)"
+  [ "$published" -eq "$loopback" ] && return 0
+  fail_selfhost "SELFHOST_SCHEME=http in ${SELFHOST_ENV_FILE}, but the assembled stack publishes a port on every interface (a published port without host_ip 127.0.0.1). Plain HTTP serves this machine alone, and that is the loopback binding — not Caddy's localhost site address, which any machine on the network satisfies by sending Host: localhost. Look for a plain ports: entry in ${SELFHOST_COMPOSE_OVERRIDE_FILE} (on http it must bind to 127.0.0.1, or use ports: !override), and check that this docker compose release understands the !override tag. Published ports as rendered:
+$(printf '%s\n' "$rendered" | grep -n -B1 -A3 '^ *published:')"
+}
+
 compose_selfhost() {
   if [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] && selfhost_compose_override_required; then
     fail_selfhost "this deployment requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true in ${SELFHOST_ENV_FILE}), but the file is missing — running compose without it would silently revert the stack to the base configuration. Restore the override (re-run the installer that wrote it), or set SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false to proceed without it."
@@ -305,10 +354,11 @@ compose_selfhost() {
 
   validate_selfhost_stack_shape
 
-  local db_mode storage_mode origin_mode
+  local db_mode storage_mode origin_mode scheme
   db_mode="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
   storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
   origin_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_ORIGIN_MODE)"
+  scheme="$(selfhost_scheme_from_env_file)"
 
   # An unrecognized mode must fail hard, never fall back to bundled: on an
   # external-DB deployment a typo'd flag would assemble the bundled stack,
@@ -330,9 +380,24 @@ compose_selfhost() {
     gcs) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_GCS_FILE") ;;
     *) fail_selfhost "SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag — falling back to bundled storage here could point the stack at an empty MinIO instead of your external bucket." ;;
   esac
+  # The plain-HTTP overlay only adds to caddy, so it goes after every overlay
+  # that selects a Caddyfile. validate_selfhost_stack_shape has already
+  # rejected any value other than https/http.
+  if [ "$scheme" = "http" ]; then
+    compose_files+=(-f "$SELFHOST_COMPOSE_HTTP_FILE")
+  fi
   # Operator overlay stays last so it can tweak whatever the mode overlays set.
   if [ -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ]; then
     compose_files+=(-f "$SELFHOST_COMPOSE_OVERRIDE_FILE")
+  fi
+
+  # The loopback rule guards the commands that apply port bindings (and
+  # `config`, which is how the stack is inspected), not every ps/logs/exec:
+  # those run in readiness loops and must not re-render the stack each time.
+  if [ "$scheme" = "http" ]; then
+    case "${1:-}" in
+      up | create | config) validate_selfhost_http_loopback_only "${compose_files[@]}" ;;
+    esac
   fi
 
   # Compose interpolation gives an exported shell variable precedence over
@@ -471,7 +536,7 @@ ensure_selfhost_oauth_env() {
   # A GitHub id without a secret is a real legacy shape: the retired device
   # flow needed no secret, so old env files and backups can carry it.
   if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_CLIENT_SECRET:-}" ]; then
-    fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL https://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun."
+    fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL $(selfhost_scheme_from_env_file)://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun."
   fi
   if [ -n "${BITBUCKET_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_SECRET:-}" ]; then
     fail_selfhost "BITBUCKET_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but BITBUCKET_OAUTH_CLIENT_SECRET is missing. Add the consumer secret (or remove the client id), then rerun."

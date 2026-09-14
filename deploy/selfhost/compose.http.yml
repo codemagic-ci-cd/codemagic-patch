@@ -1,0 +1,38 @@
+# Plain-HTTP overlay — merged after the storage overlay (and before the
+# operator override) when SELFHOST_SCHEME=http in .env.selfhost. Selected by
+# scripts/selfhost/common.sh; when running compose by hand, pass it last
+# among the mode overlays. Written by `install.sh --allow-http`, which serves
+# this machine alone: the API site is localhost and the bundled storage site
+# is localhost:<port>.
+#
+# It changes exactly two things about caddy, so everything else the stack
+# runs — the same server image, the bundled Postgres/MinIO overlays, OAuth
+# sign-in — is untouched:
+#   1. CODEMAGIC_PATCH_SITE_SCHEME=http:// prefixes every site address in the
+#      mounted Caddyfile, so Caddy serves plain HTTP on port 80 and obtains no
+#      certificate and creates no HTTP->HTTPS redirect for any of them.
+#   2. The published ports are replaced, not extended: port 80 and the storage
+#      site's port — the port of CODEMAGIC_PATCH_STORAGE_DOMAIN, recorded by
+#      install.sh as SELFHOST_HTTP_STORAGE_PORT (9110 when the key is absent)
+#      — are bound to the loopback interface only, and 443 is not published
+#      at all (nothing listens behind it without TLS). With external storage
+#      there is no storage site behind the second port; it is published
+#      unused.
+#
+# `ports: !override` is what makes the loopback binding real. A plain `ports:`
+# list would merge with the base file's — compose appends sequences and keys
+# port entries by {ip, target, published, protocol} — so `127.0.0.1:80:80`
+# would sit next to the base file's `80:80` and port 80 would stay reachable
+# from every interface. Caddy's `localhost` site address is no substitute: it
+# matches the request's Host header, which any client on the network can set,
+# not the address the connection arrived on. The rendering tests
+# (scripts/selfhost/test/compose-rendering.test.sh and
+# install-allow-http.test.sh) pin that every published port carries
+# host_ip 127.0.0.1 and that 443 is absent.
+services:
+  caddy:
+    environment:
+      CODEMAGIC_PATCH_SITE_SCHEME: "http://"
+    ports: !override
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:${SELFHOST_HTTP_STORAGE_PORT:-9110}:${SELFHOST_HTTP_STORAGE_PORT:-9110}"

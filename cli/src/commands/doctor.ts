@@ -1,6 +1,23 @@
-import { resolve } from "node:path";
+import { prepareDoctorFix, applyDoctorFix, type DoctorFix } from "../doctor/fixes";
+import { canPromptOnStderr } from "./shared";
+import { doctorBlockers } from "../doctor/report";
+import { verifyDoctorDelivery, type PublicationCache } from "../doctor/deliveryVerification";
+import { basename, resolve } from "node:path";
 
 import { PRODUCT_NAME } from "../branding";
+import {
+  discoverDoctorProject,
+  readDoctorSource,
+  type DiscoveryFinding,
+  type PlatformDiscovery,
+} from "../doctor/discovery";
+import {
+  compareUrl,
+  httpUrl,
+  probeDownloadOrigin,
+  safeUrl,
+  redactUrlText,
+} from "../doctor/connectivity";
 import type { DoctorCommand } from "../commandTypes";
 import {
   loadCliConfig,
@@ -13,16 +30,19 @@ import {
   loadStoredCredential,
   resolveCredentialStorePath,
 } from "../credentialStore";
-import {
-  buildDownloadUrl,
-  fetchDeliveryJson,
-  type DeliveryJsonResponse,
-} from "../delivery";
 import { request } from "../http";
-import { resolveEffectiveContext, type EffectiveContext } from "../localContext";
-import { isRecord, PLAIN_PALETTE, type Palette } from "../output";
+import {
+  resolveEffectiveContext,
+  type EffectiveContext,
+} from "../localContext";
+import {
+  isInteractiveOutput,
+  isRecord,
+  PLAIN_PALETTE,
+  type Palette,
+} from "../output";
 import { HttpProblemError } from "../problem-details";
-import { createProgress, type Progress } from "../progress";
+import { createProgress, fitSpinnerLine, onInterruptCleanup, type Progress } from "../progress";
 import {
   detectNativePlatforms,
   detectProjectBundler,
@@ -44,6 +64,11 @@ import {
 export type DoctorCheckStatus = "fail" | "pass" | "skip" | "warn";
 
 export type DoctorCheckResult = {
+  severity?: "info";
+  reason?: string;
+  prerequisites?: string[];
+  scope?: "setup" | "delivery";
+  platform?: NativePlatform;
   advice?: string[];
   detail?: string;
   evidence?: Record<string, unknown>;
@@ -61,6 +86,8 @@ export type DoctorCheckGroup = {
 };
 
 export type DoctorResult = {
+  fixes?: Array<DoctorFix & { status: "available" | "applied" | "declined" | "failed"; detail?: string }>;
+  coverage: { setup: DoctorCoverage; delivery: DoctorCoverage };
   command: "doctor";
   exitCode: 0 | 1;
   groups: DoctorCheckGroup[];
@@ -108,9 +135,11 @@ type DoctorExecutionState = {
   token?: string;
 };
 
-type DoctorPlatformPlan = {
-  command: DoctorCommand;
-  platform: NativePlatform;
+export type DoctorCoverage = {
+  state: "complete" | "incomplete" | "not_requested";
+  outcome: "passed" | "warnings" | "failed" | "not_verified";
+  reasons: string[];
+  platforms?: Partial<Record<NativePlatform, DoctorCoverage>>;
 };
 
 /**
@@ -124,16 +153,96 @@ export async function executeDoctor(
   command: DoctorCommand,
   deps: CommandDeps,
 ): Promise<DoctorResult> {
-  const progress = createProgress({ label: "doctor", stderr: deps.stderr });
-
+  const controller = new AbortController();
+  const progress = createProgress({
+    label: "doctor",
+    title: fitSpinnerLine(`${PRODUCT_NAME} doctor · ${basename(resolve(command.projectRoot))} · ${command.platform ?? "configured iOS/Android"} · ${command.verifyDelivery ? "setup + delivery" : "setup"}`, deps.stderr?.columns),
+    neutralSteps: true,
+    stderr:
+      command.format !== "json" &&
+      deps.stdout !== undefined &&
+      isInteractiveOutput(deps.stdout) &&
+      !deps.env.CI
+        ? deps.stderr
+        : undefined,
+  });
+  const dispose = onInterruptCleanup(async () => {
+    controller.abort();
+    progress.fail("Doctor interrupted");
+  });
+  const scopedDeps: CommandDeps = {
+    ...deps,
+    fetch: (input, init) => {
+      controller.signal.throwIfAborted();
+      return deps.fetch(input, {
+        ...init,
+        signal: AbortSignal.any([
+          controller.signal,
+          ...(init?.signal ? [init.signal] : []),
+        ]),
+      });
+    },
+  };
   try {
-    const result = await runDoctorChecks(command, deps, progress);
-    progress.stop();
-    return result;
+    let result = await runDoctorChecks(command, scopedDeps, progress);
+    controller.signal.throwIfAborted();
+    progress.stop("Diagnostic checks completed");
+    if (command.fix) {
+      const fix = await prepareDoctorFix(command.projectRoot, command.fixServerUrl, result);
+      if (fix) {
+        let approved = command.yes === true;
+        if (!approved && command.format !== "json" && deps.stdout && isInteractiveOutput(deps.stdout) && canPromptOnStderr(deps, command.nonInteractive === true) && deps.confirm) {
+          deps.stdout.write(renderDoctorTable(sanitizeDoctorOutput(result), command));
+          approved = await deps.confirm({
+            initial: false,
+            message: `Create ${fix.preview.file} with serverUrl = ${fix.preview.value}?`,
+          });
+        }
+        controller.signal.throwIfAborted();
+        result.fixes = [{ ...fix.preview, status: approved ? "available" : "declined" }];
+        if (approved) {
+          try {
+            await applyDoctorFix(fix, controller.signal);
+          } catch {
+            controller.signal.throwIfAborted();
+            result.fixes = [{ ...fix.preview, status: "failed", detail: "Configuration could not be created safely. Check permissions or concurrent changes and rerun doctor." }];
+            result.exitCode = 1;
+            return sanitizeDoctorOutput(result);
+          }
+          result = await runDoctorChecks(command, scopedDeps, progress);
+          controller.signal.throwIfAborted();
+          progress.stop("Configuration saved; diagnostic recheck completed");
+          result.fixes = [{ ...fix.preview, status: "applied" }];
+        }
+      } else result.fixes = [];
+    }
+    return sanitizeDoctorOutput(result);
   } catch (error) {
     progress.fail();
     throw error;
+  } finally {
+    dispose();
+    controller.abort();
+    progress.stop();
   }
+}
+
+function sanitizeDoctorOutput<T>(value: T): T {
+  if (typeof value === "string")
+    return redactUrlText(value)
+      .replace(
+        /cm_pat_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+        "<redacted>",
+      ) as T;
+  if (Array.isArray(value)) return value.map(sanitizeDoctorOutput) as T;
+  if (isRecord(value))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        sanitizeDoctorOutput(item),
+      ]),
+    ) as T;
+  return value;
 }
 
 async function runDoctorChecks(
@@ -172,261 +281,385 @@ async function runDoctorChecks(
     id: "context",
     title: "Context",
   };
-  const platformPlans = resolveDoctorPlatformPlans(command, projectConfig.config);
+  progress.write("Inspecting application SDK configuration");
+  const discovery = await discoverDoctorProject(command, projectConfig.config);
+  const toCheck = (check: DiscoveryFinding): DoctorCheckResult => ({
+    id: check.id,
+    ...(check.severity ? { severity: check.severity } : {}),
+    ...(check.platform ? { platform: check.platform } : {}),
+    title:
+      check.id
+        .replace(/^sdk-/, "")
+        .replace(/-/g, " ")
+        .replace(/apiUrl/g, "API URL")
+        .replace(/downloadBaseUrl/g, "download URL")
+        .replace(/deploymentKey/g, "deployment key") +
+      (check.platform ? ` (${check.platform})` : ""),
+    status: check.status,
+    detail: check.detail,
+    reason: check.reason,
+    evidence: { sources: check.sources },
+    ...(check.advice ? { advice: check.advice } : {}),
+  });
   const projectContext = {
     projectRoot,
     projectRootExists: projectRootCheck.status === "pass",
   };
-
-  if (platformPlans.length > 0) {
-    const commonState: DoctorExecutionState = {};
-    progress.write("Checking control plane and project");
-    // The control-plane probes touch the network while the bundler probe only
-    // reads the project tree; they share no execution state, so they overlap.
-    const [controlPlaneChecks, bundlerCheck] = await Promise.all([
-      runControlPlaneBaseChecks(deps, command, commonState),
-      checkBundler(deps, command, projectContext),
-    ]);
-    const commonGroups: DoctorCheckGroup[] = [
-      contextGroup,
-      {
-        checks: controlPlaneChecks,
-        id: "control-plane",
-        title: "Control Plane",
-      },
-      {
-        checks: [bundlerCheck],
-        id: "bundler",
-        title: "Bundler",
-      },
-    ];
-
-    progress.write(
-      `Checking ${platformPlans.map((plan) => plan.platform).join(" and ")} delivery`,
-    );
-    // Each platform plan works on its own cloned state, so the plans are
-    // independent and run concurrently.
-    const planGroups = await Promise.all(
-      platformPlans.map(async (plan): Promise<DoctorCheckGroup[]> => {
-        const state = cloneDoctorExecutionState(commonState);
-        // Target resolution (network) and native inspection (filesystem)
-        // write to disjoint state fields; only the download probes need both.
-        const [targetChecks, nativeChecks] = await Promise.all([
-          runControlPlaneTargetChecks(deps, plan.command, state),
-          runNativeChecks(deps, plan.command, {
-            ...projectContext,
-            state,
-          }),
-        ]);
-        const downloadChecks = await runDownloadChecks(deps, plan.command, state);
-        const platformGroups: DoctorCheckGroup[] = [
-          {
-            checks: targetChecks,
-            id: `control-plane-${plan.platform}`,
-            title: `Control Plane (${plan.platform})`,
-          },
-          {
-            checks: nativeChecks,
-            id: `native-${plan.platform}`,
-            title: `Native Project (${plan.platform})`,
-          },
-          {
-            checks: downloadChecks,
-            id: `download-${plan.platform}`,
-            title: `Manifest And Download (${plan.platform})`,
-          },
-        ];
-
-        return [
-          ...platformGroups,
-          {
-            checks: runDeviceDebugHandoffChecks(plan.command, state, [
-              ...commonGroups,
-              ...platformGroups,
-            ]),
-            id: `device-${plan.platform}`,
-            title: `Device Debugging (${plan.platform})`,
-          },
-        ];
-      }),
-    );
-
-    return createDoctorResult([...commonGroups, ...planGroups.flat()]);
-  }
-
   const state: DoctorExecutionState = {};
   progress.write("Checking control plane and project");
-  // Control-plane resolution writes server/auth/app state, the native checks
-  // write platform/version state, and the bundler check writes none: disjoint
-  // fields, so all three pipelines overlap. Only the download probes read from
-  // both sides and have to wait.
-  const [controlPlaneChecks, nativeChecks, bundlerCheck] = await Promise.all([
-    runControlPlaneChecks(deps, command, state),
-    runNativeChecks(deps, command, {
-      ...projectContext,
-      state,
-    }),
+  const [baseChecks, bundlerCheck] = await Promise.all([
+    runControlPlaneBaseChecks(deps, command, state,
+      !command.team && !command.teamId &&
+      (discovery.platforms.some((item) => item.intent !== "not_configured")
+        ? discovery.platforms.filter((item) => item.intent !== "not_configured").every((item) => !!item.binding.appId)
+        : !!command.appId)),
     checkBundler(deps, command, projectContext),
   ]);
-  progress.write("Checking manifest delivery");
-  const downloadChecks = await runDownloadChecks(deps, command, state);
+  const sdkConfigCheck = await checkServerSdkConfig(deps, state);
   const groups: DoctorCheckGroup[] = [
     contextGroup,
     {
-      checks: controlPlaneChecks,
+      id: "sdk-project",
+      title: "SDK Project",
+      checks: discovery.findings.map(toCheck),
+    },
+    {
       id: "control-plane",
       title: "Control Plane",
+      checks: [...baseChecks, sdkConfigCheck],
     },
-    {
-      checks: nativeChecks,
-      id: "native",
-      title: "Native Project",
-    },
-    {
-      checks: [bundlerCheck],
-      id: "bundler",
-      title: "Bundler",
-    },
-    {
-      checks: downloadChecks,
-      id: "download",
-      title: "Manifest And Download",
-    },
+    { id: "bundler", title: "Bundler", checks: [bundlerCheck] },
   ];
-
-  groups.push({
-    checks: runDeviceDebugHandoffChecks(command, state, groups),
-    id: "device",
-    title: "Device Debugging",
-  });
-
+  const platforms = discovery.platforms.filter(
+    (item) => item.intent !== "not_configured",
+  );
+  for (const item of discovery.platforms.filter(
+    (item) => item.intent === "not_configured",
+  )) {
+    groups.push({
+      id: `sdk-${item.platform}`,
+      title: `SDK Configuration (${item.platform})`,
+      checks: item.findings
+        .map(toCheck)
+        .map((check) => ({ ...check, platform: item.platform })),
+    });
+  }
+  // No known OTA scope still gets useful CLI/server probes, never a guessed SDK binding.
+  const publicationCache: PublicationCache = new Map();
+  const plans: Array<PlatformDiscovery | undefined> = platforms.length
+    ? platforms
+    : [undefined];
+  for (const item of plans) {
+    const platform = item?.platform;
+    const suffix = platforms.length > 1 ? `-${platform}` : "";
+    const localState: DoctorExecutionState = { ...state, platform };
+    const bound = item?.binding.state === "resolved";
+    const selectors = item?.binding;
+    const plan: DoctorCommand = item
+      ? {
+          ...command,
+          platform,
+          unboundSelectors: item.binding.state === "unresolved" &&
+            (!!(command.app || command.appId) && !selectors?.app && !selectors?.appId || !!command.deploymentId && !selectors?.deploymentId),
+          app: selectors?.app,
+          appId: selectors?.appId,
+          deployment: selectors?.deployment,
+          deploymentId: selectors?.deploymentId,
+          deploymentKey:
+            platforms.length === 1 ? command.deploymentKey : undefined,
+        }
+      : command;
+    progress.write(
+      `Checking ${platform ?? "selected"} setup and download connectivity`,
+    );
+    const targetChecks = await runControlPlaneTargetChecks(
+      deps,
+      plan,
+      localState,
+    );
+    const nativeChecks =
+      item &&
+      !item.nativePresent &&
+      (item.findings.some(
+        (check) => check.id === "sdk-native" && check.reason === "deferred",
+      ) ||
+        item.intent === "unresolved")
+        ? [
+            {
+              id: "native-prebuild",
+              title: "Generated native project",
+              status: "skip" as const,
+              reason: "deferred",
+              detail:
+                "Native build evidence is unavailable; inspect the Expo configuration and generated project after prebuild/build. Doctor did not run prebuild.",
+            },
+          ]
+        : await runNativeChecks(deps, plan, {
+            ...projectContext,
+            state: localState,
+            iosVersionSource: item?.iosVersionSource,
+          });
+    const sdkChecks = item
+      ? [
+          ...item.findings.map(toCheck),
+          ...compareApplicationSettings(item, plan, localState),
+        ]
+      : [];
+    // Overrides get their own probe; they never erase app-source comparisons or failures.
+    const sources = [
+      item?.native?.downloadBaseUrl,
+      item?.expo?.downloadBaseUrl,
+    ].filter((source) => source?.state === "resolved");
+    const urls = [
+      ...new Set([
+        ...sources.map((source) => source!.value!),
+        ...(command.downloadBaseUrl ? [command.downloadBaseUrl] : []),
+      ]),
+    ];
+    const downloadChecks: DoctorCheckResult[] = urls.length
+      ? await Promise.all(
+          urls.map(async (url) => {
+            const check = await probeDownloadOrigin(deps.fetch, url);
+            return {
+              ...check,
+              evidence: {
+                ...check.evidence,
+                sources: sources
+                  .filter((source) => source?.value === url)
+                  .map((source) => source!.source),
+                override: command.downloadBaseUrl === url,
+              },
+            };
+          }),
+        )
+      : [
+          {
+            id: "download-connectivity",
+            title: "Download endpoint connectivity",
+            status: "skip",
+            reason: "unresolved",
+            detail:
+              "No resolved application download URL or explicit probe override is available.",
+          },
+        ];
+    const appSettings = item?.native ?? item?.expo;
+    const deliveryCommand = {
+      ...plan,
+      downloadBaseUrl:
+        command.downloadBaseUrl ??
+        (appSettings?.downloadBaseUrl.state === "resolved"
+          ? appSettings.downloadBaseUrl.value
+          : undefined),
+      deploymentKey:
+        plan.deploymentKey ??
+        (appSettings?.deploymentKey.state === "resolved" && bound
+          ? appSettings.deploymentKey.value
+          : undefined),
+    };
+    const deliveryChecks: DoctorCheckResult[] = command.verifyDelivery
+      ? await verifyDoctorDelivery({
+          fetch: deps.fetch, cache: publicationCache,
+          downloadBaseUrl: deliveryCommand.downloadBaseUrl,
+          deploymentKey: deliveryCommand.deploymentKey ?? localState.deployment?.deploymentKey,
+          version: localState.targetBinaryVersion ?? command.targetBinaryVersion,
+          currentHash: command.currentPackageHash,
+          serverUrl: localState.serverUrl, token: localState.token,
+          deploymentId: (deliveryCommand.deploymentKey === undefined || deliveryCommand.deploymentKey === localState.deployment?.deploymentKey) ? localState.deploymentId : undefined,
+        })
+      : [{ id: "delivery-not-requested", title: "Optional delivery verification", status: "skip", reason: "not_requested", detail: "Delivery verification was not requested. No release history, metadata, manifests, or OTA artifacts were requested." }];
+    const platformGroups: DoctorCheckGroup[] = [
+      {
+        id: `control-plane${suffix || "-target"}`,
+        title: `Control Plane${platform ? ` (${platform})` : ""}`,
+        checks: targetChecks,
+      },
+      {
+        id: `native${suffix}`,
+        title: `Native Project${platform ? ` (${platform})` : ""}`,
+        checks: nativeChecks,
+      },
+      {
+        id: `sdk-${platform ?? "unknown"}`,
+        title: `SDK Configuration (${platform ?? "unresolved"})`,
+        checks: sdkChecks,
+      },
+      {
+        id: `download${suffix}`,
+        title: `Download Connectivity${platform ? ` (${platform})` : ""}`,
+        checks: downloadChecks,
+      },
+      {
+        id: `delivery${suffix}`,
+        title: `Optional Delivery${platform ? ` (${platform})` : ""}`,
+        checks: deliveryChecks.map((check) => ({
+          ...check,
+          scope: "delivery",
+        })),
+      },
+    ];
+    for (const group of platformGroups)
+      group.checks = group.checks.map((check) => ({
+        ...check,
+        ...(platform ? { platform } : {}),
+      }));
+    groups.push(...platformGroups);
+  }
+  const preliminary = createDoctorResult(groups);
+  for (const item of plans) {
+    const platform = item?.platform;
+    const setup = platform
+      ? preliminary.coverage.setup.platforms?.[platform]
+      : preliminary.coverage.setup;
+    const complete = setup?.state === "complete" && setup.outcome !== "failed";
+    groups.push({
+      id: platforms.length > 1 ? `device-${platform}` : "device",
+      title: `Device Debugging${platform ? ` (${platform})` : ""}`,
+      checks: [
+        {
+          id: "device-debug-handoff",
+          title: "Device debugging handoff",
+          status: complete ? "pass" : "skip",
+          reason: "not_applicable",
+          ...(platform ? { platform } : {}),
+          detail: complete
+            ? "Evaluated setup assertions are complete; device behavior remains unverified."
+            : "Review setup findings before moving to device debugging.",
+          ...(complete && platform
+            ? { nextCommands: [`cmpatch debug ${platform}`] }
+            : {}),
+        },
+      ],
+    });
+  }
   return createDoctorResult(groups);
 }
 
-function resolveDoctorPlatformPlans(
-  command: DoctorCommand,
-  projectConfig: ProjectConfig,
-): DoctorPlatformPlan[] {
-  if (hasExplicitDoctorTarget(command)) {
-    return [];
-  }
-
-  const apps = projectConfig.apps;
-  if (apps === undefined) {
-    return [];
-  }
-
-  return (["ios", "android"] as const)
-    .flatMap((platform): DoctorPlatformPlan[] => {
-      const config = apps[platform];
-      if (config === undefined) {
-        return [];
-      }
-
-      return [
-        {
-          command: {
-            ...command,
-            ...(config.app !== undefined ? { app: config.app } : {}),
-            ...(config.deployment !== undefined
-              ? { deployment: config.deployment }
-              : {}),
-            platform,
-          },
-          platform,
-        },
-      ];
-    });
-}
-
-function hasExplicitDoctorTarget(command: DoctorCommand): boolean {
-  return (
-    command.app !== undefined ||
-    command.appId !== undefined ||
-    command.deployment !== undefined ||
-    command.deploymentId !== undefined ||
-    command.deploymentKey !== undefined ||
-    command.platform !== undefined
-  );
-}
-
-function cloneDoctorExecutionState(
+async function checkServerSdkConfig(
+  deps: CommandDeps,
   state: DoctorExecutionState,
-): DoctorExecutionState {
-  return {
-    ...(state.downloadBaseUrl !== undefined ? { downloadBaseUrl: state.downloadBaseUrl } : {}),
-    ...(state.serverUrl !== undefined ? { serverUrl: state.serverUrl } : {}),
-    ...(state.targetBinaryVersion !== undefined
-      ? { targetBinaryVersion: state.targetBinaryVersion }
-      : {}),
-    ...(state.teamId !== undefined ? { teamId: state.teamId } : {}),
-    ...(state.teams !== undefined ? { teams: state.teams } : {}),
-    ...(state.token !== undefined ? { token: state.token } : {}),
-  };
-}
-
-function runDeviceDebugHandoffChecks(
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-  priorGroups: DoctorCheckGroup[],
-): DoctorCheckResult[] {
-  const blockingChecks = priorGroups
-    .flatMap((group) => group.checks)
-    .filter(isDeviceDebugHandoffBlockedBy);
-
-  if (blockingChecks.length > 0) {
-    return [
-      {
-        detail: "Device log handoff waits for local, control-plane, and download checks to be clean.",
-        evidence: {
-          blockingChecks: blockingChecks.map((check) => check.id),
-        },
-        id: "device-debug-handoff",
+): Promise<DoctorCheckResult> {
+  const base = { id: "server-sdk-config", title: "Server SDK configuration" };
+  if (!state.serverUrl || !state.token)
+    return {
+      ...base,
+      status: "skip",
+      reason: "blocked",
+      prerequisites: ["auth"],
+      detail:
+        "Server comparison requires authentication; public connectivity remains independent.",
+    };
+  try {
+    const response = await doctorGet(
+      deps,
+      state.serverUrl,
+      "/v1/sdk-config",
+      state.token,
+    );
+    if (
+      !isRecord(response) ||
+      typeof response.download_base_url !== "string" ||
+      !httpUrl(response.download_base_url)
+    ) {
+      return {
+        ...base,
         status: "skip",
-        title: "Device debug handoff",
-      },
-    ];
-  }
-
-  const platform = state.platform ?? command.platform;
-  if (platform === undefined) {
-    return [
-      {
-        detail: "Device log handoff needs a resolved platform.",
-        id: "device-debug-handoff",
-        status: "skip",
-        title: "Device debug handoff",
-      },
-    ];
-  }
-
-  // A clean run passes: a healthy setup must end all-green, not with a
-  // standing warning. The device-log pointer stays on the check so the JSON
-  // shape and the renderer's closing hint still carry it.
-  return [
-    {
-      detail: "No setup issue was found before the device-side boundary. If updates still do not appear, collect device logs next.",
-      id: "device-debug-handoff",
-      advice: [
-        "Run the debug command while reproducing an update check on the device or simulator.",
-      ],
-      nextCommands: [`cmpatch debug ${platform}`],
+        reason: "unresolved",
+        detail:
+          "The SDK-config endpoint did not return a valid download_base_url.",
+      };
+    }
+    state.downloadBaseUrl = response.download_base_url;
+    return {
+      ...base,
       status: "pass",
-      title: "Device debug handoff",
-    },
-  ];
+      detail: "Server download configuration was retrieved.",
+      evidence: { downloadBaseUrl: safeUrl(state.downloadBaseUrl) },
+    };
+  } catch (error) {
+    return {
+      ...base,
+      status: "skip",
+      reason: "unresolved",
+      detail:
+        error instanceof HttpProblemError && error.responseStatus === 501
+          ? "Server SDK configuration is not available (HTTP 501)."
+          : "Server SDK configuration could not be retrieved.",
+      advice: [
+        "Inspect the server's download configuration; public endpoint probes still run independently.",
+      ],
+    };
+  }
 }
 
-function isDeviceDebugHandoffBlockedBy(check: DoctorCheckResult): boolean {
-  if (check.status === "fail" || check.status === "warn") {
-    return true;
+function compareApplicationSettings(
+  item: PlatformDiscovery,
+  command: DoctorCommand,
+  state: DoctorExecutionState,
+): DoctorCheckResult[] {
+  const checks: DoctorCheckResult[] = [];
+  for (const [kind, settings] of [
+    ["native", item.native],
+    ["expo", item.expo],
+  ] as const) {
+    if (!settings) continue;
+    const value = (field: keyof typeof settings) =>
+      settings[field].state === "resolved" ? settings[field].value : undefined;
+    checks.push(
+      compareUrl(
+        `sdk-${kind}-api-comparison`,
+        value("apiUrl"),
+        state.serverUrl,
+        settings.apiUrl.source,
+      ),
+    );
+    checks.push({
+      ...compareUrl(
+        `sdk-${kind}-download-comparison`,
+        value("downloadBaseUrl"),
+        state.downloadBaseUrl,
+        settings.downloadBaseUrl.source,
+      ),
+      prerequisites: ["server-sdk-config"],
+    });
+    const key = value("deploymentKey");
+    const verified =
+      item.binding.state === "resolved" &&
+      state.appId &&
+      state.deployment?.deploymentKey &&
+      key;
+    checks.push({
+      id: `sdk-${kind}-key-comparison`,
+      title: "Application deployment key",
+      status: verified
+        ? key === state.deployment!.deploymentKey
+          ? "pass"
+          : "fail"
+        : "skip",
+      ...(!verified
+        ? {
+            reason: "blocked",
+            prerequisites: [
+              "app",
+              "deployment",
+              `sdk-${kind}-deploymentKey`,
+              ...(item.binding.state === "unresolved"
+                ? ["sdk-platform-binding"]
+                : []),
+            ],
+          }
+        : {}),
+      detail: verified
+        ? key === state.deployment!.deploymentKey
+          ? "Application key matches the verified deployment."
+          : "Application key differs from the verified deployment; a CLI override does not repair the app."
+        : "Application key comparison needs resolved same-platform app, deployment, and source evidence.",
+      evidence: {
+        source: settings.deploymentKey.source,
+        overrideSupplied: command.deploymentKey !== undefined,
+      },
+    });
   }
-
-  if (isActionableSkip(check)) {
-    return true;
-  }
-
-  return check.status === "skip" && check.id !== "primary-manifest";
+  return checks;
 }
 
 function commandShapeCheck(command: DoctorCommand): DoctorCheckResult {
@@ -706,21 +939,11 @@ function checkEffectiveContext(
   };
 }
 
-async function runControlPlaneChecks(
-  deps: CommandDeps,
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): Promise<DoctorCheckResult[]> {
-  return [
-    ...(await runControlPlaneBaseChecks(deps, command, state)),
-    ...(await runControlPlaneTargetChecks(deps, command, state)),
-  ];
-}
-
 async function runControlPlaneBaseChecks(
   deps: CommandDeps,
   command: DoctorCommand,
   state: DoctorExecutionState,
+  teamIndependent = false,
 ): Promise<DoctorCheckResult[]> {
   const serverUrlCheck = checkServerUrl(command.serverUrl, state);
   // The readiness probe is unauthenticated and independent of the auth->team
@@ -729,7 +952,10 @@ async function runControlPlaneBaseChecks(
     checkServerHealth(deps, state),
     (async () => {
       const authCheck = await checkControlPlaneAuth(deps, command, state);
-      const teamCheck = await checkTeamResolution(command, state);
+      const teamCheck: DoctorCheckResult = teamIndependent
+        ? { id: "team", title: "Team", status: "skip", reason: "not_applicable", detail: "App IDs are verified directly; no team selection is required." }
+        : await checkTeamResolution(command, state);
+      if (teamCheck.status === "skip" && !teamCheck.reason) { teamCheck.reason = "blocked"; teamCheck.prerequisites = ["auth"]; }
       return [authCheck, teamCheck];
     })(),
   ]);
@@ -742,9 +968,17 @@ async function runControlPlaneTargetChecks(
   command: DoctorCommand,
   state: DoctorExecutionState,
 ): Promise<DoctorCheckResult[]> {
+  if (command.unboundSelectors) return ["app", "deployment", "deployment-key"].map((id) => ({
+    id, title: id, status: "skip" as const, reason: "blocked", prerequisites: ["sdk-platform-binding"],
+    detail: "App/deployment selectors were supplied, but cannot be assigned to this platform safely.",
+    advice: [`Select --platform ${command.platform} or configure its apps.${command.platform} mapping.`],
+  }));
   const appCheck = await checkAppResolution(deps, command, state);
   const deploymentCheck = await checkDeploymentResolution(deps, command, state);
   const deploymentKeyCheck = checkDeploymentKey(command, state);
+  if (appCheck.status === "skip" && (!state.token || !state.teamId)) { appCheck.reason = "blocked"; appCheck.prerequisites = [!state.token ? "auth" : "team"]; }
+  if (deploymentCheck.status === "skip" && !state.appId) { deploymentCheck.reason = "blocked"; deploymentCheck.prerequisites = ["app"]; }
+  if (deploymentKeyCheck.status === "skip" && !state.deployment) { deploymentKeyCheck.reason = "blocked"; deploymentKeyCheck.prerequisites = ["deployment"]; }
 
   return [
     appCheck,
@@ -768,11 +1002,12 @@ function checkServerUrl(
   }
 
   try {
-    const parsed = new URL(serverUrl);
+    const parsed = httpUrl(serverUrl);
+    if (!parsed) throw new Error("Invalid HTTP URL");
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return {
-        detail: `${serverUrl} does not use http or https.`,
-        evidence: { serverUrl },
+        detail: `${safeUrl(serverUrl)} does not use http or https.`,
+        evidence: { serverUrl: safeUrl(serverUrl) },
         id: "server-url",
         issues: ["The configured server URL has an unsupported protocol."],
         advice: [`Set a ${PRODUCT_NAME} API URL that starts with http:// or https://.`],
@@ -783,10 +1018,10 @@ function checkServerUrl(
 
     state.serverUrl = serverUrl;
     return {
-      detail: `Using control-plane server ${serverUrl}.`,
+      detail: `Using control-plane server ${safeUrl(serverUrl)}.`,
       evidence: {
         origin: parsed.origin,
-        serverUrl,
+        serverUrl: safeUrl(serverUrl),
       },
       id: "server-url",
       status: "pass",
@@ -794,8 +1029,8 @@ function checkServerUrl(
     };
   } catch (error) {
     return {
-      detail: `${serverUrl} is not a valid URL${formatErrorSuffix(error)}.`,
-      evidence: { serverUrl },
+      detail: `${safeUrl(serverUrl)} is not a valid URL${formatErrorSuffix(error)}.`,
+      evidence: { serverUrl: safeUrl(serverUrl) },
       id: "server-url",
       issues: ["The configured server URL cannot be parsed."],
       advice: ["Check `CODEMAGIC_PATCH_SERVER_URL` or run `cmpatch config set server-url <url>`."],
@@ -832,6 +1067,7 @@ async function checkServerHealth(
   } catch (error) {
     return {
       detail: formatRequestError(error),
+      ...(error instanceof DoctorRedirectError ? {reason: "redirect"} : {}),
       evidence: { url },
       id: "server-health",
       issues: ["The server readiness endpoint did not respond."],
@@ -848,9 +1084,9 @@ async function checkServerHealth(
     body = undefined;
   }
 
-  if (response.ok) {
+  if (response.ok && isRecord(body) && body.ok === true) {
     return {
-      detail: "Server is ready (control plane and database reachable).",
+      detail: "Server readiness endpoint reports ok=true.",
       evidence: {
         response: summarizeHealthResponse(body),
         url,
@@ -863,16 +1099,14 @@ async function checkServerHealth(
 
   if (response.status === 503) {
     return {
-      detail: "Server is running but not ready; its database readiness check failed.",
+      detail: "Server readiness endpoint returned HTTP 503.",
       evidence: {
-        ...(isRecord(body) && Array.isArray(body.checks)
-          ? { checks: body.checks }
-          : {}),
+        response: summarizeHealthResponse(body),
         url,
       },
       id: "server-health",
       issues: [
-        "The server is up but its readiness check is failing; the database may be unreachable.",
+        "Readiness failed; inspect server logs to establish the cause.",
       ],
       advice: [
         "Check the database container and the server logs (e.g. docker compose logs postgres server).",
@@ -883,7 +1117,7 @@ async function checkServerHealth(
   }
 
   return {
-    detail: `Server readiness endpoint responded with HTTP ${response.status}.`,
+    detail: `Server readiness endpoint returned HTTP ${response.status} with an unexpected readiness response.`,
     evidence: { url },
     id: "server-health",
     issues: ["The server readiness endpoint did not respond successfully."],
@@ -955,11 +1189,12 @@ async function checkControlPlaneAuth(
   } catch (error) {
     return {
       detail: formatRequestError(error),
+      ...(error instanceof DoctorRedirectError ? {reason: "redirect"} : {}),
       evidence: { authSource: authSource.kind },
       id: "auth",
       issues: [formatAuthFailureIssue(authSource.kind, error)],
       advice: [
-        authSource.kind === "stored"
+        error instanceof DoctorRedirectError ? "Use the verified canonical server URL; this is not evidence of an invalid token." : authSource.kind === "stored"
           ? `Run \`cmpatch login --server-url ${state.serverUrl}\` again.`
           : "Check the token passed with --token or CODEMAGIC_PATCH_TOKEN.",
       ],
@@ -983,14 +1218,9 @@ async function checkTeamResolution(
   }
 
   if (command.teamId !== undefined) {
-    state.teamId = command.teamId;
-    return {
-      detail: "Using explicit team id.",
-      evidence: { teamId: command.teamId },
-      id: "team",
-      status: "pass",
-      title: "Team",
-    };
+    const exists = state.teams.some(team => team.id === command.teamId);
+    if (exists) state.teamId = command.teamId;
+    return { id: "team", title: "Team", status: exists ? "pass" : "fail", detail: exists ? "Explicit team ID is accessible." : "Explicit team ID is not among the accessible teams.", evidence: { teamId: command.teamId } };
   }
 
   if (command.team !== undefined) {
@@ -1069,18 +1299,7 @@ async function checkAppResolution(
     };
   }
 
-  if (command.appId !== undefined) {
-    state.appId = command.appId;
-    return {
-      detail: "Using explicit app id.",
-      evidence: { appId: command.appId },
-      id: "app",
-      status: "pass",
-      title: "App",
-    };
-  }
-
-  if (command.app === undefined) {
+  if (command.app === undefined && command.appId === undefined) {
     return {
       detail: "No app selector was provided.",
       id: "app",
@@ -1090,7 +1309,7 @@ async function checkAppResolution(
     };
   }
 
-  if (state.teamId === undefined) {
+  if (state.teamId === undefined && (!command.appId || command.team || command.teamId)) {
     return {
       detail: "App resolution needs a resolved team.",
       id: "app",
@@ -1100,22 +1319,34 @@ async function checkAppResolution(
   }
 
   try {
+    if (command.appId) {
+      const response = await doctorGet(deps, state.serverUrl, `/v1/apps/${encodeURIComponent(command.appId)}`, state.token);
+      const app = isRecord(response) ? response.app : undefined;
+      const appTeam = isRecord(app) ? app.team_id : undefined;
+      if (!isNamedResource(app) || app.id !== command.appId || typeof appTeam !== "string") throw new Error("Invalid app response");
+      if ((command.team || command.teamId) && appTeam !== state.teamId) return {
+        id: "app", title: "App", status: "fail", detail: "The requested app does not belong to the selected team.",
+      };
+      state.appId = app.id;
+      return { id: "app", title: "App", status: "pass", detail: `Verified app ${app.name}.`, evidence: {appId: app.id, appName: app.name, teamId: appTeam} };
+    }
     const response = await doctorGet(
       deps,
       state.serverUrl,
-      `/v1/teams/${encodeURIComponent(state.teamId)}/apps`,
+      `/v1/teams/${encodeURIComponent(state.teamId!)}/apps`,
       state.token,
     );
     const apps = parseNamedResourceList(response, "apps");
-    const match = matchNamedResource(apps, command.app, "App");
+    const selector = command.app!;
+    const match = matchNamedResource(apps, selector, "App");
 
     if (match.kind !== "matched") {
-      return resourceMatchFailure("app", command.app, match);
+      return resourceMatchFailure("app", selector, match);
     }
 
     state.appId = match.resource.id;
     return {
-      detail: `Resolved app ${command.app}.`,
+      detail: `Resolved app ${match.resource.name}.`,
       evidence: {
         appId: match.resource.id,
         appName: match.resource.name,
@@ -1128,6 +1359,7 @@ async function checkAppResolution(
   } catch (error) {
     return {
       detail: formatRequestError(error),
+      ...(error instanceof DoctorRedirectError ? {reason: "redirect"} : {}),
       id: "app",
       issues: ["App resolution request failed."],
       advice: ["Run `cmpatch app list` with the same team selector."],
@@ -1151,18 +1383,7 @@ async function checkDeploymentResolution(
     };
   }
 
-  if (command.deploymentId !== undefined) {
-    state.deploymentId = command.deploymentId;
-    return {
-      detail: "Using explicit deployment id.",
-      evidence: { deploymentId: command.deploymentId },
-      id: "deployment",
-      status: "pass",
-      title: "Deployment",
-    };
-  }
-
-  if (command.deployment === undefined) {
+  if (command.deployment === undefined && command.deploymentId === undefined) {
     return {
       detail: "No deployment selector was provided.",
       id: "deployment",
@@ -1191,16 +1412,18 @@ async function checkDeploymentResolution(
       state.token,
     );
     const deployments = parseDeploymentList(response);
-    const match = matchNamedResource(deployments, command.deployment, "Deployment");
+    const selector = command.deploymentId ?? command.deployment!;
+    const candidates = command.deploymentId ? deployments.filter(resource => resource.id === command.deploymentId) : deployments;
+    const match = matchNamedResource(candidates, command.deploymentId ? candidates[0]?.name ?? selector : selector, "Deployment");
 
     if (match.kind !== "matched") {
-      return resourceMatchFailure("deployment", command.deployment, match);
+      return resourceMatchFailure("deployment", selector, match);
     }
 
     state.deployment = match.resource;
     state.deploymentId = match.resource.id;
     return {
-      detail: `Resolved deployment ${command.deployment}.`,
+      detail: `Resolved deployment ${match.resource.name}.`,
       evidence: {
         appId: state.appId,
         deploymentId: match.resource.id,
@@ -1216,6 +1439,7 @@ async function checkDeploymentResolution(
   } catch (error) {
     return {
       detail: formatRequestError(error),
+      ...(error instanceof DoctorRedirectError ? {reason: "redirect"} : {}),
       id: "deployment",
       issues: ["Deployment resolution request failed."],
       advice: ["Run `cmpatch deployment list` with the same app selector."],
@@ -1341,20 +1565,29 @@ async function resolveDoctorAuthSource(
   }
 }
 
+class DoctorRedirectError extends Error {
+  constructor(readonly target?: string) { super("Control-plane redirect"); }
+}
+
 async function doctorGet(
   deps: Pick<CommandDeps, "fetch">,
   serverUrl: string,
   pathname: string,
   token: string | undefined,
 ): Promise<unknown> {
-  return request(deps.fetch, buildApiUrl(serverUrl, pathname), {
-    headers:
-      token !== undefined
-        ? { authorization: `Bearer ${normalizeBearerToken(token)}` }
-        : {},
-    method: "GET",
+  const response = await deps.fetch(buildApiUrl(serverUrl, pathname), {
+    headers: token !== undefined ? { authorization: `Bearer ${normalizeBearerToken(token)}` } : {},
+    method: "GET", redirect: "manual",
     signal: AbortSignal.timeout(DOCTOR_REQUEST_TIMEOUT_MS),
   });
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get("location");
+    await response.body?.cancel();
+    let target: string | undefined;
+    try { target = location ? safeUrl(new URL(location, buildApiUrl(serverUrl, pathname)).toString()) : undefined; } catch { /* unavailable */ }
+    throw new DoctorRedirectError(target);
+  }
+  return request(async () => response, buildApiUrl(serverUrl, pathname), { method: "GET" });
 }
 
 function parseNamedResourceList(
@@ -1500,19 +1733,15 @@ function summarizeHealthResponse(response: unknown): Record<string, unknown> {
 }
 
 function formatRequestError(error: unknown): string {
+  if (error instanceof DoctorRedirectError) return `The control-plane endpoint redirected${error.target ? ` to ${error.target}` : ""}. No credentials were forwarded. Verify the canonical server URL and rerun with --server-url.`;
   if (isTimeoutError(error)) {
     return `The request did not respond within ${DOCTOR_REQUEST_TIMEOUT_MS / 1000} seconds.`;
   }
 
   if (error instanceof HttpProblemError) {
-    const title =
-      typeof error.problem.title === "string" ? error.problem.title : "Request failed";
-    const detail =
-      typeof error.problem.detail === "string" ? `: ${error.problem.detail}` : "";
-    return `${title} (${error.responseStatus})${detail}`;
+    return `Control-plane request failed (HTTP ${error.responseStatus}).`;
   }
-
-  return error instanceof Error ? error.message : String(error);
+  return "The control-plane request failed or returned an unexpected response.";
 }
 
 function formatAuthFailureIssue(
@@ -1564,551 +1793,8 @@ function capitalize(value: string): string {
   return value[0]!.toUpperCase() + value.slice(1);
 }
 
-async function runDownloadChecks(
-  deps: CommandDeps,
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): Promise<DoctorCheckResult[]> {
-  const downloadBaseUrlCheck = checkDownloadBaseUrl(command.downloadBaseUrl, state);
-  // The three delivery probes only read the resolved state, so they overlap.
-  const [deploymentMetaCheck, fallbackManifestCheck, primaryManifestCheck] =
-    await Promise.all([
-      checkDeploymentMeta(deps, command, state),
-      checkFallbackManifest(deps, command, state),
-      checkPrimaryManifest(deps, command, state),
-    ]);
-
-  return [
-    downloadBaseUrlCheck,
-    deploymentMetaCheck,
-    fallbackManifestCheck,
-    primaryManifestCheck,
-  ];
-}
-
-function checkDownloadBaseUrl(
-  downloadBaseUrl: string | undefined,
-  state: DoctorExecutionState,
-): DoctorCheckResult {
-  if (downloadBaseUrl === undefined) {
-    return {
-      detail: "Download checks need a client-facing download base URL.",
-      id: "download-base-url",
-      status: "skip",
-      title: "Download Base URL",
-    };
-  }
-
-  try {
-    const parsed = new URL(downloadBaseUrl);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return {
-        detail: `${downloadBaseUrl} does not use http or https.`,
-        evidence: { downloadBaseUrl },
-        id: "download-base-url",
-        issues: ["The configured download base URL has an unsupported protocol."],
-        advice: ["Use the client-facing CodemagicPatchDownloadBaseUrl value."],
-        status: "fail",
-        title: "Download Base URL",
-      };
-    }
-
-    state.downloadBaseUrl = downloadBaseUrl;
-    return {
-      detail: `Using download base URL ${downloadBaseUrl}.`,
-      evidence: {
-        downloadBaseUrl,
-        origin: parsed.origin,
-      },
-      id: "download-base-url",
-      status: "pass",
-      title: "Download Base URL",
-    };
-  } catch (error) {
-    return {
-      detail: `${downloadBaseUrl} is not a valid URL${formatErrorSuffix(error)}.`,
-      evidence: { downloadBaseUrl },
-      id: "download-base-url",
-      issues: ["The configured download base URL cannot be parsed."],
-      advice: ["Pass the client-facing CodemagicPatchDownloadBaseUrl value with --download-base-url."],
-      status: "fail",
-      title: "Download Base URL",
-    };
-  }
-}
-
-async function checkDeploymentMeta(
-  deps: Pick<CommandDeps, "fetch">,
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): Promise<DoctorCheckResult> {
-  if (state.downloadBaseUrl === undefined) {
-    return {
-      detail: "Deployment metadata check needs a valid download base URL.",
-      id: "deployment-meta",
-      status: "skip",
-      title: "Deployment metadata",
-    };
-  }
-
-  const keyResolution = resolveDeliveryDeploymentKey(command, state);
-  if (keyResolution.kind !== "resolved") {
-    return deliveryPrerequisiteSkip("deployment-meta", "Deployment metadata", keyResolution);
-  }
-
-  const url = buildDownloadUrl(state.downloadBaseUrl, [
-    keyResolution.deploymentKey,
-    "meta.json",
-  ]);
-
-  try {
-    const response = await fetchDeliveryJson(deps.fetch, url, {
-      timeoutMs: DOCTOR_REQUEST_TIMEOUT_MS,
-    });
-    if (!response.ok) {
-      return deliveryHttpFailure(
-        "deployment-meta",
-        "Deployment metadata",
-        response,
-        response.status === 404
-          ? "Deployment metadata was not found at the download base URL."
-          : "Deployment metadata request failed.",
-        response.status === 404
-          ? ["meta.json at the download base URL is missing for the selected deployment key."]
-          : ["Deployment metadata request did not complete successfully."],
-      );
-    }
-
-    const validation = validateDeploymentMeta(response.body);
-    if (!validation.ok) {
-      return {
-        detail: `Deployment metadata response is malformed: ${validation.error}.`,
-        evidence: { url },
-        id: "deployment-meta",
-        issues: [`meta.json at the download base URL does not match the expected ${PRODUCT_NAME} shape.`],
-        advice: [`Verify the public delivery endpoint points at ${PRODUCT_NAME} artifacts.`],
-        status: "fail",
-        title: "Deployment metadata",
-      };
-    }
-
-    return {
-      detail: "Deployment metadata is reachable at the download base URL.",
-      evidence: {
-        deploymentKeySource: keyResolution.source,
-        latestBinaryVersion: validation.latestBinaryVersion,
-        url,
-      },
-      id: "deployment-meta",
-      status: "pass",
-      title: "Deployment metadata",
-    };
-  } catch (error) {
-    return deliveryNetworkFailure(
-      "deployment-meta",
-      "Deployment metadata",
-      url,
-      error,
-    );
-  }
-}
-
-async function checkFallbackManifest(
-  deps: Pick<CommandDeps, "fetch">,
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): Promise<DoctorCheckResult> {
-  if (state.downloadBaseUrl === undefined) {
-    return {
-      detail: "Fallback manifest check needs a valid download base URL.",
-      id: "fallback-manifest",
-      status: "skip",
-      title: "Fallback manifest",
-    };
-  }
-
-  const keyResolution = resolveDeliveryDeploymentKey(command, state);
-  if (keyResolution.kind !== "resolved") {
-    return deliveryPrerequisiteSkip("fallback-manifest", "Fallback manifest", keyResolution);
-  }
-
-  const targetBinaryVersion = resolveDeliveryTargetBinaryVersion(command, state);
-  if (targetBinaryVersion === undefined) {
-    return {
-      detail: "Fallback manifest check needs a target binary version.",
-      id: "fallback-manifest",
-      issues: ["Manifest URL cannot be built without the binary version."],
-      advice: ["Pass --target-binary-version <version> or run doctor from a native project."],
-      status: "skip",
-      title: "Fallback manifest",
-    };
-  }
-
-  const url = buildDownloadUrl(state.downloadBaseUrl, [
-    keyResolution.deploymentKey,
-    targetBinaryVersion,
-    "manifest.json",
-  ]);
-
-  return checkManifestUrl(deps.fetch, {
-    id: "fallback-manifest",
-    kind: "fallback",
-    title: "Fallback manifest",
-    url,
-  });
-}
-
-async function checkPrimaryManifest(
-  deps: Pick<CommandDeps, "fetch">,
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): Promise<DoctorCheckResult> {
-  if (state.downloadBaseUrl === undefined) {
-    return {
-      detail: "Primary manifest check needs a valid download base URL.",
-      id: "primary-manifest",
-      status: "skip",
-      title: "Primary manifest",
-    };
-  }
-
-  if (command.currentPackageHash === undefined) {
-    return {
-      detail: "Primary manifest probing needs --current-package-hash.",
-      id: "primary-manifest",
-      status: "skip",
-      title: "Primary manifest",
-    };
-  }
-
-  const keyResolution = resolveDeliveryDeploymentKey(command, state);
-  if (keyResolution.kind !== "resolved") {
-    return deliveryPrerequisiteSkip("primary-manifest", "Primary manifest", keyResolution);
-  }
-
-  const targetBinaryVersion = resolveDeliveryTargetBinaryVersion(command, state);
-  if (targetBinaryVersion === undefined) {
-    return {
-      detail: "Primary manifest check needs a target binary version.",
-      id: "primary-manifest",
-      issues: ["Manifest URL cannot be built without the binary version."],
-      advice: ["Pass --target-binary-version <version> or run doctor from a native project."],
-      status: "skip",
-      title: "Primary manifest",
-    };
-  }
-
-  const url = buildDownloadUrl(state.downloadBaseUrl, [
-    keyResolution.deploymentKey,
-    targetBinaryVersion,
-    command.currentPackageHash,
-    "manifest.json",
-  ]);
-
-  return checkManifestUrl(deps.fetch, {
-    id: "primary-manifest",
-    kind: "primary",
-    title: "Primary manifest",
-    url,
-  });
-}
-
-async function checkManifestUrl(
-  fetchImpl: typeof globalThis.fetch,
-  input: {
-    id: "fallback-manifest" | "primary-manifest";
-    kind: "fallback" | "primary";
-    title: string;
-    url: string;
-  },
-): Promise<DoctorCheckResult> {
-  try {
-    const response = await fetchDeliveryJson(fetchImpl, input.url, {
-      timeoutMs: DOCTOR_REQUEST_TIMEOUT_MS,
-    });
-    if (!response.ok) {
-      return deliveryHttpFailure(
-        input.id,
-        input.title,
-        response,
-        response.status === 404
-          ? input.kind === "fallback"
-            ? "Fallback manifest was not found at the download base URL."
-            : "Primary manifest was not found at the download base URL."
-          : `${input.title} request failed.`,
-        response.status === 404
-          ? [
-              input.kind === "fallback"
-                ? "No healthy published OTA manifest exists for this binary version."
-                : "No pre-generated manifest exists for this current package hash.",
-            ]
-          : ["Manifest request did not complete successfully."],
-      );
-    }
-
-    const validation = validateManifest(response.body);
-    if (!validation.ok) {
-      return {
-        detail: `${input.title} response is malformed: ${validation.error}.`,
-        evidence: { url: input.url },
-        id: input.id,
-        issues: [`manifest.json at the download base URL does not match the expected ${PRODUCT_NAME} shape.`],
-        advice: [`Verify the public delivery endpoint points at ${PRODUCT_NAME} artifacts.`],
-        status: "fail",
-        title: input.title,
-      };
-    }
-
-    const summary = summarizeManifest(response.body);
-    if (summary.targetPackageHash === null) {
-      return {
-        detail: `${input.title} is reachable but does not target a healthy OTA release.`,
-        evidence: {
-          ...summary,
-          url: input.url,
-        },
-        id: input.id,
-        issues: ["The manifest reports that no OTA package is available."],
-        advice: ["Run `cmpatch release inspect --wait` for the expected release."],
-        status: "warn",
-        title: input.title,
-      };
-    }
-
-    return {
-      detail: `${input.title} is reachable at the download base URL.`,
-      evidence: {
-        ...summary,
-        url: input.url,
-      },
-      id: input.id,
-      status: "pass",
-      title: input.title,
-    };
-  } catch (error) {
-    return deliveryNetworkFailure(input.id, input.title, input.url, error);
-  }
-}
-
-type DeliveryDeploymentKeyResolution =
-  | {
-      deploymentKey: string;
-      kind: "resolved";
-      source: "resolved-deployment" | "supplied";
-    }
-  | {
-      advice: string[];
-      detail: string;
-      issues: string[];
-      kind: "missing";
-    };
-
-function resolveDeliveryDeploymentKey(
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): DeliveryDeploymentKeyResolution {
-  if (command.deploymentKey !== undefined) {
-    if (looksLikeCredential(command.deploymentKey)) {
-      return {
-        advice: ["Use the deployment key from `cmpatch deployment list`, not a personal access token."],
-        detail: "Download URL construction was skipped because the supplied deployment key looks like a credential.",
-        issues: ["A private credential may be wired as the client deployment key."],
-        kind: "missing",
-      };
-    }
-
-    return {
-      deploymentKey: command.deploymentKey,
-      kind: "resolved",
-      source: "supplied",
-    };
-  }
-
-  if (state.deployment?.deploymentKey !== undefined) {
-    return {
-      deploymentKey: state.deployment.deploymentKey,
-      kind: "resolved",
-      source: "resolved-deployment",
-    };
-  }
-
-  return {
-    advice: [
-      "Pass --deployment-key <key>, or resolve deployment by name so doctor can read it back.",
-    ],
-    detail: "Download URL construction needs a deployment key.",
-    issues: ["Download checks cannot run without the client deployment key."],
-    kind: "missing",
-  };
-}
-
-function resolveDeliveryTargetBinaryVersion(
-  command: DoctorCommand,
-  state: DoctorExecutionState,
-): string | undefined {
-  return state.targetBinaryVersion ?? command.targetBinaryVersion;
-}
-
-function deliveryPrerequisiteSkip(
-  id: "deployment-meta" | "fallback-manifest" | "primary-manifest",
-  title: string,
-  resolution: Exclude<DeliveryDeploymentKeyResolution, { kind: "resolved" }>,
-): DoctorCheckResult {
-  return {
-    detail: resolution.detail,
-    id,
-    issues: resolution.issues,
-    advice: resolution.advice,
-    nextCommands: ["cmpatch deployment list"],
-    status: "skip",
-    title,
-  };
-}
-
-function deliveryHttpFailure(
-  id: "deployment-meta" | "fallback-manifest" | "primary-manifest",
-  title: string,
-  response: DeliveryJsonResponse,
-  detail: string,
-  issues: string[],
-): DoctorCheckResult {
-  return {
-    detail: `${detail} (${formatHttpStatus(response.status)})`,
-    evidence: {
-      status: response.status,
-      url: response.url,
-    },
-    id,
-    issues,
-    advice: [
-      "Verify the client's CodemagicPatchDownloadBaseUrl and CodemagicPatchDeploymentKey values.",
-      "Retry after the release worker has published manifests.",
-    ],
-    nextCommands: ["cmpatch release inspect --wait"],
-    status: "fail",
-    title,
-  };
-}
-
 function isTimeoutError(error: unknown): boolean {
   return error instanceof Error && error.name === "TimeoutError";
-}
-
-function deliveryNetworkFailure(
-  id: "deployment-meta" | "fallback-manifest" | "primary-manifest",
-  title: string,
-  url: string,
-  error: unknown,
-): DoctorCheckResult {
-  return {
-    detail: isTimeoutError(error)
-      ? `The request did not respond within ${DOCTOR_REQUEST_TIMEOUT_MS / 1000} seconds.`
-      : error instanceof Error
-        ? error.message
-        : String(error),
-    evidence: { url },
-    id,
-    issues: ["Download request failed before a usable response was received."],
-    advice: ["Check the download base URL and network access."],
-    status: "fail",
-    title,
-  };
-}
-
-function validateDeploymentMeta(
-  value: unknown,
-): { latestBinaryVersion: string; ok: true } | { error: string; ok: false } {
-  if (!isRecord(value)) {
-    return { error: "expected an object", ok: false };
-  }
-
-  if (typeof value.latest_binary_version !== "string") {
-    return { error: "latest_binary_version must be a string", ok: false };
-  }
-
-  return {
-    latestBinaryVersion: value.latest_binary_version,
-    ok: true,
-  };
-}
-
-function validateManifest(
-  value: unknown,
-): { ok: true } | { error: string; ok: false } {
-  if (!isRecord(value)) {
-    return { error: "expected an object", ok: false };
-  }
-
-  if (
-    value.target_package_hash !== null &&
-    typeof value.target_package_hash !== "string"
-  ) {
-    return { error: "target_package_hash must be a string or null", ok: false };
-  }
-
-  if (typeof value.is_mandatory !== "boolean") {
-    return { error: "is_mandatory must be a boolean", ok: false };
-  }
-
-  if (
-    value.release_notes !== null &&
-    typeof value.release_notes !== "string"
-  ) {
-    return { error: "release_notes must be a string or null", ok: false };
-  }
-
-  if (typeof value.rollout_percentage !== "number") {
-    return { error: "rollout_percentage must be a number", ok: false };
-  }
-
-  if (
-    "full_bundle_url" in value &&
-    value.full_bundle_url !== undefined &&
-    typeof value.full_bundle_url !== "string"
-  ) {
-    return { error: "full_bundle_url must be a string", ok: false };
-  }
-
-  if (
-    "patch_url" in value &&
-    value.patch_url !== undefined &&
-    typeof value.patch_url !== "string"
-  ) {
-    return { error: "patch_url must be a string", ok: false };
-  }
-
-  return { ok: true };
-}
-
-function summarizeManifest(value: unknown): {
-  hasFullBundleUrl: boolean;
-  hasPatchUrl: boolean;
-  releaseLabel?: string;
-  targetPackageHash: null | string;
-} {
-  if (!isRecord(value)) {
-    return {
-      hasFullBundleUrl: false,
-      hasPatchUrl: false,
-      targetPackageHash: null,
-    };
-  }
-
-  return {
-    hasFullBundleUrl: typeof value.full_bundle_url === "string",
-    hasPatchUrl: typeof value.patch_url === "string",
-    ...(typeof value.release_label === "string"
-      ? { releaseLabel: value.release_label }
-      : {}),
-    targetPackageHash:
-      typeof value.target_package_hash === "string"
-        ? redactFingerprint(value.target_package_hash)
-        : null,
-  };
-}
-
-function formatHttpStatus(status: number): string {
-  return `HTTP ${status}`;
 }
 
 async function runNativeChecks(
@@ -2118,6 +1804,7 @@ async function runNativeChecks(
     projectRoot: string;
     projectRootExists: boolean;
     state: DoctorExecutionState;
+    iosVersionSource?: PlatformDiscovery["iosVersionSource"];
   },
 ): Promise<DoctorCheckResult[]> {
   const platformResolution = await resolveDoctorPlatform(deps, command, context);
@@ -2295,6 +1982,7 @@ async function checkTargetBinaryVersion(
   context: {
     projectRoot: string;
     projectRootExists: boolean;
+    iosVersionSource?: PlatformDiscovery["iosVersionSource"];
   },
   state: DoctorExecutionState,
 ): Promise<DoctorCheckResult> {
@@ -2343,9 +2031,42 @@ async function checkTargetBinaryVersion(
   }
 
   try {
-    const targetBinaryVersion = await resolveTargetBinaryVersion(deps, {
+    if (platform === "ios" && context.iosVersionSource && !context.iosVersionSource.plistFile) {
+      return {
+        id: "target-binary-version",
+        title: "Target binary version",
+        status: "skip",
+        reason: "unresolved",
+        detail: "The iOS application plist is not selected; a version from another target cannot be used.",
+        advice: ["Select --plist-file <app-plist-path> or pass --target-binary-version <version>."],
+      };
+    }
+    const selectedFile = platform === "ios"
+      ? command.plistFile ?? context.iosVersionSource?.plistFile
+      : command.gradleFile;
+    const selectedPath = selectedFile === undefined ? undefined : resolve(context.projectRoot, selectedFile);
+    const selectedSource = selectedPath === undefined ? undefined : await readDoctorSource(selectedPath);
+    if (selectedSource !== undefined && selectedSource.state !== "resolved") {
+      return {
+        id: "target-binary-version",
+        title: "Target binary version",
+        status: selectedSource.state === "missing" ? "fail" : "skip",
+        detail: "The selected binary-version source could not be read within the diagnostic limits.",
+        evidence: { source: selectedPath, reason: selectedSource.reason },
+        advice: ["Inspect the selected file or pass --target-binary-version <version>."],
+      };
+    }
+    const targetBinaryVersion = await resolveTargetBinaryVersion({
+      ...deps,
+      readFile: file => selectedSource !== undefined && resolve(file) === selectedPath
+        ? Promise.resolve(Buffer.from(selectedSource.text!, "utf8"))
+        : deps.readFile(file),
+    }, {
       platform,
       projectRoot: context.projectRoot,
+      ...(platform === "ios" ? context.iosVersionSource : {}),
+      ...(command.plistFile !== undefined ? { plistFile: command.plistFile } : {}),
+      ...(command.gradleFile !== undefined ? { gradleFile: command.gradleFile } : {}),
     });
 
     state.targetBinaryVersion = targetBinaryVersion;
@@ -2661,7 +2382,7 @@ function formatErrorSuffix(error: unknown): string {
     return "";
   }
 
-  return ` (${error.message})`;
+  return " (source could not be read or parsed)";
 }
 
 function redactFingerprint(value: string): string {
@@ -2681,19 +2402,57 @@ export function renderDoctorTable(
     throw new UsageError("Cannot render doctor output: invalid doctor result");
   }
 
-  const lines = [palette.heading(`${PRODUCT_NAME} doctor`), ""];
+  const platforms = Object.keys(result.coverage.setup.platforms ?? {});
+  const lines = [
+    palette.heading(`${PRODUCT_NAME} doctor · ${basename(resolve(command.projectRoot))}`),
+    palette.dim(`Platforms: ${platforms.length ? platforms.join(", ") : command.platform ?? "not determined"} · ${command.verifyDelivery ? "Setup and delivery verification" : "Setup checks; delivery not requested"}`),
+    "", renderVerdict(result, palette), "",
+  ];
+  const afterFix = result.fixes?.some((fix) => fix.status === "applied") === true;
+  if (afterFix) lines.push(result.groups.some((group) => group.checks.some(isProblemCheck))
+    ? "Configuration saved and diagnostics rechecked. Remaining findings:"
+    : "Configuration saved and diagnostics rechecked. No remaining actionable findings.");
+  const blockers = doctorBlockers(result.groups);
 
   for (const group of result.groups) {
+    if (afterFix && !command.verbose && !group.checks.some(isProblemCheck) && !group.checks.some(isNoticeCheck)) continue;
     lines.push(renderGroupLine(group, palette));
     const visibleChecks = command.verbose
       ? group.checks
-      : group.checks.filter(isProblemCheck);
+      : group.checks.filter((check) => !blockers.has(check) && (isProblemCheck(check) || isNoticeCheck(check)));
     for (const check of visibleChecks) {
       lines.push(...renderCheckLines(check, palette, command.verbose === true));
     }
+    if (!command.verbose) {
+      const affected = new Map<DoctorCheckResult, number>();
+      for (const check of group.checks) {
+        for (const root of blockers.get(check) ?? []) {
+          affected.set(root, (affected.get(root) ?? 0) + 1);
+        }
+      }
+      for (const [root, count] of affected) {
+        lines.push(palette.dim(`  ○ ${count} ${count === 1 ? "check" : "checks"} blocked by ${root.title} [${root.id}${root.platform ? ` / ${root.platform}` : ""}].`));
+      }
+    }
   }
 
-  lines.push("", renderVerdict(result, palette));
+  lines.push("");
+  const coverageLine = (label: string, coverage: DoctorResult["coverage"]["setup"]) =>
+    `${label}: ${coverage.state.replaceAll("_", " ")} (${coverage.outcome.replaceAll("_", " ")}).`;
+  lines.push(coverageLine("Setup", result.coverage.setup));
+  lines.push(coverageLine("Delivery", result.coverage.delivery));
+  if (result.coverage.delivery.state === "not_requested") {
+    lines.push("Run `cmpatch doctor --verify-delivery` to check published artifacts.");
+  }
+  lines.push("Static/CLI evidence does not verify behavior on a device.");
+  if (result.fixes) {
+    if (!result.fixes.length) lines.push("No supported configuration fixes are available for these inputs.");
+    for (const fix of result.fixes) {
+      lines.push(`Configuration fix: ${fix.status} — ${fix.file} (${fix.field}).`);
+      if (fix.detail) lines.push(fix.detail);
+      if (fix.status === "declined") lines.push("No file was created. Use an interactive terminal or --fix --yes to apply this configuration-only fix.");
+    }
+  }
 
   const handoffHint = renderHandoffHint(result);
   if (handoffHint !== null) {
@@ -2749,7 +2508,7 @@ function rollupGroupStatus(group: DoctorCheckGroup): DoctorCheckStatus {
     return "warn";
   }
 
-  if (group.checks.every((check) => check.status === "skip")) {
+  if (group.checks.every((check) => check.status === "skip") || group.checks.some(isDeliveryBoundary)) {
     return "skip";
   }
 
@@ -2760,7 +2519,7 @@ function renderGroupLine(group: DoctorCheckGroup, palette: Palette): string {
   const status = rollupGroupStatus(group);
 
   if (status === "skip") {
-    return `${paintStatus(status, palette)} ${palette.dim(`${group.title} — skipped`)}`;
+    return `${paintStatus(status, palette)} ${palette.dim(`${group.title} — ${group.checks.some(isDeliveryBoundary) ? "verification incomplete" : "skipped"}`)}`;
   }
 
   return `${paintStatus(status, palette)} ${group.title}`;
@@ -2781,7 +2540,7 @@ function renderCheckLines(
 ): string[] {
   const [firstIssue, ...remainingIssues] = check.issues ?? [];
   const lines = [
-    `  ${paintStatus(check.status, palette)} ${check.title}${
+    `  ${check.severity === "info" ? palette.dim("i") : paintStatus(check.status, palette)} ${check.title}${
       firstIssue !== undefined ? ` — ${firstIssue}` : ""
     }`,
   ];
@@ -2821,6 +2580,9 @@ function nextCommandsNotInAdvice(check: DoctorCheckResult): string[] {
 }
 
 function renderVerdict(result: DoctorResult, palette: Palette): string {
+  if (result.fixes?.some((fix) => fix.status === "failed")) {
+    return palette.err("✗ Configuration fix could not be applied; review the fix result below.");
+  }
   const counts = palette.dim(`(${renderSummaryCounts(result.summary)})`);
   const failedAreas = result.groups.filter((group) =>
     group.checks.some((check) => check.status === "fail"),
@@ -2842,9 +2604,15 @@ function renderVerdict(result: DoctorResult, palette: Palette): string {
     )} ${counts}`;
   }
 
-  return `${palette.ok(
-    "✓ No issues found. Your setup is ready for OTA updates.",
-  )} ${counts}`;
+  if (result.coverage.setup.state !== "complete") {
+    return `${palette.dim("○ No confirmed failures; setup verification is incomplete.")} ${counts}`;
+  }
+  if (result.coverage.delivery.state === "incomplete") {
+    return `${palette.dim("○ Setup checks passed; delivery verification is incomplete.")} ${counts}`;
+  }
+  return `${palette.ok(result.coverage.delivery.state === "complete"
+    ? "✓ Setup and published artifact accessibility checks passed."
+    : "✓ Evaluated setup checks passed.")} ${counts}`;
 }
 
 /**
@@ -2873,11 +2641,76 @@ function renderHandoffHint(result: DoctorResult): string | null {
 function countHiddenChecks(result: DoctorResult): number {
   return result.groups
     .flatMap((group) => group.checks)
-    .filter((check) => !isProblemCheck(check)).length;
+    .filter((check) => !isProblemCheck(check) && !isNoticeCheck(check)).length;
 }
 
 function createDoctorResult(groups: DoctorCheckGroup[]): DoctorResult {
+  for (const group of groups)
+    for (const check of group.checks) {
+      check.scope ??= "setup";
+      if (check.status === "skip") check.reason ??= "unresolved";
+      if (check.reason === "blocked" && !check.prerequisites)
+        check.prerequisites = ["auth"];
+    }
   const checks = groups.flatMap((group) => group.checks);
+  const summarizeScope = (items: DoctorCheckResult[]): DoctorCoverage => {
+    const applicable = items.filter(
+      (check) =>
+        check.severity !== "info" &&
+        !["not_applicable", "not_configured"].includes(check.reason ?? ""),
+    );
+    const reasons = [
+      ...new Set(
+        applicable
+          .filter(
+            (check) => check.status === "skip" || ["unresolved", "deferred"].includes(check.reason ?? ""),
+          )
+          .map((check) => check.reason ?? "unresolved"),
+      ),
+    ];
+    const state =
+      applicable.length > 0 &&
+      applicable.every((check) => check.reason === "not_requested")
+        ? "not_requested"
+        : !applicable.length || reasons.length
+          ? "incomplete"
+          : "complete";
+    return {
+      state,
+      outcome: applicable.some((check) => check.status === "fail")
+        ? "failed"
+        : state !== "complete"
+          ? "not_verified"
+          : applicable.some((check) => check.status === "warn")
+            ? "warnings"
+            : "passed",
+      reasons,
+    };
+  };
+  const coverageFor = (scope: "setup" | "delivery"): DoctorCoverage => {
+    const scoped = checks.filter((check) => check.scope === scope);
+    const shared = scoped.filter((check) => !check.platform);
+    return {
+      ...summarizeScope(scoped),
+      platforms: Object.fromEntries(
+        (["ios", "android"] as const)
+          .filter((platform) =>
+            scoped.some(
+              (check) =>
+                check.platform === platform &&
+                check.reason !== "not_configured",
+            ),
+          )
+          .map((platform) => [
+            platform,
+            summarizeScope([
+              ...shared,
+              ...scoped.filter((check) => check.platform === platform),
+            ]),
+          ]),
+      ),
+    };
+  };
   const summary = {
     fail: countChecks(checks, "fail"),
     pass: countChecks(checks, "pass"),
@@ -2888,6 +2721,10 @@ function createDoctorResult(groups: DoctorCheckGroup[]): DoctorResult {
 
   return {
     command: "doctor",
+    coverage: {
+      setup: coverageFor("setup"),
+      delivery: coverageFor("delivery"),
+    },
     exitCode: summary.fail > 0 ? 1 : 0,
     groups,
     summary,
@@ -2968,7 +2805,17 @@ function formatCount(
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function isDeliveryBoundary(check: DoctorCheckResult): boolean {
+  return check.status === "skip" && ["no_artifact", "embedded_target"].includes(check.reason ?? "");
+}
+
+function isNoticeCheck(check: DoctorCheckResult): boolean {
+  return check.severity === "info" || isDeliveryBoundary(check);
+}
+
 function isActionableSkip(check: DoctorCheckResult): boolean {
+  if (isNoticeCheck(check)) return false;
+  if (check.status === "skip" && ["blocked", "unresolved", "deferred"].includes(check.reason ?? "")) return true;
   return (
     check.status === "skip" &&
     ((check.issues?.length ?? 0) > 0 ||

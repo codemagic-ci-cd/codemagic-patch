@@ -23,7 +23,7 @@ import { useToast } from "../../../components/overlay/ToastProvider";
 import type { ProblemBehavior } from "../../../api/problem";
 import type { Release } from "../../../model/release";
 import { buttonVariants } from "../../../components/ui/Button";
-import { CALLOUT, CALLOUT_BLOCK, CALLOUT_TONE } from "../../../components/ui/callout";
+import { CALLOUT, CALLOUT_TONE } from "../../../components/ui/callout";
 import {
   FIELD,
   FIELD_ERR,
@@ -124,7 +124,6 @@ function RolloutModalContent({
       onClose={requestClose}
       title="Increase rollout"
       description="Rollout can only increase. Set to 100 to complete."
-      icon={<TrendUpIcon />}
       footer={
         <>
           <button
@@ -208,7 +207,6 @@ function RolloutModalContent({
               </span>
             ) : (
               <span id={hintId} className={FIELD_ERR}>
-                <AlertIcon />
                 {validationMessage}
               </span>
             )
@@ -231,7 +229,7 @@ function RolloutModalContent({
           </div>
         </div>
         {patchMutation.isError ? (
-          <div className={`${CALLOUT} ${CALLOUT_TONE.danger} ${CALLOUT_BLOCK} mt-[18px]`} role="alert">
+          <div className={`${CALLOUT} ${CALLOUT_TONE.danger} mt-[18px]`} role="alert">
             <AlertIcon />
             <div>
               {behavior === "blocking-job" ? (
@@ -295,15 +293,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function TrendUpIcon() {
-  return (
-    <IconSvg>
-      <polyline points="3 17 9 11 13 15 21 7" />
-      <polyline points="15 7 21 7 21 13" />
-    </IconSvg>
   );
 }
 

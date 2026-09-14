@@ -120,7 +120,7 @@ export function MobileNavDrawer({ open, onClose, teamId }: MobileNavDrawerProps)
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex animate-fade bg-[rgba(10,14,34,.5)] backdrop-blur-[4px] shell:hidden"
+      className="fixed inset-0 z-[100] flex animate-fade bg-overlay shell:hidden"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onClose();

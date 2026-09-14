@@ -25,6 +25,8 @@ import {
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 
+import { isInternalKey } from "./internal-key";
+
 import type {
   GetResult,
   HeadResult,
@@ -37,11 +39,13 @@ import type {
 
 export interface S3StorageAdapterOptions {
   bucket: string;
+  internalBucket?: string;
   client: S3Client;
 }
 
 export class S3StorageAdapter implements StorageAdapter {
   private readonly bucket: string;
+  private readonly internalBucket: string;
   private readonly client: S3Client;
 
   constructor(options: S3StorageAdapterOptions) {
@@ -49,7 +53,13 @@ export class S3StorageAdapter implements StorageAdapter {
       throw new Error("S3StorageAdapter: bucket must not be empty");
     }
 
+    if (options.internalBucket !== undefined &&
+        (!options.internalBucket.trim() || options.internalBucket === options.bucket)) {
+      throw new Error("S3StorageAdapter: internalBucket must be nonempty and different from bucket");
+    }
+
     this.bucket = options.bucket;
+    this.internalBucket = options.internalBucket ?? options.bucket;
     this.client = options.client;
   }
 
@@ -64,7 +74,7 @@ export class S3StorageAdapter implements StorageAdapter {
       client: this.client,
       params: {
         Body: body,
-        Bucket: this.bucket,
+        Bucket: this.bucketFor(key),
         CacheControl: options?.cacheControl,
         ContentType: options?.contentType,
         Key: key,
@@ -93,7 +103,7 @@ export class S3StorageAdapter implements StorageAdapter {
   async get(key: string): Promise<GetResult | null> {
     try {
       const response = await this.client.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        new GetObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
       );
 
       const body = response.Body;
@@ -127,7 +137,7 @@ export class S3StorageAdapter implements StorageAdapter {
   async head(key: string): Promise<HeadResult | null> {
     try {
       const response = await this.client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+        new HeadObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
       );
 
       return {
@@ -147,14 +157,14 @@ export class S3StorageAdapter implements StorageAdapter {
 
   async delete(key: string): Promise<void> {
     await this.client.send(
-      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+      new DeleteObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
     );
   }
 
   async list(prefix: string, options?: ListOptions): Promise<ListResult> {
     const response = await this.client.send(
       new ListObjectsV2Command({
-        Bucket: this.bucket,
+        Bucket: this.bucketFor(prefix),
         ContinuationToken: options?.cursor,
         MaxKeys: options?.maxKeys,
         Prefix: prefix,
@@ -178,11 +188,15 @@ export class S3StorageAdapter implements StorageAdapter {
   async copy(sourceKey: string, destinationKey: string): Promise<void> {
     await this.client.send(
       new CopyObjectCommand({
-        Bucket: this.bucket,
-        CopySource: `${this.bucket}/${encodeS3CopySource(sourceKey)}`,
+        Bucket: this.bucketFor(destinationKey),
+        CopySource: `${this.bucketFor(sourceKey)}/${encodeS3CopySource(sourceKey)}`,
         Key: destinationKey,
       }),
     );
+  }
+
+  private bucketFor(key: string): string {
+    return isInternalKey(key) ? this.internalBucket : this.bucket;
   }
 
   /**
