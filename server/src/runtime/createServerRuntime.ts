@@ -132,6 +132,7 @@ import {
 import { METRICS_FAILURE_DISTRIBUTION_LIMIT } from "../plugins/api/routeConstants";
 import { createBitbucketAuthNAdapter } from "../app/bitbucketAuthNAdapter";
 import { createGitHubAuthNAdapter } from "../app/githubAuthNAdapter";
+import { createGitlabAuthNAdapter } from "../app/gitlabAuthNAdapter";
 import {
   createGitHubUserLookupService,
   type GitHubUserLookupService,
@@ -318,10 +319,11 @@ export async function createServerRuntime(
     needsControlPlaneAuth &&
     !config.githubOAuth &&
     !config.bitbucketOAuth &&
+    !config.gitlabOAuth &&
     !options.authNAdapter
   ) {
     throw new Error(
-      "GITHUB_OAUTH_CLIENT_ID or BITBUCKET_OAUTH_CLIENT_ID is required when control-plane auth is enabled",
+      "GITHUB_OAUTH_CLIENT_ID, BITBUCKET_OAUTH_CLIENT_ID, or GITLAB_OAUTH_CLIENT_ID is required when control-plane auth is enabled",
     );
   }
 
@@ -398,6 +400,18 @@ export async function createServerRuntime(
         }),
         allowedRedirectUris: config.bitbucketOAuth.allowedRedirectUris,
         provider: "bitbucket",
+      });
+    }
+    if (config.gitlabOAuth) {
+      authNAdapterRegistrations.push({
+        adapter: createGitlabAuthNAdapter({
+          apiBaseUrl: config.gitlabOAuth.apiBaseUrl,
+          baseUrl: config.gitlabOAuth.baseUrl,
+          clientId: config.gitlabOAuth.clientId,
+          clientSecret: config.gitlabOAuth.clientSecret,
+        }),
+        allowedRedirectUris: config.gitlabOAuth.allowedRedirectUris,
+        provider: "gitlab",
       });
     }
     const authNAdapter =
@@ -486,6 +500,16 @@ export async function createServerRuntime(
             },
           ]
         : []),
+      ...(config.gitlabOAuth
+        ? [
+            {
+              authorizeEndpoint: `${config.gitlabOAuth.baseUrl}/oauth/authorize`,
+              clientId: config.gitlabOAuth.clientId,
+              provider: "gitlab",
+              scopes: config.gitlabOAuth.scopes,
+            },
+          ]
+        : []),
     ];
     const oauthWebConfig: OAuthWebConfig | undefined =
       options.oauthWebConfig ??
@@ -493,7 +517,7 @@ export async function createServerRuntime(
         ? { providers: oauthWebConfigProviders }
         : undefined);
 
-    // The env parser's fail-fast only covers env-driven GitHub/Bitbucket
+    // The env parser's fail-fast only covers env-driven GitHub/Bitbucket/GitLab
     // configs; an embedder injecting authNAdapter/oauthWebConfig bypasses it.
     // Without the CLI auth secret such a runtime would pass the CLI's
     // web-config probe, complete the browser sign-in, and then answer 501 at

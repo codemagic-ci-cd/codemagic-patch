@@ -524,9 +524,9 @@ ensure_selfhost_oauth_env() {
   local env_changed=0
 
   # The server refuses to boot in MODE=all/api unless at least one OAuth
-  # provider (GitHub or Bitbucket) is configured.
-  if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_ID:-}" ]; then
-    fail_selfhost "Neither GITHUB_OAUTH_CLIENT_ID nor BITBUCKET_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE}. At least one OAuth sign-in provider is required. Create a GitHub OAuth App or a Bitbucket OAuth consumer and add its client id and secret to the env file, then rerun. Existing API tokens keep working."
+  # provider (GitHub, Bitbucket, or GitLab) is configured.
+  if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITLAB_OAUTH_CLIENT_ID:-}" ]; then
+    fail_selfhost "Neither GITHUB_OAUTH_CLIENT_ID, BITBUCKET_OAUTH_CLIENT_ID, nor GITLAB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE}. At least one OAuth sign-in provider is required. Create a GitHub OAuth App, a Bitbucket OAuth consumer, or a GitLab application and add its client id and secret to the env file, then rerun. Existing API tokens keep working."
   fi
 
   # Per-provider config is all-or-nothing: the server refuses to boot with a
@@ -540,6 +540,9 @@ ensure_selfhost_oauth_env() {
   fi
   if [ -n "${BITBUCKET_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_SECRET:-}" ]; then
     fail_selfhost "BITBUCKET_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but BITBUCKET_OAUTH_CLIENT_SECRET is missing. Add the consumer secret (or remove the client id), then rerun."
+  fi
+  if [ -n "${GITLAB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITLAB_OAUTH_CLIENT_SECRET:-}" ]; then
+    fail_selfhost "GITLAB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITLAB_OAUTH_CLIENT_SECRET is missing. Add the application secret (or remove the client id), then rerun."
   fi
 
   # OAUTH_CLI_AUTH_SECRET signs the CLI browser-login authorization codes.

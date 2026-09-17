@@ -33,8 +33,9 @@ yarn install
 
 ## Run The Server Locally
 
-API-capable modes (`MODE=all` and `MODE=api`) **require GitHub OAuth** — the
-server refuses to boot without `GITHUB_OAUTH_CLIENT_ID`. Run Postgres, then start
+API-capable modes (`MODE=all` and `MODE=api`) **require OAuth** — the
+server refuses to boot without `GITHUB_OAUTH_CLIENT_ID`,
+`BITBUCKET_OAUTH_CLIENT_ID`, or `GITLAB_OAUTH_CLIENT_ID`. Run Postgres, then start
 the server with the OAuth env configured. From the repository root:
 
 ```bash
@@ -79,7 +80,11 @@ trimming and at least 32 characters long when worker capabilities are enabled in
 The GitHub OAuth app needs an **Authorization callback URL**
 (`https://<host>/auth/callback`) and a client secret. `GITHUB_OAUTH_SCOPES`
 defaults to `read:user user:email`; `GITHUB_OAUTH_BASE_URL` and
-`GITHUB_API_BASE_URL` default to GitHub.com. For custom deployments, provide the
+`GITHUB_API_BASE_URL` default to GitHub.com. Bitbucket uses
+`BITBUCKET_OAUTH_CLIENT_ID` / `BITBUCKET_OAUTH_CLIENT_SECRET` (consumer with
+the account + email scopes); GitLab uses `GITLAB_OAUTH_CLIENT_ID` /
+`GITLAB_OAUTH_CLIENT_SECRET` (application with the `read_user` scope,
+`GITLAB_BASE_URL` defaulting to `https://gitlab.com`). For custom deployments, provide the
 same environment variables through your platform's secret/config system.
 
 ### First admin
@@ -87,9 +92,9 @@ same environment variables through your platform's secret/config system.
 There is no token-minting bootstrap step. The single team is provisioned on boot
 as the fixed `default-team` (the name is not configurable); team creation is removed from
 the CLI and dashboard. The first admin account is created the first time an email
-listed in `INITIAL_ADMIN_EMAILS` signs in via GitHub OAuth (it is allowed past
+listed in `INITIAL_ADMIN_EMAILS` signs in via OAuth (it is allowed past
 invite-only registration). That email must match the **verified** primary email
-of the admin's GitHub account — that first sign-in also makes the admin the
+of the admin's GitHub, Bitbucket, or GitLab account — that first sign-in also makes the admin the
 team's owner:
 
 ```bash
@@ -156,7 +161,7 @@ curl -X POST http://127.0.0.1:3000/v1/auth/tokens \
 OTA manifest and download URLs are data-plane download URLs (object storage, optionally fronted by a CDN). They are
 not protected by control-plane bearer tokens. Current user auth supports
 DB-backed personal API tokens and OAuth session access tokens. The built-in
-provider paths are GitHub and Bitbucket browser sign-in (shared by the
+provider paths are GitHub, Bitbucket, and GitLab browser sign-in (shared by the
 dashboard and `cmpatch login`); full user administration remains deferred.
 
 ## Run Tests

@@ -280,8 +280,9 @@ Non-interactive form:
 The installer creates `.env.selfhost`, builds the server and caddy (web
 dashboard) images, starts the Compose stack, and waits for HTTPS readiness.
 
-**At least one OAuth sign-in provider is required** — GitHub and/or Bitbucket.
-Create the GitHub OAuth App or Bitbucket OAuth consumer first (next sections)
+**At least one OAuth sign-in provider is required** — GitHub, Bitbucket, and/or
+GitLab. Create the GitHub OAuth App, Bitbucket OAuth consumer, or GitLab
+application first (next sections)
 and pass its client ID and client secret; the server refuses to boot without
 one. For a Bitbucket-only install, pass `--bitbucket-oauth-client-id` and
 `--bitbucket-oauth-client-secret` — the installer then skips the GitHub
@@ -292,11 +293,11 @@ creates everything from there. Store `.env.selfhost` securely.
 ### Required: OAuth sign-in
 
 People sign in through an OAuth provider: users open the web dashboard or run
-`cmpatch login`, authorize on GitHub or Bitbucket, and get their own account —
-there is no shared token to copy around. At least one provider must be
+`cmpatch login`, authorize on GitHub, Bitbucket, or GitLab, and get their own
+account — there is no shared token to copy around. At least one provider must be
 configured. This section walks through the GitHub OAuth App;
-[Bitbucket sign-in](#bitbucket-sign-in) covers Bitbucket, both as a second
-provider and as the only one. (Machine/CI access still uses personal access
+[Bitbucket sign-in](#bitbucket-sign-in) and [GitLab sign-in](#gitlab-sign-in)
+cover the other providers, alone or alongside GitHub. (Machine/CI access still uses personal access
 tokens; see [Machine & CI access](#machine--ci-access).)
 
 One OAuth App (or consumer) serves both sign-in paths:
@@ -388,10 +389,10 @@ created automatically on first sign-in. The provider account's email must be
 
 ### Bitbucket sign-in
 
-Bitbucket Cloud can be configured as a second sign-in provider next to GitHub,
-or as the only provider. The dashboard login page shows one button per
+Bitbucket Cloud can be configured as a sign-in provider next to GitHub,
+GitLab, or as the only provider. The dashboard login page shows one button per
 configured provider ("Continue with
-GitHub" / "Continue with Bitbucket"), and either identity resolves to the same
+GitHub" / "Continue with Bitbucket" / "Continue with GitLab"), and either identity resolves to the same
 kind of account — invitations, admin emails, and RBAC work identically.
 `cmpatch login` signs in through the same dashboard page in the browser, so
 Bitbucket users get the CLI signed in the same way — the provider choice
@@ -446,6 +447,74 @@ the server refuses to boot without one so `cmpatch login` can never dead-end
 after the browser sign-in. The user's
 Bitbucket primary email must be **confirmed**; sign-in fails otherwise with a
 "confirm the primary email" error.
+
+### GitLab sign-in
+
+GitLab (gitlab.com or self-hosted) can be configured as a sign-in provider
+next to GitHub/Bitbucket, or as a provider when they are omitted. The
+dashboard login page shows one button per configured provider, and every
+identity resolves to the same kind of account — invitations, admin emails,
+and RBAC work identically. `cmpatch login` signs in through the same
+dashboard page in the browser, so GitLab users get the CLI signed in the
+same way — the provider choice happens on the login page, not in the CLI.
+
+#### 1. Create a GitLab application
+
+1. Go to GitLab → **User Settings → Applications** (or the admin area for a
+   shared application).
+2. **Name**: anything, for example `Codemagic Patch (self-host)`.
+3. **Redirect URI**: `https://<api-domain>/auth/callback`, for example
+   `https://updates.example.com/auth/callback`.
+4. **Scopes**: check **`read_user`** — nothing broader is needed.
+5. Check **Confidential** and click **Save application**.
+6. Copy the **Application ID** and **Secret**.
+
+#### 2. Configure the stack
+
+On a fresh install, pass the application credentials to the installer:
+
+```bash
+./scripts/selfhost/install.sh \
+  ... \
+  --gitlab-oauth-client-id <application-id> \
+  --gitlab-oauth-client-secret <secret>
+```
+
+Passing only the GitLab flags — no `--github-oauth-*` or
+`--bitbucket-oauth-*` flags — runs an install without GitHub/Bitbucket: the
+installer skips the interactive GitHub prompts and writes no `GITHUB_*` /
+`BITBUCKET_*` variables, and the dashboard shows only the GitLab button.
+
+Self-hosted GitLab adds the origin:
+
+```bash
+./scripts/selfhost/install.sh \
+  ... \
+  --gitlab-oauth-client-id <application-id> \
+  --gitlab-oauth-client-secret <secret> \
+  --gitlab-base-url https://gitlab.example.com
+```
+
+On an existing stack, add to `.env.selfhost` and recreate the stack (see
+[Upgrade](#upgrade)):
+
+```bash
+GITLAB_OAUTH_CLIENT_ID=<application-id>
+GITLAB_OAUTH_CLIENT_SECRET=<secret>
+GITLAB_OAUTH_SCOPES=read_user
+GITLAB_BASE_URL=https://gitlab.example.com # self-hosted only; omit for gitlab.com
+GITLAB_OAUTH_ALLOWED_REDIRECT_URIS=https://<api-domain>/auth/callback
+```
+
+`GITLAB_API_BASE_URL` is an optional override and defaults to
+`<base>/api/v4`. Both ID and secret are required together — the server
+refuses to boot with a client id but no secret. The user's GitLab email
+must be **confirmed**; sign-in fails otherwise with a "confirm the primary
+email" error.
+
+> **Note:** `cmpatch selfhost install` (the SSH wizard) remains GitHub-only
+> for the interactive OAuth step, as with Bitbucket — use
+> `scripts/selfhost/install.sh` directly for GitLab installs.
 
 ## Plain HTTP (no TLS)
 
