@@ -967,8 +967,8 @@ print_prerequisites() {
     are needed (the stack does not publish 443), and nothing has to be opened
     in a firewall: both ports are bound to 127.0.0.1, so only this machine
     can connect.
-  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
-    OAuth consumer — with an Authorization callback URL
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization callback URL
     http://localhost/auth/callback and a generated client secret.
   - Traffic is unencrypted and the server is reached only as localhost — from
     a browser here, an iOS simulator, or a client that resolves localhost to
@@ -990,8 +990,8 @@ EOF
     (Let's Encrypt validates over HTTP on port 80). External object storage
     is in use, so no storage domain terminates on this host.
   - Ports 80 and 443 are open to the internet and free on this host.
-  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
-    OAuth consumer — with an Authorization callback URL
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization callback URL
     https://<API domain>/auth/callback and a generated client secret.
   (No DNS yet? Re-run later, or pass --skip-public-check to skip the HTTPS wait.)
 EOF
@@ -1009,8 +1009,8 @@ EOF
     object storage (--storage-mode s3/gcs) needs the API domain only.
 ${cloudfront_origin_prerequisite}
   - Ports 80 and 443 are open to the internet and free on this host.
-  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
-    OAuth consumer — with an Authorization callback URL
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization callback URL
     https://<API domain>/auth/callback and a generated client secret.
   (No DNS yet? Re-run later, or pass --skip-public-check to skip the HTTPS wait.)
 EOF
@@ -1225,7 +1225,7 @@ EOF
     printf '\nDELIVERY_ADAPTER=base-url\n' >>"$env_tmp"
   fi
 
-  # At least one OAuth provider (GitHub or Bitbucket) is mandatory; the
+  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory; the
   # server refuses to boot without one. Each client secret powers the web
   # dashboard's confidential code exchange, and each redirect allowlist pins
   # the browser callback to the API domain.
@@ -1804,7 +1804,7 @@ main() {
 
   verify_cloudflare
 
-  # At least one OAuth provider (GitHub or Bitbucket) is mandatory, and each
+  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory, and each
   # configured provider needs its client secret: the server refuses to boot
   # otherwise. This validates an existing env file from a pre-OAuth
   # (token-only) or hand-edited install and backfills what it can before the
@@ -1907,7 +1907,7 @@ main() {
   printf "     (no CLI needed), or install the CLI from this repo's root and sign in:\n"
   printf '       yarn install && yarn cli:install-global\n'
   printf '       cmpatch login --server-url %s\n' "$SERVER_URL"
-  printf '     Use the GitHub or Bitbucket account whose verified primary email is %s.\n' "$ACME_EMAIL"
+  printf '     Use the GitHub, Bitbucket, or GitLab account whose verified primary email is %s.\n' "$ACME_EMAIL"
   printf '     This first sign-in creates the admin account and makes you owner\n'
   printf '     of the auto-created "default-team".\n'
   printf '  3. The "default-team" is the single fixed team; team creation is disabled.\n'

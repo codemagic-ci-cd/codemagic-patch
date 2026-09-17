@@ -567,11 +567,11 @@ ensure_selfhost_oauth_env() {
     [ -z "${INITIAL_ADMIN_EMAILS:-}" ]; then
     if [ -n "${ACME_EMAIL:-}" ]; then
       log_selfhost "INITIAL_ADMIN_EMAILS is missing; backfilling from ACME_EMAIL=${ACME_EMAIL}"
-      warn_selfhost "the admin must sign in with the GitHub or Bitbucket account whose verified primary email is ${ACME_EMAIL}; edit INITIAL_ADMIN_EMAILS in ${SELFHOST_ENV_FILE} if that is not the admin's email"
+      warn_selfhost "the admin must sign in with the GitHub, Bitbucket, or GitLab account whose verified primary email is ${ACME_EMAIL}; edit INITIAL_ADMIN_EMAILS in ${SELFHOST_ENV_FILE} if that is not the admin's email"
       set_selfhost_env_value INITIAL_ADMIN_EMAILS "$ACME_EMAIL"
       env_changed=1
     else
-      fail_selfhost "INITIAL_ADMIN_EMAILS is missing from ${SELFHOST_ENV_FILE} and there is no ACME_EMAIL to backfill from. Add INITIAL_ADMIN_EMAILS=<admin email> (the admin's verified primary email on GitHub or Bitbucket), then rerun."
+      fail_selfhost "INITIAL_ADMIN_EMAILS is missing from ${SELFHOST_ENV_FILE} and there is no ACME_EMAIL to backfill from. Add INITIAL_ADMIN_EMAILS=<admin email> (the admin's verified primary email on GitHub, Bitbucket, or GitLab), then rerun."
     fi
   fi
 
