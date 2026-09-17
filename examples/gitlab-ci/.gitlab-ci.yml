@@ -1,0 +1,49 @@
+# Codemagic Patch OTA release from GitLab CI.
+#
+# Copy this into your React Native project as `.gitlab-ci.yml` (or merge the
+# `publish_ota` job into your existing pipeline).
+#
+# Required GitLab CI/CD variables (project Settings > CI/CD > Variables):
+#   CODEMAGIC_PATCH_TOKEN      — Patch API token (`cm_pat_…`), masked and protected
+#   CODEMAGIC_PATCH_SERVER_URL — e.g. https://updates.example.com
+#
+# Regular variables (customize below or override in the UI):
+#   PATCH_APP        — Patch app name from `cmpatch init`
+#   PATCH_DEPLOYMENT — Staging or Production
+#   PATCH_PLATFORM   — android or ios
+#
+# Notes:
+# - The job is manual so OTA releases never ship by accident. Remove the
+#   `rules` block to release automatically.
+# - `--non-interactive` keeps the runner from hanging on a confirm prompt.
+# - For a monorepo, run this job from the React Native project directory or
+#   add `--project-root <path>` to the release command.
+# - On tag pipelines, add `--target-binary-version "$CI_COMMIT_TAG"`.
+
+stages:
+  - release
+
+variables:
+  PATCH_APP: "my-app"
+  PATCH_DEPLOYMENT: "Staging"
+  PATCH_PLATFORM: "android"
+
+publish_ota:
+  stage: release
+  image: node:22
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+    - when: never
+  script:
+    - npm install --global @codemagic/patch-cli
+    - |
+      cmpatch release-react \
+        --app "$PATCH_APP" \
+        --deployment "$PATCH_DEPLOYMENT" \
+        --platform "$PATCH_PLATFORM" \
+        --server-url "$CODEMAGIC_PATCH_SERVER_URL" \
+        --yes \
+        --non-interactive
