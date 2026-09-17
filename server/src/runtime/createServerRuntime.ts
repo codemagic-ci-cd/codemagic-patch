@@ -406,9 +406,9 @@ export async function createServerRuntime(
       authNAdapterRegistrations.push({
         adapter: createGitlabAuthNAdapter({
           apiBaseUrl: config.gitlabOAuth.apiBaseUrl,
-          baseUrl: config.gitlabOAuth.baseUrl,
           clientId: config.gitlabOAuth.clientId,
           clientSecret: config.gitlabOAuth.clientSecret,
+          oauthBaseUrl: config.gitlabOAuth.oauthBaseUrl,
         }),
         allowedRedirectUris: config.gitlabOAuth.allowedRedirectUris,
         provider: "gitlab",
@@ -503,7 +503,7 @@ export async function createServerRuntime(
       ...(config.gitlabOAuth
         ? [
             {
-              authorizeEndpoint: `${config.gitlabOAuth.baseUrl}/oauth/authorize`,
+              authorizeEndpoint: `${config.gitlabOAuth.oauthBaseUrl}/oauth/authorize`,
               clientId: config.gitlabOAuth.clientId,
               provider: "gitlab",
               scopes: config.gitlabOAuth.scopes,

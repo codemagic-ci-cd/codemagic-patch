@@ -91,6 +91,12 @@ if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_ALLOWED_REDIRECT
   warn_selfhost "GITHUB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
 fi
 
+if [ -n "${GITLAB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITLAB_OAUTH_ALLOWED_REDIRECT_URIS:-}" ]; then
+  upgrade_scheme="$(selfhost_scheme_from_env_file)"
+  set_selfhost_env_value GITLAB_OAUTH_ALLOWED_REDIRECT_URIS "${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
+  warn_selfhost "GITLAB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
+fi
+
 if [ -z "${CODEMAGIC_PATCH_CADDY_IMAGE:-}" ]; then
   log_selfhost "CODEMAGIC_PATCH_CADDY_IMAGE was missing; defaulting to codemagic-patch-caddy:selfhost"
   set_selfhost_env_value CODEMAGIC_PATCH_CADDY_IMAGE "codemagic-patch-caddy:selfhost"

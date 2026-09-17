@@ -17,10 +17,10 @@
 
 import { providerError, readJsonObject } from "./githubApi";
 
-export const DEFAULT_GITLAB_BASE_URL = "https://gitlab.com";
+export const DEFAULT_GITLAB_OAUTH_BASE_URL = "https://gitlab.com";
 
-export function defaultGitlabApiBaseUrl(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}/api/v4`;
+export function defaultGitlabApiBaseUrl(oauthBaseUrl: string): string {
+  return `${oauthBaseUrl.replace(/\/+$/, "")}/api/v4`;
 }
 
 export interface GitlabUserResponse {

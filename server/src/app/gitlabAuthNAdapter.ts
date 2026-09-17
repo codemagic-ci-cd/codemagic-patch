@@ -1,6 +1,6 @@
 import type { AuthNAdapter } from "./authNAdapter";
 import {
-  DEFAULT_GITLAB_BASE_URL,
+  DEFAULT_GITLAB_OAUTH_BASE_URL,
   defaultGitlabApiBaseUrl,
   fetchGitlabUser,
   fetchGitlabVerifiedPrimaryEmail,
@@ -11,10 +11,10 @@ import { providerError, readJsonObject, trimTrailingSlash } from "./githubApi";
 
 export interface CreateGitlabAuthNAdapterOptions {
   apiBaseUrl?: string;
-  baseUrl?: string;
   clientId: string;
   clientSecret: string;
   fetch?: typeof globalThis.fetch;
+  oauthBaseUrl?: string;
 }
 
 interface GitlabTokenResponse {
@@ -34,11 +34,11 @@ export function createGitlabAuthNAdapter(
   options: CreateGitlabAuthNAdapterOptions,
 ): AuthNAdapter {
   const fetchImpl = options.fetch ?? globalThis.fetch;
-  const baseUrl = trimTrailingSlash(
-    options.baseUrl ?? DEFAULT_GITLAB_BASE_URL,
+  const oauthBaseUrl = trimTrailingSlash(
+    options.oauthBaseUrl ?? DEFAULT_GITLAB_OAUTH_BASE_URL,
   );
   const apiBaseUrl = trimTrailingSlash(
-    options.apiBaseUrl ?? defaultGitlabApiBaseUrl(baseUrl),
+    options.apiBaseUrl ?? defaultGitlabApiBaseUrl(oauthBaseUrl),
   );
 
   return {
@@ -51,7 +51,7 @@ export function createGitlabAuthNAdapter(
 
       const tokenResponse = await postGitlabTokenForm(
         fetchImpl,
-        `${baseUrl}/oauth/token`,
+        `${oauthBaseUrl}/oauth/token`,
         {
           client_id: options.clientId,
           client_secret: options.clientSecret,

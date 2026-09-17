@@ -15,7 +15,7 @@ BITBUCKET_OAUTH_CLIENT_ID="${BITBUCKET_OAUTH_CLIENT_ID:-}"
 BITBUCKET_OAUTH_CLIENT_SECRET="${BITBUCKET_OAUTH_CLIENT_SECRET:-}"
 GITLAB_OAUTH_CLIENT_ID="${GITLAB_OAUTH_CLIENT_ID:-}"
 GITLAB_OAUTH_CLIENT_SECRET="${GITLAB_OAUTH_CLIENT_SECRET:-}"
-GITLAB_BASE_URL="${GITLAB_BASE_URL:-}"
+GITLAB_OAUTH_BASE_URL="${GITLAB_OAUTH_BASE_URL:-}"
 GITLAB_API_BASE_URL="${GITLAB_API_BASE_URL:-}"
 GITLAB_OAUTH_SCOPES="${GITLAB_OAUTH_SCOPES:-}"
 CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
@@ -151,7 +151,7 @@ Options:
                                 application needs callback URL
                                 https://<api-domain>/auth/callback (http://
                                 with --allow-http) and the read_user scope.
-  --gitlab-base-url <url>        OPTIONAL. GitLab origin for self-hosted
+  --gitlab-oauth-base-url <url>        OPTIONAL. GitLab origin for self-hosted
                                 GitLab (default: https://gitlab.com).
   --gitlab-api-base-url <url>    OPTIONAL. GitLab REST origin override;
                                 defaults to <base>/api/v4.
@@ -264,7 +264,7 @@ while [ "$#" -gt 0 ]; do
     --bitbucket-oauth-client-secret) BITBUCKET_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
     --gitlab-oauth-client-id) GITLAB_OAUTH_CLIENT_ID="${2:-}"; shift 2 ;;
     --gitlab-oauth-client-secret) GITLAB_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
-    --gitlab-base-url) GITLAB_BASE_URL="${2:-}"; shift 2 ;;
+    --gitlab-oauth-base-url) GITLAB_OAUTH_BASE_URL="${2:-}"; shift 2 ;;
     --gitlab-api-base-url) GITLAB_API_BASE_URL="${2:-}"; shift 2 ;;
     --gitlab-oauth-scopes) GITLAB_OAUTH_SCOPES="${2:-}"; shift 2 ;;
     --database-mode) DATABASE_MODE="${2:-}"; shift 2 ;;
@@ -1269,9 +1269,9 @@ EOF
 GITLAB_OAUTH_CLIENT_ID=${GITLAB_OAUTH_CLIENT_ID}
 GITLAB_OAUTH_CLIENT_SECRET='${GITLAB_OAUTH_CLIENT_SECRET}'
 EOF
-    if [ -n "$GITLAB_BASE_URL" ]; then
+    if [ -n "$GITLAB_OAUTH_BASE_URL" ]; then
       cat >>"$env_tmp" <<EOF
-GITLAB_BASE_URL=${GITLAB_BASE_URL}
+GITLAB_OAUTH_BASE_URL=${GITLAB_OAUTH_BASE_URL}
 EOF
     fi
     if [ -n "$GITLAB_API_BASE_URL" ]; then
@@ -1594,7 +1594,7 @@ main() {
       warn_selfhost "ignoring --bitbucket-oauth-client-id/--bitbucket-oauth-client-secret; OAuth is only written on initial install"
       warn_selfhost "edit BITBUCKET_OAUTH_CLIENT_ID/BITBUCKET_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
     fi
-    if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ] || [ -n "$GITLAB_BASE_URL" ] || [ -n "$GITLAB_API_BASE_URL" ] || [ -n "$GITLAB_OAUTH_SCOPES" ]; then
+    if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ] || [ -n "$GITLAB_OAUTH_BASE_URL" ] || [ -n "$GITLAB_API_BASE_URL" ] || [ -n "$GITLAB_OAUTH_SCOPES" ]; then
       warn_selfhost "ignoring --gitlab-oauth-*; OAuth is only written on initial install"
       warn_selfhost "edit GITLAB_OAUTH_CLIENT_ID/GITLAB_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
     fi
@@ -1634,7 +1634,7 @@ main() {
   BITBUCKET_OAUTH_CLIENT_SECRET=""
   GITLAB_OAUTH_CLIENT_ID=""
   GITLAB_OAUTH_CLIENT_SECRET=""
-  GITLAB_BASE_URL=""
+  GITLAB_OAUTH_BASE_URL=""
   GITLAB_API_BASE_URL=""
   GITLAB_OAUTH_SCOPES=""
   USE_CLOUDFLARE=0

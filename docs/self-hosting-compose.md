@@ -492,7 +492,7 @@ Self-hosted GitLab adds the origin:
   ... \
   --gitlab-oauth-client-id <application-id> \
   --gitlab-oauth-client-secret <secret> \
-  --gitlab-base-url https://gitlab.example.com
+  --gitlab-oauth-base-url https://gitlab.example.com
 ```
 
 On an existing stack, add to `.env.selfhost` and recreate the stack (see
@@ -502,7 +502,7 @@ On an existing stack, add to `.env.selfhost` and recreate the stack (see
 GITLAB_OAUTH_CLIENT_ID=<application-id>
 GITLAB_OAUTH_CLIENT_SECRET=<secret>
 GITLAB_OAUTH_SCOPES=read_user
-GITLAB_BASE_URL=https://gitlab.example.com # self-hosted only; omit for gitlab.com
+GITLAB_OAUTH_BASE_URL=https://gitlab.example.com # self-hosted only; omit for gitlab.com
 GITLAB_OAUTH_ALLOWED_REDIRECT_URIS=https://<api-domain>/auth/callback
 ```
 

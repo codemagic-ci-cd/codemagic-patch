@@ -19,7 +19,7 @@ const DEFAULT_GITHUB_OAUTH_BASE_URL = "https://github.com";
 const DEFAULT_GITHUB_OAUTH_SCOPES = "read:user user:email";
 const DEFAULT_BITBUCKET_API_BASE_URL = "https://api.bitbucket.org";
 const DEFAULT_BITBUCKET_OAUTH_BASE_URL = "https://bitbucket.org";
-const DEFAULT_GITLAB_BASE_URL = "https://gitlab.com";
+const DEFAULT_GITLAB_OAUTH_BASE_URL = "https://gitlab.com";
 const DEFAULT_GITLAB_OAUTH_SCOPES = "read_user";
 const MAX_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const MAX_OAUTH_REFRESH_TOKEN_TTL_DAYS = 365;
@@ -84,17 +84,17 @@ export interface BitbucketOAuthConfig {
 }
 
 /**
- * GitLab OAuth (gitlab.com or self-hosted). `baseUrl` is the GitLab origin
- * (`https://gitlab.com` by default); `apiBaseUrl` overrides the REST origin
- * and defaults to `{baseUrl}/api/v4` so self-hosted instances work with a
- * single variable.
+ * GitLab OAuth (gitlab.com or self-hosted). `oauthBaseUrl` is the GitLab
+ * origin (`https://gitlab.com` by default); `apiBaseUrl` overrides the REST
+ * origin and defaults to `{oauthBaseUrl}/api/v4` so self-hosted instances
+ * work with a single variable.
  */
 export interface GitlabOAuthConfig {
   allowedRedirectUris?: string[];
   apiBaseUrl: string;
-  baseUrl: string;
   clientId: string;
   clientSecret: string;
+  oauthBaseUrl: string;
   scopes: string;
 }
 
@@ -492,8 +492,9 @@ function resolveGitlabOAuthConfig(
     );
   }
 
-  const baseUrl = trimTrailingSlash(
-    resolveOptionalString(env.GITLAB_BASE_URL) ?? DEFAULT_GITLAB_BASE_URL,
+  const oauthBaseUrl = trimTrailingSlash(
+    resolveOptionalString(env.GITLAB_OAUTH_BASE_URL) ??
+      DEFAULT_GITLAB_OAUTH_BASE_URL,
   );
 
   return {
@@ -501,11 +502,12 @@ function resolveGitlabOAuthConfig(
       env.GITLAB_OAUTH_ALLOWED_REDIRECT_URIS,
     ),
     apiBaseUrl: trimTrailingSlash(
-      resolveOptionalString(env.GITLAB_API_BASE_URL) ?? `${baseUrl}/api/v4`,
+      resolveOptionalString(env.GITLAB_API_BASE_URL) ??
+        `${oauthBaseUrl}/api/v4`,
     ),
-    baseUrl,
     clientId,
     clientSecret,
+    oauthBaseUrl,
     scopes:
       resolveOptionalString(env.GITLAB_OAUTH_SCOPES) ??
       DEFAULT_GITLAB_OAUTH_SCOPES,

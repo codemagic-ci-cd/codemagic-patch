@@ -84,7 +84,7 @@ defaults to `read:user user:email`; `GITHUB_OAUTH_BASE_URL` and
 `BITBUCKET_OAUTH_CLIENT_ID` / `BITBUCKET_OAUTH_CLIENT_SECRET` (consumer with
 the account + email scopes); GitLab uses `GITLAB_OAUTH_CLIENT_ID` /
 `GITLAB_OAUTH_CLIENT_SECRET` (application with the `read_user` scope,
-`GITLAB_BASE_URL` defaulting to `https://gitlab.com`). For custom deployments, provide the
+`GITLAB_OAUTH_BASE_URL` defaulting to `https://gitlab.com`). For custom deployments, provide the
 same environment variables through your platform's secret/config system.
 
 ### First admin
