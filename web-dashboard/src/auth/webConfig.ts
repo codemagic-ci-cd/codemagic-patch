@@ -160,6 +160,8 @@ export function providerDisplayName(provider: string): string {
       return "GitHub";
     case "bitbucket":
       return "Bitbucket";
+    case "gitlab":
+      return "GitLab";
     case LOCAL_DEV_MODE:
       return "Local";
     default:

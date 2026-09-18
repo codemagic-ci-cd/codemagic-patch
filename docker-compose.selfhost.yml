@@ -93,6 +93,15 @@ services:
       BITBUCKET_OAUTH_CLIENT_ID: ${BITBUCKET_OAUTH_CLIENT_ID:-}
       BITBUCKET_OAUTH_CLIENT_SECRET: ${BITBUCKET_OAUTH_CLIENT_SECRET:-}
       BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS: ${BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS:-}
+      # GitLab sign-in (web flow only) — next to GitHub/Bitbucket, or a
+      # provider when they are not configured. GITLAB_API_BASE_URL defaults
+      # server-side to <GITLAB_OAUTH_BASE_URL>/api/v4 when unset.
+      GITLAB_OAUTH_CLIENT_ID: ${GITLAB_OAUTH_CLIENT_ID:-}
+      GITLAB_OAUTH_CLIENT_SECRET: ${GITLAB_OAUTH_CLIENT_SECRET:-}
+      GITLAB_OAUTH_ALLOWED_REDIRECT_URIS: ${GITLAB_OAUTH_ALLOWED_REDIRECT_URIS:-}
+      GITLAB_OAUTH_SCOPES: ${GITLAB_OAUTH_SCOPES:-read_user}
+      GITLAB_OAUTH_BASE_URL: ${GITLAB_OAUTH_BASE_URL:-}
+      GITLAB_API_BASE_URL: ${GITLAB_API_BASE_URL:-}
       INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:-}
       # The fixed `default-team` is created on boot (idempotent); the initial
       # admin becomes its owner on first sign-in. Team CRUD is disabled in the

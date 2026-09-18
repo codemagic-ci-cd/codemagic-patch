@@ -13,6 +13,11 @@ GITHUB_OAUTH_CLIENT_SECRET="${GITHUB_OAUTH_CLIENT_SECRET:-}"
 GITHUB_OAUTH_SCOPES="${GITHUB_OAUTH_SCOPES:-}"
 BITBUCKET_OAUTH_CLIENT_ID="${BITBUCKET_OAUTH_CLIENT_ID:-}"
 BITBUCKET_OAUTH_CLIENT_SECRET="${BITBUCKET_OAUTH_CLIENT_SECRET:-}"
+GITLAB_OAUTH_CLIENT_ID="${GITLAB_OAUTH_CLIENT_ID:-}"
+GITLAB_OAUTH_CLIENT_SECRET="${GITLAB_OAUTH_CLIENT_SECRET:-}"
+GITLAB_OAUTH_BASE_URL="${GITLAB_OAUTH_BASE_URL:-}"
+GITLAB_API_BASE_URL="${GITLAB_API_BASE_URL:-}"
+GITLAB_OAUTH_SCOPES="${GITLAB_OAUTH_SCOPES:-}"
 CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
 CLOUDFLARE_ZONE_ID="${CLOUDFLARE_ZONE_ID:-}"
 CLOUDFLARE_API_BASE_URL="${CLOUDFLARE_API_BASE_URL:-}"
@@ -74,8 +79,9 @@ Usage: scripts/selfhost/install.sh [options]
 Prerequisites: a public DNS A/AAAA record for the API domain (and, with the
 default bundled storage, the storage domain) pointing at this host, ports
 80/443 open to the internet (Let's Encrypt), and at least one
-OAuth sign-in provider — a GitHub OAuth App and/or a Bitbucket OAuth
-consumer. Create it (with Authorization callback URL
+OAuth sign-in provider — a GitHub OAuth App, a Bitbucket OAuth
+consumer, and/or a GitLab application. Create it (with Authorization
+callback URL
 https://<api-domain>/auth/callback, or http:// with --allow-http) before
 running, and pass its client ID and a generated client secret. The admin
 signs in via the web dashboard or `cmpatch login`; the first sign-in by
@@ -112,11 +118,11 @@ Options:
                                --cloudflare or --cloudfront. Fixed at install
                                time (SELFHOST_SCHEME=http in .env.selfhost).
   --email <email>              Admin and ACME email. Must match the verified
-                               primary email of the admin's GitHub or
-                               Bitbucket account.
+                                primary email of the admin's GitHub,
+                                Bitbucket, or GitLab account.
   --github-oauth-client-id <id>
-                               GitHub OAuth App Client ID. Required unless
-                               Bitbucket OAuth is configured instead.
+                                GitHub OAuth App Client ID. Required unless
+                                Bitbucket or GitLab OAuth is configured instead.
   --github-oauth-client-secret <secret>
                                GitHub OAuth App client secret — generate one
                                on the same OAuth App; required together with
@@ -129,11 +135,27 @@ Options:
                                OAuth is not configured.
                                Requires --bitbucket-oauth-client-secret.
   --bitbucket-oauth-client-secret <secret>
-                               OPTIONAL. Bitbucket OAuth consumer secret. The
-                               consumer needs callback URL
-                               https://<api-domain>/auth/callback (http://
-                               with --allow-http) and the account + email
-                               scopes (set on the consumer).
+                                OPTIONAL. Bitbucket OAuth consumer secret. The
+                                consumer needs callback URL
+                                https://<api-domain>/auth/callback (http://
+                                with --allow-http) and the account + email
+                                scopes (set on the consumer).
+  --gitlab-oauth-client-id <id>
+                                GitLab application ID — adds
+                                "Continue with GitLab" to the dashboard,
+                                or serves as a provider when GitHub/Bitbucket
+                                OAuth is not configured.
+                                Requires --gitlab-oauth-client-secret.
+  --gitlab-oauth-client-secret <secret>
+                                OPTIONAL. GitLab application secret. The
+                                application needs callback URL
+                                https://<api-domain>/auth/callback (http://
+                                with --allow-http) and the read_user scope.
+  --gitlab-oauth-base-url <url>        OPTIONAL. GitLab origin for self-hosted
+                                GitLab (default: https://gitlab.com).
+  --gitlab-api-base-url <url>    OPTIONAL. GitLab REST origin override;
+                                defaults to <base>/api/v4.
+  --gitlab-oauth-scopes <s>      OAuth scopes (default: read_user).
   --database-mode <mode>       bundled (default) runs Postgres inside the
                                stack; external connects the server to an
                                existing PostgreSQL via --database-url. Fixed
@@ -240,6 +262,11 @@ while [ "$#" -gt 0 ]; do
     --github-oauth-scopes) GITHUB_OAUTH_SCOPES="${2:-}"; shift 2 ;;
     --bitbucket-oauth-client-id) BITBUCKET_OAUTH_CLIENT_ID="${2:-}"; shift 2 ;;
     --bitbucket-oauth-client-secret) BITBUCKET_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
+    --gitlab-oauth-client-id) GITLAB_OAUTH_CLIENT_ID="${2:-}"; shift 2 ;;
+    --gitlab-oauth-client-secret) GITLAB_OAUTH_CLIENT_SECRET="${2:-}"; shift 2 ;;
+    --gitlab-oauth-base-url) GITLAB_OAUTH_BASE_URL="${2:-}"; shift 2 ;;
+    --gitlab-api-base-url) GITLAB_API_BASE_URL="${2:-}"; shift 2 ;;
+    --gitlab-oauth-scopes) GITLAB_OAUTH_SCOPES="${2:-}"; shift 2 ;;
     --database-mode) DATABASE_MODE="${2:-}"; shift 2 ;;
     --database-url) DATABASE_URL="${2:-}"; shift 2 ;;
     --storage-mode) STORAGE_MODE="${2:-}"; shift 2 ;;
@@ -669,12 +696,12 @@ install_gcs_credentials() (
 )
 
 prompt_github_oauth() {
-  # At least one OAuth provider (GitHub or Bitbucket) is mandatory. Bitbucket
-  # is flags/env-only, so when it is configured and no GitHub value was given,
-  # skip the GitHub prompts and run Bitbucket-only. Otherwise reuse
-  # prompt_required so non-interactive runs fail fast when
-  # --github-oauth-client-id or --github-oauth-client-secret is missing.
-  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] &&
+  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory.
+  # Bitbucket/GitLab are flags/env-only, so when one of them is configured
+  # and no GitHub value was given, skip the GitHub prompts and run without
+  # GitHub. Otherwise reuse prompt_required so non-interactive runs fail fast
+  # when --github-oauth-client-id or --github-oauth-client-secret is missing.
+  if { [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_ID" ]; } &&
     [ -z "$GITHUB_OAUTH_CLIENT_ID" ] && [ -z "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
     return 0
   fi
@@ -692,6 +719,17 @@ validate_bitbucket_oauth() {
   fi
   if [ -z "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
     fail_selfhost "--bitbucket-oauth-client-secret requires --bitbucket-oauth-client-id"
+  fi
+}
+
+validate_gitlab_oauth() {
+  # GitLab is optional (flags/env only, no prompt) but all-or-nothing: the
+  # server refuses to boot with a client id and no secret, so catch it here.
+  if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] && [ -z "$GITLAB_OAUTH_CLIENT_SECRET" ]; then
+    fail_selfhost "--gitlab-oauth-client-id requires --gitlab-oauth-client-secret (GitLab has no secret-less flow)"
+  fi
+  if [ -z "$GITLAB_OAUTH_CLIENT_ID" ] && [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ]; then
+    fail_selfhost "--gitlab-oauth-client-secret requires --gitlab-oauth-client-id"
   fi
 }
 
@@ -929,8 +967,8 @@ print_prerequisites() {
     are needed (the stack does not publish 443), and nothing has to be opened
     in a firewall: both ports are bound to 127.0.0.1, so only this machine
     can connect.
-  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
-    OAuth consumer — with an Authorization callback URL
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization callback URL
     http://localhost/auth/callback and a generated client secret.
   - Traffic is unencrypted and the server is reached only as localhost — from
     a browser here, an iOS simulator, or a client that resolves localhost to
@@ -952,8 +990,8 @@ EOF
     (Let's Encrypt validates over HTTP on port 80). External object storage
     is in use, so no storage domain terminates on this host.
   - Ports 80 and 443 are open to the internet and free on this host.
-  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
-    OAuth consumer — with an Authorization callback URL
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization callback URL
     https://<API domain>/auth/callback and a generated client secret.
   (No DNS yet? Re-run later, or pass --skip-public-check to skip the HTTPS wait.)
 EOF
@@ -971,8 +1009,8 @@ EOF
     object storage (--storage-mode s3/gcs) needs the API domain only.
 ${cloudfront_origin_prerequisite}
   - Ports 80 and 443 are open to the internet and free on this host.
-  - An OAuth sign-in provider exists — a GitHub OAuth App and/or a Bitbucket
-    OAuth consumer — with an Authorization callback URL
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization callback URL
     https://<API domain>/auth/callback and a generated client secret.
   (No DNS yet? Re-run later, or pass --skip-public-check to skip the HTTPS wait.)
 EOF
@@ -1187,7 +1225,7 @@ EOF
     printf '\nDELIVERY_ADAPTER=base-url\n' >>"$env_tmp"
   fi
 
-  # At least one OAuth provider (GitHub or Bitbucket) is mandatory; the
+  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory; the
   # server refuses to boot without one. Each client secret powers the web
   # dashboard's confidential code exchange, and each redirect allowlist pins
   # the browser callback to the API domain.
@@ -1220,6 +1258,30 @@ EOF
 BITBUCKET_OAUTH_CLIENT_ID=${BITBUCKET_OAUTH_CLIENT_ID}
 BITBUCKET_OAUTH_CLIENT_SECRET='${BITBUCKET_OAUTH_CLIENT_SECRET}'
 BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
+EOF
+  fi
+
+  # GitLab sign-in is written only when provided (see
+  # .env.selfhost.example for the application setup notes).
+  if [ -n "$GITLAB_OAUTH_CLIENT_ID" ]; then
+    cat >>"$env_tmp" <<EOF
+
+GITLAB_OAUTH_CLIENT_ID=${GITLAB_OAUTH_CLIENT_ID}
+GITLAB_OAUTH_CLIENT_SECRET='${GITLAB_OAUTH_CLIENT_SECRET}'
+EOF
+    if [ -n "$GITLAB_OAUTH_BASE_URL" ]; then
+      cat >>"$env_tmp" <<EOF
+GITLAB_OAUTH_BASE_URL=${GITLAB_OAUTH_BASE_URL}
+EOF
+    fi
+    if [ -n "$GITLAB_API_BASE_URL" ]; then
+      cat >>"$env_tmp" <<EOF
+GITLAB_API_BASE_URL=${GITLAB_API_BASE_URL}
+EOF
+    fi
+    cat >>"$env_tmp" <<EOF
+GITLAB_OAUTH_SCOPES="${GITLAB_OAUTH_SCOPES:-read_user}"
+GITLAB_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
 EOF
   fi
 
@@ -1332,6 +1394,9 @@ repair_env_file() {
     if [ -n "$(selfhost_env_value_from_file BITBUCKET_OAUTH_CLIENT_ID)" ]; then
       plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
     fi
+    if [ -n "$(selfhost_env_value_from_file GITLAB_OAUTH_CLIENT_ID)" ]; then
+      plan_selfhost_env_value GITLAB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
+    fi
     repaired=1
   fi
   api_domain="${API_DOMAIN:-$(selfhost_env_value_from_file CODEMAGIC_PATCH_API_DOMAIN)}"
@@ -1389,6 +1454,16 @@ repair_env_file() {
     repaired=1
   fi
 
+  if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ]; then
+    { [ -n "$GITLAB_OAUTH_CLIENT_ID" ] && [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ]; } ||
+      fail_selfhost "--gitlab-oauth-client-id and --gitlab-oauth-client-secret must be repaired together"
+    validate_env_file_literal "--gitlab-oauth-client-secret" "$GITLAB_OAUTH_CLIENT_SECRET"
+    plan_selfhost_env_value GITLAB_OAUTH_CLIENT_ID "$GITLAB_OAUTH_CLIENT_ID"
+    plan_selfhost_env_literal GITLAB_OAUTH_CLIENT_SECRET "$GITLAB_OAUTH_CLIENT_SECRET"
+    plan_selfhost_env_value GITLAB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${api_domain}/auth/callback"
+    repaired=1
+  fi
+
   if [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ] ||
     [ -n "$CLOUDFLARE_API_BASE_URL" ]; then
     [ "$adapter" = "cloudflare" ] ||
@@ -1440,7 +1515,7 @@ repair_env_file() {
   fi
 
   [ "$repaired" -eq 1 ] ||
-    fail_selfhost "--repair-env was given but no repairable value was supplied. Pass the values to correct (for example --api-domain, --email, --github-oauth-client-id/--github-oauth-client-secret, or this deployment's CDN values)."
+    fail_selfhost "--repair-env was given but no repairable value was supplied. Pass the values to correct (for example --api-domain, --email, --github-oauth-client-id/--github-oauth-client-secret, --gitlab-oauth-client-id/--gitlab-oauth-client-secret, or this deployment's CDN values)."
 
   # Every guard above has passed: only now does the file change.
   flush_selfhost_env_plan
@@ -1467,10 +1542,11 @@ main() {
     fi
     prompt_required API_DOMAIN "CodemagicPatch API domain" "$API_DOMAIN"
     prompt_required ADMIN_EMAIL "Admin email" "$ADMIN_EMAIL"
-    # Validate Bitbucket first: prompt_github_oauth skips the GitHub prompts
-    # when Bitbucket is configured, so a half-configured Bitbucket flag pair
-    # must fail before it can silently suppress the GitHub prompts.
+    # Validate Bitbucket/GitLab first: prompt_github_oauth skips the GitHub
+    # prompts when one of them is configured, so a half-configured pair must
+    # fail before it can silently suppress the GitHub prompts.
     validate_bitbucket_oauth
+    validate_gitlab_oauth
     prompt_github_oauth
     prompt_database
     # Storage must resolve before either CDN: bundled CloudFront derives its
@@ -1518,6 +1594,10 @@ main() {
       warn_selfhost "ignoring --bitbucket-oauth-client-id/--bitbucket-oauth-client-secret; OAuth is only written on initial install"
       warn_selfhost "edit BITBUCKET_OAUTH_CLIENT_ID/BITBUCKET_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
     fi
+    if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ] || [ -n "$GITLAB_OAUTH_BASE_URL" ] || [ -n "$GITLAB_API_BASE_URL" ] || [ -n "$GITLAB_OAUTH_SCOPES" ]; then
+      warn_selfhost "ignoring --gitlab-oauth-*; OAuth is only written on initial install"
+      warn_selfhost "edit GITLAB_OAUTH_CLIENT_ID/GITLAB_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
+    fi
     if [ "$USE_CLOUDFLARE" -eq 1 ] ||
       [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ]; then
       warn_selfhost "ignoring --cloudflare/--cloudflare-api-token/--cloudflare-zone-id; delivery config is only written on initial install"
@@ -1552,6 +1632,11 @@ main() {
   GITHUB_OAUTH_CLIENT_SECRET=""
   BITBUCKET_OAUTH_CLIENT_ID=""
   BITBUCKET_OAUTH_CLIENT_SECRET=""
+  GITLAB_OAUTH_CLIENT_ID=""
+  GITLAB_OAUTH_CLIENT_SECRET=""
+  GITLAB_OAUTH_BASE_URL=""
+  GITLAB_API_BASE_URL=""
+  GITLAB_OAUTH_SCOPES=""
   USE_CLOUDFLARE=0
   CLOUDFLARE_API_TOKEN=""
   CLOUDFLARE_ZONE_ID=""
@@ -1719,7 +1804,7 @@ main() {
 
   verify_cloudflare
 
-  # At least one OAuth provider (GitHub or Bitbucket) is mandatory, and each
+  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory, and each
   # configured provider needs its client secret: the server refuses to boot
   # otherwise. This validates an existing env file from a pre-OAuth
   # (token-only) or hand-edited install and backfills what it can before the
@@ -1822,7 +1907,7 @@ main() {
   printf "     (no CLI needed), or install the CLI from this repo's root and sign in:\n"
   printf '       yarn install && yarn cli:install-global\n'
   printf '       cmpatch login --server-url %s\n' "$SERVER_URL"
-  printf '     Use the GitHub or Bitbucket account whose verified primary email is %s.\n' "$ACME_EMAIL"
+  printf '     Use the GitHub, Bitbucket, or GitLab account whose verified primary email is %s.\n' "$ACME_EMAIL"
   printf '     This first sign-in creates the admin account and makes you owner\n'
   printf '     of the auto-created "default-team".\n'
   printf '  3. The "default-team" is the single fixed team; team creation is disabled.\n'
