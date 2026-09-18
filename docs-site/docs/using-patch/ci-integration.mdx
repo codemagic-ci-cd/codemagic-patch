@@ -1,9 +1,9 @@
 ---
 title: CI integration
 description: >-
-  Publish OTA updates automatically from GitHub Actions, Codemagic, or other CI
-  systems.
-llmsDescription: 'Automate cmpatch release-react in GitHub Actions, Codemagic, other CI.'
+  Publish OTA updates automatically from GitHub Actions, GitLab CI, Codemagic,
+  or other CI systems.
+llmsDescription: 'Automate cmpatch release-react in GitHub Actions, GitLab CI, Codemagic, other CI.'
 ---
 
 # CI integration
@@ -91,6 +91,46 @@ If the project has `codemagic-patch.config.json` from `cmpatch init`, you can om
       --deployment Staging \
       --yes
 ```
+
+## GitLab CI
+
+```yaml
+stages:
+  - release
+
+variables:
+  PATCH_APP: "my-app"
+  PATCH_DEPLOYMENT: "Staging"
+  PATCH_PLATFORM: "android"
+
+publish_ota:
+  stage: release
+  image: node:22
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+    - when: never
+  script:
+    - npm install --global @codemagic/patch-cli
+    - |
+      cmpatch release-react \
+        --app "$PATCH_APP" \
+        --deployment "$PATCH_DEPLOYMENT" \
+        --platform "$PATCH_PLATFORM" \
+        --server-url "$CODEMAGIC_PATCH_SERVER_URL" \
+        --yes \
+        --non-interactive
+```
+
+Configure these in GitLab project Settings > CI/CD > Variables:
+
+- `CODEMAGIC_PATCH_TOKEN` — Patch API token (`cm_pat_…`), masked and protected
+- `CODEMAGIC_PATCH_SERVER_URL` — e.g. `https://updates.example.com`
+- `PATCH_APP`, `PATCH_DEPLOYMENT`, `PATCH_PLATFORM` — regular variables
+
+The CLI reads the token from the environment, so no `--token` flag is needed. `--non-interactive` keeps the job from hanging on a prompt. For a monorepo, run the job from the React Native project directory or pass `--project-root`. On tag pipelines, pass `--target-binary-version` explicitly.
 
 ## Release strategies
 
