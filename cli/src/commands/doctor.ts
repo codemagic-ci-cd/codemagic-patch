@@ -2351,18 +2351,40 @@ function validateCredentialStoreFile(
   };
 }
 
+// Mirrors the `StoredCredential` union in `src/credentialStore.ts`: an OAuth
+// credential carries refresh-token fields, a token credential (from
+// `cmpatch login --token`) does not. Checking only the OAuth shape made this
+// check fail every personal-access-token login, which is the documented path for
+// CI and other headless machines.
 function isStoredCredential(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    typeof value.accessToken !== "string" ||
+    !isStoredUser(value.user)
+  ) {
+    return false;
+  }
+
+  if (value.kind === "token") {
+    return true;
+  }
+
+  // `kind` is absent on credentials written before the discriminator existed;
+  // those are always OAuth-shaped.
   return (
-    isRecord(value) &&
-    typeof value.accessToken === "string" &&
+    (value.kind === "oauth" || value.kind === undefined) &&
     typeof value.accessTokenExpiresAt === "string" &&
     typeof value.refreshToken === "string" &&
-    typeof value.refreshTokenExpiresAt === "string" &&
-    isRecord(value.user) &&
-    typeof value.user.email === "string" &&
-    typeof value.user.id === "string" &&
-    (typeof value.user.displayName === "string" ||
-      value.user.displayName === null)
+    typeof value.refreshTokenExpiresAt === "string"
+  );
+}
+
+function isStoredUser(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.email === "string" &&
+    typeof value.id === "string" &&
+    (typeof value.displayName === "string" || value.displayName === null)
   );
 }
 
