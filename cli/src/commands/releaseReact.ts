@@ -1438,7 +1438,7 @@ async function resolveReactNativeCommand(projectRoot: string): Promise<{
 
   try {
     return {
-      argsPrefix: [requireFromProject.resolve("react-native/cli.js")],
+      argsPrefix: [await resolveReactNativeCliPath(requireFromProject)],
       command: process.execPath,
     };
   } catch (error) {
@@ -1559,6 +1559,34 @@ async function resolveExpoResolveAppEntryPath(
     throw new UsageError(
       `Could not resolve expo/scripts/resolveAppEntry from project root: ${projectRoot}${formatErrorSuffix(error)}`,
     );
+  }
+}
+
+// React Native 0.87 narrowed its package `exports` map, dropping the `./*` and
+// `./*.js` subpath wildcards that previously made `react-native/cli.js`
+// resolvable by specifier. The file still ships at the package root, so when the
+// specifier is not exported, fall back to an on-disk lookup relative to
+// `react-native/package.json` (which stays exported). Metro absorbs the same
+// change the same way, by falling back to file-based resolution.
+//
+// Throws the original resolution error when neither path yields a readable file,
+// so the caller's package-manager fallbacks and error message are unchanged.
+async function resolveReactNativeCliPath(
+  requireFromProject: ReturnType<typeof createRequire>,
+): Promise<string> {
+  try {
+    return requireFromProject.resolve("react-native/cli.js");
+  } catch (error) {
+    const packageJsonPath = requireFromProject.resolve(
+      "react-native/package.json",
+    );
+    const cliPath = path.join(path.dirname(packageJsonPath), "cli.js");
+
+    if (await isReadableFile(cliPath)) {
+      return cliPath;
+    }
+
+    throw error;
   }
 }
 

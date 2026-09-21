@@ -236,7 +236,11 @@ export function isCurrentlyBackgrounded(): boolean {
 function setupAppStateListener(): void {
   if (appStateSubscription) return;
 
-  state.lastAppState = AppState.currentState;
+  // `AppState.currentState` is nullable until the platform sets its initial
+  // value (React Native 0.87's generated types declare this, earlier hand-written
+  // ones did not). Keep the existing value in that window rather than widening
+  // `lastAppState`: the "active" default already means "not backgrounded".
+  state.lastAppState = AppState.currentState ?? state.lastAppState;
   appStateSubscription = AppState.addEventListener("change", handleAppStateTransition);
 }
 
