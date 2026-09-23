@@ -69,6 +69,9 @@ import { executeDeploymentRename } from "./commands/deploymentRename";
 import { executeDeploymentRemove } from "./commands/deploymentRemove";
 import { executeDebug } from "./commands/debug";
 import { executeDoctor, renderDoctorTable } from "./commands/doctor";
+import { executeWireCommand } from "./commands/wire";
+import { renderWireResult } from "./wire/render";
+import type { WireResult } from "./wire/types";
 import { executeFingerprint } from "./commands/fingerprint";
 import {
   executeConfigCommand,
@@ -230,7 +233,7 @@ export type CommandView<C = never> =
        * the response is not recognisable enough to summarise, and the labelled
        * record is shown instead.
        */
-      summarize: (result: unknown, command: C) => ActionSummary | string | null;
+      summarize: (result: unknown, command: C, palette?: Palette) => ActionSummary | string | null;
       kind: "action";
     }
   | {
@@ -471,12 +474,13 @@ const helpGroups: readonly CommandHelpGroup[] = [
       "cmpatch config set server-url https://updates.example.com",
       "cmpatch init",
       "cmpatch init --ios-app MyApp-iOS --android-app MyApp-Android --yes",
+      "cmpatch wire",
       "cmpatch context",
       "cmpatch context --remote",
     ],
     name: "config",
-    summary: "Store defaults and inspect the effective local context.",
-    topics: ["config", "context", "init"],
+    summary: "Store defaults, wire the SDK, and inspect the effective local context.",
+    topics: ["config", "context", "init", "wire"],
   },
   {
     examples: [
@@ -569,10 +573,11 @@ const commandSpecs: RunnableCommandSpec[] = [
     kind: "init",
     help: [
       {
-        description: `Initialize ${PRODUCT_NAME} for this project. Runs as an interactive wizard; pass flags to script it.`,
+        description: `Initialize ${PRODUCT_NAME} for this project: connect a server, team, app and deployment per platform, then wire the SDK. Runs as an interactive wizard; pass flags to script it. Also accepts every \`cmpatch wire\` flag; see \`cmpatch wire --help\`.`,
         examples: [
           "cmpatch init",
           "cmpatch init --ios-app MyApp-iOS --android-app MyApp-Android --yes",
+          "cmpatch init --skip-wire",
         ],
         flags: [
           {
@@ -587,6 +592,8 @@ const commandSpecs: RunnableCommandSpec[] = [
                 flag: "--deployment <name>",
                 summary: "Default deployment to store",
               },
+              { flag: "--skip-wire", summary: "Connect only; do not wire the SDK" },
+              { flag: "--dry-run", summary: "Plan everything, write nothing" },
               flagHelp.projectRoot,
               flagHelp.yes,
               flagHelp.nonInteractive,
@@ -599,6 +606,53 @@ const commandSpecs: RunnableCommandSpec[] = [
     ],
     parse: (args) => parseRawArgvCommand(args, "init"),
     routes: [{ path: ["init"] }],
+  }),
+  commandSpec({
+    commandName: "wire",
+    defaults: false,
+    execute: executeWireCommand,
+    kind: "wire",
+    help: [
+      {
+        description:
+          "Wire the SDK into the connected app: install the package, set the deployment key and URLs, hook native bundle selection, and export the root through Patch.wrap. Previews the plan and asks before changing files.",
+        examples: [
+          "cmpatch wire",
+          "cmpatch wire --dry-run --diff",
+          "cmpatch wire --yes --allow-dirty --pod-install",
+        ],
+        flags: [
+          {
+            flags: [
+              flagHelp.platform,
+              flagHelp.projectRoot,
+              { flag: "--dry-run", summary: "Plan and preview only; change nothing" },
+              { flag: "--diff", summary: "Show the file diffs the plan would apply" },
+              { flag: "--skip-js", summary: "Leave the JavaScript root alone (custom bootstrap)" },
+              { flag: "--pod-install", summary: "Run pod install after the iOS changes" },
+              { flag: "--no-pod-install", summary: "Do not run pod install, and do not ask" },
+              {
+                flag: "--replace-destination",
+                summary: "Replace a deployment key/URL group that points elsewhere",
+              },
+              { flag: "--allow-dirty", summary: "Apply with uncommitted changes in the working tree (non-interactive)" },
+              {
+                flag: "--native-projects <generated|maintained>",
+                summary: "Whether Expo prebuild generates native directories (overrides automatic detection)",
+              },
+              flagHelp.token,
+              flagHelp.yes,
+              flagHelp.nonInteractive,
+            ],
+          },
+        ],
+        group: "config",
+        usage: "cmpatch wire [flags]",
+      },
+    ],
+    parse: (args) => parseRawArgvCommand(args, "wire"),
+    renderTable: (result, _command, palette) => renderWireResult(result as WireResult, palette),
+    routes: [{ path: ["wire"] }],
   }),
   commandSpec({
     commandName: "demo",
@@ -659,9 +713,15 @@ const commandSpecs: RunnableCommandSpec[] = [
                   "Where downloads are served (default: storage.<api-domain> on a zone apex, storage-<api-domain> on a subdomain)",
               },
               { flag: "--email <email>", summary: "The admin's email address" },
+              { flag: "--oauth-provider <provider>", summary: "Sign-in provider: github, bitbucket, or gitlab (inferred from credentials when supplied)" },
+              { flag: "--bitbucket-oauth-client-id <id>", summary: "Bitbucket Cloud OAuth consumer key (or BITBUCKET_OAUTH_CLIENT_ID)" },
+              { flag: "--bitbucket-oauth-client-secret <secret>", summary: "Bitbucket Cloud OAuth consumer secret (or BITBUCKET_OAUTH_CLIENT_SECRET)" },
+              { flag: "--gitlab-oauth-client-id <id>", summary: "GitLab OAuth application ID (or GITLAB_OAUTH_CLIENT_ID)" },
+              { flag: "--gitlab-oauth-client-secret <secret>", summary: "GitLab OAuth application secret (or GITLAB_OAUTH_CLIENT_SECRET)" },
+              { flag: "--gitlab-oauth-base-url <url>", summary: "Self-managed GitLab origin, for example https://gitlab.example.com (or GITLAB_OAUTH_BASE_URL; default gitlab.com)" },
               {
                 flag: "--github-oauth-client-id <id>",
-                summary: "GitHub OAuth app client ID",
+                summary: "GitHub OAuth app client ID (or GITHUB_OAUTH_CLIENT_ID)",
               },
               {
                 flag: "--github-oauth-client-secret <secret>",
@@ -1178,7 +1238,7 @@ const commandSpecs: RunnableCommandSpec[] = [
         result,
         "releases",
         "No release metrics found. Publish a release with `cmpatch release-react --deployment <name>`.",
-        ["ID", "LABEL", "TARGET", "ACTIVE", "DOWNLOADED", "INSTALLED", "FAILED", "SUCCESS"],
+        ["ID", "LABEL", "TARGET", "ACTIVE", "DOWNLOADED", "READY", "FAILED", "APPLIED"],
         (item) => {
           const metrics = readRecord(item, "metrics");
           return [
@@ -1281,6 +1341,9 @@ const commandSpecs: RunnableCommandSpec[] = [
               flagHelp.platform,
               flagHelp.projectRoot,
               { flag: "--plist-file <path>", summary: "Inspect an explicit iOS app plist (requires --platform ios)" },
+              { flag: "--xcode-project-file <path>", summary: "Xcode project to read the iOS version from (requires --platform ios)" },
+              { flag: "--xcode-target-name <name>", summary: "Xcode application target to read the iOS version from (requires --platform ios)" },
+              { flag: "--build-configuration-name <name>", summary: "Xcode build configuration to read the iOS version from (requires --platform ios)" },
               { flag: "--android-strings-file <path>", summary: "Inspect an Android SDK resource file (requires --platform android)" },
               { flag: "--gradle-file <path>", summary: "Select the Android module and version source (requires --platform android)" },
               flagHelp.format,
@@ -2212,7 +2275,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               {
                 flag: "--build-configuration-name <name>",
-                summary: "Xcode build configuration (default: Release)",
+                summary: "Xcode build configuration (default: all configurations must agree)",
               },
             ],
             title: "Version detection flags (when --target-binary-version is omitted)",

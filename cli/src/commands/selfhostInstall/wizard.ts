@@ -1,6 +1,6 @@
 /**
  * The wizard proper: the recovery question a rerun opens with, the answers a
- * first install collects, the GitHub OAuth pair, and the repair edge's smaller
+ * first install collects, the OAuth pair, and the repair edge's smaller
  * version of all of it.
  */
 
@@ -19,21 +19,31 @@ import {
 import { detectDnsProvider, findZoneApex } from "../../selfhostDns";
 import {
   buildRepairEnv,
+  checkOAuthCredential,
   defaultRecoveryEdge,
   describeDomainProblem,
+  OAUTH_PROVIDERS,
   type DeliverySelection,
+  type OAuthExtraRepair,
   type InstallAnswers,
+  type OAuthCredentials,
+  type OAuthExtraField,
+  type OAuthProvider,
   type InstallState,
   type RecoveryEdge,
   type RepairScope,
   type RepairValues,
 } from "../../selfhostInstall";
 import {
+  oauthAppUrl,
   renderCdnPurpose,
   renderCloudflareUnavailable,
   renderIncompleteIntro,
+  renderManualOAuthFormValues,
+  renderManualOAuthVerifiedLater,
   renderOAuthFormValues,
   renderOAuthIntro,
+  renderOAuthRepairIntro,
   renderOAuthShapeProblem,
 } from "../../selfhostSetupCopy";
 import {
@@ -58,8 +68,11 @@ import {
   readDelivery,
   readInstallAnswers,
   readRepairValues,
+  readNonOAuthRepairValues,
   suggestStorageDomain,
-  supplied,
+  checkSuppliedOAuthCredentials,
+  suppliedOAuthProvider,
+  suppliedOAuthCredentials,
 } from "./answers";
 import { collectCloudflare, repairCloudflare } from "./cloudflare";
 import { collectCloudFront } from "./cloudfront";
@@ -163,26 +176,17 @@ export async function collectAnswers(
     }] : []),
   ], true);
 
-  // The GitHub pair and the administrator email come before storage
+  // The OAuth pair and the administrator email come before storage
   // provisioning and the CDN walkthrough: provisioning creates cloud
   // resources, and the runtime secret it generates lives only in memory until
   // install.sh writes the env file, so no question may sit between the two —
   // a rerun after an interruption there finds no env file and provisions
   // again.
-  const flagClientId = readStringFlag(parsed, "--github-oauth-client-id");
-  const flagClientSecret = supplied(deps, parsed, {
-    env: "GITHUB_OAUTH_CLIENT_SECRET",
-    flag: "--github-oauth-client-secret",
-  })?.value;
-  const github =
-    flagClientId !== undefined &&
-    flagClientSecret !== undefined &&
-    flagClientSecret.length > 0
-      ? { clientId: flagClientId, clientSecret: flagClientSecret }
-      : await collectGithubPair(deps, apiDomain);
+  // An install always collects the pair; the origin-only outcome is a repair's.
+  const oauth = (await collectOAuth(deps, parsed, apiDomain)) as OAuthCredentials;
 
   const adminEmail =
-    readStringFlag(parsed, "--email") ?? (await askAdminEmail(deps));
+    readStringFlag(parsed, "--email") ?? (await askAdminEmail(deps, oauth.provider));
 
   const storageAnswers = storagePlan !== null
     ? {
@@ -198,8 +202,7 @@ export async function collectAnswers(
     ...storageAnswers,
     adminEmail,
     apiDomain,
-    githubClientId: github.clientId,
-    githubClientSecret: github.clientSecret,
+    oauth,
   };
 }
 
@@ -319,12 +322,12 @@ async function chooseDelivery(
   });
 }
 
-async function askAdminEmail(deps: CommandDeps): Promise<string> {
+async function askAdminEmail(deps: CommandDeps, provider: OAuthProvider): Promise<string> {
   // The match matters: the server creates the admin account for whoever signs
   // in with this address, and GitHub only reports an address it has verified.
   notice(deps, [
-    "Which email address should be the administrator? Use the verified primary email of the GitHub account you will sign in with — that is how the server knows which account is yours.",
-    "Not sure which one is primary? It is listed at https://github.com/settings/emails",
+    `Which email address should be the administrator? Use the verified primary email of the ${OAUTH_PROVIDERS[provider].displayName} account you will sign in with — that is how the server knows which account is yours.`,
+    ...(provider === "github" ? ["Not sure which one is primary? It is listed at https://github.com/settings/emails"] : []),
   ]);
 
   return askChecked(deps, {
@@ -338,43 +341,161 @@ async function askAdminEmail(deps: CommandDeps): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// The wizard: the GitHub OAuth app
+// The wizard: the OAuth provider and application
 // ---------------------------------------------------------------------------
+
+/** The pair, or on a repair handed only the extra fields (the GitLab origin), just those. */
+async function collectOAuth(
+  deps: CommandDeps,
+  parsed: ParsedArgs,
+  apiDomain: string,
+  intent: "install" | "repair" = "install",
+  /** The deployed extra-field values by provider and flag suffix, for repair guidance only. */
+  deployedExtra: Partial<Record<OAuthProvider, Record<string, string | null>>> = {},
+): Promise<OAuthCredentials | OAuthExtraRepair> {
+  const provider = suppliedOAuthProvider(deps, parsed) ?? (await askSelect(deps, {
+    message: "Which provider should people use to sign in to Codemagic Patch?",
+    choices: Object.entries(OAUTH_PROVIDERS).map(([value, { displayName }]) => ({ value, title: displayName })),
+    fallback: "github",
+    initial: 0,
+  }) as OAuthProvider);
+  const pair = suppliedOAuthCredentials(deps, parsed, provider);
+  checkSuppliedOAuthCredentials(provider, pair);
+  const extra = await collectOAuthExtraFields(deps, provider, pair.extra, intent);
+  const credentials = Object.keys(extra).length > 0 ? { extra } : {};
+  if (pair.clientId && pair.clientSecret) {
+    return { provider, clientId: pair.clientId, clientSecret: pair.clientSecret, ...credentials };
+  }
+  if (provider === "github") return { provider, ...await collectGithubPair(deps, apiDomain, pair, intent) };
+
+  // Past GitHub's own flow, every provider walks its page by hand.
+  const { app, clientIdLabel, clientSecretLabel, displayName } = OAUTH_PROVIDERS[provider];
+  // A supplied value aims the guidance; on a repair the deployed one does
+  // when nothing was supplied, and it never enters the repair payload.
+  const deployed = Object.fromEntries(
+    Object.entries(intent === "repair" ? deployedExtra[provider] ?? {} : {}).filter((entry): entry is [string, string] => entry[1] !== null),
+  );
+  const appUrl = oauthAppUrl(provider, { ...deployed, ...extra });
+  if (intent === "repair") {
+    notice(deps, renderOAuthRepairIntro({ callbackUrl: callbackUrl(apiDomain), provider, settingsUrl: appUrl }));
+    noteBlock(deps, "Check these options", [...app.create.options]);
+  } else {
+    notice(deps, [app.create.whereToCreate, appUrl]);
+    notice(deps, renderManualOAuthFormValues({ callbackUrl: callbackUrl(apiDomain), provider }));
+    noteBlock(deps, "Select these options", [...app.create.options]);
+    notice(deps, app.create.afterSave);
+  }
+  await offerBrowserOpen(deps, {
+    message: `Open ${displayName} in your browser?`,
+    url: appUrl,
+  });
+  // A repair that was handed only the extra fields (the origin) may be
+  // nothing but those: the pair is kept when the ID is left empty, so a
+  // mistyped address does not cost a "Renew secret" round-trip.
+  const extraOnly = intent === "repair" && Object.keys(extra).length > 0 && !pair.clientId && !pair.clientSecret;
+  const clientId = pair.clientId || (extraOnly
+    ? await askOptionalCredential(deps, `${clientIdLabel} (Enter to keep the current ID and secret)`)
+    : await askChecked(deps, { check: checkOAuthCredential, message: clientIdLabel, type: "text" }));
+  if (clientId === "" && extraOnly) return { provider, extra };
+  const clientSecret = pair.clientSecret || await askChecked(deps, { check: checkOAuthCredential, message: clientSecretLabel, type: "password" });
+  notice(deps, renderManualOAuthVerifiedLater(provider));
+  return { provider, clientId, clientSecret, ...credentials };
+}
+
+/** A credential prompt Enter may leave empty; anything typed gets the shape check. */
+async function askOptionalCredential(deps: CommandDeps, message: string): Promise<string> {
+  for (;;) {
+    const value = await askValue(deps, { message, optional: true, type: "text" });
+    const problem = value === "" ? null : checkOAuthCredential(value);
+    if (problem === null) return value;
+    notice(deps, problem);
+  }
+}
+
+/**
+ * The provider's extra fields, ahead of the credential shortcut: a pair
+ * supplied in advance says nothing about which instance issued it. A supplied
+ * value is kept, normalized. Otherwise a first install asks, and Enter keeps
+ * the default, which is then left unset rather than written out. A repair
+ * does not ask: the deployed env file already holds the value and
+ * `--repair-env` leaves unsupplied keys alone, so only an explicit flag or
+ * variable changes it.
+ */
+async function collectOAuthExtraFields(
+  deps: CommandDeps,
+  provider: OAuthProvider,
+  suppliedExtra: Record<string, string>,
+  intent: "install" | "repair",
+): Promise<Record<string, string>> {
+  const extra: Record<string, string> = {};
+  for (const field of OAUTH_PROVIDERS[provider].extraFields) {
+    const suppliedValue = suppliedExtra[field.flag];
+    const value = suppliedValue !== undefined
+      ? field.normalize(suppliedValue)
+      : intent === "repair" ? undefined : await askOAuthExtraField(deps, field);
+    if (value !== undefined) extra[field.flag] = value;
+  }
+  return extra;
+}
+
+/** The normalized answer, or undefined when Enter kept the default. */
+async function askOAuthExtraField(deps: CommandDeps, field: OAuthExtraField): Promise<string | undefined> {
+  const value = field.normalize(await askChecked(deps, {
+    check: field.check,
+    initial: field.default,
+    message: field.prompt,
+    type: "text",
+  }));
+  return value === field.default ? undefined : value;
+}
 
 async function collectGithubPair(
   deps: CommandDeps,
   apiDomain: string,
+  suppliedPair: { clientId?: string; clientSecret?: string } = {},
+  intent: "install" | "repair" = "install",
 ): Promise<{ clientId: string; clientSecret: string }> {
-  const creationUrl = buildOAuthAppUrl({ apiDomain, name: PRODUCT_NAME });
-  notice(deps, renderOAuthIntro({ creationUrl }));
-  noteBlock(
-    deps,
-    "What the form needs",
-    renderOAuthFormValues(
-      { apiDomain, callbackUrl: callbackUrl(apiDomain), name: PRODUCT_NAME },
-      paletteFor(deps),
-    ),
-  );
+  const url = intent === "repair"
+    ? oauthAppUrl("github")
+    : buildOAuthAppUrl({ apiDomain, name: PRODUCT_NAME });
+  if (intent === "repair") {
+    notice(deps, renderOAuthRepairIntro({ callbackUrl: callbackUrl(apiDomain), provider: "github", settingsUrl: url }));
+  } else {
+    notice(deps, renderOAuthIntro({ creationUrl: url }));
+    noteBlock(
+      deps,
+      "What the form needs",
+      renderOAuthFormValues(
+        { apiDomain, callbackUrl: callbackUrl(apiDomain), name: PRODUCT_NAME },
+        paletteFor(deps),
+      ),
+    );
+  }
 
   await offerBrowserOpen(deps, {
     message: "Open GitHub in your browser?",
-    url: creationUrl,
+    url,
   });
 
   for (;;) {
-    const clientId = await askValue(deps, {
+    const clientId = suppliedPair.clientId || await askValue(deps, {
       message: "Client ID",
       type: "text",
     });
     // A password prompt, so the secret is not left on screen or in the
     // terminal's scrollback for whoever looks next.
-    const clientSecret = await askValue(deps, {
+    const clientSecret = suppliedPair.clientSecret || await askValue(deps, {
       message: "Client secret",
       type: "password",
     });
 
     const problem = checkGithubPairShape(clientId, clientSecret);
     if (problem !== null) {
+      const suppliedValueIsInvalid =
+        (problem === "client-id-shape" && suppliedPair.clientId) ||
+        (problem === "client-secret-shape" && suppliedPair.clientSecret);
+      if (suppliedValueIsInvalid) throw new UsageError(renderOAuthShapeProblem(problem));
+      if (problem === "swapped") suppliedPair = {};
       notice(deps, renderOAuthShapeProblem(problem));
       continue;
     }
@@ -400,6 +521,9 @@ async function collectGithubPair(
       return { clientId, clientSecret };
     }
 
+    // A rejected pair does not identify which half is wrong. Let the user
+    // correct both, including a value initially supplied through flags/env.
+    suppliedPair = {};
     notice(
       deps,
       "GitHub did not accept that pair. The client ID is right at the top of the app's page; the secret is only shown once, so if it has been closed, generate a new one.",
@@ -419,8 +543,9 @@ export async function collectRepairValues(
   scope: RepairScope,
 ): Promise<Record<string, string>> {
   if (!interactive) {
-    return readRepairValues(deps, parsed);
+    return readRepairValues(deps, parsed, scope);
   }
+  if (scope === "oauth-only") readNonOAuthRepairValues(deps, parsed, scope);
 
   // Only the values the failure implicates. Re-asking everything would make
   // the user retype answers that were right and are already recorded, which is
@@ -447,13 +572,14 @@ export async function collectRepairValues(
     }
   }
 
-  if (scope === "all" || scope === "oauth") {
-    const pair = await collectGithubPair(
-      deps,
-      await apiDomainForOAuthRepair(deps, session, parsed, values.apiDomain),
+  if (scope === "all" || scope === "oauth" || scope === "oauth-only") {
+    notice(deps, "Choose the provider whose credentials need correcting. Other configured providers keep their settings.");
+    values.oauth = await collectOAuth(
+      deps, parsed,
+      await apiDomainForOAuthRepair(deps, session, values.apiDomain),
+      "repair",
+      { gitlab: { "base-url": session.facts.gitlabBaseUrl } },
     );
-    values.githubClientId = pair.clientId;
-    values.githubClientSecret = pair.clientSecret;
   }
 
   if (scope === "cloudflare") {
@@ -493,7 +619,7 @@ export async function collectRepairValues(
 }
 
 /**
- * The domain the GitHub callback URL is built from.
+ * The domain the OAuth callback URL is built from.
  *
  * An OAuth-only repair collects no domain, so without the deployment's own
  * settings the intro would print `https:///auth/callback` — a URL GitHub
@@ -502,13 +628,9 @@ export async function collectRepairValues(
 async function apiDomainForOAuthRepair(
   deps: CommandDeps,
   session: SelfhostSession,
-  parsed: ParsedArgs,
   collected: string | undefined,
 ): Promise<string> {
-  const known =
-    collected ??
-    readStringFlag(parsed, "--api-domain") ??
-    hostOfUrl(session.facts.serverUrl);
+  const known = collected ?? hostOfUrl(session.facts.serverUrl);
   if (known !== undefined && known.length > 0) {
     return known;
   }
@@ -516,7 +638,7 @@ async function apiDomainForOAuthRepair(
   return askDomain(deps, {
     message: "What domain does your server use?",
     purpose:
-      "The GitHub callback URL is built from it, and this machine has no record of it.",
+      "The OAuth callback URL is built from it, and this machine has no record of it.",
   });
 }
 

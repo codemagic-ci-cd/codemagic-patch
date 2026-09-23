@@ -7,7 +7,7 @@
 // degrade to "—" + Retry without failing the page (the metric-cell
 // convention). Header shows the team name/status via useTeam plus the lazy
 // role badge (skeleton while resolving, inferred confidence tolerated).
-// Quick links → apps/members/metrics. Mandatory states: per-region skeletons,
+// Quick links → apps/members. Mandatory states: per-region skeletons,
 // page-level ErrorState (useTeam failure → retry; not-found/forbidden copy
 // comes from the shared classifier). Breadcrumbs are omitted on this screen
 // (see Breadcrumbs.tsx). TeamRoleBadge mirrors the TeamsPage helper by design
@@ -136,15 +136,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
               />
             </>
           ) : null}
-          <div className="h-px bg-border my-1" />
-          <QuickLink
-            to={`/teams/${teamId}/metrics`}
-            icon={<ChartIcon />}
-            iconBackground="var(--color-green-tint)"
-            iconColor="var(--color-green-deep)"
-            title="Metrics"
-            subtitle="Release health & adoption"
-          />
         </div>
       </div>
     </>
@@ -407,17 +398,6 @@ function MailIcon() {
     <PageIcon>
       <rect x="2" y="4" width="20" height="16" rx="2.5" />
       <path d="m3 7 9 6 9-6" />
-    </PageIcon>
-  );
-}
-
-function ChartIcon() {
-  return (
-    <PageIcon>
-      <path d="M3 3v18h18" />
-      <rect x="7" y="11" width="3" height="6" rx="1" fill="currentColor" stroke="none" />
-      <rect x="12.5" y="7" width="3" height="10" rx="1" fill="currentColor" stroke="none" />
-      <rect x="18" y="13" width="3" height="4" rx="1" fill="currentColor" stroke="none" />
     </PageIcon>
   );
 }

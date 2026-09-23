@@ -15,10 +15,18 @@ cmpatch init
 ```
 
 It finds or asks for the server, signs you in if needed, creates or selects an
-app per platform with a default deployment, and writes
+app per platform with a default deployment, writes
 `codemagic-patch.config.json` so later commands can omit `--server-url` and
-`--app`. Every question has a flag for scripted setups, for example
-`cmpatch init --server-url https://updates.example.com --ios-app MyApp-iOS --android-app MyApp-Android --deployment Staging --yes`.
+`--app`, and then wires the SDK into the app (see
+[Native setup](/docs/setup/native-setup)). Every question has a flag for
+scripted setups, for example
+`cmpatch init --server-url https://updates.example.com --ios-app MyApp-iOS --android-app MyApp-Android --deployment Staging --yes`;
+add `--skip-wire` to link without touching the app.
+
+Complete any remaining steps reported by `init`, then rebuild and install the
+native app with the SDK before testing an OTA release. Follow
+[Native setup](/docs/setup/native-setup) for CocoaPods or Expo prebuild steps;
+an OTA update cannot add the SDK to an existing binary.
 
 Inspect the resolved context:
 

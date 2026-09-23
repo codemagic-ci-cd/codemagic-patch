@@ -1,7 +1,3 @@
-declare module "gradle-to-js/lib/parser" {
-  export function parseText(text: string): Promise<unknown>;
-}
-
 declare module "plist" {
   export function parse(xml: string): unknown;
 }

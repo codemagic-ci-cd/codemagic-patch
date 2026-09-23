@@ -3,7 +3,12 @@
 // views read their record from `useDeployments(appId)`, so the key factory
 // has no `detail` entry. Conventions as established in teams.ts.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { authenticatedRequest, createIdempotencyKey } from "../client";
 import type {
@@ -28,9 +33,13 @@ export const deploymentKeys = {
  * `GET /v1/apps/:appId/deployments` (`app.read`) — includes each
  * `deploymentKey` (SDK config value, not a secret). Detail views select
  * their deployment from this list (no single-deployment GET exists).
+ *
+ * Exported as options so a caller that needs several apps at once can hand them
+ * to `useQueries` (the command palette) and still share one cache entry per app
+ * with this hook.
  */
-export function useDeployments(appId: string) {
-  return useQuery({
+export function deploymentsQueryOptions(appId: string) {
+  return queryOptions({
     queryKey: deploymentKeys.list(appId),
     queryFn: async ({ signal }) => {
       const { deployments } = await authenticatedRequest<DeploymentsListWireResponse>({
@@ -41,6 +50,10 @@ export function useDeployments(appId: string) {
       return deployments.map(fromDeploymentWire);
     },
   });
+}
+
+export function useDeployments(appId: string) {
+  return useQuery(deploymentsQueryOptions(appId));
 }
 
 export interface DeploymentCreateVariables {

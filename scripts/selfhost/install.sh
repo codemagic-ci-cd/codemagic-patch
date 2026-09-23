@@ -8,16 +8,12 @@ API_DOMAIN="${CODEMAGIC_PATCH_API_DOMAIN:-}"
 STORAGE_DOMAIN="${CODEMAGIC_PATCH_STORAGE_DOMAIN:-}"
 STORAGE_ORIGIN_DOMAIN="${CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN:-}"
 ADMIN_EMAIL="${ACME_EMAIL:-}"
-GITHUB_OAUTH_CLIENT_ID="${GITHUB_OAUTH_CLIENT_ID:-}"
-GITHUB_OAUTH_CLIENT_SECRET="${GITHUB_OAUTH_CLIENT_SECRET:-}"
-GITHUB_OAUTH_SCOPES="${GITHUB_OAUTH_SCOPES:-}"
-BITBUCKET_OAUTH_CLIENT_ID="${BITBUCKET_OAUTH_CLIENT_ID:-}"
-BITBUCKET_OAUTH_CLIENT_SECRET="${BITBUCKET_OAUTH_CLIENT_SECRET:-}"
-GITLAB_OAUTH_CLIENT_ID="${GITLAB_OAUTH_CLIENT_ID:-}"
-GITLAB_OAUTH_CLIENT_SECRET="${GITLAB_OAUTH_CLIENT_SECRET:-}"
-GITLAB_OAUTH_BASE_URL="${GITLAB_OAUTH_BASE_URL:-}"
-GITLAB_API_BASE_URL="${GITLAB_API_BASE_URL:-}"
-GITLAB_OAUTH_SCOPES="${GITLAB_OAUTH_SCOPES:-}"
+# Every OAuth provider key (SELFHOST_OAUTH_PROVIDERS in common.sh) is a flag
+# with an environment fallback, like the values above.
+for oauth_key in $(selfhost_oauth_keys); do
+  printf -v "$oauth_key" '%s' "${!oauth_key:-}"
+done
+unset oauth_key
 CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
 CLOUDFLARE_ZONE_ID="${CLOUDFLARE_ZONE_ID:-}"
 CLOUDFLARE_API_BASE_URL="${CLOUDFLARE_API_BASE_URL:-}"
@@ -239,9 +235,10 @@ Options:
                                leaving every other line untouched, then
                                continue the normal rerun. For an install that
                                never completed and baked in a wrong value (a
-                               mistyped domain, a wrong OAuth pair, a
-                               CloudFront distribution id that fails
-                               verification only after the build). The stack
+                               mistyped domain, a wrong OAuth pair or its
+                               scopes/GitLab origin, a CloudFront distribution
+                               id that fails verification only after the
+                               build). The stack
                                shape is NOT repairable: switching the database
                                mode, the storage mode, or the delivery adapter
                                on an existing deployment stays a manual
@@ -251,6 +248,7 @@ Options:
 USAGE
 }
 
+# shellcheck disable=SC2034  # the OAuth keys are read by name (SELFHOST_OAUTH_PROVIDERS)
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --api-domain) API_DOMAIN="${2:-}"; shift 2 ;;
@@ -695,13 +693,25 @@ install_gcs_credentials() (
   log_selfhost "copied GCS service-account key to ${dest}"
 )
 
+# True when a provider other than GitHub — one that is flags/env only, with
+# no prompt — has a client id.
+flag_only_oauth_provider_configured() {
+  local provider id_var
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    [ "$provider" != GITHUB ] || continue
+    id_var="${provider}_OAUTH_CLIENT_ID"
+    [ -z "${!id_var}" ] || return 0
+  done
+  return 1
+}
+
 prompt_github_oauth() {
-  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory.
-  # Bitbucket/GitLab are flags/env-only, so when one of them is configured
-  # and no GitHub value was given, skip the GitHub prompts and run without
-  # GitHub. Otherwise reuse prompt_required so non-interactive runs fail fast
-  # when --github-oauth-client-id or --github-oauth-client-secret is missing.
-  if { [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_ID" ]; } &&
+  # At least one OAuth provider is mandatory. The other providers are
+  # flags/env-only, so when one of them is configured and no GitHub value
+  # was given, skip the GitHub prompts and run without GitHub. Otherwise
+  # reuse prompt_required so non-interactive runs fail fast when
+  # --github-oauth-client-id or --github-oauth-client-secret is missing.
+  if flag_only_oauth_provider_configured &&
     [ -z "$GITHUB_OAUTH_CLIENT_ID" ] && [ -z "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
     return 0
   fi
@@ -711,26 +721,25 @@ prompt_github_oauth() {
     "GitHub OAuth App client secret (web dashboard)" "$GITHUB_OAUTH_CLIENT_SECRET"
 }
 
-validate_bitbucket_oauth() {
-  # Bitbucket is optional (flags/env only, no prompt) but all-or-nothing: the
-  # server refuses to boot with a client id and no secret, so catch it here.
-  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -z "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
-    fail_selfhost "--bitbucket-oauth-client-id requires --bitbucket-oauth-client-secret (Bitbucket has no secret-less flow)"
-  fi
-  if [ -z "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
-    fail_selfhost "--bitbucket-oauth-client-secret requires --bitbucket-oauth-client-id"
-  fi
-}
-
-validate_gitlab_oauth() {
-  # GitLab is optional (flags/env only, no prompt) but all-or-nothing: the
-  # server refuses to boot with a client id and no secret, so catch it here.
-  if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] && [ -z "$GITLAB_OAUTH_CLIENT_SECRET" ]; then
-    fail_selfhost "--gitlab-oauth-client-id requires --gitlab-oauth-client-secret (GitLab has no secret-less flow)"
-  fi
-  if [ -z "$GITLAB_OAUTH_CLIENT_ID" ] && [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ]; then
-    fail_selfhost "--gitlab-oauth-client-secret requires --gitlab-oauth-client-id"
-  fi
+validate_flag_only_oauth_providers() {
+  # The providers other than GitHub are optional (flags/env only, no prompt)
+  # but all-or-nothing: the server refuses to boot with a client id and no
+  # secret, so catch it here.
+  local provider id_var secret_var name_var id_flag secret_flag
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    [ "$provider" != GITHUB ] || continue
+    id_var="${provider}_OAUTH_CLIENT_ID"
+    secret_var="${provider}_OAUTH_CLIENT_SECRET"
+    name_var="SELFHOST_OAUTH_${provider}_NAME"
+    id_flag="$(selfhost_oauth_flag "$id_var")"
+    secret_flag="$(selfhost_oauth_flag "$secret_var")"
+    if [ -n "${!id_var}" ] && [ -z "${!secret_var}" ]; then
+      fail_selfhost "${id_flag} requires ${secret_flag} (${!name_var} has no secret-less flow)"
+    fi
+    if [ -z "${!id_var}" ] && [ -n "${!secret_var}" ]; then
+      fail_selfhost "${secret_flag} requires ${id_flag}"
+    fi
+  done
 }
 
 prompt_cloudflare() {
@@ -1065,8 +1074,11 @@ write_env_file() {
   validate_env_file_literal "--cloudfront-access-key-id" "$CLOUDFRONT_ACCESS_KEY_ID"
   validate_env_file_literal "--cloudfront-secret-access-key" "$CLOUDFRONT_SECRET_ACCESS_KEY"
   validate_env_file_literal "--cloudfront-origin-verify-secret" "$CLOUDFRONT_ORIGIN_VERIFY_SECRET"
-  validate_env_file_literal "--github-oauth-client-secret" "$GITHUB_OAUTH_CLIENT_SECRET"
-  validate_env_file_literal "--bitbucket-oauth-client-secret" "$BITBUCKET_OAUTH_CLIENT_SECRET"
+  local provider secret_var
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    secret_var="${provider}_OAUTH_CLIENT_SECRET"
+    validate_env_file_literal "$(selfhost_oauth_flag "$secret_var")" "${!secret_var}"
+  done
 
   umask 077
   # DR2: build into a temp file in the same directory, then atomically rename, so
@@ -1225,10 +1237,10 @@ EOF
     printf '\nDELIVERY_ADAPTER=base-url\n' >>"$env_tmp"
   fi
 
-  # At least one OAuth provider (GitHub, Bitbucket, or GitLab) is mandatory; the
-  # server refuses to boot without one. Each client secret powers the web
-  # dashboard's confidential code exchange, and each redirect allowlist pins
-  # the browser callback to the API domain.
+  # At least one OAuth provider is mandatory; the server refuses to boot
+  # without one. Each client secret powers the web dashboard's confidential
+  # code exchange, and each redirect allowlist pins the browser callback to
+  # the API domain.
   # OAUTH_CLI_AUTH_SECRET signs the CLI browser-login authorization codes.
   # INITIAL_ADMIN_EMAILS lets the admin's first OAuth sign-in create the
   # admin account under invite-only registration.
@@ -1240,50 +1252,30 @@ OAUTH_CLI_AUTH_SECRET=${cli_auth_secret}
 INITIAL_ADMIN_EMAILS=${ADMIN_EMAIL}
 EOF
 
-  if [ -n "$GITHUB_OAUTH_CLIENT_ID" ]; then
-    cat >>"$env_tmp" <<EOF
-
-GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
-GITHUB_OAUTH_CLIENT_SECRET='${GITHUB_OAUTH_CLIENT_SECRET}'
-GITHUB_OAUTH_SCOPES="${GITHUB_OAUTH_SCOPES:-read:user user:email}"
-GITHUB_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
-EOF
-  fi
-
-  # Bitbucket sign-in is written only when provided (see
-  # .env.selfhost.example for the consumer setup notes).
-  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ]; then
-    cat >>"$env_tmp" <<EOF
-
-BITBUCKET_OAUTH_CLIENT_ID=${BITBUCKET_OAUTH_CLIENT_ID}
-BITBUCKET_OAUTH_CLIENT_SECRET='${BITBUCKET_OAUTH_CLIENT_SECRET}'
-BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
-EOF
-  fi
-
-  # GitLab sign-in is written only when provided (see
-  # .env.selfhost.example for the application setup notes).
-  if [ -n "$GITLAB_OAUTH_CLIENT_ID" ]; then
-    cat >>"$env_tmp" <<EOF
-
-GITLAB_OAUTH_CLIENT_ID=${GITLAB_OAUTH_CLIENT_ID}
-GITLAB_OAUTH_CLIENT_SECRET='${GITLAB_OAUTH_CLIENT_SECRET}'
-EOF
-    if [ -n "$GITLAB_OAUTH_BASE_URL" ]; then
-      cat >>"$env_tmp" <<EOF
-GITLAB_OAUTH_BASE_URL=${GITLAB_OAUTH_BASE_URL}
-EOF
-    fi
-    if [ -n "$GITLAB_API_BASE_URL" ]; then
-      cat >>"$env_tmp" <<EOF
-GITLAB_API_BASE_URL=${GITLAB_API_BASE_URL}
-EOF
-    fi
-    cat >>"$env_tmp" <<EOF
-GITLAB_OAUTH_SCOPES="${GITLAB_OAUTH_SCOPES:-read_user}"
-GITLAB_OAUTH_ALLOWED_REDIRECT_URIS=${SCHEME}://${API_DOMAIN}/auth/callback
-EOF
-  fi
+  # A provider's sign-in is written only when its client id was provided (see
+  # .env.selfhost.example for the per-provider setup notes): the secret
+  # single-quoted, its optional keys only when given, its scopes always (with
+  # the provider's default), and the derived redirect allowlist last.
+  local id_var optional_var scopes_default_var key
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    id_var="${provider}_OAUTH_CLIENT_ID"
+    secret_var="${provider}_OAUTH_CLIENT_SECRET"
+    optional_var="SELFHOST_OAUTH_${provider}_OPTIONAL_KEYS"
+    scopes_default_var="SELFHOST_OAUTH_${provider}_SCOPES_DEFAULT"
+    [ -n "${!id_var}" ] || continue
+    {
+      printf '\n%s=%s\n' "$id_var" "${!id_var}"
+      printf "%s='%s'\n" "$secret_var" "${!secret_var}"
+      for key in ${!optional_var}; do
+        [ -z "${!key}" ] || printf '%s=%s\n' "$key" "${!key}"
+      done
+      if [ -n "${!scopes_default_var}" ]; then
+        key="${provider}_OAUTH_SCOPES"
+        printf '%s="%s"\n' "$key" "${!key:-${!scopes_default_var}}"
+      fi
+      printf '%s_OAUTH_ALLOWED_REDIRECT_URIS=%s://%s/auth/callback\n' "$provider" "$SCHEME" "$API_DOMAIN"
+    } >>"$env_tmp"
+  done
 
   chmod 600 "$env_tmp"
   mv "$env_tmp" "$SELFHOST_ENV_FILE"
@@ -1345,8 +1337,20 @@ flush_selfhost_env_plan() {
   done
 }
 
+# A provider option (scopes, a self-hosted GitLab origin) is repairable only
+# where that provider is configured: in the file already, or by the client id
+# this same invocation repairs. Otherwise the key would be written for a
+# sign-in the server never loads, and the repair would look like it took.
+require_repairable_oauth_provider() {
+  local prefix="$1" flag="$2" client_id_var="${1}_OAUTH_CLIENT_ID"
+  [ -n "${!client_id_var}" ] ||
+    [ -n "$(selfhost_env_value_from_file "$client_id_var")" ] ||
+    fail_selfhost "${flag} applies only to a deployment that signs in with ${prefix}; pass --$(printf '%s' "$prefix" | tr '[:upper:]' '[:lower:]')-oauth-client-id/-secret with it, or configure that provider first"
+}
+
 repair_env_file() {
   local adapter storage_mode storage_origin_mode api_domain repaired=0
+  local provider id_var secret_var optional_var scopes_default_var key together
 
   REPAIR_ENV_PLAN_KEYS=()
   REPAIR_ENV_PLAN_VALUES=()
@@ -1388,15 +1392,11 @@ repair_env_file() {
     # Derived, not independent: keeping these in step with the domain is the
     # whole reason repair belongs in this script.
     plan_selfhost_env_value SERVER_URL "${SCHEME}://${API_DOMAIN}"
-    if [ -n "$(selfhost_env_value_from_file GITHUB_OAUTH_CLIENT_ID)" ]; then
-      plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
-    fi
-    if [ -n "$(selfhost_env_value_from_file BITBUCKET_OAUTH_CLIENT_ID)" ]; then
-      plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
-    fi
-    if [ -n "$(selfhost_env_value_from_file GITLAB_OAUTH_CLIENT_ID)" ]; then
-      plan_selfhost_env_value GITLAB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${API_DOMAIN}/auth/callback"
-    fi
+    for provider in $SELFHOST_OAUTH_PROVIDERS; do
+      if [ -n "$(selfhost_env_value_from_file "${provider}_OAUTH_CLIENT_ID")" ]; then
+        plan_selfhost_env_value "${provider}_OAUTH_ALLOWED_REDIRECT_URIS" "${SCHEME}://${API_DOMAIN}/auth/callback"
+      fi
+    done
     repaired=1
   fi
   api_domain="${API_DOMAIN:-$(selfhost_env_value_from_file CODEMAGIC_PATCH_API_DOMAIN)}"
@@ -1434,35 +1434,41 @@ repair_env_file() {
     repaired=1
   fi
 
-  if [ -n "$GITHUB_OAUTH_CLIENT_ID" ] || [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
-    { [ -n "$GITHUB_OAUTH_CLIENT_ID" ] && [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; } ||
-      fail_selfhost "--github-oauth-client-id and --github-oauth-client-secret must be repaired together (the dashboard's confidential code exchange needs both)"
-    validate_env_file_literal "--github-oauth-client-secret" "$GITHUB_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value GITHUB_OAUTH_CLIENT_ID "$GITHUB_OAUTH_CLIENT_ID"
-    plan_selfhost_env_literal GITHUB_OAUTH_CLIENT_SECRET "$GITHUB_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${api_domain}/auth/callback"
-    repaired=1
-  fi
-
-  if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] || [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
-    { [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] && [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; } ||
-      fail_selfhost "--bitbucket-oauth-client-id and --bitbucket-oauth-client-secret must be repaired together"
-    validate_env_file_literal "--bitbucket-oauth-client-secret" "$BITBUCKET_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value BITBUCKET_OAUTH_CLIENT_ID "$BITBUCKET_OAUTH_CLIENT_ID"
-    plan_selfhost_env_literal BITBUCKET_OAUTH_CLIENT_SECRET "$BITBUCKET_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${api_domain}/auth/callback"
-    repaired=1
-  fi
-
-  if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ]; then
-    { [ -n "$GITLAB_OAUTH_CLIENT_ID" ] && [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ]; } ||
-      fail_selfhost "--gitlab-oauth-client-id and --gitlab-oauth-client-secret must be repaired together"
-    validate_env_file_literal "--gitlab-oauth-client-secret" "$GITLAB_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value GITLAB_OAUTH_CLIENT_ID "$GITLAB_OAUTH_CLIENT_ID"
-    plan_selfhost_env_literal GITLAB_OAUTH_CLIENT_SECRET "$GITLAB_OAUTH_CLIENT_SECRET"
-    plan_selfhost_env_value GITLAB_OAUTH_ALLOWED_REDIRECT_URIS "${SCHEME}://${api_domain}/auth/callback"
-    repaired=1
-  fi
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    id_var="${provider}_OAUTH_CLIENT_ID"
+    secret_var="${provider}_OAUTH_CLIENT_SECRET"
+    optional_var="SELFHOST_OAUTH_${provider}_OPTIONAL_KEYS"
+    scopes_default_var="SELFHOST_OAUTH_${provider}_SCOPES_DEFAULT"
+    if [ -n "${!id_var}" ] || [ -n "${!secret_var}" ]; then
+      together="$(selfhost_oauth_flag "$id_var") and $(selfhost_oauth_flag "$secret_var") must be repaired together"
+      # GitHub's message says why: its id once stood alone (see
+      # ensure_selfhost_oauth_env), so an operator may expect that to work.
+      [ "$provider" != GITHUB ] || together="${together} (the dashboard's confidential code exchange needs both)"
+      { [ -n "${!id_var}" ] && [ -n "${!secret_var}" ]; } || fail_selfhost "$together"
+      validate_env_file_literal "$(selfhost_oauth_flag "$secret_var")" "${!secret_var}"
+      plan_selfhost_env_value "$id_var" "${!id_var}"
+      plan_selfhost_env_literal "$secret_var" "${!secret_var}"
+      plan_selfhost_env_value "${provider}_OAUTH_ALLOWED_REDIRECT_URIS" "${SCHEME}://${api_domain}/auth/callback"
+      repaired=1
+    fi
+    # A provider's optional keys and scopes are repairable on their own, and
+    # only for a deployment that signs in with that provider: write_env_file
+    # emits the optional keys under the client id, so on a gitlab.com install
+    # they are absent and a repair appends them, which is the one case
+    # set_selfhost_env_value adds a line.
+    for key in ${!optional_var}; do
+      [ -n "${!key}" ] || continue
+      require_repairable_oauth_provider "$provider" "$(selfhost_oauth_flag "$key")"
+      plan_selfhost_env_value "$key" "${!key}"
+      repaired=1
+    done
+    key="${provider}_OAUTH_SCOPES"
+    if [ -n "${!scopes_default_var}" ] && [ -n "${!key:-}" ]; then
+      require_repairable_oauth_provider "$provider" "$(selfhost_oauth_flag "$key")"
+      plan_selfhost_env_value "$key" "\"${!key}\""
+      repaired=1
+    fi
+  done
 
   if [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ] ||
     [ -n "$CLOUDFLARE_API_BASE_URL" ]; then
@@ -1524,6 +1530,7 @@ repair_env_file() {
 }
 
 main() {
+  local provider key given ignored optional_var
   check_tooling
   if [ "$REPAIR_ENV" -eq 1 ] && [ ! -f "$SELFHOST_ENV_FILE" ]; then
     fail_selfhost "--repair-env applies only to an existing ${SELFHOST_ENV_FILE}; there is nothing to repair here. Run the install without it."
@@ -1542,11 +1549,10 @@ main() {
     fi
     prompt_required API_DOMAIN "CodemagicPatch API domain" "$API_DOMAIN"
     prompt_required ADMIN_EMAIL "Admin email" "$ADMIN_EMAIL"
-    # Validate Bitbucket/GitLab first: prompt_github_oauth skips the GitHub
-    # prompts when one of them is configured, so a half-configured pair must
-    # fail before it can silently suppress the GitHub prompts.
-    validate_bitbucket_oauth
-    validate_gitlab_oauth
+    # Validate the flag-only providers first: prompt_github_oauth skips the
+    # GitHub prompts when one of them is configured, so a half-configured
+    # pair must fail before it can silently suppress the GitHub prompts.
+    validate_flag_only_oauth_providers
     prompt_github_oauth
     prompt_database
     # Storage must resolve before either CDN: bundled CloudFront derives its
@@ -1586,18 +1592,23 @@ main() {
     repair_env_file
   else
     log_selfhost "reusing existing ${SELFHOST_ENV_FILE}"
-    if [ -n "$GITHUB_OAUTH_CLIENT_ID" ] || [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
-      warn_selfhost "ignoring --github-oauth-client-id/--github-oauth-client-secret; OAuth is only written on initial install"
-      warn_selfhost "edit GITHUB_OAUTH_CLIENT_ID/GITHUB_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
-    fi
-    if [ -n "$BITBUCKET_OAUTH_CLIENT_ID" ] || [ -n "$BITBUCKET_OAUTH_CLIENT_SECRET" ]; then
-      warn_selfhost "ignoring --bitbucket-oauth-client-id/--bitbucket-oauth-client-secret; OAuth is only written on initial install"
-      warn_selfhost "edit BITBUCKET_OAUTH_CLIENT_ID/BITBUCKET_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
-    fi
-    if [ -n "$GITLAB_OAUTH_CLIENT_ID" ] || [ -n "$GITLAB_OAUTH_CLIENT_SECRET" ] || [ -n "$GITLAB_OAUTH_BASE_URL" ] || [ -n "$GITLAB_API_BASE_URL" ] || [ -n "$GITLAB_OAUTH_SCOPES" ]; then
-      warn_selfhost "ignoring --gitlab-oauth-*; OAuth is only written on initial install"
-      warn_selfhost "edit GITLAB_OAUTH_CLIENT_ID/GITLAB_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
-    fi
+    # The warning names the id/secret pair, or --<provider>-oauth-* for a
+    # provider with more flags than that (optional keys).
+    for provider in $SELFHOST_OAUTH_PROVIDERS; do
+      given=0
+      for key in $(selfhost_oauth_provider_keys "$provider"); do
+        [ -z "${!key}" ] || given=1
+      done
+      [ "$given" -eq 1 ] || continue
+      optional_var="SELFHOST_OAUTH_${provider}_OPTIONAL_KEYS"
+      if [ -n "${!optional_var}" ]; then
+        ignored="$(selfhost_oauth_flag "${provider}_OAUTH")-*"
+      else
+        ignored="$(selfhost_oauth_flag "${provider}_OAUTH_CLIENT_ID")/$(selfhost_oauth_flag "${provider}_OAUTH_CLIENT_SECRET")"
+      fi
+      warn_selfhost "ignoring ${ignored}; OAuth is only written on initial install"
+      warn_selfhost "edit ${provider}_OAUTH_CLIENT_ID/${provider}_OAUTH_CLIENT_SECRET in ${SELFHOST_ENV_FILE} to change them, then rerun"
+    done
     if [ "$USE_CLOUDFLARE" -eq 1 ] ||
       [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ]; then
       warn_selfhost "ignoring --cloudflare/--cloudflare-api-token/--cloudflare-zone-id; delivery config is only written on initial install"
@@ -1628,15 +1639,9 @@ main() {
   # environment. load_selfhost_env repopulates them from the file.
   ALLOW_HTTP=0
   SCHEME=https
-  GITHUB_OAUTH_CLIENT_ID=""
-  GITHUB_OAUTH_CLIENT_SECRET=""
-  BITBUCKET_OAUTH_CLIENT_ID=""
-  BITBUCKET_OAUTH_CLIENT_SECRET=""
-  GITLAB_OAUTH_CLIENT_ID=""
-  GITLAB_OAUTH_CLIENT_SECRET=""
-  GITLAB_OAUTH_BASE_URL=""
-  GITLAB_API_BASE_URL=""
-  GITLAB_OAUTH_SCOPES=""
+  for key in $(selfhost_oauth_keys); do
+    printf -v "$key" ''
+  done
   USE_CLOUDFLARE=0
   CLOUDFLARE_API_TOKEN=""
   CLOUDFLARE_ZONE_ID=""

@@ -191,16 +191,14 @@ ON CONFLICT (id) DO UPDATE SET
 -- Refresh demo metrics on every run (relative timestamps stay recent).
 DELETE FROM metric_event WHERE id LIKE 'me_demo_ex_%';
 
--- Helper pattern: one INSERT per (deployment, package hash, event_name) cohort.
--- emitted_at spreads across the last 14 days so a future time-series view has
--- something to bucket; counters today only need the COUNT(*) totals.
---
+-- Funnel events (Downloaded / Ready / Applied) stamp over the few days
+-- after that release's publish, front-loaded and a bit uneven so cumulative
+-- Applied ramps instead of smearing. Production totals sit next to the
+-- 10k-device Active occupancy grid (v1 from day 28, v2 from day 13, v3
+-- peels a 10% canary from day 3), not a separate 70k lifetime funnel.
 -- Staging ≈ 30-person internal team. Healthy releases have no Failed rows
 -- (0.02% of ~30 devices rounds to zero). v4 is the disabled crash-rollback
--- canary. Production ≈ 70k fleet, Failed ≈ 0.02% of Success+Failed, with a
--- 10k-device Active occupancy grid so the adoption chart hands off v1 → v2 →
--- v3 instead of stacking step-ups. v1 eases in from 28 days ago so the
--- 30-day window is not mostly zeros; v2 takes over from day 13.
+-- canary.
 
 -- Staging v1 (a couple of stragglers; high lifetime funnel)
 INSERT INTO metric_event (
@@ -216,7 +214,13 @@ SELECT
   CASE
     WHEN e.event_name = 'Active'
       THEN date_trunc('day', now()) - ((10 + g) * interval '1 day') + interval '12 hours'
-    ELSE now() - ((g % 14) * interval '1 day') - ((g % 17) * interval '1 hour')
+    ELSE LEAST(
+      now() - interval '2 minutes',
+      date_trunc('day', now())
+        - (GREATEST(11, 14 - ((g - 1) * 3 / e.n)) * interval '1 day')
+        + ((g % 17) * interval '1 hour')
+        + ((g * 7) % 50) * interval '1 minute'
+    )
   END,
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
@@ -229,14 +233,14 @@ SELECT
   '0.1.0',
   CASE WHEN g % 2 = 0 THEN 'ios' ELSE 'android' END,
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"full_bundle"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
   ('Downloaded'::text, 28),
-  ('Installed', 26),
-  ('Success', 25),
+  ('Ready', 26),
+  ('Applied', 25),
   ('Active', 2)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
@@ -255,7 +259,13 @@ SELECT
   CASE
     WHEN e.event_name = 'Active'
       THEN date_trunc('day', now()) - ((2 + g) * interval '1 day') + interval '12 hours'
-    ELSE now() - ((g % 10) * interval '1 day') - ((g % 13) * interval '1 hour')
+    ELSE LEAST(
+      now() - interval '2 minutes',
+      date_trunc('day', now())
+        - (GREATEST(5, 7 - ((g - 1) * 2 / e.n)) * interval '1 day')
+        + ((g % 13) * interval '1 hour')
+        + ((g * 11) % 50) * interval '1 minute'
+    )
   END,
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
@@ -268,14 +278,14 @@ SELECT
   '0.1.0',
   CASE WHEN g % 3 = 0 THEN 'android' ELSE 'ios' END,
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"full_bundle"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
   ('Downloaded'::text, 20),
-  ('Installed', 18),
-  ('Success', 17),
+  ('Ready', 18),
+  ('Applied', 17),
   ('Active', 6)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
@@ -294,7 +304,13 @@ SELECT
   CASE
     WHEN e.event_name = 'Active'
       THEN date_trunc('day', now()) - ((g % 3) * interval '1 day') + interval '12 hours'
-    ELSE now() - ((g % 3) * interval '1 day') - ((g % 11) * interval '1 hour')
+    ELSE LEAST(
+      now() - interval '2 minutes',
+      date_trunc('day', now())
+        - (GREATEST(0, 2 - ((g - 1) * 2 / e.n)) * interval '1 day')
+        + ((g % 11) * interval '1 hour')
+        + ((g * 13) % 50) * interval '1 minute'
+    )
   END,
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
@@ -307,14 +323,14 @@ SELECT
   '0.1.0',
   CASE WHEN g % 2 = 0 THEN 'ios' ELSE 'android' END,
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"patch"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
   ('Downloaded'::text, 24),
-  ('Installed', 23),
-  ('Success', 22),
+  ('Ready', 23),
+  ('Applied', 22),
   ('Active', 22)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
@@ -342,18 +358,18 @@ SELECT
   '0.1.0',
   'ios',
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"patch"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
   ('Downloaded'::text, 8),
-  ('Installed', 6),
-  ('Success', 2)
+  ('Ready', 6),
+  ('Applied', 2)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
--- Production v1 (stragglers; high lifetime funnel from earlier full rollout)
+-- Production v1: take-up over the occupancy ramp-in (publish 28 days ago).
 INSERT INTO metric_event (
   id, event_id, event_name, emitted_at,
   team_id, app_id, deployment_id, deployment_key,
@@ -361,10 +377,16 @@ INSERT INTO metric_event (
   device_id, sdk_version, platform, attributes
 )
 SELECT
-  'me_demo_ex_prd_v1_' || lower(e.event_name) || '_' || g,
-  'evt_demo_ex_prd_v1_' || lower(e.event_name) || '_' || g,
+  'me_demo_ex_prd_v1_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
+  'evt_demo_ex_prd_v1_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
   e.event_name,
-  now() - ((g % 14) * interval '1 day') - ((g % 19) * interval '1 hour'),
+  LEAST(
+    now() - interval '2 minutes',
+    date_trunc('day', now())
+      - (day.day_offset * interval '1 day')
+      + (((g * 13 + day.day_offset * 5) % 20) * interval '1 hour')
+      + (((g * 17) % 53) * interval '1 minute')
+  ),
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
   'deployment_demo_example_production',
@@ -372,22 +394,39 @@ SELECT
   '1.0.0',
   'demo_ex_prd_pkg_v1',
   'demo_ex_prd_pkg_v1',
-  'device_demo_prd_v1_' || g,
+  'device_demo_prd_v1_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
   '0.1.0',
   CASE WHEN g % 2 = 0 THEN 'ios' ELSE 'android' END,
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"full_bundle"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
-  ('Downloaded'::text, 68000),
-  ('Installed', 65000),
-  ('Success', 63500)
+  (28, 640),
+  (27, 990),
+  (26, 1380),
+  (25, 1640),
+  (24, 1510),
+  (23, 1160),
+  (22, 870),
+  (21, 610),
+  (20, 400),
+  (19, 220),
+  (18, 110),
+  (17, 55),
+  (16, 28),
+  (15, 14)
+) AS day(day_offset, applied)
+CROSS JOIN LATERAL (VALUES
+  ('Downloaded'::text, GREATEST(1, round(day.applied * 1.08))::int),
+  ('Ready', GREATEST(1, round(day.applied * 1.03))::int),
+  ('Applied', day.applied)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
--- Production v2 (almost everyone)
+-- Production v2: takeover from day 13, matching the occupancy 25/55/82/100
+-- steps plus a thin tail.
 INSERT INTO metric_event (
   id, event_id, event_name, emitted_at,
   team_id, app_id, deployment_id, deployment_key,
@@ -395,10 +434,16 @@ INSERT INTO metric_event (
   device_id, sdk_version, platform, attributes
 )
 SELECT
-  'me_demo_ex_prd_v2_' || lower(e.event_name) || '_' || g,
-  'evt_demo_ex_prd_v2_' || lower(e.event_name) || '_' || g,
+  'me_demo_ex_prd_v2_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
+  'evt_demo_ex_prd_v2_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
   e.event_name,
-  now() - ((g % 10) * interval '1 day') - ((g % 15) * interval '1 hour'),
+  LEAST(
+    now() - interval '2 minutes',
+    date_trunc('day', now())
+      - (day.day_offset * interval '1 day')
+      + (((g * 11 + day.day_offset * 7) % 20) * interval '1 hour')
+      + (((g * 19) % 53) * interval '1 minute')
+  ),
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
   'deployment_demo_example_production',
@@ -406,22 +451,32 @@ SELECT
   '1.0.0',
   'demo_ex_prd_pkg_v2',
   'demo_ex_prd_pkg_v2',
-  'device_demo_prd_v2_' || g,
+  'device_demo_prd_v2_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
   '0.1.0',
   CASE WHEN g % 3 = 0 THEN 'android' ELSE 'ios' END,
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"full_bundle"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
-  ('Downloaded'::text, 65000),
-  ('Installed', 63000),
-  ('Success', 62000)
+  (13, 2410),
+  (12, 3040),
+  (11, 2480),
+  (10, 1090),
+  (9, 360),
+  (8, 140),
+  (7, 55),
+  (6, 22)
+) AS day(day_offset, applied)
+CROSS JOIN LATERAL (VALUES
+  ('Downloaded'::text, GREATEST(1, round(day.applied * 1.07))::int),
+  ('Ready', GREATEST(1, round(day.applied * 1.03))::int),
+  ('Applied', day.applied)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
--- Production v3 (10% canary)
+-- Production v3: 10% canary from day 3.
 INSERT INTO metric_event (
   id, event_id, event_name, emitted_at,
   team_id, app_id, deployment_id, deployment_key,
@@ -429,10 +484,16 @@ INSERT INTO metric_event (
   device_id, sdk_version, platform, attributes
 )
 SELECT
-  'me_demo_ex_prd_v3_' || lower(e.event_name) || '_' || g,
-  'evt_demo_ex_prd_v3_' || lower(e.event_name) || '_' || g,
+  'me_demo_ex_prd_v3_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
+  'evt_demo_ex_prd_v3_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
   e.event_name,
-  now() - ((g % 3) * interval '1 day') - ((g % 9) * interval '1 hour'),
+  LEAST(
+    now() - interval '2 minutes',
+    date_trunc('day', now())
+      - (day.day_offset * interval '1 day')
+      + (((g * 9 + day.day_offset * 3) % 20) * interval '1 hour')
+      + (((g * 23) % 53) * interval '1 minute')
+  ),
   (SELECT id FROM team WHERE name = 'default-team'),
   'app_demo_example',
   'deployment_demo_example_production',
@@ -440,18 +501,24 @@ SELECT
   '1.0.1',
   'demo_ex_prd_pkg_v3',
   'demo_ex_prd_pkg_v3',
-  'device_demo_prd_v3_' || g,
+  'device_demo_prd_v3_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
   '0.1.0',
   CASE WHEN g % 2 = 0 THEN 'ios' ELSE 'android' END,
   CASE
-    WHEN e.event_name IN ('Downloaded', 'Installed', 'Success')
+    WHEN e.event_name IN ('Downloaded', 'Ready', 'Applied')
       THEN '{"delivery_type":"patch"}'::jsonb
     ELSE NULL
   END
 FROM (VALUES
-  ('Downloaded'::text, 7200),
-  ('Installed', 6900),
-  ('Success', 6700)
+  (3, 355),
+  (2, 280),
+  (1, 175),
+  (0, 82)
+) AS day(day_offset, applied)
+CROSS JOIN LATERAL (VALUES
+  ('Downloaded'::text, GREATEST(1, round(day.applied * 1.09))::int),
+  ('Ready', GREATEST(1, round(day.applied * 1.04))::int),
+  ('Applied', day.applied)
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 

@@ -1,6 +1,7 @@
 // Release history table layout (DeploymentDetailPage).
 //
-// - release / actions: shrink-to-content (w-[1%]).
+// - release / actions: shrink-to-content (w-[1%]). First/last inset matches
+//   CARD_HEAD (22px) so the table chrome can stay full-bleed.
 // - note: single-line truncate (~38ch) on the cell text.
 // - data: shared preset for status, rollout, target, and metric columns.
 
@@ -106,16 +107,16 @@ function td(...parts: string[]): string {
 /** th/td class presets — always use the matching pair for a column. */
 export const releaseHistoryCol = {
   th: {
-    release: th(FIT, "!px-[12px]"),
+    release: th(FIT, "!pl-[22px]"),
     note: TBL_TH,
     data: th("!px-[10px]", "!text-center"),
-    actions: th(FIT, "!px-[8px]", "!text-center"),
+    actions: th(FIT, "!pr-[22px]", "!text-center"),
   },
   td: {
-    release: td(FIT, "!px-[12px]"),
+    release: td(FIT, "!pl-[22px]"),
     note: TBL_TD,
     data: td("!px-[10px]", DATA_CELL),
-    actions: td(FIT, "!px-[8px]", "text-center"),
+    actions: td(FIT, "!pr-[22px]", "text-center"),
   },
 } as const;
 
@@ -133,7 +134,7 @@ export function ReleaseHistoryTableHead({
       <th className={releaseHistoryCol.th.data}>Rollout</th>
       <th className={releaseHistoryCol.th.data}>Target</th>
       <th className={releaseHistoryCol.th.data}>Downloads</th>
-      <th className={releaseHistoryCol.th.data}>Success</th>
+      <th className={releaseHistoryCol.th.data}>Applied</th>
       <th className={releaseHistoryCol.th.data}>Failed</th>
       <th
         className={releaseHistoryCol.th.actions}

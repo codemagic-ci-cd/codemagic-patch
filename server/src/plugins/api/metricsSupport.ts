@@ -97,7 +97,8 @@ export function parseMetricEventInput(body: unknown):
     };
   }
 
-  if (!isMetricEventName(body.event_name)) {
+  const eventName = resolveMetricEventName(body.event_name);
+  if (eventName === null) {
     return {
       kind: "error",
       problem: singleFieldValidationProblem(
@@ -152,9 +153,9 @@ export function parseMetricEventInput(body: unknown):
 
   const deliveryType = attributes?.delivery_type;
   const deliveryTypeRequired =
-    body.event_name === "Downloaded" ||
-    body.event_name === "Installed" ||
-    body.event_name === "Success";
+    eventName === "Downloaded" ||
+    eventName === "Ready" ||
+    eventName === "Applied";
   if (
     (deliveryTypeRequired || deliveryType !== undefined) &&
     deliveryType !== "patch" &&
@@ -201,7 +202,7 @@ export function parseMetricEventInput(body: unknown):
       deviceId: body.device_id as string,
       emittedAt,
       eventId: body.event_id as string,
-      eventName: body.event_name,
+      eventName,
       failurePayload: decodeFailurePayload(attributes),
       id: createMetricEventId(),
       platform: platform.value,
@@ -508,13 +509,34 @@ export function extractAcknowledgeableEventId(body: unknown): string | null {
     : null;
 }
 
+/**
+ * SDK releases before the Ready/Applied rename (0.4.x and earlier) still emit
+ * `Installed` and `Success`. Ingest stores them under the new names so a server
+ * upgrade does not drop metrics from apps already in the field (PROTOCOL.md
+ * §Metric Lifecycle Names). Remove the aliases once those SDKs are unsupported.
+ */
+function resolveMetricEventName(
+  value: unknown,
+): MetricEventIngestHandlerInput["eventName"] | null {
+  if (isMetricEventName(value)) {
+    return value;
+  }
+  if (value === "Installed") {
+    return "Ready";
+  }
+  if (value === "Success") {
+    return "Applied";
+  }
+  return null;
+}
+
 export function isMetricEventName(
   value: unknown,
 ): value is MetricEventIngestHandlerInput["eventName"] {
   return (
     value === "Downloaded" ||
-    value === "Installed" ||
-    value === "Success" ||
+    value === "Ready" ||
+    value === "Applied" ||
     value === "Failed" ||
     value === "Active"
   );

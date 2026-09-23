@@ -7,9 +7,8 @@
 //
 // Height contract: exactly EVAL_BANNER_HEIGHT_PX (single line, truncated on
 // overflow; height and line-height are driven from the constant below).
-// AppShell reserves the same value as `--eval-banner-h` so the TopBar and
-// Sidebar sticky offsets clear the banner instead of sliding underneath it
-// on scroll.
+// AppShell subtracts the same value from the shell grid so the banner and
+// chrome tile the viewport without a second scrollbar.
 
 import { useIsLocalDevSession } from "../../api/hooks/me";
 

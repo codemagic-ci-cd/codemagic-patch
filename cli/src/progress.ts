@@ -9,7 +9,6 @@ import {
 } from "@clack/prompts";
 
 import {
-  isInteractiveOutput,
   isInteractiveWritable,
   writeLine,
   type WritableStream,
@@ -45,9 +44,10 @@ export type Progress = {
    * Settles the step in flight into a completed line without closing the run.
    * Required before anything else draws on the same stream — a confirm prompt
    * over an animating spinner corrupts both — and a later `write` resumes the
-   * same tree.
+   * same tree. `"failed"` marks the settled step with the error symbol, for
+   * a run that goes on after one of its steps failed.
    */
-  settle: () => void;
+  settle: (outcome?: "failed") => void;
   stop: (message?: string) => void;
   warn: (message: string) => void;
   write: (message: string) => void;
@@ -341,35 +341,48 @@ export function createProgress({
     return NO_OP_PROGRESS;
   }
 
-  // Warnings are never gated on interactivity: they matter most in CI logs.
+  // Warnings are never gated on the renderer: they matter most in CI logs.
   const warnLine = (message: string) =>
     writeLine(stderr, `${label}: warning: ${message}`);
 
-  if (!isInteractiveOutput(stderr)) {
-    // Non-interactive keeps the historical contract: steps are noise in a log
-    // that already ends with the machine-readable result, warnings are not.
-    return {
-      detail: () => {},
-      fail: () => {},
-      settle: () => {},
-      stop: () => {},
-      warn: warnLine,
-      write: () => {},
-    };
-  }
-
   if (!isInteractiveWritable(stderr)) {
-    // An injected, interactive-but-not-a-real-stream writer (tests, embedders)
-    // cannot drive a spinner, so each step is emitted as its own line.
+    // Plain lines, one per step, for every stream that cannot drive a
+    // spinner: a pipe or a CI log (`isTTY` false), and an injected
+    // interactive-but-not-a-real-stream writer (tests, embedders). Steps are
+    // written on purpose — a minutes-long `local-eval` build or a
+    // `release-react` bundle in a CI log looks hung without them — and only
+    // steps: `detail` repaints a spinner line that does not exist here and
+    // would stream a build's every raw line, so it stays silent. Nothing here
+    // ever touches stdout, which stays the machine-readable result.
+    const step = (message: string) => {
+      writeLine(stderr, `${label}: ${message}`);
+    };
+    // The first message-bearing close wins, so the usual catch-then-finally
+    // pair (`fail("x")` then `stop()`) reports the outcome once, the way the
+    // spinner renderer's closed tree does.
+    let closed = false;
+    const close = (message: string | undefined) => {
+      if (closed) {
+        return;
+      }
+
+      if (message !== undefined && message.length > 0) {
+        closed = true;
+        step(message);
+      }
+    };
+
     return {
       detail: () => {},
-      // Neither fallback draws a tree, so there is nothing to close or to
-      // re-mark; the failure itself is reported by the caller's error output.
-      fail: () => {},
+      // No tree is drawn, so there is nothing to close or to re-mark: `stop`
+      // and `fail` only say their closing line, when the caller gave one. A
+      // bare `fail()` prints nothing — the error itself is reported by the
+      // caller's error output.
+      fail: close,
       settle: () => {},
-      stop: () => {},
+      stop: close,
       warn: warnLine,
-      write: (message) => writeLine(stderr, `${label}: ${message}`),
+      write: step,
     };
   }
 
@@ -522,8 +535,8 @@ function createSpinnerProgress(
       settle("failed");
       close(message, "failed");
     },
-    settle() {
-      settle();
+    settle(outcome) {
+      settle(outcome ?? "done");
     },
     stop(message) {
       settle();

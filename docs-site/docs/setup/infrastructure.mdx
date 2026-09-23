@@ -75,6 +75,10 @@ one-bucket server routing. Changing
 only `STORAGE_ADAPTER` in an existing `.env.selfhost` is not a migration and
 does not move stored objects.
 
+On AWS, the wizard's runtime credentials are a dedicated bucket-scoped IAM user
+key, not an SSO or STS session. It changes only the buckets it creates. It does
+not turn off account-wide Block Public Access.
+
 ### Google Cloud Storage
 
 Set `STORAGE_ADAPTER=gcs` with:
@@ -85,6 +89,9 @@ Set `STORAGE_ADAPTER=gcs` with:
 Select GCS in `cmpatch selfhost install` with automatic or guided setup,
 or pass `--storage-mode gcs` with a complete two-bucket runtime configuration. The Compose
 path mounts the service-account JSON supplied with `--gcs-credentials-file`.
+Runtime access is granted on those two buckets, not the project. Public Access
+Prevention must allow anonymous reads on the public bucket, and the project must
+allow service-account key creation.
 
 ## Delivery adapter
 

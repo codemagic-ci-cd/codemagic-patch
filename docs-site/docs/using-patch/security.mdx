@@ -3,7 +3,7 @@ title: Security and access
 description: >-
   How Patch handles authentication, team access, API tokens, and optional code
   signing.
-llmsDescription: 'Auth — GitHub OAuth, API tokens, team roles, optional code signing.'
+llmsDescription: 'Auth — OAuth sign-in, API tokens, team roles, optional code signing.'
 ---
 
 # Security and access
@@ -14,9 +14,9 @@ Patch separates who can publish updates (CLI and dashboard auth) from whether cl
 
 ### Dashboard sign-in
 
-The dashboard uses GitHub or Bitbucket Cloud OAuth. Installs with domains require at least one OAuth provider (a GitHub OAuth App and/or a Bitbucket OAuth consumer); the first admin email must match the verified primary address on that account when `REGISTRATION_MODE=invite_only`.
+Sign-in uses GitHub, Bitbucket Cloud, or GitLab OAuth. Installs with domains require at least one configured provider; the first admin email must match the verified primary address on that account when `REGISTRATION_MODE=invite_only`.
 
-See [Install](/docs/install#github-oauth-app) for OAuth App setup ([register an OAuth App](https://github.com/settings/applications/new)).
+See [Install](/docs/install#github-oauth-app) for OAuth app setup.
 
 ### CLI sign-in
 

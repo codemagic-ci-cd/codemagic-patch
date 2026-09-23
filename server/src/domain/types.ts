@@ -75,8 +75,8 @@ export type TeamInvitationStatus =
 
 export type MetricEventName =
   | "Downloaded"
-  | "Installed"
-  | "Success"
+  | "Ready"
+  | "Applied"
   | "Failed"
   | "Active";
 
@@ -351,7 +351,9 @@ export interface ReleaseMetrics {
    * at all are absent rather than zero.
    */
   failureReasonDetailCounts: Record<string, number>;
+  /** Ready count, including historical Installed events; retained wire key. */
   installed: number;
+  /** Applied count, including historical Success events; retained wire key. */
   success: number;
 }
 

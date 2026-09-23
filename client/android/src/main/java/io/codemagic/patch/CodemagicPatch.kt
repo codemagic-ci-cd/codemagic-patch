@@ -44,7 +44,7 @@ object CodemagicPatch {
 
   private fun selectJSBundleFile(context: Context, binaryVersion: String): String? {
     val storage = CodemagicPatchStorage(context)
-    prepareBootState(storage, binaryVersion) { packageHash, failedAt ->
+    prepareBootState(context, storage, binaryVersion) { packageHash, failedAt ->
       // The static path runs before React exists, so it has no activity to
       // read E2E launch arguments from and resolves every value from
       // resources and storage alone. CodemagicPatchModule supplies its own
@@ -106,6 +106,7 @@ object CodemagicPatch {
    * the call site instead of forking this function.
    */
   internal fun prepareBootState(
+    context: Context,
     storage: CodemagicPatchStorage,
     binaryVersion: String,
     onCrashRollback: (packageHash: String, failedAt: String) -> Unit
@@ -134,7 +135,7 @@ object CodemagicPatch {
     // The previous launch booted this package and never confirmed it. That
     // alone does not prove a crash — the OS can reclaim a healthy process
     // first — so spend an attempt and boot it again until the budget runs out.
-    if (state.pendingStartCount < CodemagicPatchFailure.PENDING_LAUNCH_ATTEMPT_BUDGET) {
+    if (state.pendingStartCount < CodemagicPatchFailure.maxLaunchAttempts(context)) {
       return
     }
 

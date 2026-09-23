@@ -19,6 +19,135 @@ Patch ships three versioned surfaces on independent tags. To upgrade each one, r
 | CLI | `npm install -g @codemagic/patch-cli@latest` |
 | Server (self-host) | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
 
+## Version 0.5.0
+
+*23rd September 2026*
+
+Wire the SDK into your app with one command, integrate with a single
+`Patch.wrap`, and sign in to self-hosted servers with GitLab.
+
+:::warning Upgrade your server first
+SDK 0.5.0 reports update lifecycle events as `Ready` and `Applied`. Servers
+0.4.x and earlier drop these events without storing them, so upgrade your server
+to 0.5.0 before you ship an app build with the new SDK. Server 0.5.0 still
+accepts the old event names, so apps already in the field keep reporting normally.
+:::
+
+### CLI 0.5.0
+
+#### Wire the SDK with one command
+
+`cmpatch wire` installs the Patch SDK in a supported React Native or Expo project
+and wires it up. It sets the deployment key and server URLs, adds the native
+bundle-loading hooks, and wraps your root component with `Patch.wrap`.
+`cmpatch init` now runs it automatically; pass `--skip-wire` to only connect the
+app. Run `cmpatch wire --dry-run --diff` to preview the changes. When wire can't
+finish the setup automatically, it prints a `Patch.wrap` snippet to add by hand.
+
+If CodePush or `expo-updates` is still in the project, `init` holds off on wiring
+until you remove it. See [Native setup](/docs/setup/native-setup#install-the-sdk).
+
+#### GitLab and Bitbucket in the self-host wizard
+
+`cmpatch selfhost install` now supports Bitbucket Cloud and GitLab sign-in, in
+the wizard and in non-interactive setup. For a self-managed GitLab instance,
+enter its address when asked or pass `--gitlab-oauth-base-url`.
+
+- **Release conflict hints:** When a release change is blocked by a 409
+  conflict, the CLI names the release to wait for and the
+  `cmpatch release inspect --release-id <id> --wait` command to run before
+  retrying.
+- **React Native 0.87:** `cmpatch release-react` works again on React Native
+  0.87, which removed `react-native/cli.js` from its package exports. Before
+  this fix the command failed with "Could not resolve react-native from
+  project root", mostly in npm projects.
+- **Binary version detection:** iOS and Android version detection is more
+  accurate, so OTA releases target the right app version. It handles Android
+  `versionNameSuffix` and asks you to pass the target explicitly when the
+  project is ambiguous.
+- **`cmpatch doctor`:** No longer fails the credential check for logins made
+  with `cmpatch login --token`. It also accepts `--xcode-project-file`,
+  `--xcode-target-name`, and `--build-configuration-name`.
+- **CI logs:** Progress steps now show up in non-interactive output, so long
+  builds and bundle uploads no longer look stuck.
+- **`cmpatch debug`:** Shows only Patch SDK logs and filters out unrelated
+  system messages.
+- **`cmpatch release metrics`:** Columns are now labeled `ready` and `applied`.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.5.0).
+
+### React Native SDK 0.5.0
+
+#### Integrate with `Patch.wrap`
+
+Wrap your root component, and the SDK runs an update check after it mounts:
+
+```tsx
+import * as Patch from "@codemagic/react-native-patch";
+
+export default Patch.wrap(App);
+```
+
+The app renders immediately and never waits for the check. Set
+`checkFrequency: CheckFrequency.ON_APP_RESUME` to also check whenever the app
+returns to the foreground. Other options are passed through to `sync()`, so
+install behavior is unchanged. Mounting the wrapped root marks the running
+update as healthy. If your app needs to finish an async startup step first,
+call `sync()` yourself at that point instead.
+
+#### Configure the rollback launch budget
+
+The new optional `CodemagicPatchMaxLaunchAttempts` setting (Info.plist on iOS,
+strings.xml on Android) sets how many launches a pending update may make without
+`notifyAppReady()` before it is rolled back. The default is still 3. Expo
+projects can set it with the config plugin's `maxLaunchAttempts` option.
+
+- **Lifecycle names:** `Installed` is now `Ready` (the update is prepared for
+  the next launch), and `Success` is now `Applied` (the update is running and
+  confirmed by `notifyAppReady()`). Requires server 0.5.0; see the warning above.
+- **Development warning:** In development builds, a failed `sync()` logs a
+  warning with the reason, even when nothing reads its result, as with
+  `Patch.wrap`. Release builds stay silent. A wrong deployment key or server
+  path returns "no update" and doesn't trigger the warning.
+- **Duplicate Applied events:** Concurrent `notifyAppReady()` calls no longer
+  report the same update as applied more than once.
+- **React Native 0.87:** The SDK typechecks again in strict TypeScript apps.
+
+See the [SDK reference](/docs/reference/sdk-reference#wraproot-options) and
+[SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.5.0).
+
+### Server and Dashboard 0.5.0
+
+#### GitLab sign-in
+
+Self-hosted servers can now use GitLab for sign-in, on gitlab.com or a
+self-managed instance set with `GITLAB_OAUTH_BASE_URL`. GitLab accounts that
+have only a confirmed primary email can sign in, and the sign-in button shows the
+GitLab name and icon.
+
+#### Find your way around the dashboard
+
+A command palette (⌘K / Ctrl+K) jumps to apps, releases, metrics, and teams, and
+runs common actions. The deployment page now shows update adoption, the sidebar
+lists apps with their deployments, and the Metrics screens are available from a
+link on the deployment page. Release details add a cumulative `Applied` chart
+showing update adoption over time.
+
+- **Lifecycle names:** The server stores events from SDK 0.4.x and earlier
+  under the new `Ready` and `Applied` names. Existing data is kept as is, and
+  the metrics API response keys (`installed`, `success`) are unchanged.
+- **Database migration:** The upgrade runs migration
+  `0016_metric_event_lifecycle_names`, which rebuilds an index on the
+  `metric_event` table while holding an exclusive lock on it. On servers with a
+  large metrics history, expect the upgrade to take longer.
+- **Dashboard fixes:** Fixed page scrolling, removed blank space a hidden chart
+  table added to the bottom of the page, and cleaned up how the deployment and
+  release detail pages show status, metrics, charts, and history.
+
+See the [configuration reference](/docs/reference/configuration) and
+[server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.5.0).
+
 ## Version 0.4.0
 
 *14th September 2026*
@@ -26,87 +155,70 @@ Patch ships three versioned surfaces on independent tags. To upgrade each one, r
 Try an OTA update with a guided demo, diagnose your SDK setup, and
 configure external storage and DNS from the install wizard.
 
-Includes CLI 0.4.0, React Native SDK 0.4.0, and Server / Dashboard 0.4.0.
-
 ### CLI 0.4.0
 
-#### Watch an OTA fix apply
+#### Try an OTA update with a guided demo
 
-After starting the local evaluation stack, run `cmpatch demo` to try
-Patch with the bundled app on an iOS simulator or Android emulator.
-
-The wizard checks prerequisites, prepares and builds the app, and walks
-you through a catalog bug and its fix. After you approve publication,
-it waits for the release to publish and automatically resumes the app
-to trigger the update download, installation, and reload.
+After starting the local evaluation stack, run `cmpatch demo` to see Patch in
+action before integrating it into your own app. The wizard checks prerequisites,
+builds a bundled demo on an iOS simulator or Android emulator, and shows a catalog
+bug. After you approve publishing the fix, it automatically resumes the app to
+download, install, and apply the update.
 
 #### Diagnose setup before your first release
 
-`cmpatch doctor` now checks native SDK configuration, integration
-evidence, authentication, app and deployment settings, and download
-connectivity across React Native and Expo projects.
+`cmpatch doctor` checks React Native and Expo integration on iOS and Android,
+including native configuration, authentication, and deployment settings. Reports
+explain likely causes and distinguish confirmed failures from incomplete checks.
+Add `--verify-delivery` to probe manifests and artifacts, with JSON output
+available for CI. An optional `--fix --server-url <url>` can create missing server
+configuration after a readiness check and your approval.
 
-Add `--verify-delivery` to probe the manifest and artifact delivery path.
-Reports distinguish confirmed failures from checks that could not be
-completed, with setup and delivery coverage available in JSON for CI.
-These checks do not replace installation testing on a device.
+#### Configure external storage and DNS from the wizard
 
-An optional `--fix --server-url <url>` can create a missing CLI
-configuration file after a readiness check and confirmation.
+`cmpatch selfhost install` now offers Cloudflare R2, Amazon S3, and Google Cloud
+Storage alongside bundled MinIO. Automatic setup or guided console instructions
+help configure storage, then verify public downloads and private-object
+protection. DNS setup supports Cloudflare and compatible Domain Connect providers,
+with manual instructions as a fallback.
 
-#### Set up external storage and DNS from the wizard
+Failed setup steps offer correction and retry paths. These options apply to new
+installations; they do not migrate existing storage.
 
-`cmpatch selfhost install` now offers Cloudflare R2, Amazon S3, and
-Google Cloud Storage alongside bundled MinIO, with automatic resource
-setup or guided console instructions.
-
-Setup verifies storage access, public downloads, and private-object
-protection. DNS setup supports Cloudflare and Domain Connect where the
-provider supports Patch's templates, with manual instructions available
-as a fallback.
-
-These options configure new installations; they do not automatically
-migrate data from an existing storage provider.
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.4.0).
 
 ### React Native SDK 0.4.0
 
-#### Check whether an update is ready to activate
+#### Know when an update is ready to activate
 
-The new `isNextVersionReady()` API returns whether a different OTA
-package is installed and waiting for the next reload. Use it to show an
-“Update ready” prompt without confusing the installed update with the
-bundle currently running.
+The new `isNextVersionReady()` API reports whether a different OTA package is
+installed and waiting for the next reload. Use it to show an “Update ready”
+prompt while the current bundle continues running. It does not report a staged
+return to the embedded bundle.
 
-A staged return to the embedded bundle is not reported by this API.
+- **Embedded revert fix:** Returning to the embedded bundle now honors the
+  selected install mode, including next suspend, resume, or restart.
+
+See the [SDK reference](/docs/reference/sdk-reference) and
+[SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.4.0).
 
 ### Server and Dashboard 0.4.0
 
-#### Separate public artifacts from private storage
+- **Private storage:** S3-compatible storage can use `S3_INTERNAL_BUCKET` to keep
+  internal uploads and worker artifacts in a separate private bucket while
+  serving release artifacts publicly. Leaving it unset keeps single-bucket routing.
+- **Dashboard appearance:** Light, dark, and system themes, refreshed branding,
+  accessibility improvements, and a fix for translucent dark-mode callouts.
+- **Delivery metrics:** Release details drop Active counts; deployment summaries
+  show successful installs, and release history includes downloads. Success
+  counts represent installations, not users currently running a version.
+- **Localhost HTTP:** Run `scripts/selfhost/install.sh --allow-http` from a local
+  clone to test the self-hosted stack without TLS certificates or public DNS.
+  Service ports bind to loopback; OAuth setup is still required.
 
-S3-compatible storage now supports a separate private bucket for
-internal uploads and worker artifacts through `S3_INTERNAL_BUCKET`.
-Leaving it unset preserves the existing single-bucket routing.
-
-#### Choose your dashboard theme
-
-The dashboard adds light, dark, and system themes, alongside refreshed
-Patch branding across navigation, forms, dialogs, and tables.
-
-#### Clearer update delivery metrics
-
-Dashboard metrics now focus on update delivery outcomes. Success counts
-show successful installations, rather than implying how many users are
-currently running a version.
-
-Active metrics have been removed from release details. Deployment
-summaries now show successful installs, and release history shows
-downloads alongside successes and failures.
-
-#### Run a localhost installation without TLS
-
-The direct self-host installer adds `--allow-http` for localhost
-testing without TLS. Its published service ports bind to loopback;
-production installation continues to use HTTPS.
+See the [configuration reference](/docs/reference/configuration) and
+[server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.4.0).
 
 ## Version 0.3.0
 
@@ -193,7 +305,7 @@ Failures now come only from devices that never got the update, not from
 retries on a flaky network that later succeeded. When a device later installs
 the same package successfully, its earlier `Failed` events for that package are
 dropped. A late `Failed` after a
-`Success` is acknowledged and discarded.
+`Applied` is acknowledged and discarded.
 
 ### Server status in the dashboard
 

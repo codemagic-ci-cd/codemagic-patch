@@ -3,6 +3,7 @@ import { Writable } from "node:stream";
 import pc from "picocolors";
 
 import type { ProblemDetails } from "./problem-details";
+import { deriveProblemHint } from "./releaseHints";
 
 export type WritableStream = {
   /** The terminal's width, when the stream is one; unset for pipes and files. */
@@ -196,8 +197,12 @@ export function renderProblemDetails(
     lines.push(palette.dim(`type: ${problem.type}`));
   }
 
-  if (typeof problem.hint === "string" && problem.hint.length > 0) {
-    lines.push(palette.dim(`Hint: ${problem.hint}`));
+  const hint =
+    typeof problem.hint === "string" && problem.hint.length > 0
+      ? problem.hint
+      : deriveProblemHint(problem);
+  if (hint !== null) {
+    lines.push(palette.dim(`Hint: ${hint}`));
   }
 
   const extraEntries = Object.entries(problem).filter(

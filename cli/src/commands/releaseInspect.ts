@@ -2,6 +2,7 @@ import type { ReleaseInspectCommand } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
 import { isRecord, readCell } from "../output";
 import { createProgress, type Progress } from "../progress";
+import { releaseInspectWaitCommand } from "../releaseHints";
 import { buildApiUrl, type CommandDeps, UsageError, ValidationError } from "./shared";
 import { resolveReleaseId } from "./resolveNames";
 
@@ -236,7 +237,7 @@ function nextActions(
   const releaseId = readCell(release, "id");
 
   if (status === "queued" || status === "running") {
-    return [`cmpatch release inspect --release-id ${releaseId} --wait`];
+    return [releaseInspectWaitCommand(releaseId)];
   }
 
   if (status === "published") {

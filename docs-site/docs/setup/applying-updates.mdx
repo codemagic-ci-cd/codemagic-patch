@@ -10,7 +10,7 @@ llmsDescription: 'Client apply timing — install modes, mandatoryInstallMode, p
 
 After Patch downloads an update, install mode controls when that bundle becomes active. Non-mandatory releases wait for the condition set in `installMode`. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode` instead and do not wait for that looser timing.
 
-For when the app checks and downloads updates, see [Checking for updates](/docs/setup/checking-for-updates).
+For when the app checks and downloads updates, see [Checking for updates](/docs/setup/checking-for-updates). If you use `Patch.wrap(App, options)`, put the install options shown below in that wrapper call. The `sync()` examples are for direct integrations; adding a separate call does not configure the wrapper.
 
 ## Install modes
 
@@ -26,9 +26,11 @@ For when the app checks and downloads updates, see [Checking for updates](/docs/
 `ON_NEXT_RESTART` is the default `installMode` and works well for Staging, where developers restart the app on purpose. In Production, an update applying on restart can cause unwanted behavior. `ON_NEXT_SUSPEND` is a common `installMode` for Production: the bundle activates when the user backgrounds the app after `minimumBackgroundDuration`, without interrupting an open session.
 
 ```ts
+import { InstallMode, sync } from "@codemagic/react-native-patch";
+
 void sync({
-  installMode: "ON_NEXT_SUSPEND",
-  mandatoryInstallMode: "IMMEDIATE",
+  installMode: InstallMode.ON_NEXT_SUSPEND,
+  mandatoryInstallMode: InstallMode.IMMEDIATE,
   minimumBackgroundDuration: 60_000, // ms; for ON_NEXT_RESUME / ON_NEXT_SUSPEND
 });
 ```
@@ -46,16 +48,21 @@ Sync and apply behavior is client-side. The server does not push different `sync
 Teams can map Staging and Production to different app builds (different deployment keys baked into native config), then branch `sync()` options on the same build-time signal that selects the deployment key:
 
 ```ts
+import { InstallMode, sync } from "@codemagic/react-native-patch";
+
 // Wire this to whatever selects your Staging deployment key at build time:
 // a build flavor / scheme, or a build-time env flag (e.g. react-native-config).
 declare function isStagingBuild(): boolean;
 
 void sync(
   isStagingBuild()
-    ? { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" }
+    ? {
+        installMode: InstallMode.ON_NEXT_RESTART,
+        mandatoryInstallMode: InstallMode.IMMEDIATE,
+      }
     : {
-        installMode: "ON_NEXT_SUSPEND",
-        mandatoryInstallMode: "ON_NEXT_RESUME",
+        installMode: InstallMode.ON_NEXT_SUSPEND,
+        mandatoryInstallMode: InstallMode.ON_NEXT_RESUME,
         minimumBackgroundDuration: 300_000, // 5 min
       },
 );

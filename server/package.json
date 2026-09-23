@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/patch-server",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "main": "./dist/index.js",

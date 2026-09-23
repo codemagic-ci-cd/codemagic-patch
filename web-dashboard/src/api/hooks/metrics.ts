@@ -9,7 +9,12 @@
 // call with `limit: 1`: a cell failure propagates as
 // HttpProblemError so the cell renders "—" + retry without failing the table.
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+  type QueryClient,
+} from "@tanstack/react-query";
 
 import { authenticatedRequest } from "../client";
 import {
@@ -49,8 +54,8 @@ export const metricsKeys = {
   failureEvents: (kind: string, id: string, reason: string, code: string | null) =>
     [...metricsKeys.all, kind, id, "failures", reason, "events", code] as const,
   release: (releaseId: string) => [...metricsKeys.all, "release", releaseId] as const,
-  timeseries: (deploymentId: string) =>
-    [...metricsKeys.all, "timeseries", deploymentId] as const,
+  timeseries: (deploymentId: string, rangeDays: number | "default" = "default") =>
+    [...metricsKeys.all, "timeseries", deploymentId, rangeDays] as const,
 };
 
 /**
@@ -80,20 +85,55 @@ export function useDeploymentMetrics(
 
 /**
  * `GET /v1/metrics/deployments/:deploymentId/timeseries` (`release.view`) —
- * day-bucketed adoption series over the server-default trailing 30 days.
- * Derivation (zero-fill, partial-bucket detection, card value) lives in
- * model/timeseries.ts.
+ * day-bucketed adoption series. Omitted `rangeDays` uses the server default
+ * (trailing 30 days). Derivation (zero-fill, partial-bucket detection,
+ * in-range totals) lives in model/timeseries.ts. `keepPreviousData` holds the
+ * last range on screen while a newly selected preset loads.
  */
-export function useDeploymentTimeseries(deploymentId: string) {
+export function useDeploymentTimeseries(
+  deploymentId: string,
+  { rangeDays }: { rangeDays?: number } = {},
+) {
   return useQuery({
-    queryKey: metricsKeys.timeseries(deploymentId),
+    queryKey: metricsKeys.timeseries(deploymentId, rangeDays ?? "default"),
     queryFn: ({ signal }) =>
-      authenticatedRequest<DeploymentTimeseriesWireResponse>({
-        method: "GET",
-        path: `/metrics/deployments/${encodeURIComponent(deploymentId)}/timeseries`,
-        signal,
-      }).then(fromDeploymentTimeseriesWire),
+      fetchDeploymentTimeseries(deploymentId, rangeDays, signal),
+    placeholderData: keepPreviousData,
   });
+}
+
+export function prefetchDeploymentTimeseries(
+  queryClient: QueryClient,
+  deploymentId: string,
+  rangeDays: number,
+) {
+  return queryClient.prefetchQuery({
+    queryKey: metricsKeys.timeseries(deploymentId, rangeDays),
+    queryFn: ({ signal }) =>
+      fetchDeploymentTimeseries(deploymentId, rangeDays, signal),
+  });
+}
+
+function fetchDeploymentTimeseries(
+  deploymentId: string,
+  rangeDays: number | undefined,
+  signal?: AbortSignal,
+) {
+  const params: Record<string, string | number | undefined> = {};
+  if (rangeDays !== undefined) {
+    const to = new Date();
+    params.from = new Date(
+      to.getTime() - rangeDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    params.to = to.toISOString();
+  }
+  return authenticatedRequest<DeploymentTimeseriesWireResponse>({
+    method: "GET",
+    path: `/metrics/deployments/${encodeURIComponent(deploymentId)}/timeseries${searchString(
+      params,
+    )}`,
+    signal,
+  }).then(fromDeploymentTimeseriesWire);
 }
 
 /** `GET /v1/metrics/releases/:releaseId` (`release.view`) — unwraps to the release's counter entry. */

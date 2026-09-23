@@ -1,12 +1,12 @@
 import { AppState } from "react-native";
 
-import type {
-  BootSource,
-  FailedInstallState,
+import {
+  type BootSource,
+  type FailedInstallState,
   InstallMode,
-  RuntimePackage,
-  RuntimeState,
-  UpdateMetadata,
+  type RuntimePackage,
+  type RuntimeState,
+  type UpdateMetadata,
 } from "./types";
 
 import NativeCodemagicPatch, {
@@ -41,6 +41,7 @@ export function createInitialRuntimeState(): RuntimeState {
     lastUpdateCheckResult: null,
     hydrated: false,
     hydrationPromise: null,
+    appReadyPromise: null,
     publicKeyConfigured: false,
     syncInProgress: false,
     downloadInProgress: false,
@@ -271,11 +272,11 @@ function handleAppStateTransition(nextState: string): void {
 }
 
 async function handleForegroundEntry(backgroundDurationMs = 0): Promise<void> {
-  await activateForLifecycle("ON_NEXT_RESUME", backgroundDurationMs);
+  await activateForLifecycle(InstallMode.ON_NEXT_RESUME, backgroundDurationMs);
 }
 
 async function handleBackgroundTransition(backgroundDurationMs = 0): Promise<void> {
-  await activateForLifecycle("ON_NEXT_SUSPEND", backgroundDurationMs);
+  await activateForLifecycle(InstallMode.ON_NEXT_SUSPEND, backgroundDurationMs);
 }
 
 setupAppStateListener();
@@ -361,7 +362,10 @@ function activatePendingPackageOrScheduleReload(): boolean {
 export function scheduleSuspendActivationIfDue(): void {
   clearSuspendActivationTimer();
 
-  if (!hasPendingActivation() || state.pendingInstallMode !== "ON_NEXT_SUSPEND") {
+  if (
+    !hasPendingActivation() ||
+    state.pendingInstallMode !== InstallMode.ON_NEXT_SUSPEND
+  ) {
     return;
   }
 

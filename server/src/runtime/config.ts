@@ -1,7 +1,13 @@
 import path from "node:path";
 
+import { DEFAULT_GITHUB_API_BASE_URL } from "../app/githubApi";
 import type { ServerMode } from "../app/types";
 import { DEFAULT_MAX_UPLOAD_SIZE_BYTES } from "../app/upload-size";
+import {
+  WEB_OAUTH_PROVIDERS,
+  type WebOAuthProviderConfig,
+  type WebOAuthProviderDescriptor,
+} from "../app/webOAuthProviders";
 import {
   CDN_MANIFEST_CACHE_CONTROL,
   DIRECT_MANIFEST_CACHE_CONTROL,
@@ -14,13 +20,6 @@ const DEFAULT_MODE: ServerMode = "all";
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
 const DEFAULT_OAUTH_REFRESH_TOKEN_TTL_DAYS = 30;
 const DEFAULT_IAM_INVITATION_TTL_DAYS = 14;
-const DEFAULT_GITHUB_API_BASE_URL = "https://api.github.com";
-const DEFAULT_GITHUB_OAUTH_BASE_URL = "https://github.com";
-const DEFAULT_GITHUB_OAUTH_SCOPES = "read:user user:email";
-const DEFAULT_BITBUCKET_API_BASE_URL = "https://api.bitbucket.org";
-const DEFAULT_BITBUCKET_OAUTH_BASE_URL = "https://bitbucket.org";
-const DEFAULT_GITLAB_OAUTH_BASE_URL = "https://gitlab.com";
-const DEFAULT_GITLAB_OAUTH_SCOPES = "read_user";
 const MAX_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const MAX_OAUTH_REFRESH_TOKEN_TTL_DAYS = 365;
 const MAX_IAM_INVITATION_TTL_DAYS = 90;
@@ -29,6 +28,11 @@ const MIN_OAUTH_CLI_AUTH_SECRET_LENGTH = 32;
 const MIN_WORKER_SHARED_SECRET_LENGTH = 32;
 
 type RuntimeEnvironment = Record<string, string | undefined>;
+
+export type {
+  WebOAuthProviderConfig,
+  WebOAuthProviderId,
+} from "../app/webOAuthProviders";
 
 export interface S3StorageConfig {
   internalBucket?: string;
@@ -60,44 +64,6 @@ export interface CloudFrontDeliveryConfig {
   secretAccessKey?: string;
 }
 
-export interface GitHubOAuthConfig {
-  allowedRedirectUris?: string[];
-  apiBaseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  oauthBaseUrl: string;
-  scopes: string;
-}
-
-/**
- * No `scopes`: Bitbucket scopes live on the OAuth consumer, not the authorize
- * URL, so there is nothing to configure per deployment. `clientSecret` is
- * required — Bitbucket has web (authorization-code) sign-in only, so a
- * secret-less consumer cannot serve any flow.
- */
-export interface BitbucketOAuthConfig {
-  allowedRedirectUris?: string[];
-  apiBaseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  oauthBaseUrl: string;
-}
-
-/**
- * GitLab OAuth (gitlab.com or self-hosted). `oauthBaseUrl` is the GitLab
- * origin (`https://gitlab.com` by default); `apiBaseUrl` overrides the REST
- * origin and defaults to `{oauthBaseUrl}/api/v4` so self-hosted instances
- * work with a single variable.
- */
-export interface GitlabOAuthConfig {
-  allowedRedirectUris?: string[];
-  apiBaseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  oauthBaseUrl: string;
-  scopes: string;
-}
-
 export type StagedBundleRetention = "delete" | "keep";
 
 export type RegistrationMode = "invite_only" | "open";
@@ -113,7 +79,6 @@ export interface UpdateCheckConfig {
 }
 
 export interface RuntimeConfig {
-  bitbucketOAuth?: BitbucketOAuthConfig;
   cloudfront?: CloudFrontDeliveryConfig;
   cloudflare?: CloudflareDeliveryConfig;
   /**
@@ -128,8 +93,6 @@ export interface RuntimeConfig {
   databaseUrl?: string;
   deliveryAdapter: "base-url" | "cloudflare" | "cloudfront";
   gcs?: GcsStorageConfig;
-  githubOAuth?: GitHubOAuthConfig;
-  gitlabOAuth?: GitlabOAuthConfig;
   host: string;
   /**
    * Serve HTTP/2 cleartext (h2c) instead of HTTP/1.1. An h2c server speaks
@@ -169,6 +132,12 @@ export interface RuntimeConfig {
   stagedBundleRetention: StagedBundleRetention;
   storageAdapter: "memory" | "s3" | "gcs";
   updateCheck?: UpdateCheckConfig;
+  /**
+   * Web (authorization-code) sign-in providers whose client id is set, in
+   * WEB_OAUTH_PROVIDERS order (the dashboard login-button order). Empty when
+   * none is configured.
+   */
+  webOAuthProviders: WebOAuthProviderConfig[];
   workerSharedSecret?: string;
 }
 
@@ -178,9 +147,9 @@ export function resolveRuntimeConfig(
   const storageAdapter = resolveStorageAdapter(env.STORAGE_ADAPTER);
   const mode = resolveMode(env.MODE);
   const deliveryAdapter = resolveDeliveryAdapter(env.DELIVERY_ADAPTER);
-  const githubOAuth = resolveGitHubOAuthConfig(env);
-  const bitbucketOAuth = resolveBitbucketOAuthConfig(env);
-  const gitlabOAuth = resolveGitlabOAuthConfig(env);
+  const webOAuthProviders = WEB_OAUTH_PROVIDERS.flatMap(
+    (descriptor) => resolveWebOAuthProviderConfig(env, descriptor) ?? [],
+  );
   const oauthDevicePollTokenSecret = resolveOAuthDevicePollTokenSecret(
     env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
   );
@@ -189,7 +158,7 @@ export function resolveRuntimeConfig(
     env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
   );
 
-  if ((githubOAuth || bitbucketOAuth || gitlabOAuth) && !oauthCliAuthSecret) {
+  if (webOAuthProviders.length > 0 && !oauthCliAuthSecret) {
     // Booting without it would serve a dashboard whose /cli/authorize approve
     // step answers 501 AFTER the user completed the browser sign-in, leaving
     // `cmpatch login` hanging until its timeout — fail fast instead.
@@ -199,7 +168,6 @@ export function resolveRuntimeConfig(
   }
 
   return {
-    bitbucketOAuth,
     cloudfront:
       deliveryAdapter === "cloudfront"
         ? resolveCloudFrontConfig(env)
@@ -216,8 +184,6 @@ export function resolveRuntimeConfig(
     databaseSearchPath: resolveDatabaseSearchPath(env.DATABASE_SEARCH_PATH),
     databaseUrl: resolveDatabaseUrl(env.DATABASE_URL, mode),
     deliveryAdapter,
-    githubOAuth,
-    gitlabOAuth,
     host: resolveHost(env.HOST),
     http2Cleartext: resolveBoolean(env.HTTP2_CLEARTEXT, false),
     iamInvitationTtlDays: resolvePositiveIntegerWithDefaultAndMax(
@@ -264,6 +230,7 @@ export function resolveRuntimeConfig(
     stagedBundleRetention: resolveStagedBundleRetention(env.UPLOAD_RETENTION),
     storageAdapter,
     updateCheck: resolveUpdateCheckConfig(env),
+    webOAuthProviders,
     workerSharedSecret: resolveWorkerSharedSecret(env.WORKER_SHARED_SECRET, mode),
   };
 }
@@ -403,114 +370,50 @@ function resolveOptionalPositiveInteger(
   return parsed;
 }
 
-function resolveGitHubOAuthConfig(
+function resolveWebOAuthProviderConfig(
   env: RuntimeEnvironment,
-): GitHubOAuthConfig | undefined {
-  const clientId = resolveOptionalString(env.GITHUB_OAUTH_CLIENT_ID);
+  descriptor: WebOAuthProviderDescriptor,
+): WebOAuthProviderConfig | undefined {
+  const { envPrefix } = descriptor;
+  const clientId = resolveOptionalString(env[`${envPrefix}_OAUTH_CLIENT_ID`]);
   if (!clientId) {
     return undefined;
   }
 
-  const clientSecret = resolveOptionalString(env.GITHUB_OAUTH_CLIENT_SECRET);
+  const clientSecret = resolveOptionalString(
+    env[`${envPrefix}_OAUTH_CLIENT_SECRET`],
+  );
   if (!clientSecret) {
-    // The web dashboard's code exchange needs the secret; a device-only
-    // (secret-less) deployment would silently serve a dashboard whose sign-in
-    // answers 501, so fail fast like the Bitbucket config does.
+    // Every provider is web-flow only: the dashboard's code exchange needs
+    // the secret, so a secret-less config would silently serve a dashboard
+    // whose sign-in answers 501. Failing fast beats a missing login button.
     throw new Error(
-      "GITHUB_OAUTH_CLIENT_SECRET is required when GITHUB_OAUTH_CLIENT_ID is set",
-    );
-  }
-
-  return {
-    allowedRedirectUris: resolveAllowedRedirectUris(
-      env.GITHUB_OAUTH_ALLOWED_REDIRECT_URIS,
-    ),
-    apiBaseUrl: trimTrailingSlash(
-      resolveOptionalString(env.GITHUB_API_BASE_URL) ??
-        DEFAULT_GITHUB_API_BASE_URL,
-    ),
-    clientId,
-    clientSecret,
-    oauthBaseUrl: trimTrailingSlash(
-      resolveOptionalString(env.GITHUB_OAUTH_BASE_URL) ??
-        DEFAULT_GITHUB_OAUTH_BASE_URL,
-    ),
-    scopes:
-      resolveOptionalString(env.GITHUB_OAUTH_SCOPES) ??
-      DEFAULT_GITHUB_OAUTH_SCOPES,
-  };
-}
-
-function resolveBitbucketOAuthConfig(
-  env: RuntimeEnvironment,
-): BitbucketOAuthConfig | undefined {
-  const clientId = resolveOptionalString(env.BITBUCKET_OAUTH_CLIENT_ID);
-  if (!clientId) {
-    return undefined;
-  }
-
-  const clientSecret = resolveOptionalString(env.BITBUCKET_OAUTH_CLIENT_SECRET);
-  if (!clientSecret) {
-    // Bitbucket is web-flow only, so a secret-less config could serve nothing;
-    // failing fast beats a silently missing login button.
-    throw new Error(
-      "BITBUCKET_OAUTH_CLIENT_SECRET is required when BITBUCKET_OAUTH_CLIENT_ID is set",
-    );
-  }
-
-  return {
-    allowedRedirectUris: resolveAllowedRedirectUris(
-      env.BITBUCKET_OAUTH_ALLOWED_REDIRECT_URIS,
-    ),
-    apiBaseUrl: trimTrailingSlash(
-      resolveOptionalString(env.BITBUCKET_API_BASE_URL) ??
-        DEFAULT_BITBUCKET_API_BASE_URL,
-    ),
-    clientId,
-    clientSecret,
-    oauthBaseUrl: trimTrailingSlash(
-      resolveOptionalString(env.BITBUCKET_OAUTH_BASE_URL) ??
-        DEFAULT_BITBUCKET_OAUTH_BASE_URL,
-    ),
-  };
-}
-
-function resolveGitlabOAuthConfig(
-  env: RuntimeEnvironment,
-): GitlabOAuthConfig | undefined {
-  const clientId = resolveOptionalString(env.GITLAB_OAUTH_CLIENT_ID);
-  if (!clientId) {
-    return undefined;
-  }
-
-  const clientSecret = resolveOptionalString(env.GITLAB_OAUTH_CLIENT_SECRET);
-  if (!clientSecret) {
-    // GitLab is web-flow only, so a secret-less config could serve nothing;
-    // failing fast beats a silently missing login button.
-    throw new Error(
-      "GITLAB_OAUTH_CLIENT_SECRET is required when GITLAB_OAUTH_CLIENT_ID is set",
+      `${envPrefix}_OAUTH_CLIENT_SECRET is required when ${envPrefix}_OAUTH_CLIENT_ID is set`,
     );
   }
 
   const oauthBaseUrl = trimTrailingSlash(
-    resolveOptionalString(env.GITLAB_OAUTH_BASE_URL) ??
-      DEFAULT_GITLAB_OAUTH_BASE_URL,
+    resolveOptionalString(env[`${envPrefix}_OAUTH_BASE_URL`]) ??
+      descriptor.defaultOAuthBaseUrl,
   );
 
   return {
     allowedRedirectUris: resolveAllowedRedirectUris(
-      env.GITLAB_OAUTH_ALLOWED_REDIRECT_URIS,
+      env[`${envPrefix}_OAUTH_ALLOWED_REDIRECT_URIS`],
     ),
     apiBaseUrl: trimTrailingSlash(
-      resolveOptionalString(env.GITLAB_API_BASE_URL) ??
-        `${oauthBaseUrl}/api/v4`,
+      resolveOptionalString(env[`${envPrefix}_API_BASE_URL`]) ??
+        descriptor.defaultApiBaseUrl(oauthBaseUrl),
     ),
     clientId,
     clientSecret,
     oauthBaseUrl,
+    provider: descriptor.provider,
     scopes:
-      resolveOptionalString(env.GITLAB_OAUTH_SCOPES) ??
-      DEFAULT_GITLAB_OAUTH_SCOPES,
+      descriptor.defaultScopes === undefined
+        ? ""
+        : (resolveOptionalString(env[`${envPrefix}_OAUTH_SCOPES`]) ??
+          descriptor.defaultScopes),
   };
 }
 

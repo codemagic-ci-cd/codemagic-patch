@@ -129,6 +129,11 @@
   /* Dialog scrim: 95% white, per the Codemagic app; dark keeps a navy scrim
      so a same-color dialog still separates from the canvas. */
   --color-overlay: rgba(255, 255, 255, 0.95);
+  /* Command-palette scrim. The palette is a navigation surface rather than a
+     task to finish, so it DIMS the page instead of hiding it — the reader keeps
+     the context they are jumping from. Dark reuses its dialog scrim, which is
+     already translucent. */
+  --color-overlay-soft: rgba(17, 40, 91, 0.32);
   --color-thumb: #ffffff;
   --color-code-str: #ffd479;
   --color-code-ok: var(--color-green);
@@ -208,6 +213,7 @@
 
   --color-inverse: #182238;
   --color-overlay: rgba(1, 9, 26, 0.72);
+  --color-overlay-soft: rgba(1, 9, 26, 0.72);
 
   --shadow-xs: none;
   --shadow-sm: none;

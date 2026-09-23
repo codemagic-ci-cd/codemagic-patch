@@ -39,7 +39,7 @@ cmpatch release patch --app MyApp-iOS --deployment Production --label v5 \
 ### Rollout constraints
 
 - One partial rollout per deployment at a time
-- Complete or disable the current rollout before publishing another update to the same deployment
+- Complete or disable the current rollout before publishing another update to the same deployment. `cmpatch release inspect --wait` only waits for the release worker; it does not finish a rollout
 - Rollout percentage must be between 1 and 100
 
 These constraints prevent users on the same deployment from receiving conflicting versions.

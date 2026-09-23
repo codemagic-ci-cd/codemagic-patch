@@ -14,6 +14,7 @@
 // ("Revoke 404 if not found").
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import type { FormEvent, ReactNode } from "react";
 
 import {
@@ -58,12 +59,32 @@ export function TokensPage() {
   const tokensQuery = useApiTokens();
   const revoke = useRevokeApiToken();
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [createOpen, setCreateOpen] = useState(false);
   /** Set right after a 201 — owns the non-dismissible show-once modal. */
   const [secret, setSecret] = useState<ApiTokenCreateResponse | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<ApiTokenMetadata | null>(
     null,
   );
+
+  // `?new=1` deep-links this dialog for the command palette; see AppsPage.
+  const createRequestedByUrl = searchParams.get("new") === "1";
+  const createModalOpen = createOpen || createRequestedByUrl;
+
+  const closeCreate = () => {
+    setCreateOpen(false);
+    if (createRequestedByUrl) {
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete("new");
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  };
 
   const closeRevoke = () => {
     setRevokeTarget(null);
@@ -236,11 +257,11 @@ export function TokensPage() {
       )}
 
       {/* Conditional mount resets the form state on every open. */}
-      {createOpen ? (
+      {createModalOpen ? (
         <CreateTokenModal
-          onClose={() => setCreateOpen(false)}
+          onClose={closeCreate}
           onCreated={(created) => {
-            setCreateOpen(false);
+            closeCreate();
             setSecret(created);
           }}
         />

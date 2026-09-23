@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/patch-cli",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Codemagic Patch CLI for releasing and managing over-the-air React Native updates",
   "license": "Apache-2.0",
   "repository": {
@@ -8,7 +8,7 @@
     "url": "git+https://github.com/codemagic-ci-cd/codemagic-patch.git",
     "directory": "cli"
   },
-  "homepage": "https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/cli#readme",
+  "homepage": "https://patch.codemagic.io/",
   "bugs": "https://github.com/codemagic-ci-cd/codemagic-patch/issues",
   "keywords": [
     "cmpatch",
@@ -39,7 +39,6 @@
     "fast-xml-parser": "^5.0.0",
     "fflate": "^0.8.2",
     "fzstd": "^0.1.1",
-    "gradle-to-js": "2.0.1",
     "picocolors": "^1.1.1",
     "plist": "^3.0.6",
     "xcode": "^3.0.1"

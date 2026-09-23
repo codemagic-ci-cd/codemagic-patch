@@ -5,9 +5,10 @@ import { createHash } from "node:crypto";
 import { ProviderHttpError } from "../../providers/providerError";
 import {
   buildR2TokenTemplateUrl,
-  checkR2CacheRule,
+  checkCacheRule,
   cloudflareRequest,
-  createR2CacheRule,
+  createCacheRule,
+  R2_CACHE_RULE,
 } from "../../providers/cloudflare";
 import { findZoneApex } from "../../selfhostDns";
 import { UsageError } from "../shared";
@@ -142,7 +143,7 @@ export async function setupR2(
       }
     }
     step = "Check R2 download cache rule";
-    await checkR2CacheRule({ ...api, zoneId: zone.id, domain });
+    await checkCacheRule({ ...api, zoneId: zone.id, domain, profile: R2_CACHE_RULE });
     await approveSetup(
       ctx,
       `Cloudflare account ${accountId}, zone ${zoneName}`,
@@ -174,7 +175,7 @@ export async function setupR2(
     });
     recordResource(ctx, resources, `R2 custom domain ${domain}`);
     step = "Configure R2 cache rule";
-    await createR2CacheRule({ ...api, zoneId: zone.id, domain });
+    await createCacheRule({ ...api, zoneId: zone.id, domain, profile: R2_CACHE_RULE });
     step = "Create R2 runtime token";
     const runtime = await cloudflareRequest<{ id: string; value: string }>({
       ...api,

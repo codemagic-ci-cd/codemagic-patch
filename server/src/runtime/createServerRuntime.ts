@@ -130,9 +130,10 @@ import {
   skipProbe,
 } from "../app/serverStatus";
 import { METRICS_FAILURE_DISTRIBUTION_LIMIT } from "../plugins/api/routeConstants";
-import { createBitbucketAuthNAdapter } from "../app/bitbucketAuthNAdapter";
-import { createGitHubAuthNAdapter } from "../app/githubAuthNAdapter";
-import { createGitlabAuthNAdapter } from "../app/gitlabAuthNAdapter";
+import {
+  WEB_OAUTH_PROVIDERS,
+  webOAuthProviderDescriptor,
+} from "../app/webOAuthProviders";
 import {
   createGitHubUserLookupService,
   type GitHubUserLookupService,
@@ -317,13 +318,14 @@ export async function createServerRuntime(
 
   if (
     needsControlPlaneAuth &&
-    !config.githubOAuth &&
-    !config.bitbucketOAuth &&
-    !config.gitlabOAuth &&
+    config.webOAuthProviders.length === 0 &&
     !options.authNAdapter
   ) {
+    const clientIdEnvNames = WEB_OAUTH_PROVIDERS.map(
+      (descriptor) => `${descriptor.envPrefix}_OAUTH_CLIENT_ID`,
+    );
     throw new Error(
-      "GITHUB_OAUTH_CLIENT_ID, BITBUCKET_OAUTH_CLIENT_ID, or GITLAB_OAUTH_CLIENT_ID is required when control-plane auth is enabled",
+      `${clientIdEnvNames.slice(0, -1).join(", ")}, or ${clientIdEnvNames.at(-1)} is required when control-plane auth is enabled`,
     );
   }
 
@@ -372,48 +374,19 @@ export async function createServerRuntime(
     const userAuthHandlers = authRepository
       ? createUserAuthHandlers(authRepository)
       : {};
-    // Web OAuth (authorization-code exchange) providers. Both configs carry a
-    // client secret (config parsing fails fast without one), so a configured
+    // Web OAuth (authorization-code exchange) providers. Every config carries
+    // a client secret (config parsing fails fast without one), so a configured
     // provider is always web-capable. The registry dispatches on the callback
     // body's provider and enforces the per-provider redirect-URI allowlists.
     // Injection always wins.
-    const authNAdapterRegistrations: AuthNAdapterRegistration[] = [];
-    if (config.githubOAuth) {
-      authNAdapterRegistrations.push({
-        adapter: createGitHubAuthNAdapter({
-          apiBaseUrl: config.githubOAuth.apiBaseUrl,
-          clientId: config.githubOAuth.clientId,
-          clientSecret: config.githubOAuth.clientSecret,
-          oauthBaseUrl: config.githubOAuth.oauthBaseUrl,
-        }),
-        allowedRedirectUris: config.githubOAuth.allowedRedirectUris,
-        provider: "github",
-      });
-    }
-    if (config.bitbucketOAuth) {
-      authNAdapterRegistrations.push({
-        adapter: createBitbucketAuthNAdapter({
-          apiBaseUrl: config.bitbucketOAuth.apiBaseUrl,
-          clientId: config.bitbucketOAuth.clientId,
-          clientSecret: config.bitbucketOAuth.clientSecret,
-          oauthBaseUrl: config.bitbucketOAuth.oauthBaseUrl,
-        }),
-        allowedRedirectUris: config.bitbucketOAuth.allowedRedirectUris,
-        provider: "bitbucket",
-      });
-    }
-    if (config.gitlabOAuth) {
-      authNAdapterRegistrations.push({
-        adapter: createGitlabAuthNAdapter({
-          apiBaseUrl: config.gitlabOAuth.apiBaseUrl,
-          clientId: config.gitlabOAuth.clientId,
-          clientSecret: config.gitlabOAuth.clientSecret,
-          oauthBaseUrl: config.gitlabOAuth.oauthBaseUrl,
-        }),
-        allowedRedirectUris: config.gitlabOAuth.allowedRedirectUris,
-        provider: "gitlab",
-      });
-    }
+    const authNAdapterRegistrations: AuthNAdapterRegistration[] =
+      config.webOAuthProviders.map((provider) => ({
+        adapter: webOAuthProviderDescriptor(provider.provider).createAdapter(
+          provider,
+        ),
+        allowedRedirectUris: provider.allowedRedirectUris,
+        provider: provider.provider,
+      }));
     const authNAdapter =
       authRepository && authNAdapterRegistrations.length > 0
         ? options.authNAdapter ??
@@ -422,10 +395,13 @@ export async function createServerRuntime(
     // Handle→subject directory lookup for GitHub-handle invitations. Enabled
     // whenever GitHub OAuth is configured (self-host always is); injection wins
     // for tests. Unauthenticated public lookups — see githubUserLookupService.
-    const githubUserLookupService = config.githubOAuth
+    const githubOAuth = config.webOAuthProviders.find(
+      (provider) => provider.provider === "github",
+    );
+    const githubUserLookupService = githubOAuth
       ? (options.githubUserLookupService ??
         createGitHubUserLookupService({
-          apiBaseUrl: config.githubOAuth.apiBaseUrl,
+          apiBaseUrl: githubOAuth.apiBaseUrl,
         }))
       : options.githubUserLookupService;
     const managementIdGenerator =
@@ -477,47 +453,22 @@ export async function createServerRuntime(
     // configured; the public web-config route serves 404 (about:blank)
     // otherwise. An injected web config wins so embedders with an injected
     // authNAdapter can drive the dashboard login without any provider config.
-    const oauthWebConfigProviders = [
-      ...(config.githubOAuth
-        ? [
-            {
-              authorizeEndpoint: `${config.githubOAuth.oauthBaseUrl}/login/oauth/authorize`,
-              clientId: config.githubOAuth.clientId,
-              provider: "github",
-              scopes: config.githubOAuth.scopes,
-            },
-          ]
-        : []),
-      ...(config.bitbucketOAuth
-        ? [
-            {
-              authorizeEndpoint: `${config.bitbucketOAuth.oauthBaseUrl}/site/oauth2/authorize`,
-              clientId: config.bitbucketOAuth.clientId,
-              provider: "bitbucket",
-              // Bitbucket scopes live on the OAuth consumer; the SPA omits the
-              // scope param when this is empty.
-              scopes: "",
-            },
-          ]
-        : []),
-      ...(config.gitlabOAuth
-        ? [
-            {
-              authorizeEndpoint: `${config.gitlabOAuth.oauthBaseUrl}/oauth/authorize`,
-              clientId: config.gitlabOAuth.clientId,
-              provider: "gitlab",
-              scopes: config.gitlabOAuth.scopes,
-            },
-          ]
-        : []),
-    ];
+    const oauthWebConfigProviders = config.webOAuthProviders.map(
+      (provider) => ({
+        authorizeEndpoint: `${provider.oauthBaseUrl}${webOAuthProviderDescriptor(provider.provider).authorizePath}`,
+        clientId: provider.clientId,
+        provider: provider.provider,
+        // The SPA omits the scope param when this is empty (Bitbucket).
+        scopes: provider.scopes,
+      }),
+    );
     const oauthWebConfig: OAuthWebConfig | undefined =
       options.oauthWebConfig ??
       (oauthWebConfigProviders.length > 0
         ? { providers: oauthWebConfigProviders }
         : undefined);
 
-    // The env parser's fail-fast only covers env-driven GitHub/Bitbucket/GitLab
+    // The env parser's fail-fast only covers env-driven web provider
     // configs; an embedder injecting authNAdapter/oauthWebConfig bypasses it.
     // Without the CLI auth secret such a runtime would pass the CLI's
     // web-config probe, complete the browser sign-in, and then answer 501 at

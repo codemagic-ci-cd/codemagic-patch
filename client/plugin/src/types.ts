@@ -15,6 +15,12 @@ export interface CodemagicPatchPlatformConfig {
   apiUrl: string;
   /** `CodemagicPatchPublicKey` — optional PEM key; only needed for client-side signature enforcement. */
   publicKey?: string;
+  /**
+   * `CodemagicPatchMaxLaunchAttempts` — optional positive integer. Consecutive
+   * launches a pending update may boot without `notifyAppReady()` before the
+   * SDK rolls it back. Defaults to 3 in the native SDK when omitted.
+   */
+  maxLaunchAttempts?: number;
 }
 
 export interface CodemagicPatchPluginProps {

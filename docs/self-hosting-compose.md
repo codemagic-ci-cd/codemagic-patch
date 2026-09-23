@@ -7,7 +7,7 @@
 > Docker with Compose v2; the CLI offers to install or start Docker when needed.
 > `scripts/local-eval/up.sh` remains available from a clone. Deploying for real
 > (this document) additionally needs public DNS, open ports 80/443, and an OAuth
-> app on GitHub and/or Bitbucket.
+> app on GitHub, Bitbucket Cloud, and/or GitLab.
 
 This is the supported deployment path for Codemagic Patch — and in the initial
 open-source release, the only one. It runs the Codemagic Patch server as a single
@@ -29,119 +29,11 @@ Related material:
 
 ## External storage in the install wizard
 
-Run `cmpatch selfhost install` and choose where update files should live. Bundled
-MinIO remains the default. R2 is offered when the API domain uses Cloudflare DNS;
-S3 and GCS are also available. `--storage-mode r2` explicitly selects R2 with
-other API DNS, but still requires an active download zone in the R2 account.
-
-Each external provider uses two different buckets: publicly readable artifacts
-and private `_internal/` objects. The wizard proposes editable bucket names and
-asks for account/project and location before creating anything. Choose automatic
-setup for new buckets and runtime credentials, or guided setup to
-create/select resources in the console. The guided instructions include the
-exact bucket names, policy values, console navigation and verification steps.
-
-- **R2:** enable R2 billing and supply a disposable account-owned setup token.
-  Automatic setup creates both buckets, a public custom download domain, a
-  hostname Cache Rule, and runtime object/purge credentials. Neither bucket
-  uses `r2.dev`; the internal bucket has no public custom domain.
-- **S3:** explicitly select a named AWS profile (including SSO), or a disposable
-  IAM access key. Public object reads must be permitted by account/organization
-  policy. The wizard changes only its newly created buckets, never account-wide
-  Block Public Access. Runtime credentials are a dedicated bucket-scoped IAM
-  user key, not an expiring SSO/STS session.
-- **GCS:** select a gcloud account and project, or a disposable service-account
-  JSON file. Public Access Prevention must permit the public bucket, and
-  service-account key creation must be allowed. Runtime access is granted on
-  the two buckets, not the whole project. The runtime key is transported over
-  SSH as base64, written with mode `0600`, and copied into container tmpfs before
-  the server drops to its unprivileged account.
-
-S3/GCS can use direct storage, guided CloudFront, or guided Cloudflare Cloud
-Connector (Beta). CloudFront needs a certificate, public bucket origin,
-restricted invalidation key and DNS changes. Cloud Connector needs a rule
-matching only the download hostname, a proxied record and a separate Cache Rule
-respecting origin Cache-Control. Neither option bypasses public-access policy.
-The wizard supplies the console steps and verifies the final URL before install.
-
-Automatic setup obtains setup credentials only after collecting the other
-installation answers. Existing AWS profiles and gcloud logins are not changed
-or revoked. Disposable setup credentials are revoked in an awaited cleanup path
-on completion or handled failure/cancellation. Failed cleanup prints the
-credential ID and manual revoke link and remains in the closing summary. Hard
-termination or network loss cannot guarantee revocation. Only runtime secrets
-reach the installer; never use the setup token as a runtime purge token.
-
-Verification writes and reads a unique object in each bucket, checks anonymous
-internal access and listing denial, and compares a public download through the
-final `PUBLIC_BASE_URL`. A selected CDN must also demonstrate cache hit and fresh
-content after purge, before the probe can expire naturally. Respect origin
-Cache-Control; CloudFront maximum TTL must be at least 3600 seconds. Probes are
-deleted; failed deletion reports the object to remove. Readiness waits display progress and support Ctrl+C. Guided verification
-can be retried without provisioning again or re-entering completed answers.
-
-After the installer reports a healthy server, sign in and run
-`./scripts/selfhost/smoke.sh` on the server with `CODEMAGIC_PATCH_TOKEN` set to
-verify an authenticated release. Storage probes alone do not prove release or
-device behavior.
-
-### Existing configuration and recovery
-
-A complete runtime configuration skips provisioning. For an unattended S3
-install, export `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and
-`GITHUB_OAUTH_CLIENT_SECRET`, then use:
-
-```sh
-cmpatch selfhost install user@vps --non-interactive \
-  --api-domain updates.example.com --email admin@example.com \
-  --github-oauth-client-id Iv1.example \
-  --storage-mode s3 --s3-bucket patch-public --s3-internal-bucket patch-private \
-  --s3-region us-east-1 \
-  --public-base-url https://patch-public.s3.us-east-1.amazonaws.com
-```
-
-For GCS use `--storage-mode gcs`, `--gcs-public-bucket`,
-`--gcs-internal-bucket` and `--gcs-credentials-file /secure/runtime.json`.
-For R2 use `--storage-mode r2`, the two S3 bucket flags,
-`--s3-endpoint https://ACCOUNT_ID.r2.cloudflarestorage.com`, and a custom-domain
-`--public-base-url`. Supply `--cloudflare-zone-id` and a runtime
-`CLOUDFLARE_API_TOKEN` using one account-owned runtime token with object-write
-access on both buckets, **Workers R2 Storage / Read** on the account, and
-**Zone / Read** plus **Cache Purge** on the download zone. Automatic setup
-creates this combined token. Account-level R2 Read also permits reading objects
-in other buckets in that account. The remote installer requires this permission
-on the saved runtime token even when separate S3 keys or a local
-`--r2-setup-token` verification override are supplied.
-
-Explicit S3-compatible configuration supports `--s3-endpoint` and
-`--s3-force-path-style true|false`. For path-style delivery, include the public
-bucket prefix in `--public-base-url`, or configure and verify the CDN rewrite.
-These custom mappings are outside the ordinary guided console walkthrough.
-External modes reject `--storage-domain` and host-origin secrets; use
-`--download-domain` for a guided CDN or `--public-base-url` for completed settings.
-
-If setup fails before deployment, inspect the printed resources and reuse them:
-
-```sh
-cmpatch selfhost install user@vps --storage-mode s3 --storage-setup guided \
-  --s3-bucket patch-public --s3-internal-bucket patch-private
-```
-
-This re-verifies existing resources; it does not resume provisioning at an API
-step. Buckets, policies and runtime keys are not rolled back or deleted by
-start-over. After the server env exists, existing resume behavior applies. To
-replace storage credentials, back up and edit the runtime values in the server's
-`.env.selfhost` (or replace its GCS key file with mode `0600`), recreate the server
-with the same Compose overlays, and rerun storage/release checks. Storage keys
-are outside `--repair-env`.
-
-The target source checkout must contain the matching two-bucket server, overlays
-and installer. The CLI checks the external-storage capability marker before
-provisioning or passing configuration. Publish that source before the matching
-CLI. Direct `scripts/selfhost/install.sh` users retain the optional
-`S3_INTERNAL_BUCKET` legacy fallback and an explicit `--skip-storage-check`
-escape hatch. The CLI always performs its own pre-install verification; that
-flag only skips the subsequent on-server script check.
+`cmpatch selfhost install` defaults to bundled MinIO. You can choose Cloudflare
+R2, Amazon S3, or Google Cloud Storage instead. The installer can create those
+buckets or walk you through the console. Direct `install.sh` flags and bucket
+layout are in
+[External database and external storage](#external-database-and-external-storage).
 
 ## Requirements
 
@@ -182,6 +74,8 @@ differ.
     handle invites.
   - **Bitbucket** (`bitbucket.org` / `api.bitbucket.org`) — OAuth token
     exchange when Bitbucket sign-in is configured.
+  - **GitLab** (`gitlab.com`, or your self-hosted GitLab origin) — OAuth token
+    exchange and identity lookup when GitLab sign-in is configured.
   - **A container registry** (Docker Hub) — the PostgreSQL/MinIO images and the
     image build base layers.
   - **The Cloudflare API** — only if you enable the CDN.
@@ -216,10 +110,10 @@ API record is needed; see
 ### OAuth sign-in provider — required
 
 The server refuses to boot without at least one OAuth sign-in provider —
-GitHub and/or Bitbucket — so create a GitHub OAuth App or a Bitbucket OAuth
-consumer and have its **client ID** and **client secret** ready before
-installing — full steps in [Required: OAuth sign-in](#required-oauth-sign-in)
-and [Bitbucket sign-in](#bitbucket-sign-in). You sign in as the first admin
+GitHub, Bitbucket Cloud, or GitLab. The SSH wizard guides you through creating
+the app. For direct script installs, prepare its **client ID** and **client
+secret** first — see [Required: OAuth sign-in](#required-oauth-sign-in),
+[Bitbucket sign-in](#bitbucket-sign-in), or [GitLab sign-in](#gitlab-sign-in). You sign in as the first admin
 with the provider account whose **verified primary email** you pass as
 `--email`, so decide that account up front.
 
@@ -256,9 +150,9 @@ installer:
 ssh -t user@vps 'git clone https://github.com/codemagic-ci-cd/codemagic-patch && cd codemagic-patch && scripts/selfhost/install.sh'
 ```
 
-This is **the** path for the advanced deployments below — an external
-PostgreSQL, S3 or GCS storage, Bitbucket sign-in — because `install.sh` takes
-the flags for all of them.
+Use the direct script for external PostgreSQL or multiple OAuth providers.
+The SSH wizard supports external R2/S3/GCS storage and a choice of GitHub,
+Bitbucket Cloud, or GitLab (gitlab.com or self-managed) for sign-in.
 
 From a checkout already on the server:
 
@@ -334,9 +228,9 @@ One OAuth App (or consumer) serves both sign-in paths:
 ```
 
 The interactive installer prompts for the GitHub Client ID and client secret
-when they are not passed — unless Bitbucket OAuth is configured instead, in
+when they are not passed — unless Bitbucket or GitLab OAuth is configured instead, in
 which case the GitHub prompts are skipped (see
-[Bitbucket sign-in](#bitbucket-sign-in)). The installer generates
+[Bitbucket sign-in](#bitbucket-sign-in) or [GitLab sign-in](#gitlab-sign-in)). The installer generates
 `OAUTH_CLI_AUTH_SECRET` and writes these into `.env.selfhost` (the `GITHUB_*`
 variables only when GitHub is configured):
 
@@ -349,9 +243,10 @@ variables only when GitHub is configured):
 | `GITHUB_OAUTH_ALLOWED_REDIRECT_URIS` | Optional exact-match allowlist for the web flow's redirect URI. Set to `https://<api-domain>/auth/callback`. |
 | `INITIAL_ADMIN_EMAILS` | Set to your `--email`. Lets that email create the admin account on first sign-in under invite-only registration. |
 
-OAuth settings are only written on the initial install. To change them later,
-edit `.env.selfhost` and recreate the stack (see [Upgrade](#upgrade)). Setting
-a provider client id (`GITHUB_OAUTH_CLIENT_ID` or `BITBUCKET_OAUTH_CLIENT_ID`)
+Normal installer reruns preserve existing OAuth settings. To correct credentials,
+run `cmpatch selfhost install --repair`. For manual configuration, edit
+`.env.selfhost` and recreate the stack (see [Upgrade](#upgrade)). Setting
+a provider client id (`GITHUB_OAUTH_CLIENT_ID`, `BITBUCKET_OAUTH_CLIENT_ID`, or `GITLAB_OAUTH_CLIENT_ID`)
 by hand also requires setting `OAUTH_CLI_AUTH_SECRET` (32+ chars), or the
 server refuses to start.
 
@@ -392,7 +287,7 @@ created automatically on first sign-in. The provider account's email must be
 Bitbucket Cloud can be configured as a sign-in provider next to GitHub,
 GitLab, or as the only provider. The dashboard login page shows one button per
 configured provider ("Continue with
-GitHub" / "Continue with Bitbucket" / "Continue with GitLab"), and either identity resolves to the same
+GitHub" / "Continue with Bitbucket" / "Continue with GitLab"), and each identity resolves to the same
 kind of account — invitations, admin emails, and RBAC work identically.
 `cmpatch login` signs in through the same dashboard page in the browser, so
 Bitbucket users get the CLI signed in the same way — the provider choice
@@ -512,9 +407,10 @@ refuses to boot with a client id but no secret. The user's GitLab email
 must be **confirmed**; sign-in fails otherwise with a "confirm the primary
 email" error.
 
-> **Note:** `cmpatch selfhost install` (the SSH wizard) remains GitHub-only
-> for the interactive OAuth step, as with Bitbucket — use
-> `scripts/selfhost/install.sh` directly for GitLab installs.
+> The SSH wizard supports both: choose GitLab during `cmpatch selfhost
+> install` and enter the instance address when asked (Enter keeps
+> gitlab.com), or pass `--gitlab-oauth-base-url`. For multiple OAuth
+> providers, use `scripts/selfhost/install.sh` as shown above.
 
 ## Plain HTTP (no TLS)
 
@@ -557,8 +453,7 @@ What changes, compared with the default HTTPS install:
   `http://` `--public-base-url` is accepted only on `localhost` too; storage
   other machines reach is an `https://` bucket.
 - **URLs.** `SERVER_URL`, `PUBLIC_BASE_URL`, and the OAuth redirect allowlist
-  are written as `http://localhost…`. Register the OAuth App (or Bitbucket
-  consumer) with the callback URL `http://localhost/auth/callback` accordingly.
+  are written as `http://localhost…`. Register the OAuth app or consumer with the callback URL `http://localhost/auth/callback` accordingly.
 - **Reach.** Port 80 and the storage port are bound to the loopback
   interface (`127.0.0.1`) only, so connections can come from this machine
   alone: a browser on it, an iOS simulator, or any client that resolves
@@ -964,8 +859,8 @@ The stack serves a web dashboard **same-origin on the API domain**, for example
 `deploy/selfhost/Dockerfile.caddy` builds the SPA and Caddy serves it next to
 the `/v1` API — so no extra domain, service, or host dependency is needed.
 
-Sign-in shows one button per configured provider (GitHub and/or Bitbucket —
-see [Bitbucket sign-in](#bitbucket-sign-in)):
+Sign-in shows one button per configured provider (GitHub, Bitbucket Cloud,
+and/or GitLab):
 the browser is sent to the provider and redirected back to
 `https://<api-domain>/auth/callback`. The first
 admin is the email in `INITIAL_ADMIN_EMAILS` (see
@@ -977,7 +872,8 @@ accounts) — or with the CLI commands below.
 
 If browser sign-in fails with a misconfiguration error, the web flow is not
 fully configured — most commonly the provider's client secret
-(`GITHUB_OAUTH_CLIENT_SECRET` / `BITBUCKET_OAUTH_CLIENT_SECRET`) is missing
+(`GITHUB_OAUTH_CLIENT_SECRET`, `BITBUCKET_OAUTH_CLIENT_SECRET`, or
+`GITLAB_OAUTH_CLIENT_SECRET`) is missing
 from `.env.selfhost`, or the OAuth App/consumer lacks the callback URL.
 
 ## Install the CLI
@@ -1023,7 +919,7 @@ created on first sign-in.
 cmpatch login --server-url https://updates.example.com
 ```
 
-You **must** use the GitHub or Bitbucket account whose **verified primary email
+You **must** use the GitHub, Bitbucket, or GitLab account whose **verified primary email
 matches `--email`**. The email must be verified with the provider — sign-in
 fails otherwise.
 
@@ -1198,7 +1094,7 @@ higher (a `viewer` cannot publish).
 
 ## Machine & CI access
 
-People sign in with browser OAuth (GitHub or Bitbucket), but machines (CI
+People sign in with browser OAuth (GitHub, Bitbucket, or GitLab), but machines (CI
 pipelines, scripts, service
 accounts) authenticate with a personal access token (`cm_pat_...`). There are
 two ways to get one:
@@ -1229,7 +1125,7 @@ channel — it is shown only once. The token is used with:
 cmpatch login --server-url https://updates.example.com --token cm_pat_...
 ```
 
-> Use an email **not** tied to a real GitHub or Bitbucket account for service
+> Use an email **not** tied to a real GitHub, Bitbucket, or GitLab account for service
 > accounts. Otherwise the owner of that email could sign in and link to the
 > account.
 
@@ -1342,17 +1238,17 @@ timestamp with your provider's tooling, as described in
 > [Mode flags and compose overlays](#mode-flags-and-compose-overlays).
 
 > **Migrating from a pre-OAuth install:** OAuth sign-in is mandatory — a
-> stack that ran with neither `GITHUB_OAUTH_CLIENT_ID` nor
-> `BITBUCKET_OAUTH_CLIENT_ID` will refuse to boot after upgrading — and each
+> stack with no configured OAuth provider will refuse to boot after upgrading — and each
 > configured provider additionally requires its client secret (the
 > confidential web code exchange). The upgrade command checks this before
 > touching anything and fails fast when no provider is configured in
 > `.env.selfhost`, or when a configured provider's client id is missing its
-> secret. Before upgrading, create a GitHub OAuth App or a Bitbucket OAuth
-> consumer (callback URL `https://<api-domain>/auth/callback`, client secret
+> secret. Before upgrading, create a GitHub OAuth App, Bitbucket OAuth
+> consumer, or GitLab application (callback URL `https://<api-domain>/auth/callback`, client secret
 > generated) and add its client id and secret — `GITHUB_OAUTH_CLIENT_ID` /
 > `GITHUB_OAUTH_CLIENT_SECRET` or `BITBUCKET_OAUTH_CLIENT_ID` /
-> `BITBUCKET_OAUTH_CLIENT_SECRET` — to `.env.selfhost`.
+> `BITBUCKET_OAUTH_CLIENT_SECRET` or `GITLAB_OAUTH_CLIENT_ID` /
+> `GITLAB_OAUTH_CLIENT_SECRET` — to `.env.selfhost`.
 > The other OAuth values migrate automatically: `OAUTH_CLI_AUTH_SECRET`
 > is generated if missing (a manually set value must be 32+ chars; an
 > existing `OAUTH_DEVICE_POLL_TOKEN_SECRET` keeps working as a permanent
@@ -1591,7 +1487,7 @@ automatically.
 
 ### Enable it on an existing install
 
-Delivery config — like OAuth sign-in — is only written on the **initial** install;
+Delivery config is only written on the **initial** install;
 re-running the installer with `--cloudflare` on an existing `.env.selfhost` is
 ignored with a warning. To turn it on later, edit `.env.selfhost` by hand — set
 `DELIVERY_ADAPTER=cloudflare` and the `CLOUDFLARE_*` values (see
@@ -1727,7 +1623,11 @@ being waited for, the wizard explains what it found the first time it sees an
 old record or a Cloudflare-proxied one, and keeps checking.
 
 For Cloudflare, create a separate temporary token with **Zone / Zone / Read**
-and **Zone / DNS / Edit**, scoped to the zones you will configure. Enter it at
+and **Zone / DNS / Edit**, scoped to the zones you will configure. The
+pre-filled link also adds **Zone / Cache Rules / Edit** and **Zone / Zone
+Settings / Read**: with Cloudflare as the CDN, the wizard then adds the cache
+rule, checks SSL/TLS and turns the proxy on for the download domain after the
+server is up, instead of walking you through them. Enter it at
 the password prompt, or supply `CMPATCH_DNS_CLOUDFLARE_API_TOKEN` through your
 shell's secret-input mechanism. The wizard retains it through the final DNS
 change, does not save it in the server or CLI configuration, and reminds you to

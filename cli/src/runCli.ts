@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
+import { cleanupChildOnInterrupt } from "./interruptChild";
 import {
   parseCliArgs,
   renderHelp,
@@ -127,6 +128,7 @@ function runCommand(
   args: string[],
   options: {
     cwd: string;
+    cleanupOnInterrupt?: boolean;
     env?: Record<string, string | undefined>;
   },
 ): Promise<{
@@ -138,6 +140,7 @@ function runCommand(
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
+      detached: options.cleanupOnInterrupt === true && process.platform !== "win32",
       env: {
         ...process.env,
         ...options.env,
@@ -153,8 +156,17 @@ function runCommand(
     child.stderr.on("data", (chunk: Buffer) => {
       stderr.push(chunk);
     });
-    child.on("error", reject);
+    let interrupted = false;
+    const dispose = options.cleanupOnInterrupt
+      ? cleanupChildOnInterrupt(child, () => { interrupted = true; })
+      : () => {};
+    child.on("error", (error) => {
+      dispose();
+      if (!interrupted) reject(error);
+    });
     child.on("close", (exitCode, signal) => {
+      dispose();
+      if (interrupted) return;
       resolve({
         exitCode,
         signal,
@@ -396,7 +408,7 @@ export async function runCli(
   // who is present, and explicit-json runs already force them into the --yes
   // requirement via withJsonNonInteractiveMode. Commands whose whole point is
   // a guided session keep their prompts and their own interactivity gates.
-  const promptDrivenKinds = new Set(["config", "demo", "init", "login", "selfhost"]);
+  const promptDrivenKinds = new Set(["config", "demo", "init", "login", "selfhost", "wire"]);
   const executionDeps =
     !promptDrivenKinds.has(commandForExecution.kind) &&
     (effectiveOutput.format === "json" || declinesInteraction(argv))
@@ -789,7 +801,7 @@ function renderResultView(
   const view = getCommandView(command);
 
   if (view?.kind === "action") {
-    const summary = view.summarize(result, command as never);
+    const summary = view.summarize(result, command as never, palette);
 
     if (summary !== null) {
       return renderActionView(
@@ -860,6 +872,14 @@ function getCommandResultExitCode(result: unknown): number | null {
     return result.exitCode;
   }
 
+  if (
+    isRecord(result) &&
+    (result.command === "wire" || result.command === "init") &&
+    (result.exitCode === 0 || result.exitCode === 1 || result.exitCode === 2)
+  ) {
+    return result.exitCode;
+  }
+
   return null;
 }
 
@@ -873,6 +893,7 @@ const JSON_NON_INTERACTIVE_KINDS = {
   "deployment-clear": true,
   "deployment-remove": true,
   login: true,
+  wire: true,
   "release-create": true,
   "release-patch": true,
   "release-promote": true,
@@ -918,6 +939,15 @@ function withJsonNonInteractiveMode(
 function withoutExplicitToken(
   command: ExecutableCliCommand,
 ): ExecutableCliCommand {
+  if (command.kind === "wire" || command.kind === "init") {
+    const argv: string[] = [];
+    for (let index = 0; index < command.argv.length; index += 1) {
+      const arg = command.argv[index]!;
+      if (arg === "--token") index += 1;
+      else if (!arg.startsWith("--token=")) argv.push(arg);
+    }
+    return { ...command, argv };
+  }
   return "token" in command && command.token !== undefined
     ? { ...command, token: undefined }
     : command;

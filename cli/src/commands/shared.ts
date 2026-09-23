@@ -117,6 +117,7 @@ export type CommandDeps = {
     args: string[],
     options: {
       cwd: string;
+      cleanupOnInterrupt?: boolean;
       env?: Record<string, string | undefined>;
     },
   ) => Promise<{

@@ -117,7 +117,7 @@ export function registerMetricsRoutes(
               eventId: input.value.eventId,
               targetPackageHash: input.value.targetPackageHash,
             },
-            "dropping Failed metric event superseded by the device's Success",
+            "dropping Failed metric event superseded by the device's Applied",
           );
         }
         acknowledgedEventIds.add(input.value.eventId);

@@ -17,6 +17,9 @@ export function applyIosInfoPlist(
   if (ios.publicKey) {
     plist.CodemagicPatchPublicKey = ios.publicKey;
   }
+  if (ios.maxLaunchAttempts !== undefined) {
+    plist.CodemagicPatchMaxLaunchAttempts = ios.maxLaunchAttempts;
+  }
   return plist;
 }
 

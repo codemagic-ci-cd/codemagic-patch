@@ -9,8 +9,10 @@
 //   (`invalid_grant` for bad/expired codes) — read the body before keying on
 //   status, like the Bitbucket adapter does.
 // - Identity comes from `GET {apiBase}/user` (subject = immutable numeric
-//   `id`); the verified email comes from `GET {apiBase}/user/emails`, whose
-//   entries carry `confirmed_at` (non-null = confirmed) and no primary flag.
+//   `id`). Its `email` is the primary address and its `confirmed_at` is the
+//   account's confirmation time, which is the primary address's confirmation.
+//   `GET {apiBase}/user/emails` lists only *secondary* addresses (the primary
+//   is excluded), each carrying `confirmed_at` (non-null = confirmed).
 // - Minimum scope is `read_user`. Scopes live on the GitLab application;
 //   the token response echoes the granted set as a space-separated `scope`
 //   string when present.
@@ -36,21 +38,6 @@ export interface GitlabEmailResponse {
   email?: unknown;
 }
 
-export async function postGitlabTokenForm(
-  fetchImpl: typeof globalThis.fetch,
-  url: string,
-  body: Record<string, string>,
-): Promise<Response> {
-  return fetchImpl(url, {
-    body: new URLSearchParams(body),
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    method: "POST",
-  });
-}
-
 export async function getGitlabJson(
   fetchImpl: typeof globalThis.fetch,
   url: string,
@@ -74,6 +61,8 @@ export async function fetchGitlabUser(
       outcome: "success";
       displayName: string | null;
       email: string | null;
+      /** Whether the primary `email` is confirmed (`/user.confirmed_at`). */
+      emailConfirmed: boolean;
       subject: string;
     }
   | {
@@ -109,26 +98,34 @@ export async function fetchGitlabUser(
         : null;
   const email =
     typeof body.email === "string" && body.email.length > 0 ? body.email : null;
+  const emailConfirmed =
+    email !== null &&
+    typeof body.confirmed_at === "string" &&
+    body.confirmed_at.length > 0;
 
   return {
     displayName,
     email,
+    emailConfirmed,
     outcome: "success",
     subject: String(body.id),
   };
 }
 
 /**
- * Resolves the account's verified email. GitLab's list has no primary flag,
- * so the `/user` email wins when it matches a confirmed entry; otherwise the
- * first confirmed entry is used. Unconfirmed-only accounts resolve to
- * `verified_email_required`, matching the GitHub/Bitbucket adapters.
+ * Resolves the account's verified email. A confirmed primary address from
+ * `/user` wins outright — `/user/emails` excludes the primary, so an account
+ * with no secondary addresses would otherwise be rejected. Only when the
+ * primary is missing or unconfirmed is the secondary list consulted: an entry
+ * matching the primary first, then the first confirmed entry. Accounts with
+ * no confirmed address resolve to `verified_email_required`, matching the
+ * GitHub/Bitbucket adapters.
  */
 export async function fetchGitlabVerifiedPrimaryEmail(
   fetchImpl: typeof globalThis.fetch,
   apiBaseUrl: string,
   accessToken: string,
-  preferredEmail: string | null,
+  primary: { email: string | null; confirmed: boolean },
 ): Promise<
   | {
       outcome: "success";
@@ -145,6 +142,13 @@ export async function fetchGitlabVerifiedPrimaryEmail(
       message: string;
     }
 > {
+  if (primary.email !== null && primary.confirmed) {
+    return {
+      email: primary.email,
+      outcome: "success",
+    };
+  }
+
   const response = await getGitlabJson(
     fetchImpl,
     `${apiBaseUrl}/user/emails?per_page=100`,
@@ -182,6 +186,7 @@ export async function fetchGitlabVerifiedPrimaryEmail(
     };
   }
 
+  const preferredEmail = primary.email;
   if (preferredEmail !== null) {
     const match = confirmed.find(
       (entry) => entry.email.toLowerCase() === preferredEmail.toLowerCase(),

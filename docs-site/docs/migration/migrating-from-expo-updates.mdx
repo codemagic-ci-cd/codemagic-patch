@@ -24,8 +24,8 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 | `eas update` | `cmpatch release-react` |
 | `Updates.checkForUpdateAsync()` / `fetchUpdateAsync()` | [`sync()`](/docs/setup/checking-for-updates) or `checkForUpdate()` + `downloadUpdate()` + `installUpdate()` |
 | `Updates.reloadAsync()` | `restartApp()` (or install mode `IMMEDIATE`) |
-| `expo-updates` config in `app.config` | `@codemagic/react-native-patch` [config plugin](/docs/setup/native-setup#option-b-expo-prebuild) |
-| EAS project credentials | GitHub OAuth + `cm_pat_…` tokens on your Patch instance |
+| `expo-updates` config in `app.config` | [Config plugin for CNG](#generated-native-projects) or [manual native configuration](#manually-maintained-native-projects) |
+| EAS project credentials | OAuth sign-in + `cm_pat_…` tokens on your Patch instance |
 
 ## 1. Stand up Patch
 
@@ -43,13 +43,20 @@ cmpatch init      # from your Expo project root: signs in, creates one app per p
 cmpatch deployment list --app MyApp-iOS --format table
 ```
 
-Map each EAS channel you use today to a Patch deployment (e.g. EAS `preview` → Patch `Staging`, EAS `production` → Patch `Production`). Copy each deployment key into the Expo config plugin in the next step.
+Map each EAS channel you use today to a Patch deployment (e.g. EAS `preview` → Patch `Staging`, EAS `production` → Patch `Production`). Use each deployment key in the native integration you choose in the next step. To build Staging and Production binaries from one project, see [Build for different deployments](/docs/setup/native-setup#build-for-different-deployments).
 
 :::info
 Local eval is enough to answer "does Patch work on our app?" It is not a production host: authentication is disabled and ports bind to localhost. Physical devices and Android emulators need a LAN IP (or `adb reverse`); see [Try it with your own app](/docs/#5-try-it-with-your-own-app).
 :::
 
 ## 2. Replace the client integration
+
+Choose how to apply the native changes before running any generation commands:
+
+- **Generated native projects (Expo CNG):** if your native customizations are represented in app config and config plugins, use the [config plugin path](#generated-native-projects) below.
+- **Manually maintained native projects:** if you edit `ios/` or `android/` directly and those changes cannot be regenerated from config, use the [manual path](#manually-maintained-native-projects). Whether the directories are committed to Git does not determine which path to use.
+
+[Expo documents Prebuild as optional](https://docs.expo.dev/workflow/continuous-native-generation/#optionality). You can keep using Expo and EAS Build while maintaining native projects yourself.
 
 Remove Expo Updates from the project:
 
@@ -59,11 +66,23 @@ yarn remove expo-updates
 
 Remove `expo-updates` from `plugins` in `app.config` and delete `updates` / `runtimeVersion` blocks that pointed at EAS (unless you still need `runtimeVersion` for another tool. Patch does not read it).
 
-Add Patch:
+While `expo-updates` is still declared, the wiring `cmpatch init` runs reports it as a conflict and leaves the native steps for later; with it removed, run `cmpatch wire` to install the SDK and apply the platform configuration for either path below, or follow the manual steps.
 
-```bash
-yarn add @codemagic/react-native-patch
-```
+### Manually maintained native projects
+
+Skip Prebuild and keep your existing native projects. Remove the previous `expo-updates` integration:
+
+- In iOS `Expo.plist`, remove the `EXUpdates*` settings.
+- In Android `AndroidManifest.xml`, remove the `expo.modules.updates.*` metadata and any resources used only by those entries, such as `expo_runtime_version`.
+- Remove any manually added `expo-updates` build hooks or custom initialization code. Older integrations may reference `create-manifest-ios.sh` in an Xcode build phase or `create-manifest-android.gradle` in `app/build.gradle`; remove those references if present, since the package is no longer installed. Keep the shared Expo modules, host wrappers, and bundling setup.
+
+Follow [manual native setup](/docs/setup/native-setup#option-a-bare-react-native) to add Patch's configuration and bundle selection using the Expo-specific diffs to preserve your host structure, then run `pod install` in `ios/` to refresh native dependencies. Adding the Patch config plugin to app config alone does not update manually maintained native files.
+
+For EAS Build, ensure the maintained native directories are included in the upload: check `.gitignore` and `.easignore` ([Expo upload rules](https://docs.expo.dev/build-reference/easignore/)). If the platform's native directory is absent, EAS Build generates it with Prebuild and your manual Patch changes will be missing. Commit the native projects so they are available in fresh checkouts; `npx expo run:ios` / `npx expo run:android` also generate the corresponding native project when it is absent.
+
+Continue with [Build and update the JavaScript integration](#build-and-update-the-javascript-integration).
+
+### Generated native projects
 
 Configure the [Expo config plugin](/docs/setup/native-setup#option-b-expo-prebuild) with deployment key, `apiUrl`, and `downloadBaseUrl` per platform. For local eval:
 
@@ -91,12 +110,18 @@ Configure the [Expo config plugin](/docs/setup/native-setup#option-b-expo-prebui
 }
 ```
 
+:::warning
+`npx expo prebuild --clean` deletes and regenerates `ios/` and `android/`; direct edits not reproduced by app config or plugins will be lost. Commit or back up your work first, and follow the [native setup guidance](/docs/setup/native-setup#option-b-expo-prebuild) before switching a manually maintained project to Prebuild.
+:::
+
 Then regenerate native projects:
 
 ```bash
 npx expo prebuild --clean
 cd ios && pod install && cd ..
 ```
+
+### Build and update the JavaScript integration
 
 Build a **development or release** binary (not Expo Go) and install it on a simulator or emulator. Replace update logic in JS:
 
@@ -143,10 +168,12 @@ Replace `eas update` (or EAS Update workflow steps) with the same `release-react
 
 You can keep **EAS Build** (or any CI) to produce the native `.ipa` / `.apk`.
 
+If your app reads `EXPO_PUBLIC_*` variables, set them in the `release-react` job too: `cmpatch release-react` bundles with the environment of the invoking shell and does not read EAS build profiles. See [Keep bundle environment in sync with the native build](/docs/using-patch/ci-integration#keep-bundle-environment-in-sync-with-the-native-build).
+
 ## 4. Cut over
 
 1. [Install](/docs/install) Patch on your domains (or keep using local only until the PoC is done).
-2. Point the Expo plugin at the production API and download URLs; ship a **development or store build** with those keys (Staging first).
+2. Set the production API and download URLs in your Expo plugin or manually maintained native configuration; ship a **development or store build** with the appropriate deployment keys (Staging first).
 3. Publish an OTA with `cmpatch release-react` targeting the binary version users install.
 4. Confirm updates on real devices; then promote the same workflow to Production.
 5. Turn off EAS Update for the project once no binaries depend on it.
@@ -154,8 +181,9 @@ You can keep **EAS Build** (or any CI) to produce the native `.ipa` / `.apk`.
 ## Checklist
 
 - [ ] Local eval (or hosted Install) running; apps and deployments created
-- [ ] `expo-updates` removed; Patch plugin configured in `app.config` (local URLs for PoC)
-- [ ] `expo prebuild` run; development/release binary installed (not Expo Go)
+- [ ] `expo-updates` removed, including its previous native integration when maintaining native projects manually
+- [ ] Chosen integration completed (local URLs for PoC): CNG — configure the Patch plugin and run `expo prebuild`; manual — apply Patch's native configuration and bundle selection directly
+- [ ] New development/release binary built and installed (not Expo Go)
 - [ ] `sync()` (or manual API) replaces Expo Updates calls
 - [ ] Local `cmpatch release-react` lands an update on that binary
 - [ ] Hosted Install done before any shared/Staging cutover

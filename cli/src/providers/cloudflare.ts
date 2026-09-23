@@ -46,9 +46,14 @@ export function buildDnsTokenTemplateUrl(input: { name: string }): string {
   const query = new URLSearchParams({
     accountId: "*",
     name: input.name,
+    // `cache_settings` is `edit` on this user-token page; the account-token
+    // page the R2 template uses takes `write` for the same permission, and
+    // either spelling on the wrong page is dropped without a warning.
     permissionGroupKeys: JSON.stringify([
       { key: "zone", type: "read" },
       { key: "dns", type: "edit" },
+      { key: "cache_settings", type: "edit" },
+      { key: "zone_settings", type: "read" },
     ]),
     // The zone ID is not available until the user supplies a token.
     zoneId: "all",
@@ -283,13 +288,75 @@ export async function cloudflareRequest<T>(input: {
   return body.result;
 }
 
-export class R2CacheRuleConflict extends Error {}
+/**
+ * The zone's SSL/TLS encryption mode: `off`, `flexible`, `full` or `strict`.
+ * A zone on the dashboard's "Automatic" setting reports the mode currently in
+ * effect here (its `ssl_automatic_mode` is a separate setting), checked
+ * against a live zone.
+ */
+export async function readZoneSslMode(input: {
+  fetch: typeof fetch;
+  apiToken: string;
+  zoneId: string;
+}): Promise<string> {
+  const setting = await cloudflareRequest<{ value: string }>({
+    ...input,
+    path: `/zones/${encodeURIComponent(input.zoneId)}/settings/ssl`,
+  });
+  return setting.value;
+}
 
-type R2CacheInput = {
+export class CacheRuleConflict extends Error {}
+
+/**
+ * The cache settings one delivery path needs on its download hostname.
+ * `create` is what the wizard writes; `compatible` lists every shape an
+ * existing rule for the same hostname may have and still be reused untouched.
+ */
+export type CacheRuleProfile = {
+  create: Record<string, unknown>;
+  compatible: readonly Record<string, unknown>[];
+  requirement: string;
+};
+
+/** R2 custom domains: cache everything, keep the origin's browser TTL. */
+export const R2_CACHE_RULE: CacheRuleProfile = {
+  create: { cache: true, browser_ttl: { mode: "respect_origin" } },
+  compatible: [{ cache: true, browser_ttl: { mode: "respect_origin" } }],
+  requirement:
+    "action_parameters must contain only cache: true and browser_ttl: { mode: respect_origin }",
+};
+
+/**
+ * The bundled server behind the Cloudflare proxy: follow the server's own
+ * cache-control and bypass without it, so no edge TTL override outlives a
+ * purge. `bypass_by_default` is the dashboard's "Use cache-control header if
+ * present, bypass cache if not", checked against a live zone. A rule made by
+ * hand in the dashboard may also carry a `respect_origin` browser TTL, which
+ * changes nothing at the edge.
+ */
+export const ORIGIN_CACHE_RULE: CacheRuleProfile = {
+  create: { cache: true, edge_ttl: { mode: "bypass_by_default" } },
+  compatible: [
+    { cache: true, edge_ttl: { mode: "bypass_by_default" } },
+    {
+      cache: true,
+      edge_ttl: { mode: "bypass_by_default" },
+      browser_ttl: { mode: "respect_origin" },
+    },
+  ],
+  requirement:
+    "action_parameters must contain only cache: true and edge_ttl: { mode: bypass_by_default }",
+};
+
+type CacheRuleInput = {
   fetch: typeof fetch;
   apiToken: string;
   zoneId: string;
   domain: string;
+  profile: CacheRuleProfile;
+  /** Checked right before the write, so a cancelled run submits nothing. */
+  shouldStop?: () => boolean;
 };
 type CacheRuleset = {
   id: string;
@@ -300,13 +367,28 @@ type CacheRuleset = {
     action_parameters?: Record<string, unknown>;
   }[];
 };
-const R2_CACHE_PARAMETERS = {
-  cache: true,
-  browser_ttl: { mode: "respect_origin" },
-};
 
-export async function checkR2CacheRule(
-  input: R2CacheInput,
+/**
+ * The hostname a single-hostname rule matches. The dashboard stores a rule
+ * built in its form as `(http.host eq "x")` while the API keeps ours bare;
+ * both are the same rule.
+ */
+function hostOfRule(expression: string): string | null {
+  let inner = expression.trim();
+  while (inner.startsWith("(") && inner.endsWith(")"))
+    inner = inner.slice(1, -1).trim();
+  const match = /^http\.host eq "([^"()]+)"$/u.exec(inner);
+  return match === null ? null : match[1]!.toLowerCase();
+}
+
+function rulesForHost(ruleset: CacheRuleset | undefined, domain: string) {
+  return (ruleset?.rules ?? []).filter(
+    (rule) => hostOfRule(rule.expression) === domain.toLowerCase(),
+  );
+}
+
+export async function checkCacheRule(
+  input: CacheRuleInput,
 ): Promise<CacheRuleset | undefined> {
   let ruleset: CacheRuleset;
   try {
@@ -319,40 +401,43 @@ export async function checkR2CacheRule(
       return undefined;
     throw error;
   }
-  for (const rule of ruleset.rules ?? []) {
-    if (rule.expression.trim() !== `http.host eq "${input.domain}"`) continue;
+  for (const rule of rulesForHost(ruleset, input.domain)) {
     const differences: string[] = [];
     if (rule.enabled !== true) differences.push("the rule must be enabled");
     if (rule.action !== "set_cache_settings")
       differences.push("action must be set_cache_settings");
-    if (!isDeepStrictEqual(rule.action_parameters, R2_CACHE_PARAMETERS))
-      differences.push(
-        "action_parameters must contain only cache: true and browser_ttl: { mode: respect_origin }",
-      );
+    if (
+      !input.profile.compatible.some((parameters) =>
+        isDeepStrictEqual(rule.action_parameters, parameters),
+      )
+    )
+      differences.push(input.profile.requirement);
     if (differences.length > 0)
-      throw new R2CacheRuleConflict(
+      throw new CacheRuleConflict(
         `A cache rule for ${input.domain} already exists with incompatible settings: ${differences.join("; ")}. Review it in Cloudflare and use guided setup to reuse existing resources; automatic setup will not change it or add another hostname rule.`,
       );
   }
   return ruleset;
 }
 
-export async function createR2CacheRule(input: R2CacheInput): Promise<void> {
+/**
+ * Adds the hostname rule, reusing an equivalent existing one. "stopped" means
+ * the run was cancelled before anything was submitted.
+ */
+export async function createCacheRule(
+  input: CacheRuleInput,
+): Promise<"written" | "reused" | "stopped"> {
   const path = `/zones/${input.zoneId}/rulesets`;
   const rule = {
     action: "set_cache_settings",
     expression: `http.host eq "${input.domain}"`,
     description: `Patch downloads ${input.domain}`,
     enabled: true,
-    action_parameters: R2_CACHE_PARAMETERS,
+    action_parameters: input.profile.create,
   };
-  const ruleset = await checkR2CacheRule(input);
-  if (
-    ruleset?.rules?.some(
-      (existing) => existing.expression.trim() === rule.expression,
-    )
-  )
-    return;
+  const ruleset = await checkCacheRule(input);
+  if (rulesForHost(ruleset, input.domain).length > 0) return "reused";
+  if (input.shouldStop?.() === true) return "stopped";
   if (!ruleset) {
     await cloudflareRequest({
       ...input,
@@ -365,7 +450,7 @@ export async function createR2CacheRule(input: R2CacheInput): Promise<void> {
         rules: [rule],
       },
     });
-    return;
+    return "written";
   }
   await cloudflareRequest({
     ...input,
@@ -373,6 +458,7 @@ export async function createR2CacheRule(input: R2CacheInput): Promise<void> {
     method: "POST",
     body: rule,
   });
+  return "written";
 }
 
 

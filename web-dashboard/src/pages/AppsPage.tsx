@@ -13,7 +13,7 @@
 // developer can wire the client before the CLI is useful.
 
 import { useId, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { useApps, useCreateApp } from "../api/hooks/apps";
 import { SOURCE_REPO_URL } from "../branding";
@@ -56,6 +56,7 @@ export function AppsPage() {
   // :teamId is always bound on this route (router.tsx nests the page under
   // teams/:teamId); the assertion keeps the hooks below string-typed.
   const teamId = useParams().teamId as string;
+  const [searchParams, setSearchParams] = useSearchParams();
   const appsQuery = useApps(teamId);
   const {
     can,
@@ -69,8 +70,28 @@ export function AppsPage() {
   // so the loading window never flashes "Requires admin" at admins/owners.
   const showDeniedTip = !roleLoading && !canCreate;
 
+  // `?new=1` lets the command palette open this dialog from any route. The
+  // param IS the open state (derived, not an effect), so a refresh keeps the
+  // dialog and closing strips it with a REPLACE navigation.
+  const createRequestedByUrl = searchParams.get("new") === "1";
+  const createModalOpen = createOpen || (createRequestedByUrl && canCreate);
+
   const openCreate = () => {
     setCreateOpen(true);
+  };
+
+  const closeCreate = () => {
+    setCreateOpen(false);
+    if (createRequestedByUrl) {
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete("new");
+          return next;
+        },
+        { replace: true },
+      );
+    }
   };
 
   return (
@@ -145,12 +166,10 @@ export function AppsPage() {
         </div>
       )}
 
-      {createOpen ? (
+      {createModalOpen ? (
         <CreateAppModal
           teamId={teamId}
-          onClose={() => {
-            setCreateOpen(false);
-          }}
+          onClose={closeCreate}
           onForbidden={downgradeToViewer}
         />
       ) : null}

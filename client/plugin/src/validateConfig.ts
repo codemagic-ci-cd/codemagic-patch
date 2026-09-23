@@ -7,6 +7,9 @@ import type { CodemagicPatchPlatformConfig, CodemagicPatchPluginProps } from './
  */
 const REQUIRED_KEYS = ['deploymentKey', 'downloadBaseUrl', 'apiUrl'] as const;
 
+/** Largest `maxLaunchAttempts` both native readers accept (Int32). */
+const MAX_LAUNCH_ATTEMPTS_LIMIT = 2147483647;
+
 /**
  * Fails the prebuild when a *provided* platform block is missing a required
  * config value.
@@ -39,6 +42,23 @@ export function assertPlatformConfig(
         `Set them in app config under plugins → "@codemagic/react-native-patch" → ${platform} ` +
         `(deploymentKey, downloadBaseUrl, and apiUrl are all required; publicKey is optional). ` +
         `To disable OTA for ${platform}, omit the ${platform} block entirely.`,
+    );
+  }
+
+  // The native SDK tolerates a malformed value at runtime by falling back to
+  // its default, but silently ignoring what the developer wrote in app config
+  // would hide the mistake until a rollback happens at the wrong launch.
+  // Prebuild is the place to fail loudly.
+  // Int32 is the range the Android reader accepts, so it is the range both
+  // platforms accept.
+  const attempts = (block as { maxLaunchAttempts?: unknown }).maxLaunchAttempts;
+  if (
+    attempts !== undefined &&
+    !(Number.isInteger(attempts) && (attempts as number) >= 1 && (attempts as number) <= MAX_LAUNCH_ATTEMPTS_LIMIT)
+  ) {
+    throw new Error(
+      `[codemagic-patch] ${platform} config value maxLaunchAttempts must be a positive integer ` +
+        `up to ${MAX_LAUNCH_ATTEMPTS_LIMIT}, got ${JSON.stringify(attempts)}. Omit it to keep the SDK default of 3.`,
     );
   }
 }

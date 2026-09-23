@@ -2031,14 +2031,20 @@ async function checkTargetBinaryVersion(
   }
 
   try {
-    if (platform === "ios" && context.iosVersionSource && !context.iosVersionSource.plistFile) {
+    // The resolver can still pick the plist from a project, target or build
+    // configuration the flags name; only a bare invocation has nothing to go on.
+    const selectsIosTarget =
+      command.xcodeProjectFile !== undefined ||
+      command.xcodeTargetName !== undefined ||
+      command.buildConfigurationName !== undefined;
+    if (platform === "ios" && context.iosVersionSource && !context.iosVersionSource.plistFile && !selectsIosTarget) {
       return {
         id: "target-binary-version",
         title: "Target binary version",
         status: "skip",
         reason: "unresolved",
         detail: "The iOS application plist is not selected; a version from another target cannot be used.",
-        advice: ["Select --plist-file <app-plist-path> or pass --target-binary-version <version>."],
+        advice: ["Select --plist-file <app-plist-path>, --xcode-target-name <name> or --build-configuration-name <name>, or pass --target-binary-version <version>."],
       };
     }
     const selectedFile = platform === "ios"
@@ -2066,6 +2072,9 @@ async function checkTargetBinaryVersion(
       projectRoot: context.projectRoot,
       ...(platform === "ios" ? context.iosVersionSource : {}),
       ...(command.plistFile !== undefined ? { plistFile: command.plistFile } : {}),
+      ...(command.xcodeProjectFile !== undefined ? { xcodeProjectFile: command.xcodeProjectFile } : {}),
+      ...(command.xcodeTargetName !== undefined ? { xcodeTargetName: command.xcodeTargetName } : {}),
+      ...(command.buildConfigurationName !== undefined ? { buildConfigurationName: command.buildConfigurationName } : {}),
       ...(command.gradleFile !== undefined ? { gradleFile: command.gradleFile } : {}),
     });
 

@@ -20,6 +20,7 @@ import { useSession } from "../auth/AuthProvider";
 import {
   classifyWebConfigError,
   isLocalDevMode,
+  providerDisplayName,
   startLogin,
 } from "../auth/webConfig";
 import { PRODUCT_NAME } from "../branding";
@@ -200,8 +201,7 @@ function ProviderButton({
   disabled: boolean;
   onClick: () => void;
 }) {
-  const intent =
-    localDev || provider.provider === "bitbucket" ? "primary" : "gh";
+  const intent = provider.provider === "github" && !localDev ? "gh" : "primary";
   return (
     <button
       type="button"
@@ -219,23 +219,11 @@ function ProviderButton({
       ) : (
         <>
           <ProviderIcon provider={provider.provider} /> Continue with{" "}
-          {providerLabel(provider.provider)}
+          {providerDisplayName(provider.provider)}
         </>
       )}
     </button>
   );
-}
-
-/** Login-button label; unknown providers get a capitalized fallback. */
-function providerLabel(provider: string): string {
-  switch (provider) {
-    case "github":
-      return "GitHub";
-    case "bitbucket":
-      return "Bitbucket";
-    default:
-      return provider.charAt(0).toUpperCase() + provider.slice(1);
-  }
 }
 
 function ProviderIcon({ provider }: { provider: string }) {
@@ -244,6 +232,9 @@ function ProviderIcon({ provider }: { provider: string }) {
   }
   if (provider === "bitbucket") {
     return <BitbucketIcon />;
+  }
+  if (provider === "gitlab") {
+    return <GitLabIcon />;
   }
   return null;
 }
@@ -269,6 +260,14 @@ function BitbucketIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.899zM14.52 15.53H9.522L8.17 8.466h7.561z" />
+    </svg>
+  );
+}
+
+function GitLabIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="m23.6 9.593-.033-.086L20.3.98a.851.851 0 0 0-.336-.405.875.875 0 0 0-1 .054.875.875 0 0 0-.29.44l-2.205 6.748H7.535L5.33 1.07a.857.857 0 0 0-.29-.441.875.875 0 0 0-1-.054.86.86 0 0 0-.336.405L.433 9.502l-.032.086a6.066 6.066 0 0 0 2.012 7.01l.01.009.03.02 4.977 3.727 2.462 1.863 1.5 1.132a1.009 1.009 0 0 0 1.22 0l1.5-1.132 2.461-1.863 5.006-3.75.013-.01a6.068 6.068 0 0 0 2.008-7.001Z" />
     </svg>
   );
 }

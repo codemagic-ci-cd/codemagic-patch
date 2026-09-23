@@ -18,7 +18,7 @@ From this SDK:
 - Signature verification when you configure a public key
 - Automatic rollback if a new package fails before the app reports ready
 - Expo config plugin for prebuild projects, plus bare React Native wiring
-- CodePush-style `sync()`, or step-by-step APIs when you need control
+- One-line `Patch.wrap(App)` root wrapper, CodePush-style `sync()`, or step-by-step APIs when you need control
 
   <img width="700" alt="the self-hosted Patch dashboard" src="https://github.com/user-attachments/assets/e48f2c99-78e9-48c0-ae75-5a5278581e7d" />
 
@@ -50,6 +50,8 @@ Configuration lives in **native resources** (deployment key, API URL, download b
 
 ### Expo (config plugin)
 
+If you maintain native projects manually, follow [manual native setup](https://patch.codemagic.io/docs/setup/native-setup#option-a-bare-react-native).
+
 ```json
 {
   "plugins": [
@@ -71,17 +73,37 @@ Configuration lives in **native resources** (deployment key, API URL, download b
 }
 ```
 
-Configure at least one platform. Every block you provide needs `deploymentKey`, `downloadBaseUrl`, and `apiUrl` (`publicKey` is optional). Then run `expo prebuild`. See [Configuration](#configuration) for where each value comes from.
+Configure at least one platform. Every block you provide needs `deploymentKey`, `downloadBaseUrl`, and `apiUrl` (`publicKey` and `maxLaunchAttempts` are optional). Then run `expo prebuild`. See [Configuration](#configuration) for where each value comes from.
 
 ### Bare React Native
 
 Add `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` (optional `CodemagicPatchPublicKey`) to Android `strings.xml` and iOS `Info.plist`, then point RN’s JS bundle path at `CodemagicPatch.getJSBundleFile` / `CodemagicPatch.bundleURL()` so boot order is pending package → current package → embedded bundle. Full snippets are in [Configuration](#configuration) below.
 
-### Call `sync()`
+### Wrap the root component
+
+```tsx
+import * as Patch from "@codemagic/react-native-patch";
+
+function App() {
+  return <AppNavigator />;
+}
+
+export default Patch.wrap(App);
+```
+
+`wrap()` renders your app right away and runs `sync()` once the root has mounted. With no options, ordinary updates install on the next restart and mandatory updates install immediately; pass `WrapOptions` as the second argument to change that (`Patch.wrap(App, { installMode: Patch.InstallMode.ON_NEXT_RESUME })`).
+
+Set `checkFrequency: "ON_APP_RESUME"` to check on mount and on foreground return; the default `"ON_APP_START"` checks only on mount. For example: `Patch.wrap(App, { checkFrequency: Patch.CheckFrequency.ON_APP_RESUME, installMode: Patch.InstallMode.ON_NEXT_RESTART })`. For manual checks, use the direct APIs without `wrap()`. `Patch.CheckFrequency` and `Patch.InstallMode` provide named constants; existing string literals remain supported.
+
+`wrap()` forwards props and refs to your root component. It does not copy custom static properties, such as `App.navigationOptions`, onto the wrapper.
+
+Mounting the wrapped root is what reports the app as ready: `sync()` calls `notifyAppReady()` first, which confirms the running package and arms rollback for the next one. If your app has to finish an asynchronous bootstrap (authentication, database migration) before it can vouch for the running bundle, skip `wrap()` and call `sync()` yourself at that point:
 
 ```ts
 import { sync } from "@codemagic/react-native-patch";
+import { bootstrapApp } from "./bootstrap"; // Your app's initialization routine.
 
+await bootstrapApp(); // If initialization fails, do not confirm the bundle.
 const status = await sync();
 // "update-installed" | "up-to-date" | "embedded-revert-applied"
 // | "sync-in-progress" | "error"
@@ -101,6 +123,7 @@ Codemagic Patch is configured through **native resources**, not a JS API — the
 | `CodemagicPatchApiUrl` | yes | API server origin (the server's `SERVER_URL`), e.g. `https://updates.example.com`. The SDK appends `/v1/...` |
 | `CodemagicPatchDownloadBaseUrl` | yes | Artifact origin (the server's `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch`. May include a bucket/path prefix; the SDK appends manifest/artifact paths |
 | `CodemagicPatchPublicKey` | no | PEM public key; required only when enforcing client-side signature verification |
+| `CodemagicPatchMaxLaunchAttempts` | no | Positive integer; consecutive launches a pending update may boot without `notifyAppReady()` before crash rollback. Default `3`; see [`notifyAppReady()`](https://patch.codemagic.io/docs/reference/sdk-reference#notifyappready) |
 
 The two URLs point at different systems (API server vs. object storage / CDN), which is why one usually carries a path and the other does not.
 
@@ -122,6 +145,9 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    <!-- optional, only when enforcing code signing -->
    <key>CodemagicPatchPublicKey</key>
    <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+   <!-- optional, defaults to 3 -->
+   <key>CodemagicPatchMaxLaunchAttempts</key>
+   <integer>3</integer>
    ```
 
    Android — `android/app/src/main/res/values/strings.xml`:
@@ -133,6 +159,8 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
      <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
      <!-- optional, only when enforcing code signing -->
      <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+     <!-- optional, defaults to 3 -->
+     <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">3</string>
    </resources>
    ```
 
@@ -204,7 +232,7 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
 
 ### Expo apps
 
-The package ships a bundled Expo config plugin (`app.plugin.js`). Add it to `app.json` with per-platform props and run `expo prebuild`:
+For projects using Prebuild, use the bundled config plugin (`app.plugin.js`) as shown in [Quick start](#expo-config-plugin). Native projects maintained manually use the native configuration and bundle-selection steps instead. The plugin configuration is:
 
 ```json
 {
@@ -217,15 +245,17 @@ The package ships a bundled Expo config plugin (`app.plugin.js`). Add it to `app
 }
 ```
 
-The plugin writes the native resources and wires bundle selection automatically (Configuration steps 1–3). Configure **at least one platform**, and complete every block you provide — `deploymentKey`, `downloadBaseUrl`, and `apiUrl` are all required per block (`publicKey` is optional). The plugin resolves `expo/config-plugins` from your app's own Expo SDK, so there is nothing extra to install; `expo` is not a runtime or peer dependency of this package.
+The plugin writes the native resources and wires bundle selection automatically (Configuration steps 1–3). Configure **at least one platform**, and complete every block you provide — `deploymentKey`, `downloadBaseUrl`, and `apiUrl` are all required per block (`publicKey` and `maxLaunchAttempts` are optional). The plugin resolves `expo/config-plugins` from your app's own Expo SDK, so there is nothing extra to install; `expo` is not a runtime or peer dependency of this package.
 
 ## Usage
 
-The simplest integration is `sync()`, which checks for an update, downloads it, installs it, and reports app readiness in one call. It never throws — it resolves to a status string.
+The simplest integration is `Patch.wrap(App)`, which renders your root component immediately and runs `sync()` after it mounts. `sync()` checks for an update, downloads it, installs it, and reports app readiness in one call. It never throws — it resolves to a status string. Call it directly when you need to pick the moment yourself, for example after an asynchronous bootstrap:
 
 ```ts
 import { sync } from "@codemagic/react-native-patch";
+import { bootstrapApp } from "./bootstrap"; // Your app's initialization routine.
 
+await bootstrapApp(); // If initialization fails, do not confirm the bundle.
 const status = await sync();
 // "update-installed" | "up-to-date" | "embedded-revert-applied"
 // | "sync-in-progress" | "error"

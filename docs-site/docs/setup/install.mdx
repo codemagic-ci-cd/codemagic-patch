@@ -1,10 +1,10 @@
 ---
 title: Install
 description: >-
-  Install Patch with Docker Compose, TLS, and GitHub OAuth on your own
+  Install Patch with Docker Compose, TLS, and OAuth sign-in on your own
   infrastructure.
 llmsDescription: >-
-  Production install — cmpatch selfhost install, domains, TLS, GitHub OAuth,
+  Production install — cmpatch selfhost install, domains, TLS, OAuth sign-in,
   machine size, first admin.
 slug: /install
 ---
@@ -19,7 +19,7 @@ To deploy with your own domains:
 - Two hostnames you can add DNS records for — usually two subdomains of one
   domain you already own, such as `updates.example.com` and
   `storage-updates.example.com`
-- A GitHub OAuth App for sign-in (a couple of clicks; the installer walks you through it)
+- A GitHub, Bitbucket Cloud, or GitLab account for sign-in (the installer walks you through creating its OAuth app)
 - For production, a CDN in front of storage — Cloudflare or CloudFront; strongly recommended, the installer offers it as a step
 
 `cmpatch selfhost install` handles the rest: it checks the server, offers to
@@ -33,119 +33,15 @@ plugin yourself and run the command again.
 
 ## Choose storage
 
-Run `cmpatch selfhost install` and choose where update files should live. Bundled
-MinIO remains the default. R2 is offered when the API domain uses Cloudflare DNS;
-S3 and GCS are also available. `--storage-mode r2` explicitly selects R2 with
-other API DNS, but still requires an active download zone in the R2 account.
+The default install stores artifacts in MinIO on the same host. You can choose
+Cloudflare R2, Amazon S3, or Google Cloud Storage instead. The installer can
+create those buckets or walk you through the console.
 
-Each external provider uses two different buckets: publicly readable artifacts
-and private `_internal/` objects. The wizard proposes editable bucket names and
-asks for account/project and location before creating anything. Choose automatic
-setup for new buckets and bucket-scoped runtime credentials, or guided setup to
-create/select resources in the console. The guided instructions include the
-exact bucket names, policy values, console navigation and verification steps.
-
-- **R2:** enable R2 billing and supply a disposable account-owned setup token.
-  Automatic setup creates both buckets, a public custom download domain, a
-  hostname Cache Rule, and runtime object/purge credentials. Neither bucket
-  uses `r2.dev`; the internal bucket has no public custom domain.
-- **S3:** explicitly select a named AWS profile (including SSO), or a disposable
-  IAM access key. Public object reads must be permitted by account/organization
-  policy. The wizard changes only its newly created buckets, never account-wide
-  Block Public Access. Runtime credentials are a dedicated bucket-scoped IAM
-  user key, not an expiring SSO/STS session.
-- **GCS:** select a gcloud account and project, or a disposable service-account
-  JSON file. Public Access Prevention must permit the public bucket, and
-  service-account key creation must be allowed. Runtime access is granted on
-  the two buckets, not the whole project. The runtime key is transported over
-  SSH as base64, written with mode `0600`, and copied into container tmpfs before
-  the server drops to its unprivileged account.
-
-S3/GCS can use direct storage, guided CloudFront, or guided Cloudflare Cloud
-Connector (Beta). CloudFront needs a certificate, public bucket origin,
-restricted invalidation key and DNS changes. Cloud Connector needs a rule
-matching only the download hostname, a proxied record and a separate Cache Rule
-respecting origin Cache-Control. Neither option bypasses public-access policy.
-The wizard supplies the console steps and verifies the final URL before install.
-
-Automatic setup obtains setup credentials only after collecting the other
-installation answers. Existing AWS profiles and gcloud logins are not changed
-or revoked. Disposable setup credentials are revoked in an awaited cleanup path
-on completion or handled failure/cancellation. Failed cleanup prints the
-credential ID and manual revoke link and remains in the closing summary. Hard
-termination or network loss cannot guarantee revocation. Only runtime secrets
-reach the installer; never use the setup token as a runtime purge token.
-
-Verification writes and reads a unique object in each bucket, checks anonymous
-internal access and listing denial, and compares a public download through the
-final `PUBLIC_BASE_URL`. A selected CDN must also demonstrate cache hit and fresh
-content after purge, before the probe can expire naturally. Respect origin
-Cache-Control; CloudFront maximum TTL must be at least 3600 seconds. Probes are
-deleted; failed deletion reports the object to remove. Readiness waits display progress and support Ctrl+C. Guided verification
-can be retried without provisioning again or re-entering completed answers.
-
-After the installer reports a healthy server, sign in and run
-`./scripts/selfhost/smoke.sh` on the server with `CODEMAGIC_PATCH_TOKEN` set to
-verify an authenticated release. Storage probes alone do not prove release or
-device behavior.
-
-### Existing configuration and recovery
-
-A complete runtime configuration skips provisioning. For an unattended S3
-install, export `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and
-`GITHUB_OAUTH_CLIENT_SECRET`, then use:
-
-```sh
-cmpatch selfhost install user@vps --non-interactive \
-  --api-domain updates.example.com --email admin@example.com \
-  --github-oauth-client-id Iv1.example \
-  --storage-mode s3 --s3-bucket patch-public --s3-internal-bucket patch-private \
-  --s3-region us-east-1 \
-  --public-base-url https://patch-public.s3.us-east-1.amazonaws.com
-```
-
-For GCS use `--storage-mode gcs`, `--gcs-public-bucket`,
-`--gcs-internal-bucket` and `--gcs-credentials-file /secure/runtime.json`.
-For R2 use `--storage-mode r2`, the two S3 bucket flags,
-`--s3-endpoint https://ACCOUNT_ID.r2.cloudflarestorage.com`, and a custom-domain
-`--public-base-url`. Supply `--cloudflare-zone-id` and a runtime
-`CLOUDFLARE_API_TOKEN` using one account-owned runtime token with object-write
-access on both buckets, **Workers R2 Storage / Read** on the account, and
-**Zone / Read** plus **Cache Purge** on the download zone. Automatic setup
-creates this combined token. Account-level R2 Read also permits reading objects
-in other buckets in that account. The remote installer requires this permission
-on the saved runtime token even when separate S3 keys or a local
-`--r2-setup-token` verification override are supplied.
-
-Explicit S3-compatible configuration supports `--s3-endpoint` and
-`--s3-force-path-style true|false`. For path-style delivery, include the public
-bucket prefix in `--public-base-url`, or configure and verify the CDN rewrite.
-These custom mappings are outside the ordinary guided console walkthrough.
-External modes reject `--storage-domain` and host-origin secrets; use
-`--download-domain` for a guided CDN or `--public-base-url` for completed settings.
-
-If setup fails before deployment, inspect the printed resources and reuse them:
-
-```sh
-cmpatch selfhost install user@vps --storage-mode s3 --storage-setup guided \
-  --s3-bucket patch-public --s3-internal-bucket patch-private
-```
-
-This re-verifies existing resources; it does not resume provisioning at an API
-step. Buckets, policies and runtime keys are not rolled back or deleted by
-start-over. After the server env exists, existing resume behavior applies. To
-replace storage credentials, back up and edit the runtime values in the server's
-`.env.selfhost` (or replace its GCS key file with mode `0600`), recreate the server
-with the same Compose overlays, and rerun storage/release checks. Storage keys
-are outside `--repair-env`.
-
-The target source checkout must contain the matching two-bucket server, overlays
-and installer. The CLI checks the external-storage capability marker before
-provisioning or passing configuration. Publish that source before the matching
-CLI. Direct `scripts/selfhost/install.sh` users retain the optional
-`S3_INTERNAL_BUCKET` legacy fallback and an explicit `--skip-storage-check`
-escape hatch. The CLI always performs its own pre-install verification; that
-flag only skips the subsequent on-server script check.
+External storage uses two buckets: one public for downloads, one private for
+`_internal/` objects. Unattended flags, and how to reuse buckets after a failed
+setup, are in the
+[CLI command reference](/docs/reference/cli-reference#external-storage-install-flags).
+Adapter env vars are in [Infrastructure adapters](/docs/setup/infrastructure).
 
 ## Machine size
 
@@ -155,16 +51,18 @@ The default Compose install runs Caddy, the API and release worker, Postgres, an
 - CPU: 1 vCPU is enough for typical use.
 - Disk: tens of GB is fine to start. Object storage grows with retained releases; Postgres grows with device metrics (`metric_event` is not auto-pruned).
 
-## GitHub OAuth App
+## OAuth sign-in {#github-oauth-app}
 
-Dashboard and CLI sign-in go through a GitHub OAuth App. You do not need to
-create it in advance: the installer opens a pre-filled registration form at the
-right moment and checks the credentials with GitHub before it builds anything.
-Bitbucket Cloud OAuth is a supported alternative for on-server installs (see
-below).
+The wizard lets you choose GitHub, Bitbucket Cloud, or GitLab (gitlab.com or
+self-managed) and guides you through creating its OAuth app. You do not need to create it in advance.
+Prompted GitHub credentials are checked during setup; Bitbucket and GitLab credentials
+are checked when you first sign in. If the credentials are wrong, run
+`cmpatch selfhost install --repair` to correct them, then sign in again.
+`--repair` on a running server is also how you add another sign-in provider
+later; the providers already configured keep their settings.
 
 :::info
-The administrator's email must exactly match the verified primary email on their GitHub (or Bitbucket) account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+The administrator's email must exactly match the verified primary email on their chosen sign-in account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
 :::
 
 ## Run the installer
@@ -178,8 +76,7 @@ cmpatch selfhost install
 ```
 
 The command asks for everything it needs — the server, the two hostnames, the
-administrator email, the GitHub OAuth app — and waits at each step until it
-checks out, so there is nothing to prepare in advance. Building the images
+administrator email, the OAuth app — and guides you through setup. Building the images
 takes around twenty minutes on a cold cache. If the server is not reachable
 over SSH, see
 [Troubleshooting](/docs/troubleshooting#cmpatch-selfhost-cannot-connect-over-ssh).
@@ -195,7 +92,7 @@ API URL:        https://updates.example.com           (app config: CodemagicPatc
 Download base:  https://storage-updates.example.com/codemagic-patch   (app config: CodemagicPatchDownloadBaseUrl)
 ```
 
-Sign in to the dashboard with GitHub to create the administrator account, then
+Sign in to the dashboard with your chosen provider to create the administrator account, then
 connect your machine with `cmpatch login` and create apps and deployments (or
 use the dashboard). See [Web dashboard](/docs/using-patch/dashboard).
 
@@ -248,8 +145,10 @@ scripts/selfhost/install.sh \
 ```
 
 To sign in with Bitbucket Cloud instead of (or as well as) GitHub, pass
-`--bitbucket-oauth-client-id` / `--bitbucket-oauth-client-secret`; at least one
-provider is required.
+`--bitbucket-oauth-client-id` / `--bitbucket-oauth-client-secret`. For GitLab,
+pass `--gitlab-oauth-client-id` / `--gitlab-oauth-client-secret`; at least one
+provider is required. See [GitLab sign-in](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#gitlab-sign-in)
+for app settings and self-hosted GitLab.
 
 To run this same stack on your own machine over plain HTTP — a laptop
 evaluation with real OAuth sign-in but no certificate, DNS, or open ports —

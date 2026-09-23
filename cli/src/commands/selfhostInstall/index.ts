@@ -38,8 +38,10 @@ import {
   classifyInstallFailure,
   classifyInstallState,
   defaultRecoveryEdge,
+  OAUTH_PROVIDERS,
   repairScopeFor,
   type InstallAnswers,
+  type OAuthProvider,
   type InstallState,
   type RecoveryEdge,
 } from "../../selfhostInstall";
@@ -50,6 +52,9 @@ import {
 } from "../../selfhostSetupCopy";
 import {
   readPendingInstall,
+  readPendingOAuthRepair,
+  withPendingOAuthRepair,
+  withoutPendingOAuthRepair,
   withoutPendingInstall,
   withPendingInstall,
   withSelfhostMapping,
@@ -70,6 +75,7 @@ import {
 } from "../selfhostSession";
 import { createProgress } from "../../progress";
 import { UsageError, type CommandDeps } from "../shared";
+import { OAUTH_FLAGS, suppliedOAuthProvider } from "./answers";
 import {
   confirmFinishStep,
   noteBlock,
@@ -116,8 +122,7 @@ const INSTALL_FLAGS = {
   /** The irreversible half of `--start-over`; see readRequestedEdge. */
   "--discard-data": "boolean",
   "--email": "value",
-  "--github-oauth-client-id": "value",
-  "--github-oauth-client-secret": "value",
+  ...OAUTH_FLAGS,
   "--install-curl": "boolean",
   "--install-docker": "boolean",
   "--install-git": "boolean",
@@ -145,11 +150,16 @@ const INSTALL_FLAGS = {
 export type InstallOutcome = {
   /**
    * The administrator address this run collected, when it collected one: the
-   * first sign-in has to use the GitHub account that owns it, and the run that
+   * first sign-in has to use the provider account that owns it, and the run that
    * asked for it is the only thing that can say so.
    */
   adminEmail?: string;
   serverUrl: string | null;
+  /**
+   * The provider this run configured, as the summary names it ("GitLab at
+   * https://gitlab.example.com"), when it configured one.
+   */
+  signInProvider?: string;
   summary: string;
 };
 
@@ -176,6 +186,7 @@ export async function runInstall(
   const requestedEdge = readRequestedEdge(parsed);
   storageMode(parsed);
   dnsMode(parsed);
+  suppliedOAuthProvider(deps, parsed);
   const publicIp = readPublicIp(parsed);
   const remotePath = readStringFlag(parsed, "--remote-path");
   // Rejected before anything connects: install.sh refuses the pair too, but
@@ -250,9 +261,10 @@ export async function runInstall(
     const state = classifyInstallState({
       facts: session.facts,
       pendingInstall: readPendingInstall(config, session.sshTarget),
+      pendingOAuthRepair: readPendingOAuthRepair(config, session.sshTarget),
     });
 
-    if (state.kind === "installed") {
+    if (state.kind === "installed" && requestedEdge !== "repair") {
       // Reconciled from the server's own facts, not merely tidied up. A
       // healthy install ends any pending-install story however it finished —
       // a record left by an interrupted run must not outlive a recovery made
@@ -289,6 +301,17 @@ export async function runInstall(
       throw new UsageError(renderUnknownUnhealthy(session, state.serverUrl));
     }
 
+    if (
+      state.kind === "oauth-repair" &&
+      requestedEdge !== undefined &&
+      requestedEdge !== "repair"
+    ) {
+      throw new UsageError(
+        "This server has a pending OAuth repair. Use --repair to correct only the OAuth credentials; resume and start-over are not available.",
+      );
+    }
+
+    const oauthRepair = state.kind === "installed" || state.kind === "oauth-repair";
     const interactive = canAsk(deps, parsed);
     dnsSetup = createDnsSetup(deps, parsed, interactive, session.progress);
     session.dnsSetup = dnsSetup;
@@ -305,12 +328,14 @@ export async function runInstall(
     await ensureCheckout(deps, session);
 
     let edge: RecoveryEdge | null =
-      state.kind === "incomplete"
-        ? (requestedEdge ??
-          (interactive
-            ? await askRecoveryEdge(deps, session, state)
-            : defaultRecoveryEdge(state.failure)))
-        : null;
+      oauthRepair
+        ? "repair"
+        : state.kind === "incomplete"
+          ? (requestedEdge ??
+            (interactive
+              ? await askRecoveryEdge(deps, session, state)
+              : defaultRecoveryEdge(state.failure)))
+          : null;
 
     const startedOver = edge === "start-over";
     if (startedOver) {
@@ -348,9 +373,11 @@ export async function runInstall(
               session,
               parsed,
               interactive,
-              state.kind === "incomplete"
-                ? repairScopeFor(state.failure)
-                : "all",
+              oauthRepair
+                ? "oauth-only"
+                : state.kind === "incomplete"
+                  ? repairScopeFor(state.failure)
+                  : "all",
             )
           : buildInstallEnv(answers as InstallAnswers);
 
@@ -369,6 +396,8 @@ export async function runInstall(
       }
     }
 
+    // Existing-server repairs use a separate record so failures or interrupts
+    // cannot expose unfinished-install recovery.
     // Written *before* the first invocation and cleared on completion: it is
     // the only evidence that distinguishes state (c) from state (d), so a run
     // interrupted between here and the end must leave it behind.
@@ -379,13 +408,21 @@ export async function runInstall(
     // outcome replaces it — a rerun interrupted before any outcome must not
     // degrade "repair the OAuth pair" back to "resume". Only a start-over
     // discards them, because that install is gone.
-    const startConfig = await loadCliConfig({ env: deps.env });
+    //
+    // An OAuth-repair record is only ever cleared by success or a healthy
+    // observation, so a failed repair leaves it behind; a run that is not one
+    // (the env file is gone: a fresh install) drops it here, or it would
+    // force the next unhealthy rerun onto `--repair-env`.
+    const loaded = await loadCliConfig({ env: deps.env });
+    const startConfig = oauthRepair ? loaded : withoutPendingOAuthRepair(loaded, session.sshTarget);
     const prior = startedOver
       ? undefined
-      : readPendingInstall(startConfig, session.sshTarget);
+      : oauthRepair
+        ? readPendingOAuthRepair(startConfig, session.sshTarget)
+        : readPendingInstall(startConfig, session.sshTarget);
     await saveConfig(
       deps,
-      withPendingInstall(startConfig, session.sshTarget, {
+      (oauthRepair ? withPendingOAuthRepair : withPendingInstall)(startConfig, session.sshTarget, {
         ...(prior?.failure !== undefined ? { failure: prior.failure } : {}),
         identityFile: session.identityFile,
         startedAt: prior?.startedAt ?? new Date(deps.now()).toISOString(),
@@ -401,7 +438,9 @@ export async function runInstall(
         script: "install.sh",
       });
     } catch (error) {
-      await recordFailure(deps, session, error);
+      if (!oauthRepair) {
+        await recordFailure(deps, session, error);
+      }
       throw error;
     }
 
@@ -445,10 +484,12 @@ export async function runInstall(
 
     dnsSetup.dispose();
     session.progress.stop("Install complete.");
+    const signInProvider = describeConfiguredProvider(scriptEnv);
     return {
       ...(answers === null ? {} : { adminEmail: answers.adminEmail }),
       serverUrl,
-      summary: renderCompletion(serverUrl, remaining, options),
+      ...(signInProvider === undefined ? {} : { signInProvider }),
+      summary: renderCompletion(serverUrl, remaining, options, signInProvider),
     };
   } catch (error) {
     // Idempotent over openSession's own fail: the tree closes once, with
@@ -623,7 +664,10 @@ async function commitServerIdentity(
     apiDomain === undefined ? session.facts.serverUrl : `https://${apiDomain}`;
 
   let config = withoutPendingInstall(
-    await loadCliConfig({ env: deps.env }),
+    withoutPendingOAuthRepair(
+      await loadCliConfig({ env: deps.env }),
+      session.sshTarget,
+    ),
     session.sshTarget,
   );
 
@@ -752,10 +796,29 @@ async function saveConfig(
   await saveCliConfig(config, { env: deps.env });
 }
 
+/**
+ * "GitLab at https://gitlab.example.com": the provider the env sent to
+ * install.sh configures, read back from it so an install and a repair name
+ * it the same way. A resume sends none and names nothing.
+ */
+function describeConfiguredProvider(env: Record<string, string>): string | undefined {
+  const provider = (Object.keys(OAUTH_PROVIDERS) as OAuthProvider[]).find((candidate) =>
+    Object.keys(env).some((key) => key.startsWith(`${OAUTH_PROVIDERS[candidate].envPrefix}_OAUTH_`)),
+  );
+  if (provider === undefined) return undefined;
+  const { displayName, envPrefix, extraFields } = OAUTH_PROVIDERS[provider];
+  // A self-managed instance is named; the provider's default is not.
+  const instance = extraFields
+    .map((field) => env[`${envPrefix}_OAUTH_${field.env}`] ?? field.default)
+    .find((value, index) => value !== extraFields[index].default);
+  return instance === undefined ? displayName : `${displayName} at ${instance}`;
+}
+
 function renderCompletion(
   serverUrl: string | null,
   remaining: readonly string[],
   options: InstallOptions,
+  signInProvider: string | undefined,
 ): string {
   return [
     serverUrl === null
@@ -769,7 +832,9 @@ function renderCompletion(
       ? []
       : [
           "",
-          "Sign in to create the admin account, then connect this machine:",
+          signInProvider === undefined
+            ? "Sign in to create the admin account, then connect this machine:"
+            : `Sign in with ${signInProvider} to create the admin account, then connect this machine:`,
           serverUrl === null
             ? "  cmpatch login"
             : `  cmpatch login --server-url ${serverUrl}`,

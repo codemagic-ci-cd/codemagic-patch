@@ -1,8 +1,29 @@
 import type { DebugCommand } from "../commandTypes";
 import { type CommandDeps, UsageError } from "./shared";
 
-const CODEMAGIC_PATCH_LOG_PATTERN =
-  "CodemagicPatch|codemagic-patch|OTA update|update check|rollback";
+/**
+ * Markers the SDK actually writes to the device log. Nothing else is matched
+ * on purpose: a broad clause such as `OTA` also hits "Rotation", "quota" or
+ * "notation" and floods the stream with unrelated system output.
+ *
+ * Both filters match message text only. `adb logcat -e` never looks at the
+ * tag, so native Android lines identified solely by their `CodemagicPatchModule`
+ * tag (e.g. `reloadBundle: ...`) are not included.
+ *
+ * - `CodemagicPatch` — the module / error-domain name that React Native prints
+ *   in the message when the native module rejects or fails to register.
+ * - `[codemagic-patch]` — the JS SDK's console prefix (`sync failed: ...`),
+ *   which React Native forwards to logcat / the unified log.
+ */
+const CODEMAGIC_PATCH_LOG_MARKERS = ["CodemagicPatch", "[codemagic-patch]"] as const;
+
+/** `adb logcat -e` regex over the two markers (brackets escaped). */
+export const CODEMAGIC_PATCH_LOG_PATTERN = "CodemagicPatch|\\[codemagic-patch\\]";
+
+/** `log stream --predicate`: case-sensitive substring match on each marker. */
+export const IOS_LOG_PREDICATE = CODEMAGIC_PATCH_LOG_MARKERS.map(
+  (marker) => `eventMessage CONTAINS "${marker}"`,
+).join(" OR ");
 
 export async function executeDebug(
   command: DebugCommand,
@@ -20,7 +41,7 @@ export async function executeDebug(
             "--style",
             "compact",
             "--predicate",
-            `eventMessage CONTAINS[c] "CodemagicPatch" OR eventMessage CONTAINS[c] "OTA"`,
+            IOS_LOG_PREDICATE,
           ],
           command: "xcrun",
           label: "iOS Simulator CodemagicPatch log stream",

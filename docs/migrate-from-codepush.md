@@ -43,9 +43,12 @@ differences worth knowing before you start:
   ([`cli/README.md`](../cli/README.md)):
 
   ```sh
-  cmpatch init                            # from the project root: signs in, creates the apps (Staging + Production), links the project
+  cmpatch init --skip-wire                # from the project root: signs in, creates the apps (Staging + Production), links the project
   cmpatch deployment list --app my-app    # note the new deployment keys
   ```
+
+Use `--skip-wire` because the steps below remove CodePush and install Patch
+explicitly; automatic wiring does not migrate an existing OTA integration.
 
 Deployment key **values** are new — CodePush keys cannot be reused. Everywhere
 this guide says "deployment key", use the value printed by
@@ -105,15 +108,29 @@ CodePush never offered first-party.
 
 ### 1.4 Migrate the JS integration
 
-There is no `codePush()` higher-order component and no decorator. Delete the
-HOC wrapper and call `sync()` from your own lifecycle code (e.g. on mount, or
-from an `AppState` listener if you want resume-triggered checks).
+Replace the `codePush()` higher-order component (or decorator) with
+`Patch.wrap()`, which renders the root immediately and calls `sync()` once it
+has mounted:
+
+```diff
+- import codePush from "react-native-code-push";
++ import * as Patch from "@codemagic/react-native-patch";
+
+- export default codePush({ installMode: codePush.InstallMode.ON_NEXT_RESUME })(App);
++ export default Patch.wrap(App, { installMode: Patch.InstallMode.ON_NEXT_RESUME });
+```
+
+`wrap()` defaults to `checkFrequency: "ON_APP_START"`. Set `"ON_APP_RESUME"`
+to check on mount and foreground return. Use `Patch.CheckFrequency.ON_APP_RESUME` and `Patch.InstallMode.ON_NEXT_RESTART` for named constants; the underlying values remain strings.
+There is no `MANUAL` option: use direct APIs without the wrapper for manual checks.
+The wrapper does not look for `codePushStatusDidChange` / `codePushDownloadDidProgress`
+methods on the root and shows no dialog; use direct `sync()` for progress and status.
 
 API mapping:
 
 | `react-native-code-push` | `@codemagic/react-native-patch` | Notes |
 | --- | --- | --- |
-| `codePush(options)(App)` HOC | — | Call `sync()` explicitly |
+| `codePush(options)(App)` HOC | `Patch.wrap(App, options?)` | Mount and optional resume checks; no root-instance event hooks or dialog |
 | `codePush.sync(options, statusCb, progressCb, mismatchCb)` | `sync(options?, onProgress?)` | Returns a final `SyncStatus` promise; no per-transition status callback |
 | `codePush.checkForUpdate(key?, mismatchCb?)` | `checkForUpdate()` | No JS deployment-key override. Binary mismatch callback is replaced by `isStoreUpdateAvailable` / `latestBinaryVersion` on the result |
 | `remotePackage.download(progressCb)` | `downloadUpdate(remotePackage, onProgress?)` | Module function, not a method on the package object |
@@ -127,7 +144,7 @@ API mapping:
 
 Option and enum mapping:
 
-- **`InstallMode`** — numeric enum → string literals: `"IMMEDIATE"`,
+- **`InstallMode`** — numeric enum → exported string-valued constants (e.g. `Patch.InstallMode.IMMEDIATE`). Existing string literals are also accepted: `"IMMEDIATE"`,
   `"ON_NEXT_RESTART"`, `"ON_NEXT_RESUME"`, `"ON_NEXT_SUSPEND"`. Defaults are
   unchanged from CodePush: `installMode` defaults to `ON_NEXT_RESTART`,
   `mandatoryInstallMode` to `IMMEDIATE`.
@@ -140,8 +157,10 @@ Option and enum mapping:
 - **`updateDialog` is gone.** The SDK never shows UI. Build your own prompt
   from `checkForUpdate()` metadata (`releaseNotes`, `isMandatory`) and drive
   the manual flow.
-- **`checkFrequency` is gone.** Sync timing is yours: call `sync()` when you
-  want `ON_APP_START` / `ON_APP_RESUME` behavior.
+- **`checkFrequency` is a `wrap()` option.** Use `Patch.CheckFrequency.ON_APP_START`
+  (default) or `Patch.CheckFrequency.ON_APP_RESUME`. For the old `MANUAL` policy,
+  remove the wrapper, call `notifyAppReady()` after successful startup, and
+  call `sync()` when the user requests a check.
 - **New result kind: `embedded-revert`.** `checkForUpdate()` can return
   `{ action: "embedded-revert" }`, meaning the server wants the device back on
   the embedded bundle. `sync()` handles it automatically; a manual flow passes
@@ -186,7 +205,7 @@ way.
 
 | Legacy | `cmpatch` | Notes |
 | --- | --- | --- |
-| `code-push register` | — | Accounts come from the server's sign-in (GitHub OAuth) or `cmpatch member invite` / `member provision` |
+| `code-push register` | — | Accounts come from the server's sign-in (GitHub, Bitbucket Cloud, or GitLab OAuth) or `cmpatch member invite` / `member provision` |
 | `code-push login <serverUrl> --accessKey <key>` | `cmpatch login --server-url <url>` | In a terminal it first asks: browser sign-in (loopback redirect) or paste a token; `--token cm_pat_...` for headless machines |
 | `code-push logout` | `cmpatch logout` | |
 | `code-push whoami` | `cmpatch whoami` | |

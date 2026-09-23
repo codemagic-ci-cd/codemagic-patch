@@ -138,7 +138,7 @@ public final class CodemagicPatch: NSObject {
     // The previous launch booted this package and never confirmed it. That
     // alone does not prove a crash — the OS can reclaim a healthy process
     // first — so spend an attempt and boot it again until the budget runs out.
-    if state.pendingLaunchAttempts < CodemagicPatchFailure.pendingLaunchAttemptBudget {
+    if state.pendingLaunchAttempts < CodemagicPatchFailure.maxLaunchAttempts() {
       return
     }
 

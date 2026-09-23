@@ -518,6 +518,12 @@ export type InitCommand = {
   kind: "init";
 };
 
+export type WireCommand = {
+  nonInteractive?: true;
+  argv: string[];
+  kind: "wire";
+};
+
 export type DemoCommand = {
   argv: string[];
   kind: "demo";
@@ -608,6 +614,9 @@ export type DoctorCommand = {
   fixServerUrl?: string;
   verifyDelivery?: boolean;
   plistFile?: string;
+  xcodeProjectFile?: string;
+  xcodeTargetName?: string;
+  buildConfigurationName?: string;
   androidStringsFile?: string;
   gradleFile?: string;
   app?: string;
@@ -672,6 +681,7 @@ export type CliCommand =
   | TokenListCommand
   | TokenRevokeCommand
   | SelfhostCommand
+  | WireCommand
   | LoginCommand
   | LogoutCommand
   | WhoamiCommand

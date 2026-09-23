@@ -25,9 +25,6 @@ other hostnames outside both rules. No bucket prefix or rewrite is added by this
 flow. Public-read restrictions must already permit the origin. The wizard checks
 file content, cache hit, purge freshness and privacy before deploying.
 
-See [Install](/docs/install#choose-storage) for account prerequisites, guided
-reuse and the separate lifetime of setup and runtime tokens.
-
 :::tip Set this up while installing
 For bundled MinIO, on an uninterrupted `cmpatch selfhost install`, the Cloudflare step opens a
 pre-scoped token form, finds the zone id for you, and — after the server is up —
@@ -36,6 +33,13 @@ offered when your download domain is already on a Cloudflare account. Keep the
 download record **DNS only** (grey cloud) while the install runs: the wizard
 waits until the record resolves to the server directly, and switches the proxy
 on with you afterwards.
+
+If you also let the wizard add your DNS records through Cloudflare, it uses the
+same temporary DNS setup token to finish these steps itself: it adds the Cache
+Rule, checks that SSL/TLS is **Full** or **Full (strict)**, and turns the proxy
+on. A scripted run does this only with `--dns-setup cloudflare`. Anything it
+cannot do, such as a conflicting Cache Rule or **Flexible** SSL/TLS, is left
+for you with the steps below.
 
 If you resume or repair after the server becomes healthy, the closing summary
 links back here because the CLI no longer has the original setup answers.
@@ -50,7 +54,7 @@ The default [install](/docs/install) works without Cloudflare (`DELIVERY_ADAPTER
 
 Front the storage domain with Cloudflare when you want edge caching and automatic cache purge. After every release, promotion, rollback, and deployment clear, the server purges the affected manifest URLs so clients do not keep stale manifests. Deleting a deployment also purges its public artifact URLs.
 
-You can also use Cloudflare **R2** as S3-compatible object storage (`STORAGE_ADAPTER=s3`). That is separate from the delivery adapter; see [Infrastructure adapters](/docs/setup/infrastructure#s3-compatible-storage).
+You can also use Cloudflare **R2** as S3-compatible object storage (`STORAGE_ADAPTER=s3`). That is separate from the delivery adapter; see [Infrastructure adapters](/docs/setup/infrastructure#s3-compatible-storage). Automatic R2 setup uses a disposable setup token, then saves a different runtime token. Do not reuse the setup token as `CLOUDFLARE_API_TOKEN`. The runtime token includes account-level Workers R2 Storage Read, which can also read objects in other buckets in that account.
 
 Follow this page in order: prepare credentials → install with flags → finish DNS and Cache Rules after the stack is up.
 

@@ -1,5 +1,5 @@
 import { scanAndroid } from "./androidScan";
-import { lstat, open, opendir } from "node:fs/promises";
+import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ import { parse as parsePlist } from "plist";
 import type { DoctorCommand } from "../commandTypes";
 import type { ProjectConfig } from "../configStore";
 import { isRecord } from "../output";
+import { findIosRoot } from "../nativeProjectPaths";
 import { discoverIosTargets } from "./iosTargets";
 import { inspectJsGraph } from "./jsDiscovery";
 
@@ -75,7 +76,7 @@ type Parsed = {
   reason?: string;
 };
 const SDK = "@codemagic/react-native-patch";
-const FIELDS = {
+export const FIELDS = {
   apiUrl: "CodemagicPatchApiUrl",
   downloadBaseUrl: "CodemagicPatchDownloadBaseUrl",
   deploymentKey: "CodemagicPatchDeploymentKey",
@@ -251,7 +252,7 @@ function settings(doc: Parsed, native: boolean): SdkSettings {
   ) as SdkSettings;
 }
 
-type Scan = {
+export type Scan = {
   sourcesLimited?: boolean;
   files: string[];
   limited: boolean;
@@ -259,7 +260,7 @@ type Scan = {
   nativeSources?: string[];
 };
 /** Platform-specific bounded native discovery. */
-async function scan(root: string, platform: Platform): Promise<Scan> {
+export async function scanNativeSources(root: string, platform: Platform): Promise<Scan> {
   let applicationClass = "MainApplication";
   let hostUnknown = false;
   if (platform === "android") {
@@ -465,7 +466,7 @@ async function nativeSettings(
   const nativeRoot = path.resolve(
     root,
     platform === "ios"
-      ? "ios"
+      ? await findIosRoot(root)
       : command.gradleFile
         ? path.join(path.dirname(command.gradleFile), "src")
         : "android/app/src",
@@ -474,8 +475,8 @@ async function nativeSettings(
     let targetRoot = nativeRoot;
     let targets = await discoverIosTargets(targetRoot, readSource);
     if (!targets.present) {
-      targetRoot = path.join(root, "iOS");
-      targets = await discoverIosTargets(targetRoot, readSource);
+      targetRoot = await realpath(path.join(root, "iOS")).catch(() => nativeRoot);
+      if (targetRoot !== nativeRoot) targets = await discoverIosTargets(targetRoot, readSource);
     }
     if (targets.present) {
       const explicit = command.plistFile
@@ -513,9 +514,12 @@ async function nativeSettings(
       };
     }
   }
-  let scanned = await scan(nativeRoot, platform);
-  if (platform === "ios" && !scanned.present && !scanned.limited)
-    scanned = await scan(path.join(root, "iOS"), platform);
+  let scanned = await scanNativeSources(nativeRoot, platform);
+  if (platform === "ios" && !scanned.present && !scanned.limited) {
+    const alternateRoot = await realpath(path.join(root, "iOS")).catch(() => nativeRoot);
+    if (alternateRoot !== nativeRoot) scanned = await scanNativeSources(alternateRoot, platform);
+  }
+
   const explicit =
     platform === "ios" ? command.plistFile : command.androidStringsFile;
   let customAndroidLayout = false;
@@ -683,7 +687,13 @@ async function expoConfig(root: string): Promise<{
   dynamic: boolean;
   declared: boolean;
 }> {
-  const doc = await parseSource(path.join(root, "app.json"), "json");
+  // app.config.json takes precedence over app.json, as in Expo's own
+  // config resolution; a missing app.config.json falls back to app.json.
+  const configJson = await parseSource(path.join(root, "app.config.json"), "json");
+  const doc =
+    configJson.state === "missing"
+      ? await parseSource(path.join(root, "app.json"), "json")
+      : configJson;
   const dynamicFiles = await Promise.all(
     ["app.config.js", "app.config.ts"].map((file) =>
       readSource(path.join(root, file)),
@@ -1076,15 +1086,20 @@ export function bindPlatforms(
   }
 }
 
-function withoutComments(text: string): string {
-  // Preserve string literals so comment markers in URLs cannot erase source.
+/**
+ * Comments blanked to spaces, newlines kept, so an index into the result
+ * addresses the same character in the original. String literals are
+ * preserved so comment markers in URLs cannot erase source.
+ */
+export function withoutComments(text: string): string {
   return text.replace(
     /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
-    (match, literal: string | undefined) => literal ?? " ",
+    (match, literal: string | undefined) =>
+      literal ?? match.replace(/[^\n]/g, " "),
   );
 }
 
-function withoutLiterals(text: string): string {
+export function withoutLiterals(text: string): string {
   return withoutComments(text).replace(
     /"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g,
     (literal) => " ".repeat(literal.length),

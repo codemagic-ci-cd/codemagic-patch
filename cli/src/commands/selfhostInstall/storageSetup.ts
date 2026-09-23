@@ -1,6 +1,6 @@
 import { quoteShellValue } from "../../remoteExec";
 import { randomBytes } from "node:crypto";
-import { R2CacheRuleConflict } from "../../providers/cloudflare";
+import { CacheRuleConflict } from "../../providers/cloudflare";
 import { ProviderHttpError } from "../../providers/providerError";
 import { PromptAbortError } from "../../prompt";
 import { type StorageConfig } from "../../storageConfig";
@@ -271,7 +271,7 @@ export function setupFailure(
         ? error.message
         : "The provider request failed.";
   const permissionsHint =
-    error instanceof ProviderHttpError || error instanceof R2CacheRuleConflict
+    error instanceof ProviderHttpError || error instanceof CacheRuleConflict
       ? ["Check the selected account's permissions and public-access policy in its console."]
       : [];
   if (!approved) {

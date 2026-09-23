@@ -32,7 +32,7 @@
 // third consumer appears.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   CSSProperties,
@@ -132,6 +132,8 @@ function MembersScreen({ teamId }: { teamId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [addOpen, setAddOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<RoleBinding | null>(
     null,
@@ -145,8 +147,24 @@ function MembersScreen({ teamId }: { teamId: string }) {
 
   const canManage = !isLoading && can("iam.manage");
 
+  // `?new=1` deep-links this dialog for the command palette; see AppsPage. The
+  // modal stays behind the `canManage` gate below, so a denied role sees
+  // nothing either way.
+  const addRequestedByUrl = searchParams.get("new") === "1";
+  const addModalOpen = addOpen || addRequestedByUrl;
+
   const closeAddModal = () => {
     setAddOpen(false);
+    if (addRequestedByUrl) {
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete("new");
+          return next;
+        },
+        { replace: true },
+      );
+    }
   };
 
   /**
@@ -272,7 +290,7 @@ function MembersScreen({ teamId }: { teamId: string }) {
       {canManage ? (
         <AddMemberModal
           teamId={teamId}
-          open={addOpen}
+          open={addModalOpen}
           onClose={closeAddModal}
           onProvisioned={handleProvisioned}
         />

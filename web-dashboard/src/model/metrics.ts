@@ -13,12 +13,17 @@ export interface ReleaseMetrics {
    * drill-down has something to show. Reasons with none are absent.
    */
   failureReasonDetailCounts: Record<string, number>;
+  /** Ready count, including historical Installed events; retained wire key. */
   installed: number;
+  /** Applied count, including historical Success events; retained wire key. */
   success: number;
 }
 
-/** Install success rate as a 0..1 fraction; null when no Success/Failed events exist. */
-export function successRate(metrics: ReleaseMetrics): number | null {
+/** Application success rate as a 0..1 fraction; null when no Applied/Failed events exist. */
+export function successRate(metrics: {
+  failed: number;
+  success: number;
+}): number | null {
   const attempts = metrics.success + metrics.failed;
   if (attempts === 0) {
     return null;

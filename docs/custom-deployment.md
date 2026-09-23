@@ -61,7 +61,8 @@ while a failed purge is bounded to five minutes at the edge.)
 
 An OAuth sign-in provider is **required** for `MODE=all`/`MODE=api` — the
 server refuses to boot without at least one of GitHub
-(`GITHUB_OAUTH_CLIENT_ID`) or Bitbucket (`BITBUCKET_OAUTH_CLIENT_ID`)
+(`GITHUB_OAUTH_CLIENT_ID`), Bitbucket (`BITBUCKET_OAUTH_CLIENT_ID`), or GitLab
+(`GITLAB_OAUTH_CLIENT_ID`)
 configured. Two more values are refuse-to-boot requirements **regardless of
 which provider you pick**: `OAUTH_CLI_AUTH_SECRET` (32+ chars; signs the CLI
 browser-login codes) and — under the default invite-only registration —
@@ -88,7 +89,7 @@ GITHUB_OAUTH_SCOPES="read:user user:email"
 INITIAL_ADMIN_EMAILS=admin@example.com
 ```
 
-Optionally add Bitbucket Cloud as a second dashboard sign-in provider, or run
+Optionally add Bitbucket Cloud as an additional sign-in provider, or run
 it as the only provider (`OAUTH_CLI_AUTH_SECRET` and `INITIAL_ADMIN_EMAILS`
 above still apply). Create an OAuth consumer with callback URL
 `https://<host>/auth/callback` and the `account` + `email` scopes set on the
@@ -99,6 +100,13 @@ mandatory — an id without its secret refuses to boot:
 BITBUCKET_OAUTH_CLIENT_ID=<bitbucket-consumer-key>
 BITBUCKET_OAUTH_CLIENT_SECRET=<bitbucket-consumer-secret>
 ```
+
+GitLab can also be the only provider or run alongside the others. Create a
+confidential application with redirect URI `https://<host>/auth/callback`
+and scope `read_user`, then set `GITLAB_OAUTH_CLIENT_ID` and
+`GITLAB_OAUTH_CLIENT_SECRET`. The same CLI signing secret and admin email
+requirements apply. For self-hosted GitLab, also set `GITLAB_OAUTH_BASE_URL`
+to its origin; see [GitLab sign-in](self-hosting-compose.md#gitlab-sign-in).
 
 The built-in team/app/deployment management APIs are part of the `MODE=all`
 control-plane surface. People authenticate through browser OAuth sign-in (the
@@ -173,7 +181,7 @@ as the fixed `default-team` (the name is not configurable). The first admin
 account is created the first time an email in `INITIAL_ADMIN_EMAILS` signs in
 through any configured OAuth provider (allowed past invite-only registration).
 That email must match the admin's **verified** primary email at the provider
-(GitHub calls it verified, Bitbucket confirmed) — that first sign-in also makes
+(GitHub calls it verified; Bitbucket and GitLab call it confirmed) — that first sign-in also makes
 the admin the team owner. The admin then mints tokens for CI as needed:
 
 ```bash

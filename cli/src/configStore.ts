@@ -63,6 +63,8 @@ export interface SelfhostPendingInstall {
 export interface CliConfig {
   /** Keyed by ssh host — see SelfhostPendingInstall. */
   pendingInstall?: Record<string, SelfhostPendingInstall>;
+  /** Existing-server OAuth repairs must never enable unfinished-install recovery. */
+  pendingOAuthRepair?: Record<string, SelfhostPendingInstall>;
   /** Keyed by normalized server URL. */
   selfhost?: Record<string, SelfhostMapping>;
   serverUrl?: string;
@@ -76,8 +78,12 @@ export interface ProjectConfig extends CliConfig {
   apps?: ProjectPlatformConfigMap;
   bundler?: string;
   deployment?: string;
+  /** Whether Expo prebuild generates `ios/` and `android/`; written by wiring once answered. */
+  nativeProjects?: NativeProjectsOwnership;
   platform?: string;
 }
+
+export type NativeProjectsOwnership = "generated" | "maintained";
 
 export interface ProjectPlatformConfig {
   app?: string;
@@ -151,6 +157,7 @@ export async function loadCliConfig(
 
   return stripEmptyConfig({
     pendingInstall: normalizePendingInstalls(parsed.pendingInstall),
+    pendingOAuthRepair: normalizePendingInstalls(parsed.pendingOAuthRepair),
     selfhost: normalizeSelfhostMappings(parsed.selfhost),
     serverUrl: parsed.serverUrl,
     team: parsed.team,
@@ -291,6 +298,7 @@ export async function loadProjectConfigFile(
     apps: parsed.apps,
     bundler: parsed.bundler,
     deployment: parsed.deployment,
+    nativeProjects: parsed.nativeProjects,
     platform: parsed.platform,
     serverUrl: parsed.serverUrl,
     team: parsed.team,
@@ -330,6 +338,7 @@ async function loadPackageProjectConfig(
     apps: cmpatch.apps,
     bundler: cmpatch.bundler,
     deployment: cmpatch.deployment,
+    nativeProjects: cmpatch.nativeProjects,
     platform: cmpatch.platform,
     serverUrl: cmpatch.serverUrl,
     team: cmpatch.team,
@@ -382,6 +391,10 @@ function stripEmptyConfig(config: CliConfig): CliConfig {
     Object.keys(config.pendingInstall).length > 0
       ? { pendingInstall: config.pendingInstall }
       : {}),
+    ...(config.pendingOAuthRepair !== undefined &&
+    Object.keys(config.pendingOAuthRepair).length > 0
+      ? { pendingOAuthRepair: config.pendingOAuthRepair }
+      : {}),
     ...(config.selfhost !== undefined && Object.keys(config.selfhost).length > 0
       ? { selfhost: config.selfhost }
       : {}),
@@ -415,6 +428,9 @@ function stripEmptyProjectConfig(config: ProjectConfig): ProjectConfig {
     ...(resolveOptionalString(config.deployment) !== undefined
       ? { deployment: resolveOptionalString(config.deployment) }
       : {}),
+    ...(config.nativeProjects !== undefined
+      ? { nativeProjects: config.nativeProjects }
+      : {}),
     ...(resolveOptionalString(config.platform) !== undefined
       ? { platform: resolveOptionalString(config.platform) }
       : {}),
@@ -430,6 +446,7 @@ function isCliConfigFile(value: unknown): value is CliConfigFile {
     // Only the section's SHAPE is validated here; individual malformed entries
     // are dropped during normalization rather than failing the whole file.
     optionalRecordField(value, "pendingInstall") &&
+    optionalRecordField(value, "pendingOAuthRepair") &&
     optionalRecordField(value, "selfhost") &&
     optionalStringField(value, "serverUrl") &&
     optionalStringField(value, "team") &&
@@ -445,11 +462,17 @@ function isProjectConfigFile(value: unknown): value is ProjectConfig {
     optionalProjectPlatformConfigMapField(value, "apps") &&
     optionalStringField(value, "bundler") &&
     optionalStringField(value, "deployment") &&
+    optionalNativeProjectsField(value) &&
     optionalStringField(value, "platform") &&
     optionalStringField(value, "serverUrl") &&
     optionalStringField(value, "team") &&
     optionalStringField(value, "teamId")
   );
+}
+
+function optionalNativeProjectsField(value: object): boolean {
+  const field = (value as Record<string, unknown>).nativeProjects;
+  return field === undefined || field === "generated" || field === "maintained";
 }
 
 function mergeProjectConfigs(

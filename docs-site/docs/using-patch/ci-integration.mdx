@@ -49,6 +49,34 @@ Store the `cm_pat_…` value as a secret. It is shown only once.
 
 Auth precedence: `--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`.
 
+## Keep bundle environment in sync with the native build
+
+Values read at bundling time, such as Expo's `EXPO_PUBLIC_*` variables, are inlined into the JavaScript bundle. `cmpatch release-react` runs the Metro or Expo bundler with the environment of the shell it is invoked from. If that environment differs from the one the store binary was bundled with, the update ships different values than the binary did. The CLI does not read EAS build profiles or the `env` blocks in `eas.json`, so you keep the two in sync yourself.
+
+With remote EAS Build, the native binary takes its variables from the build profile in `eas.json`: its `env` block, or the EAS environment named by its `environment` field. Your CI runner's shell is not involved, so export the same values explicitly before `release-react`:
+
+```json title="eas.json"
+{
+  "build": {
+    "production": {
+      "env": { "EXPO_PUBLIC_API_URL": "https://api.example.com" }
+    }
+  }
+}
+```
+
+```yaml title="OTA step"
+- name: Release OTA update
+  env:
+    EXPO_PUBLIC_API_URL: https://api.example.com
+    CODEMAGIC_PATCH_TOKEN: ${{ secrets.CODEMAGIC_PATCH_TOKEN }}
+  run: cmpatch release-react --platform ios --deployment Production --yes
+```
+
+A committed dotenv file also works: `release-react` bundles with `--dev false`, so Expo's bundler loads `.env.production.local`, `.env.local`, `.env.production`, and `.env` (highest priority first), and variables already set in the shell win over file values. Remote EAS Build only sees dotenv files that are committed and not gitignored.
+
+Anything that changes the native binary itself (deployment keys, native config) still needs a new store build; see [Build for different deployments](/docs/setup/native-setup#build-for-different-deployments).
+
 ## Codemagic
 
 Run the same commands you would locally after a successful build:
@@ -131,6 +159,73 @@ Configure these in GitLab project Settings > CI/CD > Variables:
 - `PATCH_APP`, `PATCH_DEPLOYMENT`, `PATCH_PLATFORM` — regular variables
 
 The CLI reads the token from the environment, so no `--token` flag is needed. `--non-interactive` keeps the job from hanging on a prompt. For a monorepo, run the job from the React Native project directory or pass `--project-root`. On tag pipelines, pass `--target-binary-version` explicitly.
+
+## Target the version from a published iOS binary
+
+For projects with SDK-dependent plist paths or version settings, read the version from the IPA you shipped. This avoids guessing which source build settings produced the installed app. Keep that IPA, or its extracted version, with your release artifacts and use it in later OTA jobs.
+
+In an existing Fastlane pipeline, read the built app's plist and pass its version explicitly:
+
+```ruby
+lane :publish_patch do
+  version = get_ipa_info_plist_value(
+    ipa: ENV.fetch("PUBLISHED_IPA_PATH"),
+    key: "CFBundleShortVersionString"
+  )
+  UI.user_error!("The published IPA has no app version") if version.to_s.strip.empty?
+
+  sh("cmpatch", "release-react", "--platform", "ios",
+     "--project-root", ENV.fetch("PATCH_PROJECT_ROOT"),
+     "--deployment", "Staging", "--target-binary-version", version, "--yes")
+end
+```
+
+Set `PATCH_PROJECT_ROOT` to the absolute path of your configured React Native project and `PUBLISHED_IPA_PATH` to the absolute IPA path. Use the Patch CI credentials above. `PUBLISHED_IPA_PATH` must point to the store binary you intend to update; reading a newly built, unreleased IPA would target that new version instead. See Fastlane's [`get_ipa_info_plist_value`](https://docs.fastlane.tools/actions/get_ipa_info_plist_value/) action.
+
+## Target the version from a published Android binary
+
+For flavor-specific versions, dynamic Gradle expressions, or CI property overrides, extract `versionName` from the APK or AAB you shipped and retain it for OTA jobs. Use the published binary you intend to update, not a newly built, unreleased binary. `versionCode` is the build number and is not the Patch target version.
+
+With the Android SDK's [`apkanalyzer`](https://developer.android.com/tools/apkanalyzer):
+
+```bash
+set -euo pipefail
+version="$(apkanalyzer manifest version-name "$PUBLISHED_APK_PATH")"
+[[ -n "${version//[[:space:]]/}" ]] || { echo "Published APK has no versionName" >&2; exit 1; }
+cmpatch release-react --platform android \
+  --project-root "$PATCH_PROJECT_ROOT" \
+  --deployment Staging --target-binary-version "$version" --yes
+```
+
+For an AAB, replace the extraction command with [`bundletool`](https://developer.android.com/tools/bundletool):
+
+```bash
+version="$(java -jar "$BUNDLETOOL_JAR" dump manifest \
+  --bundle="$PUBLISHED_AAB_PATH" --module=base \
+  --xpath='/manifest/@android:versionName')"
+```
+
+Set the artifact, tool, and project paths to absolute paths, and use the Patch CI credentials above. Keep the empty-version check and release command from the APK example when using an AAB.
+
+## Sequential release changes
+
+A release is processed by a worker after the upload returns, and a deployment accepts one queued or running release job at a time. A pipeline that changes the same deployment twice in a row (publish, then mark mandatory, promote, or roll back) should wait for the first job before the second command. `--format json` prints the new release's id, so a script can capture it and wait on it:
+
+```bash
+release_id="$(cmpatch release-react --platform ios --deployment Staging --yes --format json | jq -r '.release.id')"
+cmpatch release inspect --release-id "$release_id" --wait
+cmpatch release patch --release-id "$release_id" --mandatory --yes
+```
+
+If the first job is still queued or running when the second command runs, it fails with an `active-release-job` conflict that names the release to wait on:
+
+```text
+Active release job already exists (409)
+deployment already has an active queued or running release job
+Hint: Release rel_01J… still has a running release job on this deployment. Wait for it to finish with `cmpatch release inspect --release-id rel_01J… --wait`, then retry this command.
+```
+
+A partial rollout is a separate limit, one per deployment, and waiting never finishes it: complete or disable the rollout first. See [Rollout constraints](/docs/using-patch/production-control#rollout-constraints).
 
 ## Release strategies
 

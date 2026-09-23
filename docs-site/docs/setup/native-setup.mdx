@@ -1,6 +1,6 @@
 ---
 title: Native setup
-description: Integrate the Patch SDK in bare React Native or Expo prebuild projects.
+description: Integrate the Patch SDK manually or with Expo prebuild.
 llmsDescription: >-
   Create apps and deployments, then install the SDK with native config keys for
   bare RN or Expo.
@@ -8,7 +8,7 @@ llmsDescription: >-
 
 # Native setup
 
-Wire `@codemagic/react-native-patch` into a bare React Native or Expo prebuild app so release builds can check, download, and apply OTAs.
+Wire `@codemagic/react-native-patch` into a React Native or Expo app so release builds can check, download, and apply OTAs. Choose manual setup for native projects you maintain directly, or the config plugin for projects generated with Expo Prebuild.
 
 You need:
 
@@ -47,13 +47,29 @@ The same operations are available in the [web dashboard](/docs/using-patch/dashb
 
 ## Install the SDK
 
-Add the package:
+`cmpatch init` wires the SDK once the project is linked, and `cmpatch wire`
+does the same for an already linked project or a setup that stopped halfway:
+
+```bash
+cmpatch wire
+```
+
+It installs the package with your package manager, writes each platform's
+deployment key and URLs (into `Info.plist` and `strings.xml`, or the config
+plugin entry for a project that runs `expo prebuild`), hooks native bundle
+selection, and exports the root component through `Patch.wrap`. The plan is
+shown before anything changes; whatever it cannot do safely — a dynamic Expo
+config, a second app target, a root wrapped by another library, another OTA
+system still active — it lists with the exact edit for you to make. The rest
+of this page is that manual path.
+
+To do it by hand, add the package:
 
 ```bash
 yarn add @codemagic/react-native-patch
 ```
 
-The SDK is configured through four native values (injected at build time):
+The SDK is configured through native values injected at build time:
 
 | App config key | Value |
 | --- | --- |
@@ -61,12 +77,15 @@ The SDK is configured through four native values (injected at build time):
 | `CodemagicPatchDownloadBaseUrl` | the server's exact `PUBLIC_BASE_URL` (the bundled-storage default ends with `/codemagic-patch`) |
 | `CodemagicPatchApiUrl` | your API URL |
 | `CodemagicPatchPublicKey` | *(optional)* PEM public key for code-signing enforcement |
+| `CodemagicPatchMaxLaunchAttempts` | *(optional)* launches a pending update gets to call `notifyAppReady()` before rollback; default `3`, see [SDK reference](/docs/reference/sdk-reference#notifyappready) |
 
 The snippets below use placeholder values. Substitute your deployment keys from above and your API / download URLs from [Install](/docs/install) (or [local quickstart](/docs/#5-try-it-with-your-own-app) for localhost).
 
-## Option A. Bare React Native
+## Option A. Manual native setup {#option-a-bare-react-native}
 
-Wire the config and native bundle selection manually.
+Wire the config and native bundle selection manually. This path also applies to Expo apps whose native projects are maintained directly.
+
+For Expo apps, keep your existing AppDelegate superclass, factory, and Metro configuration. Apply only the bundle-selection changes described below within that structure.
 
 ### iOS
 
@@ -88,9 +107,33 @@ Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, and `Codemag
 <!-- optional, only when enforcing code signing -->
 <key>CodemagicPatchPublicKey</key>
 <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+<!-- optional, defaults to 3 -->
+<key>CodemagicPatchMaxLaunchAttempts</key>
+<integer>3</integer>
 ```
 
 In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working.
+
+**Expo (Swift AppDelegate):** apply this diff inside your existing `AppDelegate.swift`. Keep the Expo delegate and debug bundle root:
+
+```diff
+ import Expo
++import CodemagicPatchClient
+ // ...existing imports and AppDelegate...
+ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
+   // ...existing methods...
+   override func bundleURL() -> URL? {
+ #if DEBUG
+     RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
+ #else
+-    Bundle.main.url(forResource: "main", withExtension: "jsbundle")
++    CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+ #endif
+   }
+ }
+```
+
+For an older Expo `AppDelegate.mm`, add the Objective-C++ forward declaration below and change only the embedded-bundle expression in your existing release branch. Preserve Expo's superclass and `.expo/.virtual-metro-entry` debug root. The following full examples are for bare React Native.
 
 On the Swift AppDelegate (RN 0.77+ template):
 
@@ -142,12 +185,50 @@ Add the same keys to `android/app/src/main/res/values/strings.xml`:
   <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
   <!-- optional, only when enforcing code signing -->
   <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+  <!-- optional, defaults to 3 -->
+  <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">3</string>
 </resources>
 ```
 
 In `MainApplication.kt`, feed the SDK's bundle path into React Native.
 
-On RN ≤ 0.81 (`ReactNativeHost`), override `getJSBundleFile()` inside the host object:
+**Expo:** use the diff matching your existing host. Keep its other arguments, overrides, and Expo initialization.
+
+For `ExpoReactHostFactory` (Expo SDK 55+), add the bundle path to the existing call:
+
+```diff
+ import expo.modules.ExpoReactHostFactory
++import io.codemagic.patch.CodemagicPatch
+ // ...
+   override val reactHost: ReactHost by lazy {
+     ExpoReactHostFactory.getDefaultReactHost(
+       context = applicationContext,
++      jsBundleFilePath = CodemagicPatch.getJSBundleFile(applicationContext),
+       packageList =
+         PackageList(this).packages.apply {
+           // ...existing packages...
+         }
+     )
+   }
+```
+
+For `ReactNativeHostWrapper` (Expo SDK 52–54), add the override inside the wrapped host:
+
+```diff
+ import expo.modules.ReactNativeHostWrapper
++import io.codemagic.patch.CodemagicPatch
+ // ...
+   override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
+     this,
+     object : DefaultReactNativeHost(this) {
++      override fun getJSBundleFile(): String? =
++        CodemagicPatch.getJSBundleFile(applicationContext)
+       // ...existing overrides, including the Expo JS entry point...
+     }
+   )
+```
+
+**Bare React Native:** on RN ≤ 0.81 (`ReactNativeHost`), override `getJSBundleFile()` inside the host object:
 
 ```kotlin
 import io.codemagic.patch.CodemagicPatch
@@ -184,6 +265,8 @@ Debug builds load JS from Metro, so OTA updates are not picked up there. That is
 
 Requires Expo SDK 52+ and a prebuild / development-build workflow. Expo Go is not supported.
 
+Use this path when app config and config plugins can regenerate your native projects. If you maintain native changes directly, use [manual setup](#option-a-bare-react-native) instead. [Expo's workflow guidance](https://docs.expo.dev/workflow/continuous-native-generation/#optionality) explains that Prebuild is optional; using Expo does not require regenerating native projects.
+
 Add the config plugin to `app.json` / `app.config.js`:
 
 ```json
@@ -210,6 +293,10 @@ Add the config plugin to `app.json` / `app.config.js`:
 }
 ```
 
+Each block also accepts the optional `publicKey` and `maxLaunchAttempts` values from the table above.
+
+Before regenerating, commit or back up your work and make sure native customizations are represented in app config or plugins. `--clean` deletes the existing native directories; omitting it is not a preservation strategy for manually maintained projects. See [Expo's migration guidance](https://docs.expo.dev/guides/adopting-prebuild/#migrate-native-customizations).
+
 Then regenerate native projects:
 
 ```bash
@@ -221,5 +308,73 @@ The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) and
 
 - iOS AppDelegate → prefers `CodemagicPatch.bundleURL()`, falling back to the embedded bundle. The `DEBUG` / Metro branch is left untouched.
 - Android MainApplication → prefers `CodemagicPatch.getJSBundleFile(applicationContext)` (both the RN ≤ 0.81 `getJSBundleFile()` and RN ≥ 0.82 `jsBundleFilePath` host shapes are handled).
+
+## Build for different deployments
+
+Use the same project to produce Staging and Production binaries by selecting the deployment key at build time, separately for iOS and Android. API and download URLs can stay the same when both deployments use the same server. Changing these native values requires a new binary; publishing an OTA to another deployment does not switch an installed app's key.
+
+### Generated native projects (CNG)
+
+In `app.config.js` / `app.config.ts`, read environment variables in the existing Patch plugin options instead of using fixed keys:
+
+```js
+[
+  "@codemagic/react-native-patch",
+  {
+    ios: {
+      deploymentKey: process.env.PATCH_IOS_DEPLOYMENT_KEY,
+      apiUrl: "https://updates.example.com",
+      downloadBaseUrl: "https://storage-updates.example.com/codemagic-patch",
+    },
+    android: {
+      deploymentKey: process.env.PATCH_ANDROID_DEPLOYMENT_KEY,
+      apiUrl: "https://updates.example.com",
+      downloadBaseUrl: "https://storage-updates.example.com/codemagic-patch",
+    },
+  },
+]
+```
+
+Set these variables for each [EAS build profile](https://docs.expo.dev/build/eas-json/#environment-variables), for example in its `env` field:
+
+| Profile | `PATCH_IOS_DEPLOYMENT_KEY` | `PATCH_ANDROID_DEPLOYMENT_KEY` |
+| --- | --- | --- |
+| `preview` | iOS Staging key | Android Staging key |
+| `production` | iOS Production key | Android Production key |
+
+The plugin writes the resolved values into native files during Prebuild. Supply the same variables when running Prebuild locally. Changing the EAS profile alone does not rewrite already-generated native files uploaded with the build; use the manual configuration below if you maintain those files directly.
+
+`EXPO_PUBLIC_*` variables are a separate concern: they are inlined into the JavaScript bundle, and `cmpatch release-react` does not read EAS profiles, so the OTA job must set them itself. See [Keep bundle environment in sync with the native build](/docs/using-patch/ci-integration#keep-bundle-environment-in-sync-with-the-native-build).
+
+### Manually maintained native projects
+
+**iOS:** replace the deployment-key value in the app target's `Info.plist` with a build-setting reference:
+
+```xml
+<key>CodemagicPatchDeploymentKey</key>
+<string>$(PATCH_IOS_DEPLOYMENT_KEY)</string>
+```
+
+Define the user-defined `PATCH_IOS_DEPLOYMENT_KEY` setting on the app target for each build configuration, or in its existing [`.xcconfig` file](https://developer.apple.com/documentation/xcode/adding-a-build-configuration-file-to-your-project):
+
+```text
+PATCH_IOS_DEPLOYMENT_KEY = ios-staging-deployment-key
+```
+
+Use the Production key in the production configuration. Select the matching scheme/build configuration locally and with EAS's [`ios.buildConfiguration`](https://docs.expo.dev/eas/json/#buildconfiguration). If your CI supplies this value through an environment variable, explicitly connect it to the Xcode build setting, for example by generating an included `.xcconfig` before the native build. An EAS `env` entry alone is not a replacement for that configuration.
+
+**Android:** remove `CodemagicPatchDeploymentKey` from `src/main/res/values/strings.xml` and generate it in `android/app/build.gradle` instead. Add this to the existing `android.defaultConfig` block (Groovy):
+
+```groovy
+def patchDeploymentKey = System.getenv("PATCH_ANDROID_DEPLOYMENT_KEY")
+if (!patchDeploymentKey?.trim()) {
+    throw new GradleException("PATCH_ANDROID_DEPLOYMENT_KEY is required")
+}
+resValue "string", "CodemagicPatchDeploymentKey", patchDeploymentKey
+```
+
+Set the variable in the EAS profile's `env` field, or in the environment running Gradle locally. Keep the API and download URL resources from the setup above; do not also define the generated deployment-key resource in `strings.xml`.
+
+Before distributing either binary, confirm that its packaged `Info.plist` or Android string resource contains the intended deployment key.
 
 Next: [Checking for updates](/docs/setup/checking-for-updates). API details: [SDK reference](/docs/reference/sdk-reference).

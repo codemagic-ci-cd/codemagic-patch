@@ -20,14 +20,16 @@ server and create or select the platform apps and deployment:
 ```sh
 cmpatch init
 
+# Complete any remaining setup steps and rebuild the native app first.
 # Preview, then publish an OTA release
 cmpatch release-react --deployment Staging --dry-run
 cmpatch release-react --deployment Staging
 ```
 
 `cmpatch init` guides you to install a server or enter an existing server URL,
-sign in when needed, and writes the selected context to
-`codemagic-patch.config.json`.
+sign in when needed, writes the selected context to
+`codemagic-patch.config.json`, and wires the SDK into the app. Rebuild and
+install the native app before testing its first OTA release.
 
 ### Try the full service locally
 
@@ -71,7 +73,7 @@ reset during recovery; other Docker projects are left alone.
 | `management` | Manage apps, deployments, and deployment history. |
 | `auth` | Authenticate, manage tokens, and manage team members. |
 | `diagnostics` | Diagnose local setup and OTA readiness (`cmpatch doctor`). |
-| `config` | Store defaults and inspect the effective local context. |
+| `config` | Store defaults, wire the SDK, and inspect the effective local context. |
 | `fingerprint` | Compute fingerprints and inspect device update logs. |
 | `selfhost` | Run the local evaluation stack or install and maintain a self-hosted server. |
 
@@ -91,10 +93,18 @@ cmpatch app list --format json | jq '.apps[].name'
 | --- | --- |
 | 0 | Success |
 | 1 | Server or runtime error (not found, conflict, rate limited, …) |
-| 2 | Authentication required or usage error |
-| 3 | Validation error |
+| 2 | HTTP authentication refusal, usage error, or incomplete SDK wiring (`wire` / `init`) |
+| 3 | Validation error, including a rejected saved credential |
 | 4 | Account disabled |
 | 130 | Interactive prompt aborted (Ctrl-C) |
+
+`init` now wires the SDK by default and returns the wiring exit code even
+after saving the project connection. Existing scripts that only link the
+project should use `init --skip-wire` to keep connection-only behavior.
+To apply wiring non-interactively, pass `--yes`; a dirty working tree also
+requires `--allow-dirty`. If CocoaPods installation is needed, request it with
+`--pod-install` on macOS. On Linux that step remains incomplete (exit `2`),
+even with the flag, until completed on macOS.
 
 ## Configuration
 

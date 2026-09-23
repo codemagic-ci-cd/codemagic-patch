@@ -1417,7 +1417,7 @@ export interface MetricEventIngestHandlerInput {
   deviceId: string;
   emittedAt: Date;
   eventId: string;
-  eventName: "Downloaded" | "Installed" | "Success" | "Failed" | "Active";
+  eventName: "Downloaded" | "Ready" | "Applied" | "Failed" | "Active";
   /**
    * Decoded `attributes.payload`; null when absent or undecodable. The raw
    * string stays in `attributes` either way (PROTOCOL.md §Metric Event
@@ -1443,7 +1443,7 @@ export type MetricEventIngestHandlerResult =
   | {
       /**
        * A `Failed` event for a package the device has already reported
-       * `Success` for (server tech spec §Metrics Service → Failure
+       * `Applied` for (server tech spec §Metrics Service → Failure
        * Supersession). Nothing is stored; the event is acknowledged so the
        * client stops retransmitting it.
        */

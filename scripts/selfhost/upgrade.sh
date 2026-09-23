@@ -83,19 +83,17 @@ fi
 # ensure_selfhost_oauth_env above already validated the OAuth env (at least
 # one provider, and each configured provider's id/secret pair). Older GitHub
 # installs may still predate the redirect allowlist; backfill it here.
-if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_ALLOWED_REDIRECT_URIS:-}" ]; then
-  # The callback follows the stack's scheme (SELFHOST_SCHEME), exactly as
-  # install.sh derives it.
-  upgrade_scheme="$(selfhost_scheme_from_env_file)"
-  set_selfhost_env_value GITHUB_OAUTH_ALLOWED_REDIRECT_URIS "${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
-  warn_selfhost "GITHUB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
-fi
-
-if [ -n "${GITLAB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITLAB_OAUTH_ALLOWED_REDIRECT_URIS:-}" ]; then
-  upgrade_scheme="$(selfhost_scheme_from_env_file)"
-  set_selfhost_env_value GITLAB_OAUTH_ALLOWED_REDIRECT_URIS "${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
-  warn_selfhost "GITLAB_OAUTH_ALLOWED_REDIRECT_URIS was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
-fi
+for upgrade_provider in $SELFHOST_OAUTH_PROVIDERS; do
+  upgrade_id_var="${upgrade_provider}_OAUTH_CLIENT_ID"
+  upgrade_redirect_var="${upgrade_provider}_OAUTH_ALLOWED_REDIRECT_URIS"
+  if [ -n "${!upgrade_id_var:-}" ] && [ -z "${!upgrade_redirect_var:-}" ]; then
+    # The callback follows the stack's scheme (SELFHOST_SCHEME), exactly as
+    # install.sh derives it.
+    upgrade_scheme="$(selfhost_scheme_from_env_file)"
+    set_selfhost_env_value "$upgrade_redirect_var" "${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
+    warn_selfhost "${upgrade_redirect_var} was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
+  fi
+done
 
 if [ -z "${CODEMAGIC_PATCH_CADDY_IMAGE:-}" ]; then
   log_selfhost "CODEMAGIC_PATCH_CADDY_IMAGE was missing; defaulting to codemagic-patch-caddy:selfhost"

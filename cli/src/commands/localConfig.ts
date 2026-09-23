@@ -1,7 +1,7 @@
 import { basename, isAbsolute, relative } from "node:path";
 
 import type { ConfigCommand, ContextCommand, InitCommand } from "../commandTypes";
-import { authenticatedRequest } from "../authenticatedRequest";
+import { authenticatedRequest, isAuthenticationFailure } from "../authenticatedRequest";
 import { PRODUCT_NAME, SELFHOST_DOCS_URL } from "../branding";
 import { normalizeServerUrl } from "../credentialStore";
 import { RequestNetworkError } from "../http";
@@ -42,8 +42,13 @@ import {
 import type { PromptFn } from "../prompt";
 import { onInterruptCleanup } from "../progress";
 import { getCliVersion } from "../version";
+import { PromptAbortError } from "../prompt";
+import { runWire, type WireOptions } from "../wire/run";
+import type { WireResult } from "../wire/types";
+import { isWorktreeDirty } from "../wire/worktree";
 import { executeLogin } from "./auth";
 import { runInstall, type InstallOutcome } from "./selfhostInstall";
+import { parseWireFlags, WIRE_BOOLEAN_FLAGS } from "./wire";
 import {
   assertHttpUrl,
   buildApiUrl,
@@ -176,7 +181,7 @@ export async function executeContextCommand(
   };
 }
 
-function readSdkDownloadBaseUrl(response: unknown): string {
+export function readSdkDownloadBaseUrl(response: unknown): string {
   if (
     !isRecord(response) ||
     typeof response.download_base_url !== "string" ||
@@ -232,6 +237,8 @@ type LinkFlags = {
   bundler?: string;
   deployment?: string;
   deploymentId?: string;
+  /** Plan everything, write nothing: no config, no app creation, no wiring edits. */
+  dryRun: boolean;
   iosApp?: string;
   iosAppId?: string;
   iosDeployment?: string;
@@ -240,11 +247,19 @@ type LinkFlags = {
   platform?: string;
   projectRoot?: string;
   serverUrl?: string;
+  /** Connection-only setup; wiring is reported as skipped, not as incomplete. */
+  skipWire: boolean;
   team?: string;
   teamId?: string;
   token?: string;
   yes: boolean;
 };
+
+export type InitWiring =
+  | WireResult
+  | { status: "skipped" }
+  /** Wiring could not run at all; the connection is saved regardless. */
+  | { status: "failed"; error: string };
 
 async function linkProject(
   args: string[],
@@ -254,6 +269,9 @@ async function linkProject(
 ): Promise<unknown> {
   const flags = parseLinkFlags(args);
   validatePlatformSpecificFlags(flags);
+  const wireOptions = flags.skipWire
+    ? null
+    : parseWireFlags(args.filter((token) => !/^--skip-wire(=|$)/.test(token)), INIT_VALUE_FLAGS);
   const interactive =
     canPromptInteractively(deps, flags.nonInteractive === true) &&
     !flags.yes &&
@@ -265,6 +283,7 @@ async function linkProject(
   // lands under a closed tree rather than inside an open one.
   if (!interactive || deps.stderr === undefined) {
     return linkProjectFlow(
+      wireOptions,
       flags,
       interactive,
       deps,
@@ -273,9 +292,10 @@ async function linkProject(
     );
   }
   const stderr = deps.stderr;
-  openInitFlow(stderr, deps.env, projectRoot, existingConfig);
+  openInitFlow(stderr, deps.env, projectRoot, existingConfig, flags.dryRun);
   try {
     return await linkProjectFlow(
+      wireOptions,
       flags,
       interactive,
       deps,
@@ -300,16 +320,20 @@ function openInitFlow(
   env: Record<string, string | undefined>,
   projectRoot: string,
   existingConfig: ProjectConfig,
+  dryRun: boolean,
 ): void {
   const palette = createPalette(stderr, env);
   writeOpening(
     stderr,
-    `${PRODUCT_NAME} · cmpatch init ${palette.dim(getCliVersion())}`,
+    `${PRODUCT_NAME} · cmpatch init ${palette.dim(getCliVersion())}${dryRun ? " (dry run)" : ""}`,
   );
   const verb = Object.keys(existingConfig).length === 0 ? "links" : "re-links";
   writeMessage(stderr, [
-    `Welcome! This command ${verb} the app in ${describeProjectRoot(projectRoot)} to a ${PRODUCT_NAME} server and writes codemagic-patch.config.json next to it.`,
-    "It asks which server to use, signs you in, and picks the app and its deployments. The config file is only written after the last answer.",
+    `Welcome! This command ${verb} the app in ${describeProjectRoot(projectRoot)} to a ${PRODUCT_NAME} server, writes codemagic-patch.config.json next to it, and then wires the SDK into the app.`,
+    "It asks which server to use, signs you in, and picks the app and its deployments.",
+    dryRun
+      ? "This is a dry run: nothing is written and no app is created."
+      : "The config file is only written after the last answer; the SDK changes are shown and confirmed before they are made.",
   ]);
 }
 
@@ -325,6 +349,8 @@ function describeProjectRoot(projectRoot: string): string {
 }
 
 async function linkProjectFlow(
+  /** Null when wiring is skipped. */
+  wireOptions: WireOptions | null,
   flags: LinkFlags,
   interactive: boolean,
   deps: CommandDeps,
@@ -352,7 +378,7 @@ async function linkProjectFlow(
     // wizard and takes back a URL — no install flag, question, or step lives
     // here.
     const known = effectiveContext.serverUrl;
-    const source = await chooseServerSource(deps, deps.prompt, known);
+    const source = await chooseServerSource(deps, deps.prompt, known, flags.dryRun);
     switch (source) {
       case "exit":
         if (deps.stderr !== undefined) {
@@ -360,6 +386,9 @@ async function linkProjectFlow(
         }
         return renderReadTheDocsFirst();
       case "install":
+        if (flags.dryRun) {
+          throw new UsageError("A dry run cannot install a server. Use an existing server URL, or run again without --dry-run.");
+        }
         installed = await installServer(deps);
         serverUrl = installed.serverUrl ?? undefined;
         break;
@@ -381,7 +410,7 @@ async function linkProjectFlow(
   serverUrl = assertHttpUrl(serverUrl);
 
   if (installed !== undefined) {
-    await signInToNewServer(deps, serverUrl, installed.adminEmail);
+    await signInToNewServer(deps, serverUrl, installed);
   }
 
   const autoSelected: string[] = [];
@@ -412,14 +441,20 @@ async function linkProjectFlow(
   const projectName = await detectProjectName(deps, projectRoot);
   const createApp =
     interactive && deps.prompt !== undefined
-      ? (platform: NativePlatform) =>
-          createFirstApp(deps, deps.prompt as PromptFn, {
+      ? (platform: NativePlatform) => {
+          if (flags.dryRun) {
+            throw new UsageError(
+              `The team has no ${platform} app yet, and a dry run creates nothing. Run again without --dry-run, or create one with \`cmpatch app create\`.`,
+            );
+          }
+          return createFirstApp(deps, deps.prompt as PromptFn, {
             defaultName: `${projectName ?? basename(projectRoot)}-${platform}`,
             noun: `${platform} app`,
             serverUrl,
             teamId: team.id,
             ...(flags.token !== undefined ? { token: flags.token } : {}),
-          })
+          });
+        }
       : null;
 
   const platformConfigs: ProjectPlatformConfigMap = {};
@@ -487,11 +522,36 @@ async function linkProjectFlow(
   delete nextConfig.app;
   delete nextConfig.deployment;
   delete nextConfig.team;
-  await saveProjectConfig(projectRoot, nextConfig);
+  // Read before the config is written: the file init is about to create
+  // must not be what makes the tree look dirty to the wiring gate.
+  const worktreeDirty = flags.skipWire ? null : await isWorktreeDirty(deps, projectRoot);
+  if (!flags.dryRun) {
+    await saveProjectConfig(projectRoot, nextConfig);
+  }
+  if (interactive && deps.stderr !== undefined) {
+    writeMessage(
+      deps.stderr,
+      flags.dryRun
+        ? "Dry run: codemagic-patch.config.json was not written."
+        : "Wrote codemagic-patch.config.json",
+    );
+  }
+
+  const wiring =
+    wireOptions === null
+      ? { status: "skipped" as const }
+      : await wireAfterLinking(deps, {
+          connection: nextConfig,
+          // The interactive init flow opened the prompt tree wiring continues.
+          inheritsTree: interactive && deps.stderr !== undefined,
+          options: wireOptions,
+          projectRoot,
+          worktreeDirty,
+        });
 
   if (interactive && deps.stderr !== undefined) {
     // Closes the prompt tree the interactive init flow opened.
-    writeClosing(deps.stderr, "Wrote codemagic-patch.config.json");
+    writeClosing(deps.stderr, flags.dryRun ? "Dry run: nothing written" : describeInitOutcome(wiring));
   }
 
   // What the closing summary needs beyond the config: the team by name, the
@@ -500,8 +560,11 @@ async function linkProjectFlow(
   // still carries its URL and key.
   const previousServerUrl = existingConfig.serverUrl;
   return {
+    command: "init",
     config: nextConfig,
     dashboard,
+    dryRun: flags.dryRun,
+    exitCode: "status" in wiring ? (wiring.status === "failed" ? 1 : 0) : wiring.exitCode,
     nextActions: [
       "cmpatch context",
       "cmpatch release-react --dry-run",
@@ -513,7 +576,44 @@ async function linkProjectFlow(
     projectName: projectName ?? basename(projectRoot),
     projectRoot,
     team: { id: team.id, name: team.name },
+    wiring,
   };
+}
+
+/**
+ * Wiring, with the connection already saved: an error that is not the
+ * user's interruption or an authentication refusal becomes the wiring outcome
+ * rather than the run's, so the report still says the link is in place.
+ */
+async function wireAfterLinking(
+  deps: CommandDeps,
+  input: Parameters<typeof runWire>[1],
+): Promise<InitWiring> {
+  try {
+    const result = await runWire(deps, input);
+    return input.options.dryRun
+      ? { ...result, nextSteps: ["Link the project and apply this plan by running init again without --dry-run."] }
+      : result;
+  } catch (error) {
+    if (error instanceof PromptAbortError || isAuthenticationFailure(error)) {
+      throw error;
+    }
+    return { status: "failed", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export function describeInitOutcome(wiring: InitWiring): string {
+  if ("status" in wiring) {
+    return wiring.status === "skipped" ? "Linked; SDK wiring skipped" : "Linked; SDK wiring failed";
+  }
+  switch (wiring.result) {
+    case "complete":
+      return "Linked and wired";
+    case "incomplete":
+      return "Linked; SDK wiring has steps left";
+    case "failed":
+      return "Linked; SDK wiring failed";
+  }
 }
 
 /** The dashboard page for one deployment — where its releases are listed. */
@@ -560,6 +660,7 @@ async function chooseServerSource(
   deps: CommandDeps,
   prompt: PromptFn,
   known: EffectiveValue | undefined,
+  dryRun: boolean,
 ): Promise<ServerSource> {
   if (deps.stderr !== undefined) {
     if (known === undefined) {
@@ -574,7 +675,7 @@ async function chooseServerSource(
   }
 
   const answer = await prompt({
-    choices:
+    choices: (
       known === undefined
         ? [
             { title: "Install a self-hosted server now", value: "install" },
@@ -585,7 +686,7 @@ async function chooseServerSource(
             { title: `Use ${known.value}`, value: "use-known" },
             { title: "Enter a different server URL", value: "enter-url" },
             { title: "Install a self-hosted server now", value: "install" },
-          ],
+          ]).filter((choice) => !dryRun || choice.value !== "install"),
     message: "How do you want to connect to a server?",
     type: "select",
   });
@@ -712,7 +813,7 @@ const CONTINUE_TO_SIGN_IN = "Press Enter to open the browser and sign in";
 
 /** What that sign-in is for, printed above the pause so Enter is informed. */
 const SIGN_IN_PREVIEW =
-  "Next, your browser opens the new dashboard. Signing in with GitHub there creates the administrator account and connects cmpatch to the server.";
+  "Next, your browser opens the new dashboard. Signing in there creates the administrator account and connects cmpatch to the server.";
 
 /**
  * The first sign-in to a server this run just installed, done here rather than
@@ -733,7 +834,7 @@ const SIGN_IN_PREVIEW =
 async function signInToNewServer(
   deps: CommandDeps,
   serverUrl: string,
-  adminEmail: string | undefined,
+  { adminEmail, signInProvider }: Pick<InstallOutcome, "adminEmail" | "signInProvider">,
 ): Promise<void> {
   // Ctrl-C during the browser wait would otherwise leave an installed server,
   // a written config, and no idea what to run next. The wait animates a
@@ -764,8 +865,8 @@ async function signInToNewServer(
     if (deps.stderr !== undefined) {
       writeNote(deps.stderr, "Signing you in", [
         adminEmail === undefined
-          ? "Use the GitHub account for the administrator email you gave the installer."
-          : `Use the GitHub account for ${adminEmail}.`,
+          ? `Use the ${signInProvider ?? "sign-in"} account for the administrator email you gave the installer.`
+          : `Use the ${signInProvider ?? "sign-in"} account for ${adminEmail}.`,
         "This first sign-in creates the admin account.",
       ]);
     }
@@ -805,7 +906,7 @@ function writeSignInRecovery(deps: CommandDeps, serverUrl: string): void {
 
   writeLine(
     deps.stderr,
-    `\nThe server is installed and ready. Sign in and finish linking the project with:\n  cmpatch login --server-url ${serverUrl}\n  cmpatch init --server-url ${serverUrl}\n`,
+    `\nThe server is installed and ready. Sign in and finish linking the project with:\n  cmpatch login --server-url ${serverUrl}\n  cmpatch init --server-url ${serverUrl}\nIf the OAuth app credentials are wrong, correct them first with:\n  cmpatch selfhost install --repair\n`,
   );
 }
 
@@ -899,8 +1000,29 @@ function readCreatedApp(response: unknown): NamedResource {
   return { id: app.id, name: app.name };
 }
 
+/** init's own value flags, which the wiring flag parser lets through. */
+const INIT_VALUE_FLAGS: readonly string[] = [
+  "app",
+  "app-id",
+  "android-app",
+  "android-app-id",
+  "android-deployment",
+  "android-deployment-id",
+  "bundler",
+  "deployment",
+  "deployment-id",
+  "ios-app",
+  "ios-app-id",
+  "ios-deployment",
+  "ios-deployment-id",
+  "platform",
+  "project-root",
+  "server-url",
+  "team",
+  "team-id",
+];
 function parseLinkFlags(args: string[]): LinkFlags {
-  const flags: LinkFlags = { nonInteractive: false, yes: false };
+  const flags: LinkFlags = { dryRun: false, nonInteractive: false, skipWire: false, yes: false };
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index]!;
@@ -916,6 +1038,23 @@ function parseLinkFlags(args: string[]): LinkFlags {
     }
     if (name === "nonInteractive") {
       flags.nonInteractive = inlineValue === undefined || inlineValue === "true";
+      continue;
+    }
+    if (name === "skipWire") {
+      flags.skipWire = inlineValue === undefined || inlineValue === "true";
+      continue;
+    }
+    if (name === "dryRun") {
+      flags.dryRun = inlineValue === undefined || inlineValue === "true";
+      continue;
+    }
+    // Wiring flags pass through to `parseWireFlags`; `token` and `platform`
+    // are init's as well and are read below.
+    if ((WIRE_BOOLEAN_FLAGS as readonly string[]).includes(rawName ?? "")) {
+      continue;
+    }
+    if (rawName === "native-projects") {
+      if (inlineValue === undefined) index += 1;
       continue;
     }
 

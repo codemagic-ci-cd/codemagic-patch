@@ -63,6 +63,27 @@ export function writeMessage(
 }
 
 /**
+ * A paragraph between two prompts that the user should not read past: the
+ * same guide-line paragraph as `writeMessage`, marked as a warning so it
+ * stands out from the plain notes around it. Everywhere else it degrades to
+ * plain lines.
+ */
+export function writeWarning(
+  stderr: WritableStream,
+  message: string | readonly string[],
+): void {
+  const lines = typeof message === "string" ? message.split("\n") : [...message];
+  if (isInteractiveWritable(stderr)) {
+    clackLog.warn(lines.join("\n"), { output: stderr });
+    return;
+  }
+
+  for (const line of lines) {
+    writeLine(stderr, line);
+  }
+}
+
+/**
  * The opening line of an interactive flow, and the tree `writeClosing` closes.
  *
  * Drawn as a clack intro so every prompt and notice that follows hangs off

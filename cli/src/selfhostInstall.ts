@@ -181,6 +181,13 @@ export type InstallState =
    */
   | { kind: "installed"; serverUrl: string | null }
   /**
+   * An env file, an unhealthy server, and this machine's record that it
+   * started an OAuth repair on a server that was healthy. No env file is
+   * `fresh` whatever the record says: the install the repair belonged to is
+   * gone, and the record must not steer a new one onto `--repair-env`.
+   */
+  | { kind: "oauth-repair"; serverUrl: string | null }
+  /**
    * An env file, an unhealthy server, and this machine's own record that it
    * started the install — so resume / repair / start over are all meaningful.
    */
@@ -201,9 +208,17 @@ export type InstallState =
 export function classifyInstallState(input: {
   facts: RemoteHostFacts;
   pendingInstall: SelfhostPendingInstall | undefined;
+  pendingOAuthRepair?: SelfhostPendingInstall;
 }): InstallState {
   if (!input.facts.envFilePresent) {
     return { kind: "fresh" };
+  }
+
+  if (
+    input.pendingOAuthRepair !== undefined &&
+    input.facts.install?.healthy === false
+  ) {
+    return { kind: "oauth-repair", serverUrl: input.facts.serverUrl };
   }
 
   const serverUrl = input.facts.serverUrl;
@@ -304,7 +319,14 @@ export type RepairScope =
   | "cloudflare"
   | "cloudfront"
   | "domains"
-  | "oauth";
+  | "oauth"
+  /**
+   * The repair a healthy server takes: nothing but the OAuth values is
+   * accepted. Distinct from `oauth`, an incomplete install's guess at what
+   * failed, which still takes every value — the guess is a regex over the
+   * script's last message and does not prove the other answers were right.
+   */
+  | "oauth-only";
 
 /** Which answers the repair edge should re-ask, given what failed. */
 export function repairScopeFor(failure: InstallFailure): RepairScope {
@@ -363,12 +385,216 @@ export type DeliverySelection =
     )
   | { kind: "none" };
 
+/**
+ * One value a provider needs beyond the client pair, such as a self-managed
+ * instance's origin. The flag is `--<provider>-oauth-<flag>`, the variable
+ * `<PREFIX>_OAUTH_<env>`; both are spelled out because they do not derive
+ * from each other. A first install asks for it with `default` pre-filled and
+ * leaves it unset when Enter keeps that default; a supplied value is always
+ * written, normalized.
+ */
+export type OAuthExtraField = {
+  flag: string;
+  env: string;
+  default: string;
+  prompt: string;
+  check: (value: string) => string | null;
+  normalize: (value: string) => string;
+};
+
+type OAuthProviderRecord = {
+  displayName: string;
+  /** `--<flagPrefix>-oauth-client-id` and friends. */
+  flagPrefix: string;
+  /** `<envPrefix>_OAUTH_CLIENT_ID` and friends. */
+  envPrefix: string;
+  clientIdLabel: string;
+  clientSecretLabel: string;
+  extraFields: readonly OAuthExtraField[];
+  app: {
+    /** The form field the callback goes in, on both the new and the existing app. */
+    callbackField: string;
+    /** Where the application is created or found, for the instance in use. */
+    url: (extra: Record<string, string>) => string;
+    /**
+     * Walking the provider's page by hand: no pre-filled form. Absent for
+     * GitHub, whose form comes pre-filled and whose pair is probed.
+     */
+    create?: { whereToCreate: string; options: readonly string[]; afterSave: string };
+    /** Finding the existing app again to recover its credentials. */
+    repair: { instructions: string; credentials: string };
+  };
+};
+
+export const DEFAULT_GITLAB_BASE_URL = "https://gitlab.com";
+
+/**
+ * Everything the CLI knows about a sign-in provider, one record each. Adding
+ * a provider is a record here plus its flag-help lines in the command; the
+ * flags, variables, prompts, guidance and env output all read from this.
+ */
+export const OAUTH_PROVIDERS = {
+  github: {
+    displayName: "GitHub",
+    flagPrefix: "github",
+    envPrefix: "GITHUB",
+    clientIdLabel: "Client ID",
+    clientSecretLabel: "Client secret",
+    extraFields: [],
+    app: {
+      callbackField: "Authorization callback URL",
+      url: () => "https://github.com/settings/developers",
+      repair: {
+        instructions: "Open the existing OAuth app for this server. For an organization-owned app, open the organization's Settings > Developer settings > OAuth Apps instead.",
+        credentials: "Copy its Client ID. If you no longer have the client secret, choose Generate a new client secret and copy it before leaving the page.",
+      },
+    },
+  },
+  bitbucket: {
+    displayName: "Bitbucket Cloud",
+    flagPrefix: "bitbucket",
+    envPrefix: "BITBUCKET",
+    clientIdLabel: "Consumer key",
+    clientSecretLabel: "Consumer secret",
+    extraFields: [],
+    app: {
+      callbackField: "Callback URL",
+      url: () => "https://bitbucket.org/",
+      create: {
+        whereToCreate:
+          "In Bitbucket Cloud, select the workspace that should own this integration, then open Workspace settings > OAuth consumers > Add consumer.",
+        options: ["This is a private consumer: checked", "Permissions > Account: Read and Email"],
+        afterSave:
+          "Description and URL can be left blank. Choose Save, then expand the new consumer's name to reveal its Key and Secret. Use Key as the consumer key below.",
+      },
+      repair: {
+        instructions: "Select the workspace that owns this integration, then open Workspace settings > OAuth consumers and expand the existing consumer's name.",
+        credentials: "Copy its Key and Secret. Use Key as the consumer key below.",
+      },
+    },
+  },
+  gitlab: {
+    displayName: "GitLab",
+    flagPrefix: "gitlab",
+    envPrefix: "GITLAB",
+    clientIdLabel: "Application ID",
+    clientSecretLabel: "Client secret",
+    extraFields: [
+      {
+        flag: "base-url",
+        env: "BASE_URL",
+        default: DEFAULT_GITLAB_BASE_URL,
+        prompt: "GitLab address (Enter for gitlab.com)",
+        check: checkGitlabBaseUrl,
+        normalize: normalizeGitlabBaseUrl,
+      },
+    ],
+    app: {
+      callbackField: "Redirect URI",
+      url: (extra) => gitlabApplicationsUrl(extra["base-url"] ?? DEFAULT_GITLAB_BASE_URL),
+      create: {
+        whereToCreate: "In GitLab, open Applications and choose Add new application.",
+        options: ["Confidential: checked", "Scopes: read_user"],
+        afterSave:
+          "Choose Save application, then copy the Application ID and use Copy beside Secret before leaving the page.",
+      },
+      repair: {
+        instructions: "Open Applications and select the existing application for this server.",
+        credentials: "Copy its Application ID and use Copy beside Secret. If the secret needs replacing, use Renew secret and copy the new value; the old secret stops working.",
+      },
+    },
+  },
+} satisfies Record<string, OAuthProviderRecord>;
+
+export type OAuthProvider = keyof typeof OAUTH_PROVIDERS;
+
+/** The providers as a list in a sentence: "GitHub, Bitbucket Cloud, or GitLab". */
+export function listOAuthProviders(name: (provider: OAuthProvider) => string): string {
+  const names = (Object.keys(OAUTH_PROVIDERS) as OAuthProvider[]).map(name);
+  return `${names.slice(0, -1).join(", ")}, or ${names.at(-1)}`;
+}
+
+export type OAuthCredentials = {
+  provider: OAuthProvider;
+  clientId: string;
+  clientSecret: string;
+  /**
+   * The provider's extra fields by flag suffix, only those that were set:
+   * the wizard leaves a field unset when the prompt keeps its default, so a
+   * fresh install does not spell the default out — but an explicit flag value
+   * is always written, which is how a repair moves a deployment back to the
+   * default (`--repair-env` keeps a key it is not given).
+   */
+  extra?: Record<string, string>;
+};
+
+/**
+ * The user-level Applications page; the path is the same on gitlab.com and
+ * on a self-managed instance, so the origin is the only variable.
+ */
+export function gitlabApplicationsUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/u, "")}/-/user_settings/applications`;
+}
+
+/**
+ * A repair that moves only a provider's extra fields (GitLab's origin) and
+ * keeps the deployed pair, so a mistyped address does not cost a "Renew
+ * secret" round-trip. `install.sh` refuses it on a deployment without that
+ * provider.
+ */
+export type OAuthExtraRepair = { provider: OAuthProvider; extra: Record<string, string> };
+
+/**
+ * A GitLab instance origin as the server expects `GITLAB_OAUTH_BASE_URL`:
+ * scheme + host, optionally a port, nothing after. Plain http is allowed —
+ * self-managed instances on a private network run without TLS — and the
+ * origin is not probed here; sign-in is where a wrong instance shows up, the
+ * same as a wrong application ID.
+ */
+export function checkGitlabBaseUrl(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return "Enter the GitLab address as a URL, for example https://gitlab.example.com";
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return "The GitLab address must start with https:// or http://";
+  if (url.username || url.password) return "Leave credentials out of the GitLab address.";
+  if (url.search || url.hash || url.pathname !== "/") {
+    return "Enter only the GitLab origin, without a path: https://gitlab.example.com, not https://gitlab.example.com/users/sign_in";
+  }
+  return null;
+}
+
+/** The origin form the validator accepts, without a trailing slash. */
+export function normalizeGitlabBaseUrl(value: string): string {
+  return new URL(value).origin;
+}
+
+export function checkOAuthCredential(value: string): string | null {
+  if (!value || /\s/u.test(value)) return "Paste the complete credential without spaces or line breaks.";
+  if (/^https?:\/\//iu.test(value)) return "Paste the credential itself, not the application page URL.";
+  return null;
+}
+
+function buildOAuthEnv(oauth: OAuthCredentials | OAuthExtraRepair): Record<string, string> {
+  const { envPrefix, extraFields } = OAUTH_PROVIDERS[oauth.provider];
+  return {
+    ...("clientId" in oauth
+      ? { [`${envPrefix}_OAUTH_CLIENT_ID`]: oauth.clientId, [`${envPrefix}_OAUTH_CLIENT_SECRET`]: oauth.clientSecret }
+      : {}),
+    ...Object.fromEntries(extraFields.flatMap((field) => {
+      const value = oauth.extra?.[field.flag];
+      return value === undefined ? [] : [[`${envPrefix}_OAUTH_${field.env}`, field.normalize(value)]];
+    })),
+  };
+}
+
 export type InstallAnswers = {
   adminEmail: string;
   apiDomain: string;
   delivery: DeliverySelection;
-  githubClientId: string;
-  githubClientSecret: string;
+  oauth: OAuthCredentials;
   storageDomain: string;
   storage?: StorageConfig;
   storageWarnings?: string[];
@@ -393,8 +619,7 @@ export function buildInstallEnv(
     ...buildStorageEnv(
       answers.storage ?? { kind: "bundled", storageDomain: answers.storageDomain },
     ),
-    GITHUB_OAUTH_CLIENT_ID: answers.githubClientId,
-    GITHUB_OAUTH_CLIENT_SECRET: answers.githubClientSecret,
+    ...buildOAuthEnv(answers.oauth),
     ...buildDeliveryEnv(answers.delivery),
   };
 }
@@ -440,8 +665,7 @@ export type RepairValues = {
   cloudfrontAccessKeyId?: string;
   cloudfrontDistributionId?: string;
   cloudfrontSecretAccessKey?: string;
-  githubClientId?: string;
-  githubClientSecret?: string;
+  oauth?: OAuthCredentials | OAuthExtraRepair;
   storageDomain?: string;
   storageOriginDomain?: string;
 };
@@ -458,7 +682,7 @@ export type RepairValues = {
  * adapter on an existing deployment is not a repair.
  */
 export function buildRepairEnv(values: RepairValues): Record<string, string> {
-  const mapping: ReadonlyArray<[keyof RepairValues, string]> = [
+  const mapping: ReadonlyArray<[Exclude<keyof RepairValues, "oauth">, string]> = [
     ["adminEmail", "ACME_EMAIL"],
     ["apiDomain", "CODEMAGIC_PATCH_API_DOMAIN"],
     ["cloudflareApiToken", "CLOUDFLARE_API_TOKEN"],
@@ -466,13 +690,11 @@ export function buildRepairEnv(values: RepairValues): Record<string, string> {
     ["cloudfrontAccessKeyId", "CLOUDFRONT_ACCESS_KEY_ID"],
     ["cloudfrontDistributionId", "CLOUDFRONT_DISTRIBUTION_ID"],
     ["cloudfrontSecretAccessKey", "CLOUDFRONT_SECRET_ACCESS_KEY"],
-    ["githubClientId", "GITHUB_OAUTH_CLIENT_ID"],
-    ["githubClientSecret", "GITHUB_OAUTH_CLIENT_SECRET"],
     ["storageDomain", "CODEMAGIC_PATCH_STORAGE_DOMAIN"],
     ["storageOriginDomain", "CODEMAGIC_PATCH_STORAGE_ORIGIN_DOMAIN"],
   ];
 
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = values.oauth ? buildOAuthEnv(values.oauth) : {};
   for (const [key, name] of mapping) {
     const value = values[key];
     if (value !== undefined && value.length > 0) {

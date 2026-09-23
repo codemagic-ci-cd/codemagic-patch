@@ -21,6 +21,7 @@ import { Navigate, Outlet, useParams } from "react-router";
 
 import { useIsLocalDevSession } from "../../api/hooks/me";
 import { useTeams } from "../../api/hooks/teams";
+import { CommandPalette } from "../palette/CommandPalette";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { clearLastTeamId, readLastTeamId, writeLastTeamId } from "./lastTeam";
 import { EVAL_BANNER_HEIGHT_PX, LocalEvalBanner } from "./LocalEvalBanner";
@@ -68,7 +69,10 @@ export function AppShell() {
   // on Esc / overlay-click, and on resize past the breakpoint; routes outside
   // the shell (e.g. /login) unmount it entirely.
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
-  // Drives the --eval-banner-h sticky-offset reservation (see the grid div).
+  // One dialog behind three openers: the sidebar trigger, the mobile topbar
+  // button and the palette's own ⌘K listener.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Drives the --eval-banner-h reservation on the shell grid (see below).
   // Session-derived (whoami is already fetched for RBAC) — no extra request.
   const localDevMode = useIsLocalDevSession();
 
@@ -110,13 +114,11 @@ export function AppShell() {
     {/* `[display:grid]` not `grid`: the legacy `.grid{display:grid;gap:18px}`
         component class (still used by page grids) shares the `grid` token and
         would inject an 18px column gap between the sidebar and main column.
-        `--eval-banner-h` reserves the sticky evaluation banner's height so
-        the TopBar/Sidebar sticky offsets clear it instead of sliding under
-        it on scroll (0px whenever the banner is absent); the grid's min
-        height subtracts it too, so the footer lands at the viewport bottom
-        instead of 34px below it. */}
+        Height is the viewport minus the evaluation banner so the chrome
+        stays put; the content pane is the only scrollport. `--eval-banner-h`
+        is 0px whenever the banner is absent. */}
     <div
-      className="group/app [display:grid] min-h-[calc(100vh-var(--eval-banner-h))] grid-cols-[var(--sb-w)_1fr] data-collapsed:[--sb-w:76px] max-shell:grid-cols-[1fr]"
+      className="group/app [display:grid] h-[calc(100vh-var(--eval-banner-h))] grid-cols-[var(--sb-w)_1fr] overflow-hidden data-collapsed:[--sb-w:76px] max-shell:grid-cols-[1fr]"
       data-collapsed={collapsed || undefined}
       style={
         {
@@ -135,30 +137,43 @@ export function AppShell() {
         teamId={activeTeamId}
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
       <MobileNavDrawer
         open={navDrawerOpen}
         onClose={() => setNavDrawerOpen(false)}
         teamId={activeTeamId}
+        onOpenPalette={() => {
+          // The drawer is itself an aria-modal dialog, so it hands the
+          // keyboard over rather than letting the palette stack on it.
+          setNavDrawerOpen(false);
+          setPaletteOpen(true);
+        }}
       />
-      <main className="flex min-w-0 flex-col">
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        teamId={activeTeamId}
+      />
+      <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
         <TopBar
           onOpenNav={() => setNavDrawerOpen(true)}
+          onOpenPalette={() => setPaletteOpen(true)}
           homeTo={activeTeamId === null ? "/" : `/teams/${activeTeamId}`}
         />
         <div
           id="main-content"
           tabIndex={-1}
-          className="stagger mx-auto w-full max-w-[var(--maxw)] flex-1 p-7 outline-none max-shell:p-[18px]"
+          className="min-h-0 flex-1 overflow-y-auto outline-none"
         >
-          <Breadcrumbs />
-          <Outlet />
+          <div className="stagger mx-auto w-full max-w-[var(--maxw)] p-7 max-shell:p-[18px]">
+            <Breadcrumbs />
+            <Outlet />
+          </div>
+          <footer className="px-7 py-4 text-center text-[12px] text-fg-3 max-shell:px-[18px]">
+            Codemagic © 2026
+          </footer>
         </div>
-        {/* Copyright sits under the content, centered, pinned to the bottom of
-            the viewport by the flex column (the content block is flex-1). */}
-        <footer className="px-7 py-4 text-center text-[12px] text-fg-3 max-shell:px-[18px]">
-          Codemagic © 2026
-        </footer>
       </main>
     </div>
     </>

@@ -3,7 +3,9 @@ package io.codemagic.patch
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
+import android.content.res.Resources
 import android.os.Build
+import android.util.Log
 import org.json.JSONObject
 import java.io.IOException
 
@@ -29,11 +31,53 @@ internal class CodemagicPatchHttpException(
 internal object CodemagicPatchFailure {
   /**
    * Consecutive launches a pending package may boot without `notifyAppReady()`
-   * before the SDK treats it as a crash. A single unconfirmed launch is not
-   * evidence of a crash — the OS can reclaim a healthy process before JS runs —
-   * so rollback waits for the whole budget to be spent.
+   * before the SDK treats it as a crash, unless the host overrides it through
+   * [MAX_LAUNCH_ATTEMPTS_KEY]. A single unconfirmed launch is not evidence of
+   * a crash — the OS can reclaim a healthy process before JS runs — so
+   * rollback waits for the whole budget to be spent.
    */
-  const val PENDING_LAUNCH_ATTEMPT_BUDGET = 3
+  const val DEFAULT_MAX_LAUNCH_ATTEMPTS = 3
+
+  /**
+   * String resource a host app sets to change the launch-attempt budget. Read
+   * straight from resources rather than through the module's `config(...)`
+   * because the boot-state decision runs from `MainApplication` before the
+   * module exists, and both entry points must see the same value.
+   */
+  const val MAX_LAUNCH_ATTEMPTS_KEY = "CodemagicPatchMaxLaunchAttempts"
+
+  private const val TAG = "CodemagicPatch"
+
+  /**
+   * The configured launch-attempt budget, or [DEFAULT_MAX_LAUNCH_ATTEMPTS] when
+   * the resource is absent or invalid.
+   *
+   * Anything that is not a positive integer falls back to the default with a
+   * log line rather than failing the boot: a typo in app config must not take
+   * OTA down with it.
+   */
+  fun maxLaunchAttempts(context: Context): Int {
+    val id = context.resources.getIdentifier(MAX_LAUNCH_ATTEMPTS_KEY, "string", context.packageName)
+    if (id == 0) return DEFAULT_MAX_LAUNCH_ATTEMPTS
+    // A resource declared only under a qualified directory (values-en) can
+    // resolve an id yet have no value for the current configuration; that must
+    // not throw out of the boot path.
+    val raw = try {
+      context.getString(id)
+    } catch (e: Resources.NotFoundException) {
+      Log.w(TAG, "$MAX_LAUNCH_ATTEMPTS_KEY is declared but unreadable; using $DEFAULT_MAX_LAUNCH_ATTEMPTS", e)
+      return DEFAULT_MAX_LAUNCH_ATTEMPTS
+    }
+    // `toIntOrNull` bounds the value to Int32, matching the plugin's prebuild
+    // check and the iOS reader so a large value behaves the same on both.
+    val parsed = raw.trim().toIntOrNull()
+    if (parsed != null && parsed >= 1) return parsed
+    Log.w(
+      TAG,
+      "$MAX_LAUNCH_ATTEMPTS_KEY must be a positive integer, got '$raw'; using $DEFAULT_MAX_LAUNCH_ATTEMPTS"
+    )
+    return DEFAULT_MAX_LAUNCH_ATTEMPTS
+  }
 
   /** Key under which the HTTP status travels in a rejected promise's userInfo. */
   const val DETAIL_CODE_KEY = "detail_code"

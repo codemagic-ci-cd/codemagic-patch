@@ -5,6 +5,7 @@ export { installUpdate } from "./installUpdate";
 export { isNextVersionReady } from "./isNextVersionReady";
 export { notifyAppReady } from "./notifyAppReady";
 export { sync } from "./sync";
+export { wrap, type WrappedRootComponent, type WrappedRootProps } from "./wrap";
 export {
   allowRestart,
   disallowRestart,
@@ -20,7 +21,9 @@ export {
   type DownloadProgress,
   type EmbeddedRevertUpdate,
   type InstallTarget,
-  type InstallMode,
+  CheckFrequency,
+  type WrapOptions,
+  InstallMode,
   type InstallOptions,
   type LocalPackage,
   type RemotePackage,

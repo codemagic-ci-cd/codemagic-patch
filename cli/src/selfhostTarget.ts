@@ -185,6 +185,30 @@ export function readPendingInstall(
   return config.pendingInstall?.[normalizeSshHost(sshTarget)];
 }
 
+export function withPendingOAuthRepair(
+  config: CliConfig,
+  sshTarget: string,
+  record: SelfhostPendingInstall,
+): CliConfig {
+  return {
+    ...withoutPendingInstall(config, sshTarget),
+    pendingOAuthRepair: {
+      ...(config.pendingOAuthRepair ?? {}),
+      [normalizeSshHost(sshTarget)]: record,
+    },
+  };
+}
+
+export function withoutPendingOAuthRepair(config: CliConfig, sshTarget: string): CliConfig {
+  const rest = { ...(config.pendingOAuthRepair ?? {}) };
+  delete rest[normalizeSshHost(sshTarget)];
+  return { ...config, pendingOAuthRepair: rest };
+}
+
+export function readPendingOAuthRepair(config: CliConfig, sshTarget: string): SelfhostPendingInstall | undefined {
+  return config.pendingOAuthRepair?.[normalizeSshHost(sshTarget)];
+}
+
 /**
  * `normalizeServerUrl` throws on anything `new URL` rejects. A config file can
  * hold such a value (hand-edited, or written by a future version), and a

@@ -8,7 +8,7 @@ llmsDescription: 'Web UI — releases, metrics, team IAM, bundle uploads, host s
 
 # Web dashboard
 
-After [Install](/docs/install), the dashboard is served from your API domain (e.g. `https://updates.example.com/`). Sign in with GitHub or Bitbucket OAuth, the same identity model as `cmpatch login`.
+After [Install](/docs/install), the dashboard is served from your API domain (e.g. `https://updates.example.com/`). Sign in with GitHub, Bitbucket Cloud, or GitLab OAuth, the same identity model as `cmpatch login`.
 
 On the [local evaluation stack](/docs/) (`cmpatch selfhost local-eval`), open [http://localhost:8080](http://localhost:8080) and sign in as `local-admin@example.com` (prefilled, one click). Same UI; auth is local-only.
 
@@ -80,7 +80,7 @@ These map to `cmpatch release patch`, `release promote`, `release enable`/`relea
 
 ## Metrics
 
-Open **Metrics** in the sidebar to browse rollups by app, then by deployment. The deployment detail and release pages also surface status (`uploaded`, `processing`, `published`, `failed`, `disabled`) and SDK-reported counters. For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
+Each deployment page opens with adoption over time and in-range totals. Its **Metrics** button leads to the full breakdown for that deployment: update outcomes by failure reason and the active-version distribution. The command palette (⌘K / Ctrl+K) reaches the same pages by app or deployment name. The deployment detail and release pages also surface status (`uploaded`, `processing`, `published`, `failed`, `disabled`) and SDK-reported counters. For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
 
 ## API tokens
 

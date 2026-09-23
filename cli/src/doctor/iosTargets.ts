@@ -1,11 +1,12 @@
 import { opendir } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { isRecord } from "../output";
+import {
+  parseXcodeProject,
+  resolveXcodeSetting,
+  unquoteXcode as unquote,
+  xcodeRefs as refs,
+} from "../xcodeProject";
 
-const parser = createRequire(__filename)("xcode/lib/parser/pbxproj") as {
-  parse: (text: string) => unknown;
-};
 type Source = { state: string; text?: string };
 type Read = (file: string) => Promise<Source>;
 export type IosTarget = {
@@ -21,19 +22,6 @@ export type IosTargets = {
   present: boolean;
   limited: boolean;
 };
-const unquote = (value: unknown): string =>
-  typeof value === "string" ? value.replace(/^"|"$/g, "") : "";
-const refs = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.map((ref) =>
-        typeof ref === "string"
-          ? ref
-          : isRecord(ref)
-            ? String(ref.value ?? "")
-            : "",
-      )
-    : [];
-
 /** Follow Xcode target membership, not proximity of source files to a plist. */
 export async function discoverIosTargets(
   root: string,
@@ -62,29 +50,8 @@ export async function discoverIosTargets(
     const doc = await read(project);
     try {
       if (doc.state !== "resolved") throw new Error("unreadable project");
-      const parsed = parser.parse(doc.text!);
-      if (
-        !isRecord(parsed) ||
-        !isRecord(parsed.project) ||
-        !isRecord(parsed.project.objects)
-      )
-        throw new Error("invalid project");
-      const objects = parsed.project.objects;
-      const section = (name: string): Record<string, unknown> =>
-        isRecord(objects[name])
-          ? objects[name]
-          : Object.fromEntries(
-              Object.entries(objects).filter(
-                ([, value]) => isRecord(value) && value.isa === name,
-              ),
-            );
-      const record = (
-        sectionName: string,
-        id: string,
-      ): Record<string, unknown> => {
-        const value = section(sectionName)[id];
-        return isRecord(value) ? value : {};
-      };
+      const parsed = parseXcodeProject(doc.text!);
+      const { record, project: projectObject } = parsed;
       const files = new Map<string, string>();
       const seen = new Set<string>();
       const walkGroup = (id: string, parent: string, depth: number) => {
@@ -106,28 +73,14 @@ export async function discoverIosTargets(
         for (const child of refs(group.children))
           walkGroup(child, location, depth + 1);
       };
-      const projectObject = record(
-        "PBXProject",
-        String(parsed.project.rootObject),
-      );
       walkGroup(String(projectObject.mainGroup), root, 0);
-      const projectConfigurations = refs(
-        record(
-          "XCConfigurationList",
-          String(projectObject.buildConfigurationList),
-        ).buildConfigurations,
-      ).map((id) => record("XCBuildConfiguration", id));
-      for (const id of refs(projectObject.targets)) {
-        const target = record("PBXNativeTarget", id);
-        if (
-          unquote(target.productType) !== "com.apple.product-type.application"
-        )
-          continue;
+      for (const target of parsed.targets) {
         if (result.targets.length >= 32) {
           result.limited = true;
           break;
         }
-        let sourcesUnresolved = refs(target.fileSystemSynchronizedGroups).length > 0;
+        let sourcesUnresolved =
+          refs(target.fileSystemSynchronizedGroups).length > 0;
         const sources: string[] = [];
         for (const phase of refs(target.buildPhases)) {
           for (const buildFile of refs(
@@ -142,35 +95,15 @@ export async function discoverIosTargets(
         if (sources.length > 64) sourcesUnresolved = true;
         let settingsUnresolved = false;
         const plists = new Set<string>();
-        const configurations = refs(
-          record("XCConfigurationList", String(target.buildConfigurationList))
-            .buildConfigurations,
-        );
+        const configurations = parsed.configurations(target);
         if (!configurations.length) settingsUnresolved = true;
-        for (const configId of configurations) {
-          const config = record("XCBuildConfiguration", configId);
-          const parent = projectConfigurations.find(
-            (item) => item.name === config.name,
+        for (const config of configurations) {
+          const plist = resolveXcodeSetting(
+            "INFOPLIST_FILE",
+            config.settings,
+            root,
           );
-          const settings = {
-            ...(isRecord(parent?.buildSettings) ? parent.buildSettings : {}),
-            ...(isRecord(config.buildSettings) ? config.buildSettings : {}),
-          };
-          let plist = unquote(settings.INFOPLIST_FILE);
-          // Resolve only literal settings in this configuration. xcconfig-derived
-          // values remain unresolved rather than borrowing another target's value.
-          for (let n = 0; n < 8 && /\$[({]/.test(plist); n++) {
-            plist = plist.replace(
-              /\$\(([^)]+)\)|\$\{([^}]+)\}/g,
-              (match, a: string, b: string) => {
-                const key = a ?? b;
-                return key === "SRCROOT" || key === "PROJECT_DIR"
-                  ? root
-                  : unquote(settings[key]) || match;
-              },
-            );
-          }
-          if (!plist || /\$[({]/.test(plist)) settingsUnresolved = true;
+          if (!plist) settingsUnresolved = true;
           else plists.add(path.resolve(root, plist));
         }
         if (plists.size !== 1) settingsUnresolved = true;

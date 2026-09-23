@@ -1,9 +1,9 @@
-import type {
-  DownloadProgress,
+import {
+  type DownloadProgress,
   InstallMode,
-  RemotePackage,
-  SyncOptions,
-  SyncStatus,
+  type RemotePackage,
+  type SyncOptions,
+  type SyncStatus,
 } from "./types";
 import { state } from "./runtime";
 import { checkForUpdate } from "./checkForUpdate";
@@ -16,7 +16,7 @@ function resolveSyncInstallMode(
   options?: SyncOptions,
 ): InstallMode {
   if (remotePackage.isMandatory) {
-    return options?.mandatoryInstallMode ?? "IMMEDIATE";
+    return options?.mandatoryInstallMode ?? InstallMode.IMMEDIATE;
   }
 
   return options?.installMode ?? DEFAULT_INSTALL_MODE;
@@ -76,8 +76,17 @@ export async function sync(
     state.lastSyncStatus = "error";
     state.lastSyncError =
       error instanceof Error ? error.message : "Unknown sync error";
+    warnInDevelopment(state.lastSyncError);
     return "error";
   } finally {
     state.syncInProgress = false;
+  }
+}
+
+// A wrapped root never sees the "error" status, so in development the reason
+// still reaches Metro; release builds stay silent, like the status itself.
+function warnInDevelopment(message: string): void {
+  if (typeof __DEV__ !== "undefined" && __DEV__) {
+    console.warn(`[codemagic-patch] sync failed: ${message}`);
   }
 }

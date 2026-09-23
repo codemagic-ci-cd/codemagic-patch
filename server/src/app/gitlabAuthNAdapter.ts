@@ -5,9 +5,13 @@ import {
   fetchGitlabUser,
   fetchGitlabVerifiedPrimaryEmail,
   hasGitlabReadUserScope,
-  postGitlabTokenForm,
 } from "./gitlabApi";
-import { providerError, readJsonObject, trimTrailingSlash } from "./githubApi";
+import {
+  postForm,
+  providerError,
+  readJsonObject,
+  trimTrailingSlash,
+} from "./githubApi";
 
 export interface CreateGitlabAuthNAdapterOptions {
   apiBaseUrl?: string;
@@ -49,7 +53,7 @@ export function createGitlabAuthNAdapter(
         };
       }
 
-      const tokenResponse = await postGitlabTokenForm(
+      const tokenResponse = await postForm(
         fetchImpl,
         `${oauthBaseUrl}/oauth/token`,
         {
@@ -120,7 +124,7 @@ export function createGitlabAuthNAdapter(
         fetchImpl,
         apiBaseUrl,
         accessToken,
-        user.email,
+        { email: user.email, confirmed: user.emailConfirmed },
       );
       if (email.outcome === "email_scope_required") {
         return providerError(

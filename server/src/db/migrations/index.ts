@@ -13,6 +13,7 @@ import { teamInvitationStatusFieldsMigration } from "./0012_teamInvitationStatus
 import { metricEventFailurePayloadMigration } from "./0013_metricEventFailurePayload";
 import { metricEventFailureFeedMigration } from "./0014_metricEventFailureFeed";
 import { metricEventDeviceOutcomeMigration } from "./0015_metricEventDeviceOutcome";
+import { metricEventLifecycleNamesMigration } from "./0016_metricEventLifecycleNames";
 
 export interface SqlMigration {
   name: string;
@@ -35,4 +36,5 @@ export const dbMigrations: readonly SqlMigration[] = [
   metricEventFailurePayloadMigration,
   metricEventFailureFeedMigration,
   metricEventDeviceOutcomeMigration,
+  metricEventLifecycleNamesMigration,
 ];

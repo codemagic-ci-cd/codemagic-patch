@@ -585,6 +585,9 @@ const doctorSchema: Record<string, FlagSchema> = {
   teamId: STRING_FLAG,
   verifyDelivery: BOOLEAN_FLAG,
   plistFile: STRING_FLAG,
+  xcodeProjectFile: STRING_FLAG,
+  xcodeTargetName: STRING_FLAG,
+  buildConfigurationName: STRING_FLAG,
   androidStringsFile: STRING_FLAG,
   gradleFile: STRING_FLAG,
   app: STRING_FLAG,
@@ -1765,6 +1768,9 @@ export function parseDoctor(
     return { ok: false, error: "--current-package-hash requires --verify-delivery", showHelp: true };
   }
   const plistFile = readStringFlag(parsedFlags.flags, "plistFile");
+  const xcodeProjectFile = readStringFlag(parsedFlags.flags, "xcodeProjectFile");
+  const xcodeTargetName = readStringFlag(parsedFlags.flags, "xcodeTargetName");
+  const buildConfigurationName = readStringFlag(parsedFlags.flags, "buildConfigurationName");
   const androidStringsFile = readStringFlag(parsedFlags.flags, "androidStringsFile");
   const gradleFile = readStringFlag(parsedFlags.flags, "gradleFile");
   const app = readStringFlag(parsedFlags.flags, "app");
@@ -1790,6 +1796,9 @@ export function parseDoctor(
 
   const blankSelectorError =
     emptyStringFlagError(plistFile, "plist-file") ??
+    emptyStringFlagError(xcodeProjectFile, "xcode-project-file") ??
+    emptyStringFlagError(xcodeTargetName, "xcode-target-name") ??
+    emptyStringFlagError(buildConfigurationName, "build-configuration-name") ??
     emptyStringFlagError(androidStringsFile, "android-strings-file") ??
     emptyStringFlagError(gradleFile, "gradle-file") ??
     emptyStringFlagError(serverUrl, "server-url") ??
@@ -1852,7 +1861,7 @@ export function parseDoctor(
   }
 
   if (
-    (plistFile !== undefined && platform !== "ios") ||
+    ([plistFile, xcodeProjectFile, xcodeTargetName, buildConfigurationName].some((flag) => flag !== undefined) && platform !== "ios") ||
     ((androidStringsFile !== undefined || gradleFile !== undefined) && platform !== "android")
   ) {
     return {
@@ -1876,6 +1885,9 @@ export function parseDoctor(
       ...(parsedFlags.flags.fix === true && args.some((arg) => arg === "--server-url" || arg.startsWith("--server-url=")) && serverUrl ? { fixServerUrl: serverUrl } : {}),
       ...(parsedFlags.flags.verifyDelivery === true ? { verifyDelivery: true } : {}),
       ...(plistFile !== undefined ? { plistFile } : {}),
+      ...(xcodeProjectFile !== undefined ? { xcodeProjectFile } : {}),
+      ...(xcodeTargetName !== undefined ? { xcodeTargetName } : {}),
+      ...(buildConfigurationName !== undefined ? { buildConfigurationName } : {}),
       ...(androidStringsFile !== undefined ? { androidStringsFile } : {}),
       ...(gradleFile !== undefined ? { gradleFile } : {}),
       ...(app !== undefined ? { app } : {}),
@@ -4531,7 +4543,7 @@ export function parseDeploymentHistory(
 
 export function parseRawArgvCommand(
   args: string[],
-  kind: "config" | "demo" | "init" | "selfhost",
+  kind: "config" | "demo" | "init" | "selfhost" | "wire",
 ): ParseCliResult {
   const stripped = stripGlobalFormatArgs(args);
 

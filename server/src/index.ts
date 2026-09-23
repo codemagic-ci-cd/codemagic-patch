@@ -289,8 +289,9 @@ export type { ReconcileReleaseDependencies } from "./worker/reconcileRelease";
 export { resolveRuntimeConfig } from "./runtime/config";
 export type {
   CloudFrontDeliveryConfig,
-  GitHubOAuthConfig,
   RuntimeConfig,
+  WebOAuthProviderConfig,
+  WebOAuthProviderId,
 } from "./runtime/config";
 export { createServerRuntime } from "./runtime/createServerRuntime";
 export type {

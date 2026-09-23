@@ -22,10 +22,13 @@ import { ROLLOUT, ROLLOUT_TRACK } from "./RolloutBar";
 export function FailureReasonList({
   metrics,
   onOpenReason,
+  showShareBar = true,
 }: {
   metrics: ReleaseMetrics;
   /** Opens the drill-down dialog for one reason. */
   onOpenReason?: (reason: string) => void;
+  /** Share bar under each reason. Off on release detail. */
+  showShareBar?: boolean;
 }) {
   const shares = failureReasonShares(metrics);
 
@@ -40,31 +43,35 @@ export function FailureReasonList({
 
         const summary = (
           <>
-            <div className="mb-[5px] flex items-center justify-between gap-3.5 text-[12.5px]">
+            <div
+              className={`flex items-center justify-between gap-3.5 text-[12.5px] ${showShareBar ? "mb-[5px]" : ""}`}
+            >
               <span className="flex items-center gap-1.5 text-fg-2">
                 {clickable ? <Chevron /> : null}
                 {share.label}
               </span>
-              <span className="mono text-fg-2">
+              <span className="mono text-red">
                 {formatCount(share.count)} · {(share.share * 100).toFixed(1)}%
               </span>
             </div>
-            <div className={ROLLOUT}>
-              <div
-                className={ROLLOUT_TRACK}
-                role="progressbar"
-                aria-label={`${share.label} share of failures`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(share.share * 100)}
-                aria-valuetext={`${(share.share * 100).toFixed(1)}%`}
-              >
+            {showShareBar ? (
+              <div className={ROLLOUT}>
                 <div
-                  className="h-full rounded-pill bg-red"
-                  style={{ width: `${share.share * 100}%` }}
-                />
+                  className={ROLLOUT_TRACK}
+                  role="progressbar"
+                  aria-label={`${share.label} share of failures`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(share.share * 100)}
+                  aria-valuetext={`${(share.share * 100).toFixed(1)}%`}
+                >
+                  <div
+                    className="h-full rounded-pill bg-red"
+                    style={{ width: `${share.share * 100}%` }}
+                  />
+                </div>
               </div>
-            </div>
+            ) : null}
           </>
         );
 

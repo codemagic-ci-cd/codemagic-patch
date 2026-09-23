@@ -9,10 +9,9 @@
 // independent fields rendered side by side and NEVER conflated (domain
 // model hard rule). Regions degrade independently (loading
 // skeletons are per-region): the release envelope owns the page; the
-// MetricsPanel (useReleaseMetrics, derivation via model/metrics.ts
-// successRate — no math re-derived here) fails to "—" + retry without
-// touching the rest. Actions are gated by role (`useTeamRole.can
-// ("release.deploy")`; denied → disabled + "Requires developer" tip per the
+// MetricsPanel (useReleaseMetrics + shared timeseries range Applied chart)
+// fails to "—" + retry without touching the rest. Actions are gated by role
+// (`useTeamRole.can("release.deploy")`; denied → disabled + "Requires developer" tip per the
 // RBAC matrix) × release status via model/release.ts (canDisable/canEnable/
 // canPatchRollout; promote = any published; Edit metadata = any status,
 // carries no status gate) and funnel into the shared useReleaseActions
@@ -33,21 +32,19 @@ import { useReleaseMetrics } from "../api/hooks/metrics";
 import { RELEASE_POLL_INTERVAL_MS, useRelease } from "../api/hooks/releases";
 import { useUserLabel } from "../api/hooks/userLabels";
 import { Copyable } from "../components/ui/Copyable";
+import { AppliedChart } from "../components/ui/AppliedChart";
+import {
+  TimeseriesRangeSelector,
+  useTimeseriesRange,
+} from "../components/ui/TimeseriesRangeSelector";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
 import { FailureDetailDialog } from "../components/ui/FailureDetailDialog";
 import { FailureReasonList } from "../components/ui/FailureReasonList";
 import { JobBadge } from "../components/ui/JobBadge";
-import {
-  ROLLOUT,
-  ROLLOUT_FILL,
-  ROLLOUT_FILL_FULL,
-  ROLLOUT_TRACK,
-  RolloutBar,
-} from "../components/ui/RolloutBar";
+import { RolloutBar } from "../components/ui/RolloutBar";
 import { Skeleton } from "../components/ui/Skeleton";
 import { StatusChip } from "../components/ui/StatusChip";
-import { successRate } from "../model/metrics";
 import {
   canDisable,
   canEnable,
@@ -67,7 +64,7 @@ import { DL, DL_DD, DL_DT } from "../components/ui/dl";
 import { ICON_BTN } from "../components/ui/iconButton";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import { PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
-import { formatCount, formatDateTime, formatSuccessRate } from "../model/format";
+import { formatCount, formatDateTime } from "../model/format";
 
 /**
  * Lifecycle actions this screen can trigger; `release` is always THE viewed
@@ -254,11 +251,21 @@ function ReleaseDetail({
       </div>
 
       <div className="grid-cols-[1fr_360px] items-start gap-[22px] [display:grid] max-cols:grid-cols-[1fr]">
-        {/* LEFT: metadata, notes, metrics */}
+        {/* LEFT: metadata, metrics */}
         <div className="flex flex-col gap-[22px]">
           <div className={`${CARD} ${CARD_PAD}`}>
             <div className={`${SECTION_TITLE} mb-[18px]`}>Release metadata</div>
             <dl className={DL}>
+              <dt className={DL_DT}>Release notes</dt>
+              <dd className={DL_DD}>
+                {release.releaseNotes === null ? (
+                  <span className="text-fg-3">No release notes.</span>
+                ) : (
+                  <span className="whitespace-pre-wrap leading-[1.65]">
+                    {release.releaseNotes}
+                  </span>
+                )}
+              </dd>
               <dt className={DL_DT}>Target binary version</dt>
               <dd className={DL_DD}>
                 <code className="mono">{release.targetBinaryVersion}</code>
@@ -362,18 +369,11 @@ function ReleaseDetail({
             </dl>
           </div>
 
-          <div className={`${CARD} ${CARD_PAD}`}>
-            <div className={`${SECTION_TITLE} mb-[18px]`}>Release notes</div>
-            {release.releaseNotes === null ? (
-              <p className="m-0 text-[13.5px] text-fg-3">No release notes.</p>
-            ) : (
-              <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.65] text-fg-2">
-                {release.releaseNotes}
-              </p>
-            )}
-          </div>
-
-          <MetricsPanel releaseId={release.id} />
+          <MetricsPanel
+            deploymentId={depId}
+            releaseId={release.id}
+            targetPackageHash={release.targetPackageHash}
+          />
         </div>
 
         {/* RIGHT: worker job */}
@@ -606,8 +606,18 @@ function JobStateReferenceCard() {
 // Metrics panel (independent region, edge case "fetch isolation")
 // ---------------------------------------------------------------------------
 
-function MetricsPanel({ releaseId }: { releaseId: string }) {
+function MetricsPanel({
+  deploymentId,
+  releaseId,
+  targetPackageHash,
+}: {
+  deploymentId: string;
+  releaseId: string;
+  targetPackageHash: string | null;
+}) {
   const metricsQuery = useReleaseMetrics(releaseId);
+  const { rangeDays, setRangeDays, timeseriesQuery } =
+    useTimeseriesRange(deploymentId);
   // The drill-down lives in a dialog: it is two levels deep and pages on
   // scroll, which would push the rest of the card off screen if inlined.
   const [openReason, setOpenReason] = useState<string | null>(null);
@@ -659,40 +669,73 @@ function MetricsPanel({ releaseId }: { releaseId: string }) {
         />
       );
     } else {
-      // Rate via model/metrics.ts successRate — null (no Success/Failed
-      // events yet) renders as "—", not 0%.
-      const rate = successRate(metrics);
+      let appliedChart: ReactNode;
+      if (timeseriesQuery.isPending) {
+        appliedChart = (
+          <div role="status" aria-label="Loading applied chart">
+            <Skeleton height={220} />
+          </div>
+        );
+      } else if (timeseriesQuery.isError) {
+        appliedChart = (
+          <div className={`${CALLOUT} ${CALLOUT_TONE.warn}`} role="alert">
+            <AlertIcon />
+            <div>
+              Couldn't load Applied over time.{" "}
+              <button
+                type="button"
+                className={buttonVariants({ intent: "ghost", size: "sm" })}
+                onClick={() => {
+                  void timeseriesQuery.refetch();
+                }}
+              >
+                <RefreshIcon /> Retry
+              </button>
+            </div>
+          </div>
+        );
+      } else {
+        appliedChart = (
+          <div
+            className={
+              timeseriesQuery.isPlaceholderData ? "opacity-60" : undefined
+            }
+            aria-busy={timeseriesQuery.isPlaceholderData || undefined}
+          >
+            <AppliedChart
+              targetPackageHash={targetPackageHash}
+              timeseries={timeseriesQuery.data}
+            />
+          </div>
+        );
+      }
+
       body = (
         <>
           <CounterGrid metrics={metrics} />
           <div className="my-5 h-px bg-border" />
-          <div className="flex items-center justify-between gap-3.5">
-            <span className="text-[13px] text-fg-2">Install success rate</span>
-            <span
-              className="font-semibold"
-              style={{ color: rate === null ? undefined : "var(--color-green-deep)" }}
-            >
-              {rate === null ? "—" : `${formatSuccessRate(rate)}%`}
-            </span>
-          </div>
-          {rate !== null ? (
-            // Decorative restatement of the % above.
-            <div className={`${ROLLOUT} mt-2.5`} aria-hidden="true">
-              <div className={ROLLOUT_TRACK}>
-                <div
-                  className={rate >= 1 ? ROLLOUT_FILL_FULL : ROLLOUT_FILL}
-                  style={{ width: `${rate * 100}%` }}
-                />
-              </div>
+          <div className="mb-[14px] flex items-center justify-between gap-3.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="text-[13px] font-semibold">Applied over time</div>
+              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>cumulative</span>
             </div>
-          ) : null}
+            <TimeseriesRangeSelector
+              onChange={setRangeDays}
+              rangeDays={rangeDays}
+            />
+          </div>
+          {appliedChart}
           {metrics.failed > 0 ? (
             <>
               <div className="my-5 h-px bg-border" />
               <div className="mb-[14px] text-[13px] font-semibold">
                 Failure reasons
               </div>
-              <FailureReasonList metrics={metrics} onOpenReason={setOpenReason} />
+              <FailureReasonList
+                metrics={metrics}
+                onOpenReason={setOpenReason}
+                showShareBar={false}
+              />
               <FailureDetailDialog
                 open={openReason !== null}
                 onClose={() => {
@@ -734,11 +777,11 @@ function CounterGrid({ metrics }: { metrics: ReleaseMetrics | null }) {
         value={metrics === null ? null : metrics.downloaded}
       />
       <Counter
-        label="Installed"
+        label="Ready"
         value={metrics === null ? null : metrics.installed}
       />
       <Counter
-        label="Success"
+        label="Applied"
         value={metrics === null ? null : metrics.success}
         accent="var(--color-green-deep)"
       />

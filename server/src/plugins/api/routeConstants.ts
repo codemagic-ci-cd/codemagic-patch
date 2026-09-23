@@ -43,7 +43,7 @@ export const METRIC_EVENTS_BATCH_LIMIT = 100;
 export const METRIC_EVENTS_BATCH_TOO_LARGE_ERROR =
   `events must contain at most ${METRIC_EVENTS_BATCH_LIMIT} metric event envelopes`;
 export const INVALID_METRIC_EVENT_NAME_ERROR =
-  "event_name must be one of Downloaded, Installed, Success, Failed, or Active";
+  "event_name must be one of Downloaded, Ready, Applied, Failed, or Active";
 export const INVALID_METRIC_EVENT_EMITTED_AT_ERROR =
   "emitted_at must be a valid ISO timestamp";
 export const INVALID_METRIC_DELIVERY_TYPE_ERROR =

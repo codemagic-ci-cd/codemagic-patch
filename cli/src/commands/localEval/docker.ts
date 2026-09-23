@@ -11,6 +11,7 @@
  */
 
 import { PRODUCT_NAME } from "../../branding";
+import { compareVersions } from "../../semver";
 import type { Progress } from "../../progress";
 import { notice } from "../selfhostInstall/ask";
 import {
@@ -386,19 +387,6 @@ async function latestDesktopRelease(
 
 function formatMegabytes(bytes: number): string {
   return `${String(Math.round(bytes / 1_000_000))} MB`;
-}
-
-/** Dotted numeric versions ("15.6" vs "14.0.0"); a missing segment is 0. */
-export function compareVersions(left: string, right: string): number {
-  const a = left.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const b = right.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
-    const diff = (a[i] ?? 0) - (b[i] ?? 0);
-    if (diff !== 0) {
-      return diff < 0 ? -1 : 1;
-    }
-  }
-  return 0;
 }
 
 /**

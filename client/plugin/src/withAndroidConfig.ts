@@ -19,6 +19,9 @@ export function applyAndroidStrings(stringsXml: ResourceXML, android: CodemagicP
   if (android.publicKey) {
     entries.push({ name: 'CodemagicPatchPublicKey', value: android.publicKey });
   }
+  if (android.maxLaunchAttempts !== undefined) {
+    entries.push({ name: 'CodemagicPatchMaxLaunchAttempts', value: String(android.maxLaunchAttempts) });
+  }
   return AndroidConfig.Strings.setStringItem(
     entries.map((entry) => ({ $: { name: entry.name, translatable: 'false' }, _: entry.value })),
     stringsXml,

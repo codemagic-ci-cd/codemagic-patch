@@ -43,4 +43,13 @@ export default [
       ],
     },
   },
+  {
+    // React Native's bundler defines __DEV__; the SDK reads it for dev-only output.
+    files: ["client/src/**/*.ts"],
+    languageOptions: {
+      globals: {
+        __DEV__: "readonly",
+      },
+    },
+  },
 ];

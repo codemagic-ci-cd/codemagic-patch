@@ -26,9 +26,16 @@ export interface MobileNavDrawerProps {
   onClose: () => void;
   /** Active team id (route param or last-team fallback); null hides team nav. */
   teamId: string | null;
+  /** Closes the drawer and opens the ⌘K command palette. */
+  onOpenPalette?: () => void;
 }
 
-export function MobileNavDrawer({ open, onClose, teamId }: MobileNavDrawerProps) {
+export function MobileNavDrawer({
+  open,
+  onClose,
+  teamId,
+  onOpenPalette,
+}: MobileNavDrawerProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -135,7 +142,12 @@ export function MobileNavDrawer({ open, onClose, teamId }: MobileNavDrawerProps)
         tabIndex={-1}
         className="sb-art flex h-full w-[272px] max-w-[82vw] animate-drawer-in flex-col overflow-y-auto border-r border-sb-border bg-sb-bg text-sb-text shadow-lg"
       >
-        <SidebarBody teamId={teamId} collapsed={false} onNavigate={onClose} />
+        <SidebarBody
+          teamId={teamId}
+          collapsed={false}
+          onNavigate={onClose}
+          onOpenPalette={onOpenPalette}
+        />
       </div>
     </div>,
     document.body,

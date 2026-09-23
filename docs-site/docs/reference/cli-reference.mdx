@@ -15,8 +15,18 @@ Install with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then run `c
 | `cmpatch login` / `logout` / `whoami` | Browser sign-in via the dashboard (or `--token`) / sign out / identity |
 | `cmpatch token create \| list \| revoke` | Manage personal access tokens (`cm_pat_…`) |
 | `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
-| `cmpatch init` | Link a project to a server and write `codemagic-patch.config.json`; interactively install a server or enter an existing URL, sign in after a new install, and create or select an app for each platform |
+| `cmpatch init` | Link a project to a server and write `codemagic-patch.config.json`; interactively install a server or enter an existing URL, sign in after a new install, create or select an app for each platform, then wire the SDK (`--skip-wire` for the link only) |
+| `cmpatch wire` | Wire the SDK into the linked app: install the package, write each platform's deployment key and URLs, hook native bundle selection, export the root through `Patch.wrap`; shows the plan first (`--dry-run --diff` to only look) and exits `2` when steps remain for you |
 | `cmpatch context` | Show the effective resolved context; add `--remote` to include server SDK configuration (`downloadBaseUrl`) |
+
+`init` now returns the SDK wiring result, so it can exit `2` with the connection
+saved but setup incomplete. Existing scripts that only need to link the project
+should use `init --skip-wire`. It also accepts every `wire` flag; see
+`cmpatch wire --help`.
+
+For unattended wiring, use `--yes` and, if the working tree has uncommitted
+changes, `--allow-dirty`. Request any needed CocoaPods installation with
+`--pod-install` on macOS; on Linux that step remains incomplete even with the flag.
 
 ## Local evaluation and self-hosting {#self-hosting}
 
@@ -33,7 +43,7 @@ the direct `install.sh` path in [Infrastructure adapters](/docs/setup/infrastruc
 | --- | --- |
 | `cmpatch selfhost local-eval [up\|down\|status]` | Start, stop, or inspect the localhost evaluation stack; `up` is the default |
 | `cmpatch demo [--platform ios\|android] [--checkout <path>]` | Run the guided OTA demo against the local evaluation stack; reuse its checkout, sign in, build the app, and publish a fix after confirmation |
-| `cmpatch selfhost install [user@vps]` | Check and prepare a server, then run the guided install with DNS, GitHub OAuth, and optional CDN setup |
+| `cmpatch selfhost install [user@vps]` | Check and prepare a server, then run the guided install with DNS, OAuth sign-in (GitHub, Bitbucket Cloud, or GitLab), and optional CDN setup |
 | `cmpatch selfhost upgrade [user@vps]` | Fast-forward the server checkout and run the guarded backup-and-update workflow |
 | `cmpatch selfhost backup [user@vps]` | Take a mode-aware backup; add `--download` to copy it to this machine |
 | `cmpatch selfhost restore [backup] [user@vps]` | Select or upload a backup, take a safety backup, and restore the components it contains |
@@ -76,8 +86,14 @@ Setup-only credentials use `CMPATCH_R2_SETUP_TOKEN`,
 `CMPATCH_GCP_SETUP_CREDENTIALS_FILE`. Their flag equivalents are
 `--r2-setup-token`, `--aws-setup-access-key-id`, `--aws-setup-secret-access-key`
 and `--gcp-setup-credentials-file`; prefer environment/file inputs. These are
-explicitly disposable and are never installer runtime values. See
-[Install](/docs/install#choose-storage) for prerequisites and recovery.
+disposable and are never installer runtime values.
+
+A complete runtime configuration (buckets, credentials, and `--public-base-url`)
+skips provisioning. If automatic setup created buckets and then failed, rerun
+with `--storage-setup guided` and the printed names. That re-verifies existing
+resources; it does not resume an API call or delete what it already created.
+Replacing storage keys later is a manual edit of `.env.selfhost`. See
+[Configuration reference](/docs/reference/configuration).
 
 ## Apps and deployments
 
@@ -99,6 +115,10 @@ explicitly disposable and are never installer runtime values. See
 | `cmpatch release promote` | Copy a release to another deployment |
 | `cmpatch release rollback` | Revert to the previous release |
 | `cmpatch release metrics` | Metrics for one release |
+
+For iOS, `release-react` and `bundle` detect the binary version from the Xcode application target, excluding extensions. If the project has multiple apps, select one with `--xcode-project-file` and/or `--xcode-target-name`. Use `--build-configuration-name` when configurations have different versions. `--plist-file` selects a plist directly; `--plist-file-prefix` selects a prefixed plist in the chosen app's directory. If SDK/architecture conditions affect the detected version, or the project or build settings cannot be resolved, pass `--target-binary-version` with the installed app's version. `cmpatch doctor --platform ios` accepts the same selection flags.
+
+Android auto-detection supports a static `defaultConfig.versionName` and a literal common `versionNameSuffix`. Simple properties are read from the selected module and its Gradle root. Flavor/build-type version overrides and dynamic expressions require `--target-binary-version`; the CLI does not evaluate Gradle or CI overrides. For those projects, [extract the version from the published APK/AAB](/docs/using-patch/ci-integration#target-the-version-from-a-published-android-binary).
 
 ## Members and diagnostics
 

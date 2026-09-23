@@ -582,7 +582,7 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
    */
   private fun prepareBootState() {
     val binaryVersion = binaryVersionOrNull() ?: return
-    CodemagicPatch.prepareBootState(storage, binaryVersion) { packageHash, failedAt ->
+    CodemagicPatch.prepareBootState(reactContext, storage, binaryVersion) { packageHash, failedAt ->
       CodemagicPatch.writeCrashRollbackEvent(
         storage = storage,
         binaryVersion = binaryVersion,
@@ -732,7 +732,7 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
 
   private fun applyMetricMetadataSideEffect(event: JSONObject) {
     val eventName = event.optString("event_name")
-    if (eventName != "Active" && eventName != "Success") return
+    if (eventName != "Active" && eventName != "Applied") return
 
     val packageHash = event.optString("target_package_hash")
     if (!storage.isSafePackageHash(packageHash)) return

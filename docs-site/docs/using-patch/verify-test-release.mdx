@@ -76,9 +76,9 @@ Default `sync()` uses `ON_NEXT_RESTART` for non-mandatory releases, so you may n
 For faster iteration during testing, use immediate apply:
 
 ```tsx
-import { sync } from "@codemagic/react-native-patch";
+import { InstallMode, sync } from "@codemagic/react-native-patch";
 
-void sync({ installMode: "IMMEDIATE" });
+void sync({ installMode: InstallMode.IMMEDIATE });
 ```
 
 ### 4. Confirm it worked
@@ -87,7 +87,7 @@ void sync({ installMode: "IMMEDIATE" });
 | --- | --- |
 | **UI** | Your JS change is visible after reload |
 | **SDK** | `sync()` resolves to `"update-installed"` (or `"up-to-date"` if already on latest) |
-| **Dashboard** | Download / success metrics tick up on the release, [Analytics](/docs/using-patch/analytics) |
+| **Dashboard** | Download / applied metrics tick up on the release, [Analytics](/docs/using-patch/analytics) |
 | **CLI** | `cmpatch release inspect …` shows client activity for the label |
 
 Repeat on Android if you ship both platforms, separate apps and deployment keys per platform.

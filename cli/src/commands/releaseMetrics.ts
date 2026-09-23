@@ -43,9 +43,9 @@ export function renderReleaseMetricsTable(result: unknown): string {
     ["targetBinaryVersion", readCell(release, "target_binary_version")],
     ["active", metrics === null ? "-" : readCell(metrics, "active")],
     ["downloaded", metrics === null ? "-" : readCell(metrics, "downloaded")],
-    ["installed", metrics === null ? "-" : readCell(metrics, "installed")],
+    ["ready", metrics === null ? "-" : readCell(metrics, "installed")],
     ["failed", metrics === null ? "-" : readCell(metrics, "failed")],
-    ["success", metrics === null ? "-" : readCell(metrics, "success")],
+    ["applied", metrics === null ? "-" : readCell(metrics, "success")],
   ];
   const keyWidth = Math.max(...rows.map(([key]) => key.length));
 

@@ -1,6 +1,6 @@
 // Embedded deployment list for the App detail screen.
 // Rows come from `useDeployments(appId)`; the three lazy cells
-// (Latest release / Successes / Downloads) come from ONE per-row
+// (Latest release / Applied / Downloads) come from ONE per-row
 // `useDeploymentMetrics(dep.id, { limit: 1 })` query so name/key render fast
 // and a metrics failure degrades to "—" + a small retry without failing the
 // table (per-region skeletons / cell-level failure). Actions follow the
@@ -240,7 +240,7 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
               <th className={TBL_TH}>Deployment</th>
               <th className={TBL_TH}>Deployment key</th>
               <th className={TBL_TH}>Latest release</th>
-              <th className={`${TBL_TH} ${TBL_RIGHT}`}>Successes</th>
+              <th className={`${TBL_TH} ${TBL_RIGHT}`}>Applied</th>
               <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloads</th>
               <th className={TBL_TH}>
                 <span className="sr-only">Actions</span>
@@ -448,7 +448,7 @@ function DeploymentRow({
 
 /**
  * Lazy metric cells: one `limit: 1` deployment-metrics
- * query per row feeds Latest release + Successes + Downloads. Failure
+ * query per row feeds Latest release + Applied + Downloads. Failure
  * renders "—" with a small per-cell retry and never fails the table.
  */
 function MetricCells({ deployment }: { deployment: Deployment }) {
@@ -802,7 +802,7 @@ function CreateDeploymentModalContent({
     }
   };
 
-  // Success step: reveal the new deploymentKey prominently.
+  // Applied step: reveal the new deploymentKey prominently.
   if (created !== null) {
     return (
       <Modal
@@ -1119,7 +1119,7 @@ function DeploymentTableSkeleton() {
             <th className={TBL_TH}>Deployment</th>
             <th className={TBL_TH}>Deployment key</th>
             <th className={TBL_TH}>Latest release</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Successes</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Applied</th>
             <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloads</th>
             <th className={TBL_TH} aria-hidden="true" />
           </tr>

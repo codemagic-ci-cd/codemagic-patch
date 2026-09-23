@@ -49,7 +49,7 @@ export type PersistMetricEventResult =
   | {
       /**
        * A `Failed` event for a package the device has already reported
-       * `Success` for. Nothing was stored.
+       * `Applied` for. Nothing was stored.
        */
       outcome: "superseded";
     };
@@ -154,24 +154,24 @@ export function createPostgresMetricsRepository(
       const targetPackageHash = input.targetPackageHash;
       if (
         targetPackageHash === null ||
-        (input.eventName !== "Failed" && input.eventName !== "Success")
+        (input.eventName !== "Failed" && input.eventName !== "Applied")
       ) {
         return insertMetricEvent(pool, deployment, input);
       }
 
       // Failure supersession (server tech spec §Metrics Service → Failure
-      // Supersession). A device that reports `Success` for a package got
+      // Supersession). A device that reports `Applied` for a package got
       // there in the end, so the `Failed` events it reported for that package
       // on the way were transient — a retry that worked — and are removed
       // rather than left to count against the release forever. A device does
-      // not fail an update it has already confirmed, so once its `Success` is
+      // not fail an update it has already confirmed, so once its `Applied` is
       // stored any `Failed` it sends for the same package is ignored: one that
       // arrives late because the client flushes and retries in batches, or a
-      // retransmission of one the `Success` already deleted.
+      // retransmission of one the `Applied` already deleted.
       //
       // The advisory lock serializes the two paths per device and package.
       // Without it, under READ COMMITTED, a `Failed` whose check ran before
-      // the `Success` committed and whose insert ran after the `Success`'s
+      // the `Applied` committed and whose insert ran after the `Applied`'s
       // DELETE would slip through both and stick. The key is only ever hashed,
       // so a collision costs nothing but an unrelated device waiting its turn.
       return withTransaction(pool, async (client) => {
@@ -190,7 +190,7 @@ export function createPostgresMetricsRepository(
               WHERE deployment_id = $1
                 AND device_id = $2
                 AND target_package_hash = $3
-                AND event_name = 'Success'
+                AND event_name IN ('Applied', 'Success')
               LIMIT 1
             `,
             scope,
@@ -239,14 +239,14 @@ export function createPostgresMetricsRepository(
               (GROUPING(target_package_hash) = 1) AS is_total,
               COUNT(DISTINCT device_id) FILTER (WHERE event_name = 'Active')::integer AS active_devices,
               COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
-              COUNT(*) FILTER (WHERE event_name = 'Installed')::integer AS installed,
-              COUNT(*) FILTER (WHERE event_name = 'Success')::integer AS success,
+              COUNT(*) FILTER (WHERE event_name IN ('Ready', 'Installed'))::integer AS installed,
+              COUNT(*) FILTER (WHERE event_name IN ('Applied', 'Success'))::integer AS success,
               COUNT(*) FILTER (WHERE event_name = 'Failed')::integer AS failed
             FROM metric_event
             WHERE deployment_id = $1
               AND emitted_at >= $2
               AND emitted_at < $3
-              AND event_name = ANY('{Downloaded,Installed,Success,Failed,Active}')
+              AND event_name = ANY('{Downloaded,Ready,Installed,Applied,Success,Failed,Active}')
             GROUP BY GROUPING SETS (
               (date_trunc('day', emitted_at), target_package_hash),
               (date_trunc('day', emitted_at))
@@ -352,8 +352,8 @@ export function createPostgresMetricsRepository(
             COUNT(*) FILTER (WHERE event_name = 'Active')::integer AS active,
             COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
             COUNT(*) FILTER (WHERE event_name = 'Failed')::integer AS failed,
-            COUNT(*) FILTER (WHERE event_name = 'Installed')::integer AS installed,
-            COUNT(*) FILTER (WHERE event_name = 'Success')::integer AS success
+            COUNT(*) FILTER (WHERE event_name IN ('Ready', 'Installed'))::integer AS installed,
+            COUNT(*) FILTER (WHERE event_name IN ('Applied', 'Success'))::integer AS success
           FROM metric_event
           WHERE deployment_id = $1
             AND target_package_hash = ANY($2::text[])

@@ -55,6 +55,13 @@ export function createDnsSetup(
       token = "";
       disposed = true;
     },
+    async cloudflareSetupToken(hostname) {
+      if (disposed || !token) return null;
+      const zone = await findZoneApex(hostname, deps.dnsClient);
+      return zone !== null && (modes.get(zone) ?? requested) === "cloudflare"
+        ? token
+        : null;
+    },
     async apply(record, shouldStop = () => false) {
       if (
         shouldStop() ||
@@ -126,7 +133,7 @@ export function createDnsSetup(
             name: `${PRODUCT_NAME} DNS setup`,
           });
           notice(deps, [
-            `Create a setup-only Cloudflare token. The link pre-fills Zone / DNS / Edit and Zone / Zone / Read. Under Zone Resources, replace All zones with Specific zone and select ${zone}; also include any other zones being installed. Keep the token until the final DNS change, then revoke it. Do not use the runtime cache-purge token.`,
+            `Create a setup-only Cloudflare token. The link pre-fills Zone / Zone / Read and Zone / DNS / Edit, plus Zone / Cache Rules / Edit and Zone / Zone Settings / Read so that, with Cloudflare as the CDN, this wizard also adds the cache rule and turns the proxy on. Under Zone Resources, replace All zones with Specific zone and select ${zone}; also include any other zones being installed. Keep the token until the final DNS change, then revoke it. Do not use the runtime cache-purge token.`,
             url,
           ]);
           await offerBrowserOpen(deps, {

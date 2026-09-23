@@ -9,6 +9,7 @@
  * to do with it.
  */
 
+import { listOAuthProviders, OAUTH_PROVIDERS, type OAuthProvider } from "./selfhostInstall";
 import {
   CLOUDFLARE_ENABLE_LATER_URL,
   CLOUDFLARE_VERIFY_DOCS_URL,
@@ -49,8 +50,8 @@ export function renderBeforeYouStart(): string[] {
     "  2. Access to your domain's DNS",
     "     You will add two records at your DNS provider, and the install waits until they resolve.",
     "",
-    "  3. A GitHub account (or organization) that can create an OAuth app",
-    `     People sign in to the ${PRODUCT_NAME} dashboard with GitHub, so the install has you register the server there.`,
+    `  3. A ${listOAuthProviders((provider) => OAUTH_PROVIDERS[provider].displayName)} account that can create an OAuth app`,
+    `     Your chosen provider handles sign-in, so the install has you register the server there.`,
     "",
     "  4. Optional: a Cloudflare or AWS account for the CDN",
     "     Update files can be served through a CDN. Skipping this keeps the install complete; you can add it later.",
@@ -261,9 +262,9 @@ export function renderRecordWaitTimeout(
 }
 
 /**
- * The step label for the record wait. Adding the record is the user's move,
- * not the wizard's, and a spinner that only names the hostname reads as "the
- * wizard is working on this" — so the line names who acts and how to leave.
+ * The step label for the record wait. The record may be the user's to add or
+ * one the wizard just wrote through an API, so the line names only what is
+ * awaited and how to leave; who acts was said in the intro above.
  *
  * Every spinner line here is kept short on purpose: clack's spinner miscounts
  * the rows a line takes once the frame and timer it adds push the text past
@@ -272,13 +273,12 @@ export function renderRecordWaitTimeout(
  * the record itself were all printed above, so the label does not repeat them.
  */
 export function renderDnsWaitStep(hostname: string): string {
-  return `waiting for you to add ${hostname} (Ctrl+C to set up later)`;
+  return `waiting for ${hostname} (Ctrl+C to set up later)`;
 }
 
 /**
- * What each poll found, with the actor in front. This replaces the animating
- * spinner text on every attempt, so it is the line the user actually stares
- * at during the wait — it must never read as the wizard's own work. The
+ * What each poll found. This replaces the animating spinner text on every
+ * attempt, so it is the line the user actually stares at during the wait. The
  * expected address is left out: it is in the record printed above, and the
  * line has to stay within one terminal row (see `renderDnsWaitStep`).
  */
@@ -290,11 +290,11 @@ export function renderDnsWaitDetail(
     case "match":
       return `${hostname} points at this server`;
     case "missing":
-      return `waiting for you — ${hostname} does not resolve yet`;
+      return `waiting — ${hostname} does not resolve yet`;
     case "different":
-      return `waiting for you — ${hostname} still points at ${diagnosis.found.join(", ")}`;
+      return `waiting — ${hostname} still points at ${diagnosis.found.join(", ")}`;
     case "cloudflare-proxied":
-      return `waiting for you — ${hostname} still has the orange cloud on`;
+      return `waiting — ${hostname} still has the orange cloud on`;
   }
 }
 
@@ -335,7 +335,7 @@ export function renderOAuthIntro(input: {
   creationUrl: string;
 }): string[] {
   return [
-    `People sign in to your ${PRODUCT_NAME} dashboard with GitHub, so GitHub needs to know about your server.`,
+    `People use GitHub for ${PRODUCT_NAME} sign-in, so GitHub needs to know about your server.`,
     "",
     // A reference, not an instruction: the question that follows offers to
     // open it, and a line that reads "open this" gets clicked before the
@@ -348,6 +348,64 @@ export function renderOAuthIntro(input: {
     // account works identically — so a prompt here would cost every user a
     // question to save a few the trouble of moving one later.
     "This creates the app on your own GitHub account. If your team should own it instead, create it under the organization's Settings > Developer settings — everything below is the same.",
+  ];
+}
+
+/**
+ * Where the provider's application is created or found, for the instance in
+ * use: a provider with an instance origin among its extra fields aims at that
+ * origin, and at its default when none is known.
+ */
+export function oauthAppUrl(provider: OAuthProvider, extra: Record<string, string> = {}): string {
+  const { app, extraFields } = OAUTH_PROVIDERS[provider];
+  return app.url({
+    ...Object.fromEntries(extraFields.map((field) => [field.flag, field.default])),
+    ...extra,
+  });
+}
+
+export function renderOAuthRepairIntro(input: {
+  provider: OAuthProvider;
+  callbackUrl: string;
+  settingsUrl: string;
+}): string[] {
+  const { app } = OAUTH_PROVIDERS[input.provider];
+  return [
+    app.repair.instructions,
+    input.settingsUrl,
+    app.repair.credentials,
+    "Check that the existing app uses this callback value:",
+    "",
+    app.callbackField,
+    input.callbackUrl,
+  ];
+}
+
+/**
+ * The two values to paste, each on its own line under its field name: a
+ * wrapped note box would break the callback URL, and a copyable line cannot
+ * sit inside one.
+ */
+export function renderManualOAuthFormValues(input: {
+  callbackUrl: string;
+  provider: OAuthProvider;
+}): string[] {
+  return [
+    "Copy the value below each field name into the form:",
+    "",
+    "Name",
+    PRODUCT_NAME,
+    "",
+    OAUTH_PROVIDERS[input.provider].app.callbackField,
+    input.callbackUrl,
+  ];
+}
+
+/** Said once the pair is in hand: there is no probe, so this is the check. */
+export function renderManualOAuthVerifiedLater(provider: OAuthProvider): string[] {
+  return [
+    "These credentials will be checked when you first sign in to the dashboard.",
+    `If sign-in rejects them, correct them with: cmpatch selfhost install --repair --oauth-provider ${provider}`,
   ];
 }
 
@@ -400,7 +458,7 @@ export function renderIncompleteIntro(input: {
     cloudfront: "The CloudFront settings were not accepted.",
     docker: "Docker was not usable on the server.",
     domains: "One of the domains was not accepted.",
-    oauth: "The GitHub sign-in settings were not accepted.",
+    oauth: "The OAuth sign-in settings were not accepted.",
     "public-https":
       "The server never became reachable over HTTPS — usually a domain pointing somewhere else, or ports 80 and 443 still closed.",
     unknown: "It stopped part-way through.",
@@ -546,7 +604,7 @@ export function renderZoneLookupProblem(input: {
  */
 export function renderProxySwitch(storageDomain: string): string[] {
   return [
-    "Downloads are not going through Cloudflare yet. Two settings in the Cloudflare dashboard turn that on, and the token deliberately cannot change them, so they are yours to do:",
+    "Downloads are not going through Cloudflare yet. Two settings in the Cloudflare dashboard turn that on, and they are yours to do:",
     "",
     ...renderProxySwitchSteps(storageDomain),
     "",
@@ -572,26 +630,65 @@ export function renderProxySwitchSteps(storageDomain: string): string[] {
 export function renderCloudflareRemaining(
   storageDomain: string,
   leadIn: string,
+  options: { cacheRule: boolean } = { cacheRule: true },
 ): string[] {
   return [
     leadIn,
     ...renderProxySwitchSteps(storageDomain),
-    "",
-    ...renderCacheRule(storageDomain),
+    ...(options.cacheRule ? ["", ...renderCacheRule(storageDomain)] : []),
   ];
 }
 
-/**
- * The step label for the proxy-switch wait, mirroring the DNS wait: flipping
- * the cloud is the user's move, and the Ctrl+C escape is named because
- * stopping the wait keeps the run alive — the diagnosis and the closing
- * summary still print.
- */
-export function renderProxySwitchWaitStep(): string {
-  return "waiting for you to turn the orange cloud on (Ctrl+C: stop waiting)";
+/** What the setup token did about the rule, in the user's terms. */
+export function renderCacheRuleAdded(
+  storageDomain: string,
+  written: boolean,
+): string {
+  return written
+    ? `Added a Cloudflare cache rule for ${storageDomain}: downloads are cached by the server's own cache headers.`
+    : `${storageDomain} already has a matching Cloudflare cache rule, so it was left as it is.`;
 }
 
-/** What each poll of the proxy switch found, with the actor in front. */
+/** "Full" works against the server's real certificate; strict also checks it. */
+export function renderFullSslAdvice(zone: string): string {
+  return `SSL/TLS for ${zone} is "Full", which works. "Full (strict)" also checks the server's certificate and is the safer choice: SSL/TLS > Overview in Cloudflare.`;
+}
+
+/** A mode the proxy cannot run on, found before the switch rather than after it. */
+export function renderSslBlocksProxy(zone: string, mode: string): string[] {
+  return [
+    `SSL/TLS for ${zone} is "${renderSslMode(mode)}", so the proxy stays off for now.`,
+    mode === "flexible"
+      ? "With Flexible, Cloudflare asks your server over plain http, your server redirects to https, and downloads loop forever."
+      : "With SSL/TLS off, Cloudflare cannot reach a server that only speaks https.",
+    'Set SSL/TLS > Overview to "Full (strict)" in Cloudflare. It applies to the whole domain, so check that its other sites work with it too.',
+  ];
+}
+
+export function renderSslBlockedLeadIn(zone: string, mode: string): string {
+  return `Downloads are not going through Cloudflare yet, because SSL/TLS for ${zone} is "${renderSslMode(mode)}":`;
+}
+
+/** The proxy is on, but the proof never came back. */
+export function renderProxyUnconfirmedLeadIn(storageDomain: string): string {
+  return `The Cloudflare proxy is on for ${storageDomain}, but downloads were not confirmed through it yet. If they still are not, check:`;
+}
+
+function renderSslMode(mode: string): string {
+  return mode === "off" ? "Off" : mode === "flexible" ? "Flexible" : mode;
+}
+
+/**
+ * The step label for the proxy-switch wait, mirroring the DNS wait. The
+ * switch may be the user's or the wizard's own, so the line does not say
+ * whose; the Ctrl+C escape is named because stopping the wait keeps the run
+ * alive — the diagnosis and the closing summary still print.
+ */
+export function renderProxySwitchWaitStep(): string {
+  return "waiting for the Cloudflare proxy (Ctrl+C: stop waiting)";
+}
+
+/** What each poll of the proxy switch found. */
 export function renderProxySwitchWaitDetail(
   hostname: string,
   diagnosis: RecordDiagnosis,
@@ -600,11 +697,11 @@ export function renderProxySwitchWaitDetail(
     case "cloudflare-proxied":
       return `${hostname} now resolves into Cloudflare`;
     case "match":
-      return `waiting for you — ${hostname} still bypasses Cloudflare`;
+      return `waiting — ${hostname} still bypasses Cloudflare`;
     case "different":
-      return `waiting for you — ${hostname} still points at ${diagnosis.found.join(", ")}`;
+      return `waiting — ${hostname} still points at ${diagnosis.found.join(", ")}`;
     case "missing":
-      return `waiting for you — ${hostname} is not answering right now`;
+      return `waiting — ${hostname} is not answering right now`;
   }
 }
 
@@ -678,7 +775,7 @@ export function renderCacheRule(
   palette: Palette = PLAIN_PALETTE,
 ): string[] {
   return [
-    "One setting has to be added by hand, because the token deliberately cannot change Cloudflare's rules.",
+    "One more setting has to be added by hand in Cloudflare.",
     "",
     ...renderCacheRuleSteps(storageDomain, palette),
   ];
@@ -930,7 +1027,7 @@ export function renderAcmValidationRecord(
  * line names neither (see `renderDnsWaitStep` for why it must stay short).
  */
 export function renderAcmWaitStep(): string {
-  return "waiting for you to add the CNAME (Ctrl+C to add it later)";
+  return "waiting for the CNAME (Ctrl+C to add it later)";
 }
 
 export function renderAcmWaitDetail(
@@ -941,7 +1038,7 @@ export function renderAcmWaitDetail(
     case "match":
       return `${name} is live`;
     case "missing":
-      return "waiting for you — the CNAME does not resolve yet";
+      return "waiting — the CNAME does not resolve yet";
     case "doubled":
       // The single most common way this record goes in wrong, and invisible
       // from both consoles: AWS shows "Pending validation" and the DNS
@@ -950,7 +1047,7 @@ export function renderAcmWaitDetail(
       // that can go.
       return `the CNAME name ended up doubled — found it at ${diagnosis.at}`;
     case "different":
-      return `waiting for you — the CNAME points at ${diagnosis.found.join(", ")}`;
+      return `waiting — the CNAME points at ${diagnosis.found.join(", ")}`;
   }
 }
 
@@ -1328,13 +1425,11 @@ export function renderStopRequested(): string {
 }
 
 /**
- * The step label while polling after the cutover. The user has just confirmed
- * the record change, so what is pending is *their* change becoming visible —
- * a bare "waiting for <hostname>" would read as the wizard still doing setup
- * work of its own.
+ * The step label while polling after the cutover: what is pending is the
+ * record change becoming visible, whether the user made it or the wizard did.
  */
 export function renderCutoverWaitStep(storageDomain: string): string {
-  return `waiting for your record change to reach ${storageDomain} (Ctrl+C to stop waiting)`;
+  return `waiting for the record change to reach ${storageDomain} (Ctrl+C to stop waiting)`;
 }
 
 /**
@@ -1359,9 +1454,9 @@ export function renderCutoverWaitDetail(
 ): string {
   switch (seen) {
     case "no-answer":
-      return `waiting for your record change to reach ${storageDomain} — nothing is answering it yet`;
+      return `waiting for the record change to reach ${storageDomain} — nothing is answering it yet`;
     case "still-this-server":
-      return `waiting for your record change to reach ${storageDomain} — still answered by this server`;
+      return `waiting for the record change to reach ${storageDomain} — still answered by this server`;
     case "certificate-name":
       // Two causes, one symptom, and the wizard cannot tell them apart from
       // outside: a distribution that is mid-deploy serves the old certificate

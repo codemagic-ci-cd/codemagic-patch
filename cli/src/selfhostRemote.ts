@@ -133,6 +133,12 @@ export type RemoteHostFacts = {
   deliveryAdapter: string | null;
   /** Whether `.env.selfhost` exists — the first half of install-state detection. */
   envFilePresent: boolean;
+  /**
+   * `GITLAB_OAUTH_BASE_URL` from the deployment's own env file: the
+   * self-managed origin, or null on gitlab.com. An OAuth repair collects no
+   * origin, so this is what lets it point at the instance's Applications page.
+   */
+  gitlabBaseUrl: string | null;
   home: string;
   /** Present only for a probe run with `scope: "install"`. */
   install?: RemoteInstallFacts;
@@ -210,6 +216,7 @@ const PROBE_SCRIPT = [
   '    printf "storage_domain=%s\\n" "$(read_env_value CODEMAGIC_PATCH_STORAGE_DOMAIN)"',
   '    server_url="$(read_env_value SERVER_URL)"',
   '    printf "server_url=%s\\n" "$server_url"',
+  '    printf "gitlab_base_url=%s\\n" "$(read_env_value GITLAB_OAUTH_BASE_URL)"',
   "  fi",
   "fi",
 ].join("\n");
@@ -426,6 +433,7 @@ export async function probeRemoteHost(
     databaseMode: emptyToNull(values.database_mode),
     deliveryAdapter: emptyToNull(values.delivery_adapter),
     envFilePresent: values.env_present === "1",
+    gitlabBaseUrl: emptyToNull(values.gitlab_base_url),
     home,
     ...(input.scope === "install"
       ? { install: readInstallFacts(values) }

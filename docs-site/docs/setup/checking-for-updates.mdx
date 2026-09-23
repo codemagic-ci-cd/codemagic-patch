@@ -1,9 +1,9 @@
 ---
 title: Checking for updates
 description: >-
-  Wire sync() on the client to check for and download OTA updates on launch,
+  Use Patch.wrap() or sync() to check for and download OTA updates on launch,
   resume, or user action.
-llmsDescription: 'Client update checks — sync(), AppState re-checks, progress, release notes, store fallback.'
+llmsDescription: 'Client update checks — Patch.wrap(), sync(), readiness, AppState re-checks, progress, store fallback.'
 ---
 
 # Checking for updates
@@ -16,32 +16,33 @@ This page covers when and how to check and download. For when a downloaded updat
 
 On each call, in order:
 
-1. **`notifyAppReady()`**: marks the currently running bundle as healthy. If a freshly installed bundle crashes *before* `sync()` runs on the next launch, the SDK automatically reverts to the last known-good bundle. Because `sync()` calls this first, running it on every startup confirms the previous update and arms rollback for the next one.
+1. **`notifyAppReady()`**: marks the currently running bundle as healthy. If a pending bundle repeatedly starts without reaching `notifyAppReady()`, the SDK rolls it back once its launch-attempt budget is exhausted. Because `sync()` calls this first, running it on every startup confirms the previous update and arms rollback for the next one.
 2. **Check** the server for a matching update.
 3. **Download** the new bundle (or a binary patch, with automatic fallback to the full bundle).
 4. **Install** according to the install mode you choose (see [Applying updates](/docs/setup/applying-updates)).
 
-`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. With no options, non-mandatory releases wait for the next cold start (`installMode`); mandatory releases apply immediately (`mandatoryInstallMode`).
+`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. In development builds an `"error"` result is also logged as a warning with its reason (an unreachable server, a failed download or install). A wrong deployment key or path is not an error: the server answers 404, which the SDK treats as "no update", so silence there does not confirm the configuration. With no options, non-mandatory releases wait for the next cold start (`installMode`); mandatory releases apply immediately (`mandatoryInstallMode`).
 
 ## Minimal integration
 
-Call `sync()` once, as early as possible after your root component mounts:
+Wrap your root component with `Patch.wrap(App)` (`cmpatch wire` adds this for you). Your app renders immediately, and the wrapper calls `sync()` after the root mounts:
 
 ```tsx
 // App.tsx
-import { useEffect } from "react";
-import { sync } from "@codemagic/react-native-patch";
+import * as Patch from "@codemagic/react-native-patch";
 
-export default function App() {
-  useEffect(() => {
-    void sync();
-  }, []);
-
+function App() {
   return <YourApp />;
 }
+
+export default Patch.wrap(App);
 ```
 
-That is enough for internal builds. Production apps usually tune when to check and how updates apply. For step-by-step control (`checkForUpdate`, `downloadUpdate`, `installUpdate`), see [Manual control](/docs/setup/manual-control). For rollouts and mandatory flags on the server, see [Production control](/docs/using-patch/production-control).
+Pass `WrapOptions` as the second argument to customize install timing, for example `Patch.wrap(App, { installMode: Patch.InstallMode.ON_NEXT_RESUME })`. With no options, ordinary updates install on the next restart and mandatory updates install immediately. Set `checkFrequency: "ON_APP_RESUME"` to also check on foreground return. The default `"ON_APP_START"` checks only on mount. See the [wrapper reference](/docs/reference/sdk-reference#wraproot-options) for API details.
+
+If your app must finish asynchronous initialization before confirming readiness, call `sync()` after it succeeds instead of using `wrap()`; see the [readiness guidance](/docs/reference/sdk-reference#wraproot-options).
+
+For step-by-step control (`checkForUpdate`, `downloadUpdate`, `installUpdate`), see [Manual control](/docs/setup/manual-control). For rollouts and mandatory flags on the server, see [Production control](/docs/using-patch/production-control).
 
 ## When to check for updates
 
@@ -53,26 +54,33 @@ That is enough for internal builds. Production apps usually tune when to check a
 | Return to foreground | Catch updates published while the user had the app open |
 | User action | "Check for updates" in settings, after login, etc. |
 
-Wire a foreground re-check with `AppState`:
+To check on launch and foreground return:
 
-```ts
-import { AppState } from "react-native";
-import { sync } from "@codemagic/react-native-patch";
-
-AppState.addEventListener("change", (next) => {
-  if (next === "active") void sync();
+```tsx
+export default Patch.wrap(App, {
+  checkFrequency: Patch.CheckFrequency.ON_APP_RESUME,
+  installMode: Patch.InstallMode.ON_NEXT_RESTART,
 });
 ```
+
+For manual timing or asynchronous readiness, skip the wrapper and call `sync()` from your own lifecycle code.
 
 Combine with install modes from [Applying updates](/docs/setup/applying-updates) so resume-based installs do not surprise users mid-flow.
 
 ## Download progress and status
 
-Use the optional progress callback for a bar or status line:
+For progress UI, remove `Patch.wrap()` and call `sync()` from your chosen lifecycle or button handler with the optional progress callback. Keep startup readiness confirmation as described in [Manual control](/docs/setup/manual-control). A second `sync()` cannot observe the wrapper's in-flight operation: it returns `"sync-in-progress"` without attaching its callback.
+
+Pass your install options and progress callback to the direct call:
 
 ```tsx
+import { InstallMode, sync } from "@codemagic/react-native-patch";
+
 const result = await sync(
-  { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" },
+  {
+    installMode: InstallMode.ON_NEXT_RESTART,
+    mandatoryInstallMode: InstallMode.IMMEDIATE,
+  },
   ({ receivedBytes, totalBytes }) => {
     const pct = totalBytes > 0 ? receivedBytes / totalBytes : 0;
     // drive UI

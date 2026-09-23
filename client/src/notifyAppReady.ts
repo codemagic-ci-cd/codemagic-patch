@@ -7,6 +7,20 @@ import {
 import { emitActiveIfDue, packageMetricFields, recordEvent } from "./events";
 
 export async function notifyAppReady(): Promise<void> {
+  // Share one in-flight run across overlapping callers (direct calls and the
+  // one `sync()` makes on entry). Without this, both pass the
+  // `successReportedAt` / `shouldEmitActive` checks before either awaits the
+  // native confirm and emits Applied / Active twice with distinct event IDs.
+  if (!state.appReadyPromise) {
+    state.appReadyPromise = runAppReady().finally(() => {
+      state.appReadyPromise = null;
+    });
+  }
+
+  await state.appReadyPromise;
+}
+
+async function runAppReady(): Promise<void> {
   await ensureHydrated();
 
   const runningPackage = state.runningPackage;
@@ -32,15 +46,13 @@ export async function notifyAppReady(): Promise<void> {
     state.blockedActivation = false;
 
     if (!runningPackage.successReportedAt) {
-      const successEvent = await recordEvent("Success", {
+      const appliedEvent = await recordEvent("Applied", {
         ...packageMetricFields(runningPackage),
         deliveryType: runningPackage.source,
       });
-      runningPackage.successReportedAt = successEvent.at;
+      runningPackage.successReportedAt = appliedEvent.at;
     }
-
-    await emitActiveIfDue(runningPackage);
-  } else {
-    await emitActiveIfDue(runningPackage);
   }
+
+  await emitActiveIfDue(runningPackage);
 }

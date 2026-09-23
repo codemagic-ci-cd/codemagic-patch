@@ -115,7 +115,7 @@ docker compose -f docker-compose.dev.yml down -v
 
 1. You publish a release with the CLI. It bundles your JS, computes a native **fingerprint**, resolves a target **binary version**, and uploads the bundle to the server, which stores the artifact and a manifest in object storage.
 2. On launch (or resume), the SDK fetches the manifest for its deployment + binary version, downloads the new bundle (or a smaller **binary patch** when available), and swaps it in on the next restart.
-3. The SDK reports download/install/success/failure metrics back to the server.
+3. The SDK reports download/ready/applied/failure metrics back to the server.
 
 The default self-host stack runs four services on a single Docker host:
 
@@ -154,7 +154,7 @@ The default self-host stack runs four services on a single Docker host:
 - **Two hostnames** with DNS A/AAAA records pointing at the host — one for the API/dashboard, one for artifact storage. Two subdomains of a domain you already own are enough; they just have to differ:
   - API/dashboard — e.g. `updates.example.com`
   - Storage — e.g. `storage-updates.example.com`
-- A **GitHub OAuth App** (see below)
+- A GitHub, Bitbucket Cloud, or GitLab account for sign-in (the wizard helps create its OAuth app)
 
 **Using the CLI**
 
@@ -189,15 +189,19 @@ npm install -g @codemagic/patch-cli
 cmpatch selfhost install
 ```
 
-The command asks for everything it needs — the server to connect to over SSH, the two hostnames, the administrator email, the GitHub OAuth App — and waits at each step until it checks out, so there is nothing to prepare in advance. It offers to install Docker, git, and curl on the server if they are missing, then runs the installer over SSH. Building the images takes around twenty minutes on a cold cache.
+The command asks for everything it needs — the server to connect to over SSH, the two hostnames, the administrator email, the OAuth app — and guides you through setup. It offers to install Docker, git, and curl on the server if they are missing, then runs the installer over SSH. Building the images takes around twenty minutes on a cold cache.
 
-### 1.1 GitHub OAuth App
+<a id="11-github-oauth-app"></a>
 
-Sign-in (both `cmpatch login` and the dashboard) is backed by GitHub OAuth through the browser. You do not need to create the OAuth App in advance: the installer opens a pre-filled registration form at the right moment and checks the credentials with GitHub before it builds anything.
+### 1.1 OAuth sign-in
 
-> The first admin's email **must exactly match the verified primary email** on their GitHub account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+Choose GitHub, Bitbucket Cloud, or GitLab (gitlab.com or self-managed) for sign-in. The wizard opens a pre-filled registration form for GitHub, or provides the values to copy into the Bitbucket or GitLab form. You do not need to create the OAuth app in advance.
 
-Bitbucket Cloud is also supported as a sign-in provider, instead of or alongside GitHub, through the on-server install path — see [Bitbucket sign-in](docs/self-hosting-compose.md#bitbucket-sign-in) in the full guide.
+The wizard checks prompted GitHub credentials during setup. Bitbucket and GitLab credentials are checked on first sign-in. If sign-in rejects the credentials, run `cmpatch selfhost install --repair` to correct them.
+
+> The first admin's email **must exactly match the verified primary email** on their chosen sign-in account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
+
+For multiple sign-in providers or self-hosted GitLab, use the [on-server install path](docs/self-hosting-compose.md#required-oauth-sign-in).
 
 ### 1.2 CDN in front of storage (strongly recommended for production)
 
@@ -343,7 +347,7 @@ npm run cli:install-global   # builds and replaces the global `cmpatch` with thi
 CLI source. With nvm, global commands belong to the active Node version; use
 the same Node version in the terminal where you run `cmpatch`.
 
-Sign in as the admin (GitHub sign-in and approval complete in the browser):
+Sign in as the admin (sign-in and approval complete in the browser):
 
 ```bash
 cmpatch login --server-url https://updates.example.com
@@ -374,7 +378,7 @@ From your React Native project root, let the CLI do it:
 cmpatch init
 ```
 
-It connects to the server, signs you in if needed, creates or selects one app per platform — each with **`Staging`** and **`Production`** deployments — and writes `codemagic-patch.config.json` so later commands can omit `--server-url` and `--app`.
+It connects to the server, signs you in if needed, creates or selects one app per platform — each with **`Staging`** and **`Production`** deployments — writes `codemagic-patch.config.json` so later commands can omit `--server-url` and `--app`, and then wires the SDK into the app as described in Part 4 (`cmpatch wire` repeats that step on its own; `--skip-wire` links without it).
 
 To manage apps by hand instead, keep iOS and Android in **separate apps**:
 
@@ -396,13 +400,15 @@ cmpatch deployment list --app MyApp-Android --format table
 
 > **Migrating from CodePush?** The [migration guide](docs/migrate-from-codepush.md) maps `react-native-code-push` native config, JS APIs, and `code-push` CLI commands to their Codemagic Patch equivalents.
 
+`cmpatch init` (Part 3) does this part for you, and `cmpatch wire` does it for an already linked project: it installs the SDK, writes the deployment key and URLs, hooks native bundle selection, and wraps the root component, showing the plan before it changes anything and listing whatever it cannot do safely. What follows is the same setup by hand.
+
 Add the SDK:
 
 ```bash
 yarn add @codemagic/react-native-patch
 ```
 
-The SDK is configured through four native values (injected at build time):
+The SDK is configured through native values injected at build time:
 
 | App config key                  | Value                                                  |
 | ------------------------------- | ------------------------------------------------------ |
@@ -410,6 +416,7 @@ The SDK is configured through four native values (injected at build time):
 | `CodemagicPatchDownloadBaseUrl` | your **Download base** URL (ends with `/codemagic-patch`) |
 | `CodemagicPatchApiUrl`          | your **API** URL                                        |
 | `CodemagicPatchPublicKey`       | *(optional)* PEM public key for code-signing enforcement |
+| `CodemagicPatchMaxLaunchAttempts` | *(optional)* launches a pending update gets to call `notifyAppReady()` before rollback; default `3` |
 
 > The snippets below use placeholder values (`ios-staging-deployment-key`, `https://updates.example.com`, …) — substitute your own deployment keys and URLs from Parts 1 and 3.
 
@@ -434,6 +441,9 @@ Wire the config and native bundle selection manually.
   <!-- optional, only when enforcing code signing -->
   <key>CodemagicPatchPublicKey</key>
   <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+  <!-- optional, defaults to 3 -->
+  <key>CodemagicPatchMaxLaunchAttempts</key>
+  <integer>3</integer>
   ```
 - In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working. On the Swift AppDelegate (RN 0.77+ template):
   ```swift
@@ -467,6 +477,8 @@ Wire the config and native bundle selection manually.
     <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
     <!-- optional, only when enforcing code signing -->
     <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
+    <!-- optional, defaults to 3 -->
+    <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">3</string>
   </resources>
   ```
 - In `MainApplication.kt`, feed the SDK's bundle path into React Native. On RN ≤ 0.81 (`ReactNativeHost`), override `getJSBundleFile()` inside the host object:
@@ -499,6 +511,8 @@ Wire the config and native bundle selection manually.
 ### Option B — Expo (prebuild)
 
 Requires Expo SDK 52+ and a prebuild / development-build workflow — **Expo Go is not supported**.
+
+If you maintain native projects manually, follow [manual native setup](https://patch.codemagic.io/docs/setup/native-setup#option-a-bare-react-native).
 
 Add the config plugin to `app.json` / `app.config.js`:
 
@@ -544,7 +558,7 @@ The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) **a
 
 `sync()` is the one call most apps need. On each invocation it runs the whole update flow in order:
 
-1. **`notifyAppReady()`** — marks the currently running bundle as healthy. This is the SDK's **rollback protection**: if a freshly installed bundle crashes *before* `sync()` (and therefore `notifyAppReady()`) runs, the next launch automatically reverts to the last known-good bundle. Because `sync()` calls it first, simply running `sync()` on every startup confirms the previous update and arms rollback for the next one — you don't have to call it yourself.
+1. **`notifyAppReady()`** — marks the currently running bundle as healthy. This is the SDK's **rollback protection**: if a pending bundle repeatedly starts without reaching `notifyAppReady()`, the SDK rolls it back once its launch-attempt budget is exhausted. Because `sync()` calls it first, simply running `sync()` on every startup confirms the previous update and arms rollback for the next one — you don't have to call it yourself.
 2. **Check** the server for an update matching this app's deployment key + binary version.
 3. **Download** the new bundle (or a smaller binary **patch**, with automatic fallback to the full bundle).
 4. **Install** it according to the chosen *install mode* (see below).
@@ -553,24 +567,50 @@ The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) **a
 
 #### Step 1 — Minimal integration (drop-in)
 
-Call `sync()` once, as early as possible after your root component mounts. This is enough to get OTA updates working end to end.
+Wrap your root component with `Patch.wrap()`. The app renders immediately and `sync()` runs once the root has mounted. This is enough to get OTA updates working end to end.
+
+```tsx
+// App.tsx
+import * as Patch from "@codemagic/react-native-patch";
+
+function App() {
+  return <YourApp />;
+}
+
+export default Patch.wrap(App);
+```
+
+With no options, non-mandatory updates install on the **next app restart** and mandatory updates install **immediately**. Pass install options to `Patch.wrap(App, options)` as shown in Step 2.
+
+Because `sync()` starts with `notifyAppReady()`, mounting the wrapped root is what marks the running bundle as healthy. If your app must finish an asynchronous bootstrap before it can vouch for the bundle, call `sync()` yourself at that point instead of wrapping the root:
 
 ```tsx
 // App.tsx
 import { useEffect } from "react";
 import { sync } from "@codemagic/react-native-patch";
+import { bootstrapApp } from "./bootstrap"; // Your app's initialization routine.
 
 export default function App() {
   useEffect(() => {
-    // Fire-and-forget: sync() handles its own errors and resolves to a status.
-    void sync();
+    let active = true;
+
+    void bootstrapApp()
+      .then(() => {
+        if (active) return sync();
+      })
+      .catch((error) => {
+        // Use your app's startup error handling; do not confirm a failed bootstrap.
+        console.error("App bootstrap failed", error);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return <YourApp />;
 }
 ```
-
-With no options, non-mandatory updates install on the **next app restart** and mandatory updates install **immediately**. The user gets the new bundle the next time they cold-start the app.
 
 #### Step 2 — Choose how updates apply (install modes)
 
@@ -583,26 +623,23 @@ The **install mode** controls *when* a downloaded bundle becomes active. Mandato
 | `ON_NEXT_SUSPEND`   | When the app goes to the background (after `minimumBackgroundDuration`).                       |
 | `IMMEDIATE`         | Right away — the JS bundle reloads as soon as install finishes *(default for mandatory)*.      |
 
-```ts
-void sync({
-  installMode: "ON_NEXT_RESTART",   // optional updates: wait for a natural restart
-  mandatoryInstallMode: "IMMEDIATE", // forced updates: reload now
+Replace the `Patch.wrap(App)` export from Step 1 with:
+
+```tsx
+export default Patch.wrap(App, {
+  installMode: Patch.InstallMode.ON_NEXT_RESTART,
+  mandatoryInstallMode: Patch.InstallMode.IMMEDIATE,
   minimumBackgroundDuration: 60_000, // for ON_NEXT_RESUME/SUSPEND, in ms
 });
 ```
 
-> Re-running `sync()` when the app returns to the foreground catches updates published while the user had the app open. Wire it to `AppState`:
->
-> ```ts
-> import { AppState } from "react-native";
-> import { sync } from "@codemagic/react-native-patch";
->
-> AppState.addEventListener("change", (next) => {
->   if (next === "active") void sync();
-> });
-> ```
+To also check for updates when the app returns to the foreground, add `checkFrequency: Patch.CheckFrequency.ON_APP_RESUME` to these options. The default checks only on mount. `minimumBackgroundDuration` controls installation timing, not check frequency.
+
+If you use the direct `sync()` integration for asynchronous startup, pass the install options to that call instead.
 
 #### Step 3 — React to the result and show progress
+
+For progress UI, replace `Patch.wrap(App, options)` with an unwrapped `App` export and call the hook below once from your root component. Move your install options into its `sync()` call. If readiness depends on asynchronous initialization, defer that call until initialization succeeds. A second `sync()` does not observe an existing operation: it returns `"sync-in-progress"` without attaching its progress callback.
 
 `sync()` resolves to one of: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. The optional second argument is a progress callback (`{ receivedBytes, totalBytes }`) you can use to drive a UI.
 
@@ -684,12 +721,13 @@ disallowRestart();
 allowRestart();
 ```
 
-> **If you do not use `sync()`, you must call `notifyAppReady()` yourself** once the app has booted successfully. Otherwise the SDK treats the new bundle as unverified and rolls it back on the next launch.
+> **If you do not call `sync()` on every successful startup, call `notifyAppReady()` yourself** once the app has booted successfully. A button-triggered check does not replace startup confirmation. Repeated launches without confirmation eventually exhaust the pending bundle's launch-attempt budget and trigger rollback.
 
 #### API summary
 
 | Function | Purpose |
 | --- | --- |
+| `wrap(Root, options?)` | Renders the root immediately and calls `sync()` after mount. Mount confirms app readiness; use direct APIs if readiness depends on asynchronous initialization. |
 | `sync(options?, onProgress?)` | End-to-end: confirm → check → download → install. Returns a `SyncStatus`; never throws. |
 | `checkForUpdate()` | Returns `{ action: "up-to-date" \| "ota-update" \| "embedded-revert", remotePackage? }`. |
 | `downloadUpdate(remotePackage, onProgress?)` | Downloads (patch or full bundle) and returns a `LocalPackage`. |
@@ -815,7 +853,7 @@ cmpatch deployment metrics --app MyApp-iOS --deployment Production --format tabl
 cmpatch release metrics    --app MyApp-iOS --deployment Production --label v4 --format table
 ```
 
-The client posts `Downloaded` / `Installed` / `Success` / `Failed` / `Active` events to `<apiUrl>/v1/metrics/events`. Metrics failures never block the update flow — the SDK queues and retries them natively.
+The client posts `Downloaded` / `Ready` / `Applied` / `Failed` / `Active` events to `<apiUrl>/v1/metrics/events`. Metrics failures never block the update flow — the SDK queues and retries them natively.
 
 ---
 
@@ -928,7 +966,7 @@ scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:
 
 **First admin sign-in rejected**
 
-- `INITIAL_ADMIN_EMAILS` matches the GitHub account's **verified primary** email.
+- `INITIAL_ADMIN_EMAILS` matches the chosen sign-in account's **verified primary** email.
 - The OAuth App callback URL is `https://<api-domain>/auth/callback`.
 
 **Caddy certificate issuance is slow**
@@ -982,6 +1020,8 @@ The SDK reads these objects under your **Download base** URL:
 
 **Required**
 
+Configure credentials for at least one OAuth provider; you do not need all three.
+
 | Variable                          | Description                                                              |
 | --------------------------------- | ------------------------------------------------------------------------ |
 | `CODEMAGIC_PATCH_API_DOMAIN`      | API/dashboard domain (no scheme/path)                                    |
@@ -995,12 +1035,13 @@ The SDK reads these objects under your **Download base** URL:
 | `S3_BUCKET`                       | External S3 bucket (`SELFHOST_STORAGE_MODE=s3` only; optional alongside it: `S3_REGION`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE`, `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`) |
 | `GCS_PUBLIC_BUCKET` / `GCS_INTERNAL_BUCKET` | External GCS buckets (`SELFHOST_STORAGE_MODE=gcs` only; must differ) |
 | `WORKER_SHARED_SECRET`            | Protects worker routes (**≥ 32 chars**)                                  |
-| `GITHUB_OAUTH_CLIENT_ID`          | GitHub OAuth App client ID                                               |
-| `GITHUB_OAUTH_CLIENT_SECRET`      | GitHub OAuth App client secret                                           |
-| `OAUTH_DEVICE_POLL_TOKEN_SECRET`  | Local random secret (**≥ 32 chars**)                                     |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth App credentials |
+| `BITBUCKET_OAUTH_CLIENT_ID` / `BITBUCKET_OAUTH_CLIENT_SECRET` | Bitbucket Cloud OAuth consumer credentials |
+| `GITLAB_OAUTH_CLIENT_ID` / `GITLAB_OAUTH_CLIENT_SECRET` | GitLab application credentials |
+| `OAUTH_CLI_AUTH_SECRET` | Local random secret (**≥ 32 chars**); legacy `OAUTH_DEVICE_POLL_TOKEN_SECRET` is also accepted |
 | `INITIAL_ADMIN_EMAILS`            | Allowlist for the first invite-only admin sign-in                        |
 
-> The server **refuses to boot** while `WORKER_SHARED_SECRET` or `OAUTH_DEVICE_POLL_TOKEN_SECRET` are shorter than 32 chars, or if GitHub OAuth is unset — so a verbatim copy of the example file fails fast instead of running with known secrets.
+> The server **refuses to boot** while `WORKER_SHARED_SECRET` or the CLI OAuth signing secret are shorter than 32 chars, or if no OAuth provider is configured — so a verbatim copy of the example file fails fast instead of running with known secrets.
 
 **Common optional**
 

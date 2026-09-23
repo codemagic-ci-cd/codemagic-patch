@@ -6,10 +6,20 @@
 import { PRODUCT_NAME } from "../../branding";
 import {
   buildTokenTemplateUrl,
+  CacheRuleConflict,
   classifyProxiedResponse,
+  createCacheRule,
   findZoneId,
+  ORIGIN_CACHE_RULE,
+  readZoneSslMode,
 } from "../../providers/cloudflare";
 import { DISTRIBUTION_PROBE_PATH } from "../../providers/cloudfront";
+import {
+  DnsPreparationError,
+  enableCloudflareProxy,
+  lookupCloudflareZoneId,
+} from "../../providers/dns";
+import { ProviderHttpError } from "../../providers/providerError";
 import {
   detectDnsProvider,
   findZoneApex,
@@ -20,14 +30,19 @@ import {
 import { type DeliverySelection } from "../../selfhostInstall";
 import {
   renderCacheRule,
+  renderCacheRuleAdded,
   renderCacheRuleNextSteps,
   renderCacheRuleSteps,
   renderCloudflareRemaining,
   renderCloudflareTokenIntro,
+  renderFullSslAdvice,
   renderProxiedCheckProblem,
   renderProxySwitch,
   renderProxySwitchWaitDetail,
   renderProxySwitchWaitStep,
+  renderProxyUnconfirmedLeadIn,
+  renderSslBlockedLeadIn,
+  renderSslBlocksProxy,
   renderZoneLookupProblem,
 } from "../../selfhostSetupCopy";
 import {
@@ -137,6 +152,14 @@ export async function collectCloudflare(
  */
 const PROXY_CHECK_PATH = DISTRIBUTION_PROBE_PATH;
 
+type FinishInput = {
+  interactive: boolean;
+  phase: FinishPhase;
+  storageDomain: string;
+};
+
+const NOT_THROUGH_CLOUDFLARE_YET = "Downloads are not going through Cloudflare yet:";
+
 /**
  * Returns whatever is left for the user to do, for the closing summary.
  *
@@ -144,29 +167,306 @@ const PROXY_CHECK_PATH = DISTRIBUTION_PROBE_PATH;
  * this point, and downloads work from it directly. What this step buys is
  * knowing whether the CDN is *actually* in front of them — without it the
  * install would report a working CDN while Cloudflare serves nothing.
+ *
+ * When this run wrote the storage record through the Cloudflare API, the same
+ * setup token finishes the job — cache rule, SSL/TLS check, proxy switch —
+ * and any step it cannot do falls back to the printed walkthrough for that
+ * step alone. Otherwise the walkthrough is the whole step.
  */
 export async function finishCloudflare(
   deps: CommandDeps,
   session: SelfhostSession,
   parsed: ParsedArgs,
-  input: {
-    interactive: boolean;
-    phase: FinishPhase;
-    storageDomain: string;
-  },
+  input: FinishInput,
+): Promise<string[]> {
+  const apiToken =
+    (await session.dnsSetup?.cloudflareSetupToken(input.storageDomain)) ?? null;
+  return apiToken === null
+    ? finishCloudflareByHand(deps, session, parsed, input, { cacheRuleDone: false })
+    : finishCloudflareForYou(deps, session, parsed, input, apiToken);
+}
+
+async function finishCloudflareByHand(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  parsed: ParsedArgs,
+  input: FinishInput,
+  state: { cacheRuleDone: boolean },
 ): Promise<string[]> {
   const storageDomain = input.storageDomain;
   if (!input.interactive) {
-    return renderCloudflareRemaining(
-      storageDomain,
-      "Downloads are not going through Cloudflare yet:",
-    );
+    return renderCloudflareRemaining(storageDomain, NOT_THROUGH_CLOUDFLARE_YET, {
+      cacheRule: !state.cacheRuleDone,
+    });
   }
 
   session.progress.settle();
   notice(deps, renderProxySwitch(storageDomain));
+  return confirmProxyByHand(deps, session, parsed, input, {
+    attempted: false,
+    cacheRuleDone: state.cacheRuleDone,
+    declined: renderCloudflareRemaining(storageDomain, NOT_THROUGH_CLOUDFLARE_YET, {
+      cacheRule: !state.cacheRuleDone,
+    }),
+  });
+}
 
-  let attempted = false;
+/**
+ * The switch, the proof and the rule, done with the setup token. Each step
+ * that cannot be done here — a permission the token lacks, a rule or record
+ * that is not this run's to change, an SSL/TLS mode that would loop — is
+ * handed to the walkthrough for that step, so a partial success still ends
+ * with exactly what is left.
+ */
+async function finishCloudflareForYou(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  parsed: ParsedArgs,
+  input: FinishInput,
+  apiToken: string,
+): Promise<string[]> {
+  const storageDomain = input.storageDomain;
+  const api = { apiToken, fetch: deps.fetch };
+  session.progress.settle();
+
+  const zone = await findZoneApex(storageDomain, deps.dnsClient);
+  let zoneId: string;
+  try {
+    if (zone === null) {
+      throw new DnsPreparationError(`Could not find the zone for ${storageDomain}.`);
+    }
+    session.progress.write(`checking ${zone} on Cloudflare`);
+    zoneId = await lookupCloudflareZoneId({ ...api, zone });
+  } catch (error) {
+    session.progress.settle();
+    notice(deps, [cloudflareProblem(error), "The Cloudflare steps are yours to finish:"]);
+    return finishCloudflareByHand(deps, session, parsed, input, { cacheRuleDone: false });
+  }
+
+  const cacheRuleDone = await addCacheRule(deps, session, {
+    ...api,
+    shouldStop: input.phase.stopped,
+    storageDomain,
+    zoneId,
+  });
+  // A Ctrl+C anywhere above ends the automation here: what was not submitted
+  // is listed for the user rather than done after they asked to stop.
+  if (input.phase.stopped()) {
+    return renderCloudflareRemaining(storageDomain, NOT_THROUGH_CLOUDFLARE_YET, {
+      cacheRule: !cacheRuleDone,
+    });
+  }
+  const ssl = await settleSslMode(deps, session, { ...api, zone, zoneId }, input);
+  const advice = ssl.kind === "ready" && ssl.full && !input.interactive
+    ? [renderFullSslAdvice(zone), ""]
+    : [];
+
+  if (ssl.kind === "blocked") {
+    return renderCloudflareRemaining(storageDomain, renderSslBlockedLeadIn(zone, ssl.mode), {
+      cacheRule: !cacheRuleDone,
+    });
+  }
+
+  const address =
+    session.facts.install?.publicIp ?? publicIpFromTarget(session);
+  if (ssl.kind === "unknown" || address === null) {
+    return finishCloudflareByHand(deps, session, parsed, input, { cacheRuleDone });
+  }
+
+  const switched = await switchProxyOn(deps, session, parsed, input, {
+    ...api,
+    record: { type: "A", hostname: storageDomain, value: address },
+    shouldStop: input.phase.stopped,
+    zone,
+  });
+  if (switched === "declined") {
+    return renderCloudflareRemaining(storageDomain, NOT_THROUGH_CLOUDFLARE_YET, {
+      cacheRule: !cacheRuleDone,
+    });
+  }
+  if (switched === "failed") {
+    return finishCloudflareByHand(deps, session, parsed, input, { cacheRuleDone });
+  }
+
+  const check = await checkProxiedDomain(deps, session, storageDomain);
+  session.progress.settle();
+  if (check.kind === "served") {
+    notice(deps, `Downloads now go through Cloudflare (${check.rayId}).`);
+    return [
+      ...advice,
+      ...(cacheRuleDone
+        ? renderCacheRuleNextSteps()
+        : await cacheRuleByHand(deps, parsed, storageDomain, input)),
+    ];
+  }
+
+  notice(deps, renderProxiedCheckProblem(storageDomain, check));
+  const unconfirmed = [
+    ...advice,
+    ...renderCloudflareRemaining(storageDomain, renderProxyUnconfirmedLeadIn(storageDomain), {
+      cacheRule: !cacheRuleDone,
+    }),
+  ];
+  return input.interactive
+    ? confirmProxyByHand(deps, session, parsed, input, {
+        attempted: true,
+        cacheRuleDone,
+        declined: unconfirmed,
+      })
+    : unconfirmed;
+}
+
+/** Whether the rule is in place, added now or found already there. */
+async function addCacheRule(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  input: {
+    apiToken: string;
+    fetch: typeof fetch;
+    shouldStop: () => boolean;
+    storageDomain: string;
+    zoneId: string;
+  },
+): Promise<boolean> {
+  session.progress.write(`adding the Cloudflare cache rule for ${input.storageDomain}`);
+  try {
+    const result = await createCacheRule({
+      ...input,
+      domain: input.storageDomain,
+      profile: ORIGIN_CACHE_RULE,
+    });
+    session.progress.settle();
+    if (result === "stopped") return false;
+    notice(deps, renderCacheRuleAdded(input.storageDomain, result === "written"));
+    return true;
+  } catch (error) {
+    session.progress.settle();
+    notice(deps, [cloudflareProblem(error), "The cache rule is left for you to add."]);
+    return false;
+  }
+}
+
+type SslSettlement =
+  | { kind: "ready"; full: boolean }
+  /** Flexible or off: turning the proxy on would loop or go unencrypted. */
+  | { kind: "blocked"; mode: string }
+  /** Could not be read — the user checks it as part of the walkthrough. */
+  | { kind: "unknown" };
+
+/**
+ * Reads the zone's SSL/TLS mode, and on an interactive run waits while a
+ * mode that would break the proxy is changed. `full` is accepted — the
+ * server's certificate is a real one, so it works — with a nudge to strict.
+ */
+async function settleSslMode(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  input: { apiToken: string; fetch: typeof fetch; zone: string; zoneId: string },
+  finish: FinishInput,
+): Promise<SslSettlement> {
+  for (;;) {
+    let mode: string;
+    session.progress.write(`checking SSL/TLS for ${input.zone}`);
+    try {
+      mode = await readZoneSslMode(input);
+    } catch (error) {
+      session.progress.settle();
+      notice(deps, cloudflareProblem(error));
+      return { kind: "unknown" };
+    }
+    session.progress.settle();
+
+    if (mode === "strict") return { kind: "ready", full: false };
+    if (mode === "full") {
+      if (finish.interactive) notice(deps, renderFullSslAdvice(input.zone));
+      return { kind: "ready", full: true };
+    }
+    if (!finish.interactive) return { kind: "blocked", mode };
+
+    notice(deps, renderSslBlocksProxy(input.zone, mode));
+    const changed = await confirmFinishStep(
+      deps,
+      {
+        active: "Yes, check again",
+        inactive: "No, skip it for now",
+        initial: true,
+        message: "Changed it?",
+      },
+      finish.phase,
+    );
+    if (!changed) return { kind: "blocked", mode };
+  }
+}
+
+/**
+ * Flips the storage record to proxied. Asked on an interactive run, since it
+ * changes a live record; a scripted run got here only through an explicit
+ * `--dns-setup cloudflare`, which is the go-ahead.
+ */
+async function switchProxyOn(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  parsed: ParsedArgs,
+  input: FinishInput,
+  request: Parameters<typeof enableCloudflareProxy>[0],
+): Promise<"switched" | "declined" | "failed"> {
+  const hostname = request.record.hostname;
+  const go =
+    !input.phase.stopped() &&
+    (!input.interactive ||
+      readBooleanFlag(parsed, "--yes") ||
+      (await confirmFinishStep(
+        deps,
+        {
+          initial: true,
+          message: `Turn on the Cloudflare proxy (orange cloud) for ${hostname} now?`,
+        },
+        input.phase,
+      )));
+  if (!go) return "declined";
+
+  session.progress.write(`turning on the Cloudflare proxy for ${hostname}`);
+  try {
+    const result = await enableCloudflareProxy(request);
+    session.progress.settle();
+    if (result === "stopped") return "declined";
+    notice(
+      deps,
+      result === "enabled"
+        ? `Turned on the Cloudflare proxy for ${hostname}.`
+        : `${hostname} is already proxied by Cloudflare.`,
+    );
+    return "switched";
+  } catch (error) {
+    session.progress.settle();
+    notice(deps, cloudflareProblem(error));
+    return "failed";
+  }
+}
+
+/**
+ * Only messages this code wrote itself are shown: a provider error names the
+ * call and status, never the request, and anything else — a network failure
+ * whose text is not ours — is reduced to a generic line.
+ */
+function cloudflareProblem(error: unknown): string {
+  return error instanceof DnsPreparationError ||
+    error instanceof ProviderHttpError ||
+    error instanceof CacheRuleConflict
+    ? error.message
+    : "Cloudflare could not be reached.";
+}
+
+/** The "check it now / fixed it?" loop, entered with or without a first try. */
+async function confirmProxyByHand(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  parsed: ParsedArgs,
+  input: FinishInput,
+  state: { attempted: boolean; cacheRuleDone: boolean; declined: string[] },
+): Promise<string[]> {
+  const storageDomain = input.storageDomain;
+  let attempted = state.attempted;
   for (;;) {
     const ready = await confirmFinishStep(
       deps,
@@ -187,10 +487,7 @@ export async function finishCloudflare(
     );
     attempted = true;
     if (!ready) {
-      return renderCloudflareRemaining(
-        storageDomain,
-        "Downloads are not going through Cloudflare yet:",
-      );
+      return state.declined;
     }
 
     const check = await checkProxiedDomain(deps, session, storageDomain);
@@ -198,7 +495,9 @@ export async function finishCloudflare(
     session.progress.settle();
     if (check.kind === "served") {
       notice(deps, `Downloads now go through Cloudflare (${check.rayId}).`);
-      return askCacheRule(deps, parsed, storageDomain, input.phase);
+      return state.cacheRuleDone
+        ? renderCacheRuleNextSteps()
+        : askCacheRule(deps, parsed, storageDomain, input.phase);
     }
 
     notice(deps, renderProxiedCheckProblem(storageDomain, check));
@@ -340,6 +639,21 @@ async function askCacheRule(
 
   return done
     ? renderCacheRuleNextSteps()
+    : [
+        "Still to do, or releases will keep serving from a cache that never fills:",
+        ...renderCacheRuleSteps(storageDomain),
+      ];
+}
+
+/** The printed rule after the token could not add it; asked only when a person is there. */
+async function cacheRuleByHand(
+  deps: CommandDeps,
+  parsed: ParsedArgs,
+  storageDomain: string,
+  input: FinishInput,
+): Promise<string[]> {
+  return input.interactive
+    ? askCacheRule(deps, parsed, storageDomain, input.phase)
     : [
         "Still to do, or releases will keep serving from a cache that never fills:",
         ...renderCacheRuleSteps(storageDomain),

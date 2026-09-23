@@ -577,3 +577,31 @@ The payload is best-effort observability and must never cost the server a
 - Rollout stickiness uses `md5(installation_id + "-" + release_label) % 100 < rollout_percentage`. The `% 100` operand is computed by a fixed digest→integer reduction that every implementation must match: take the lowercase hex MD5 digest, read its first 8 hex characters (the first 4 digest bytes, big-endian) as an unsigned 32-bit integer, then apply `% 100` to obtain a bucket in `[0, 99]`. A device is eligible when its bucket is `< rollout_percentage`. A naive reading that takes the full 128-bit digest modulo 100 produces a different bucket and must not be used.
 - The client does not perform a second rollout evaluation on `previous_package_info` in MVP.
 - `meta.json` is fire-and-forget and must not block or retry-gate the manifest path.
+
+## Metric Lifecycle Names
+
+New SDK emission and ingestion use `Downloaded`, `Ready`, `Applied`, `Failed`,
+and `Active`. `Downloaded` is unchanged. `Ready` means the artifact is unpacked
+and SDK state is prepared for the next session according to the activation
+policy. `Applied` means the new update runs successfully, confirmed by
+`notifyAppReady()`; it remains once per device and package.
+
+Historical `Installed` and `Success` rows are read only as
+compatibility aliases for `Ready` and `Applied`. Do not rename or backfill stored
+events. Existing failure supersession still applies: either historical `Success`
+or new `Applied` prevents late failures from counting against an already
+confirmed device/package.
+
+SDK releases before the rename (`@codemagic/react-native-patch` 0.4.x and
+earlier) still emit `Installed` and `Success`. Ingestion accepts those two names
+transitionally and stores them as `Ready` and `Applied`, with the same
+`delivery_type` and supersession rules, so upgrading the server does not drop
+metrics from apps already in the field. 
+
+Metrics response keys `installed` and `success` remain stable for existing API
+consumers; they count Ready and Applied respectively, including historical
+aliases. Display labels use Ready and Applied. The application success rate
+remains `success / (success + failed)`, not Applied divided by Ready.
+The SDK retains `success_reported_at` on disk (and `successReportedAt` in its
+metadata model) so SDK upgrades preserve the once-per-package reporting marker.
+

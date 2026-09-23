@@ -38,6 +38,65 @@ SELFHOST_ENV_FILE="${SELFHOST_ENV_FILE:-${SELFHOST_REPO_ROOT}/.env.selfhost}"
 SELFHOST_PROJECT_NAME="${SELFHOST_PROJECT_NAME:-codemagic-patch-selfhost}"
 SELFHOST_DEFAULT_TIMEOUT_SECONDS="${SELFHOST_TIMEOUT_SECONDS:-300}"
 
+# OAuth sign-in providers, in the order the scripts validate and write them.
+# Every provider <P> has <P>_OAUTH_CLIENT_ID, <P>_OAUTH_CLIENT_SECRET and the
+# derived <P>_OAUTH_ALLOWED_REDIRECT_URIS; the rest is per-provider data:
+#   SELFHOST_OAUTH_<P>_NAME            display name in messages
+#   SELFHOST_OAUTH_<P>_SECRET_NOUN     what the provider calls the secret
+#                                      ("consumer secret", "application secret")
+#   SELFHOST_OAUTH_<P>_SCOPES_DEFAULT  default for <P>_OAUTH_SCOPES; empty
+#                                      means the provider has no scopes key
+#   SELFHOST_OAUTH_<P>_OPTIONAL_KEYS   env keys written only when given
+# An install flag is its env key lowercased with '-' for '_'
+# (GITLAB_API_BASE_URL -> --gitlab-api-base-url); see selfhost_oauth_flag.
+# GitHub keeps two behaviours of its own in install.sh and
+# ensure_selfhost_oauth_env: it is the provider the installer prompts for,
+# and a GitHub id without a secret is a real legacy env-file shape.
+SELFHOST_OAUTH_PROVIDERS="GITHUB BITBUCKET GITLAB"
+# shellcheck disable=SC2034  # read by name (${!var}) from the loops over SELFHOST_OAUTH_PROVIDERS
+{
+  SELFHOST_OAUTH_GITHUB_NAME="GitHub"
+  SELFHOST_OAUTH_GITHUB_SECRET_NOUN="client"
+  SELFHOST_OAUTH_GITHUB_SCOPES_DEFAULT="read:user user:email"
+  SELFHOST_OAUTH_GITHUB_OPTIONAL_KEYS=""
+
+  SELFHOST_OAUTH_BITBUCKET_NAME="Bitbucket"
+  SELFHOST_OAUTH_BITBUCKET_SECRET_NOUN="consumer"
+  SELFHOST_OAUTH_BITBUCKET_SCOPES_DEFAULT=""
+  SELFHOST_OAUTH_BITBUCKET_OPTIONAL_KEYS=""
+
+  SELFHOST_OAUTH_GITLAB_NAME="GitLab"
+  SELFHOST_OAUTH_GITLAB_SECRET_NOUN="application"
+  SELFHOST_OAUTH_GITLAB_SCOPES_DEFAULT="read_user"
+  SELFHOST_OAUTH_GITLAB_OPTIONAL_KEYS="GITLAB_OAUTH_BASE_URL GITLAB_API_BASE_URL"
+}
+
+# The env keys (and flags) one provider accepts, in .env.selfhost order. The
+# redirect allowlist is derived from the API domain, never given, so it is
+# not listed.
+selfhost_oauth_provider_keys() {
+  local provider="$1"
+  local optional_var="SELFHOST_OAUTH_${provider}_OPTIONAL_KEYS"
+  local scopes_default_var="SELFHOST_OAUTH_${provider}_SCOPES_DEFAULT"
+  printf '%s_OAUTH_CLIENT_ID %s_OAUTH_CLIENT_SECRET' "$provider" "$provider"
+  [ -z "${!optional_var}" ] || printf ' %s' "${!optional_var}"
+  [ -z "${!scopes_default_var}" ] || printf ' %s_OAUTH_SCOPES' "$provider"
+  printf '\n'
+}
+
+# The env keys of every provider.
+selfhost_oauth_keys() {
+  local provider
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    selfhost_oauth_provider_keys "$provider"
+  done
+}
+
+# The install.sh flag for an OAuth env key.
+selfhost_oauth_flag() {
+  printf -- '--%s' "$(printf '%s' "$1" | tr '[:upper:]_' '[:lower:]-')"
+}
+
 log_selfhost() {
   printf '[selfhost] %s\n' "$*"
 }
@@ -524,8 +583,13 @@ ensure_selfhost_oauth_env() {
   local env_changed=0
 
   # The server refuses to boot in MODE=all/api unless at least one OAuth
-  # provider (GitHub, Bitbucket, or GitLab) is configured.
-  if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITLAB_OAUTH_CLIENT_ID:-}" ]; then
+  # provider is configured.
+  local provider id_var secret_var noun_var configured=0
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    id_var="${provider}_OAUTH_CLIENT_ID"
+    [ -z "${!id_var:-}" ] || configured=1
+  done
+  if [ "$configured" -eq 0 ]; then
     fail_selfhost "Neither GITHUB_OAUTH_CLIENT_ID, BITBUCKET_OAUTH_CLIENT_ID, nor GITLAB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE}. At least one OAuth sign-in provider is required. Create a GitHub OAuth App, a Bitbucket OAuth consumer, or a GitLab application and add its client id and secret to the env file, then rerun. Existing API tokens keep working."
   fi
 
@@ -534,16 +598,19 @@ ensure_selfhost_oauth_env() {
   # destructive steps (upgrade.sh recreates the stack, restore.sh wipes the
   # data volumes), so a half-configured provider must fail here, not at boot.
   # A GitHub id without a secret is a real legacy shape: the retired device
-  # flow needed no secret, so old env files and backups can carry it.
-  if [ -n "${GITHUB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITHUB_OAUTH_CLIENT_SECRET:-}" ]; then
-    fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL $(selfhost_scheme_from_env_file)://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun."
-  fi
-  if [ -n "${BITBUCKET_OAUTH_CLIENT_ID:-}" ] && [ -z "${BITBUCKET_OAUTH_CLIENT_SECRET:-}" ]; then
-    fail_selfhost "BITBUCKET_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but BITBUCKET_OAUTH_CLIENT_SECRET is missing. Add the consumer secret (or remove the client id), then rerun."
-  fi
-  if [ -n "${GITLAB_OAUTH_CLIENT_ID:-}" ] && [ -z "${GITLAB_OAUTH_CLIENT_SECRET:-}" ]; then
-    fail_selfhost "GITLAB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITLAB_OAUTH_CLIENT_SECRET is missing. Add the application secret (or remove the client id), then rerun."
-  fi
+  # flow needed no secret, so old env files and backups can carry it, and its
+  # message walks the operator through adding one.
+  for provider in $SELFHOST_OAUTH_PROVIDERS; do
+    id_var="${provider}_OAUTH_CLIENT_ID"
+    secret_var="${provider}_OAUTH_CLIENT_SECRET"
+    noun_var="SELFHOST_OAUTH_${provider}_SECRET_NOUN"
+    if [ -n "${!id_var:-}" ] && [ -z "${!secret_var:-}" ]; then
+      case "$provider" in
+        GITHUB) fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL $(selfhost_scheme_from_env_file)://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun." ;;
+        *) fail_selfhost "${id_var} is set in ${SELFHOST_ENV_FILE} but ${secret_var} is missing. Add the ${!noun_var} secret (or remove the client id), then rerun." ;;
+      esac
+    fi
+  done
 
   # OAUTH_CLI_AUTH_SECRET signs the CLI browser-login authorization codes.
   # Older env files carry it under the legacy name

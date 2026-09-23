@@ -46,11 +46,29 @@ export type EmbeddedRevertUpdate = Extract<
 
 export type InstallTarget = LocalPackage | EmbeddedRevertUpdate;
 
-export type InstallMode =
-  | "IMMEDIATE"
-  | "ON_NEXT_RESTART"
-  | "ON_NEXT_RESUME"
-  | "ON_NEXT_SUSPEND";
+export const InstallMode = {
+  IMMEDIATE: "IMMEDIATE",
+  ON_NEXT_RESTART: "ON_NEXT_RESTART",
+  ON_NEXT_RESUME: "ON_NEXT_RESUME",
+  ON_NEXT_SUSPEND: "ON_NEXT_SUSPEND",
+} as const;
+
+// eslint-disable-next-line no-redeclare -- TypeScript allows a value and type to share a public name.
+export type InstallMode = (typeof InstallMode)[keyof typeof InstallMode];
+
+export const CheckFrequency = {
+  ON_APP_START: "ON_APP_START",
+  ON_APP_RESUME: "ON_APP_RESUME",
+} as const;
+
+// eslint-disable-next-line no-redeclare -- TypeScript allows a value and type to share a public name.
+export type CheckFrequency =
+  (typeof CheckFrequency)[keyof typeof CheckFrequency];
+
+export interface WrapOptions extends SyncOptions {
+  /** Check after mount, and optionally on foreground return. Defaults to ON_APP_START. */
+  checkFrequency?: CheckFrequency;
+}
 
 export interface SyncOptions {
   installMode?: InstallMode;
@@ -185,8 +203,8 @@ export interface MetaResponse {
 
 export type MetricsEventName =
   | "Downloaded"
-  | "Installed"
-  | "Success"
+  | "Ready"
+  | "Applied"
   | "Failed"
   | "Active";
 
@@ -208,8 +226,10 @@ export interface EventEnvelope {
 // Internal runtime types (not part of public API)
 // ---------------------------------------------------------------------------
 
-export interface RuntimeRemotePackage
-  extends Omit<RemotePackage, "previouslyFailed"> {
+export interface RuntimeRemotePackage extends Omit<
+  RemotePackage,
+  "previouslyFailed"
+> {
   signature: string | null;
 }
 
@@ -312,6 +332,11 @@ export interface RuntimeState {
   lastUpdateCheckResult: UpdateCheckResult | null;
   hydrated: boolean;
   hydrationPromise: Promise<void> | null;
+  /**
+   * In-flight `notifyAppReady()` run. Concurrent callers (direct and via
+   * `sync()`) await this same promise so Applied / Active are emitted once.
+   */
+  appReadyPromise: Promise<void> | null;
   publicKeyConfigured: boolean;
   syncInProgress: boolean;
   downloadInProgress: boolean;

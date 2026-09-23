@@ -113,3 +113,49 @@ export function timeseriesSeriesLabel(entry: TimeseriesSeriesEntry): string {
 
   return "No patch (binary)";
 }
+
+/** Event counts in range, summed from the deployment-wide totals series. */
+export function sumTimeseriesTotals(totals: readonly TimeseriesPoint[]): {
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+} {
+  let downloaded = 0;
+  let failed = 0;
+  let installed = 0;
+  let success = 0;
+  for (const point of totals) {
+    downloaded += point.downloaded;
+    failed += point.failed;
+    installed += point.installed;
+    success += point.success;
+  }
+  return { downloaded, failed, installed, success };
+}
+
+/**
+ * Running Applied total for one package hash across the timeseries window.
+ * Starts at 0 on `from`; events before the window are not in the payload.
+ * Null when that hash is not in the returned series (including when the
+ * volume ranking truncated it out).
+ */
+export function cumulativeAppliedCountsForHash(
+  timeseries: DeploymentTimeseries,
+  targetPackageHash: string,
+): number[] | null {
+  const entry = timeseries.series.find(
+    (series) => series.targetPackageHash === targetPackageHash,
+  );
+  if (entry === undefined) {
+    return null;
+  }
+  let running = 0;
+  return zeroFillPoints(
+    dayBucketStarts(timeseries.from, timeseries.to),
+    entry.points,
+  ).map((point) => {
+    running += point.success;
+    return running;
+  });
+}

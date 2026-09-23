@@ -370,7 +370,7 @@ class CodemagicPatchModule: NSObject {
 
   private func applyMetricMetadataSideEffect(_ event: [String: Any]) throws {
     guard let eventName = event["event_name"] as? String,
-          eventName == "Active" || eventName == "Success",
+          eventName == "Active" || eventName == "Applied",
           let packageHash = event["target_package_hash"] as? String,
           CodemagicPatchStorage.isSafePackageHash(packageHash),
           var metadata = storage.readJson("packages/\(packageHash)/update.json") else {

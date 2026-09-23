@@ -77,7 +77,7 @@ export async function authenticatedRequest(
     // 401 means the token was revoked or expired — clear it and ask to re-login.
     if (authSource.credential.kind === "token") {
       await removeStoredCredential(options.serverUrl, { env: deps.env });
-      throw new ValidationError(
+      throw new StoredAuthenticationError(
         `Stored ${PRODUCT_NAME} token was rejected. Run \`cmpatch login --server-url ${options.serverUrl} --token <token>\` to sign in again.`,
       );
     }
@@ -95,7 +95,7 @@ export async function authenticatedRequest(
       }
 
       await removeStoredCredential(options.serverUrl, { env: deps.env });
-      throw new ValidationError(
+      throw new StoredAuthenticationError(
         `Stored ${PRODUCT_NAME} session expired or was revoked. Run \`cmpatch login --server-url ${options.serverUrl}\` to sign in again.`,
       );
     }
@@ -272,4 +272,12 @@ function getProblemTypeSuffix(type: unknown): string | undefined {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+/** A rejected saved login remains an authentication failure after its HTTP error is explained. */
+export class StoredAuthenticationError extends ValidationError {}
+
+export function isAuthenticationFailure(error: unknown): boolean {
+  return error instanceof StoredAuthenticationError ||
+    (error instanceof HttpProblemError && (error.responseStatus === 401 || error.responseStatus === 403));
 }

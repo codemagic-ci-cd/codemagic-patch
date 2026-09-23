@@ -1,5 +1,6 @@
-// Team-scoped sidebar: brand, main nav (Apps, Metrics), and a foot section
-// (Profile, Status, Members for `iam.manage`, GitHub repo link) above Collapse.
+// Team-scoped sidebar: brand, the team's apps (with deployments nested under
+// the app currently in view), and a foot section (Profile, Status, Members
+// for `iam.manage`, GitHub repo link) above Collapse.
 // against the route map — the DOM/class structure is ported, its hardcoded
 // `.html` hrefs and global `DB` are not. Members is HIDDEN, not disabled,
 // when the resolved role lacks `iam.manage` (useTeamRole — inferred developer
@@ -16,13 +17,18 @@
 // owned by AppShell (the wrapper's `data-collapsed` drives the
 // group-data-collapsed/app: variants here); the button reports the toggle.
 
-import { Link, NavLink, useLocation } from "react-router";
+import { Link, NavLink, useLocation, useParams } from "react-router";
 import type { ReactElement, ReactNode } from "react";
 
-import { PRODUCT_NAME, SOURCE_REPO_URL } from "../../branding";
-import { PatchBrand } from "../brand/PatchBrand";
+import { useApps } from "../../api/hooks/apps";
+import { useDeployments } from "../../api/hooks/deployments";
 import { useServerStatusAvailability } from "../../api/hooks/serverStatus";
+import { PRODUCT_NAME, SOURCE_REPO_URL } from "../../branding";
 import { useTeamRole } from "../../rbac/useTeamRole";
+import { paletteShortcutLabel } from "../palette/commands";
+import { PatchBrand } from "../brand/PatchBrand";
+import { KBD } from "../ui/kbd";
+import { Skeleton } from "../ui/Skeleton";
 
 // nav-item is split base + state under the no-merge contract: the idle/active
 // skins swap wholesale (background, color, and the svg opacity/tint), so each
@@ -34,10 +40,15 @@ import { useTeamRole } from "../../rbac/useTeamRole";
 // <span>s — collapsed hides them (legacy `.app.collapsed .nav-item span`); no
 // .badge is rendered here so its legacy margin/hide rules drop with the rule.
 const NAV_ITEM =
-  "nav-active-bar relative flex items-center gap-3 whitespace-nowrap rounded-[10px] px-[9px] py-[9px] text-[15px] font-medium [transition:.15s] [&_svg]:size-[18px] [&_svg]:flex-none group-data-collapsed/app:justify-center group-data-collapsed/app:p-2.5 group-data-collapsed/app:[&_span]:hidden";
+  "nav-active-bar relative flex items-center gap-3 whitespace-nowrap rounded-[10px] py-[9px] pl-3 pr-[9px] text-[15px] font-medium [transition:.15s] [&_svg]:size-[18px] [&_svg]:flex-none group-data-collapsed/app:justify-center group-data-collapsed/app:p-2.5 group-data-collapsed/app:[&_span]:hidden";
 
 const NAV_ITEM_IDLE =
   "text-sb-text hover:bg-surface-2 hover:text-fg [&_svg]:opacity-100";
+
+// The palette opens a dialog rather than navigating, so it reads as a search
+// field instead of a nav item; collapsed drops the label and the keycap.
+const SEARCH_TRIGGER =
+  "flex w-full items-center gap-3 whitespace-nowrap rounded-md border border-sb-border bg-surface-2 px-[9px] py-[9px] text-[15px] font-medium text-sb-text [transition:.15s] hover:border-border-strong hover:bg-surface-3 hover:text-fg [&_svg]:size-[18px] [&_svg]:flex-none group-data-collapsed/app:justify-center group-data-collapsed/app:p-2.5 group-data-collapsed/app:[&_span]:hidden group-data-collapsed/app:[&_kbd]:hidden";
 
 const NAV_ITEM_ACTIVE =
   "is-active bg-nav-active text-white shadow-xs [&_svg]:text-white [&_svg]:opacity-100";
@@ -47,13 +58,15 @@ export interface SidebarProps {
   teamId: string | null;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** Opens the ⌘K command palette; AppShell owns the dialog state. */
+  onOpenPalette?: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
-  // top offset + height clear the sticky evaluation banner when present
-  // (--eval-banner-h is 0px outside local evaluation mode — see AppShell).
+  // Height fills the shell grid, which is already viewport minus the
+  // evaluation banner (--eval-banner-h is 0px outside local evaluation).
   return (
-    <aside className="sb-art sticky top-[var(--eval-banner-h,0px)] flex h-[calc(100vh-var(--eval-banner-h,0px))] flex-col overflow-hidden border-r border-sb-border bg-sb-bg text-sb-text max-shell:hidden">
+    <aside className="sb-art flex h-full flex-col overflow-hidden border-r border-sb-border bg-sb-bg text-sb-text max-shell:hidden">
       <SidebarBody {...props} />
     </aside>
   );
@@ -66,6 +79,8 @@ export interface SidebarBodyProps {
   onToggleCollapsed?: () => void;
   /** Called after any in-app navigation — the mobile drawer closes itself. */
   onNavigate?: () => void;
+  /** Opens the ⌘K command palette; the trigger is omitted when absent. */
+  onOpenPalette?: () => void;
 }
 
 /**
@@ -80,6 +95,7 @@ export function SidebarBody({
   collapsed,
   onToggleCollapsed,
   onNavigate,
+  onOpenPalette,
 }: SidebarBodyProps) {
   return (
     <>
@@ -99,8 +115,34 @@ export function SidebarBody({
           className="hidden size-7 group-data-collapsed/app:block"
         />
       </Link>
-      {teamId !== null && <TeamNav teamId={teamId} onNavigate={onNavigate} />}
-      <div className="flex-1" />
+      {onOpenPalette !== undefined && (
+        <div className="px-3 pb-1 pt-1">
+          <div className="px-3">
+            <button
+              type="button"
+              className={SEARCH_TRIGGER}
+              onClick={onOpenPalette}
+              // The label and keycap are hidden while collapsed and the glyph
+              // is decorative, so the name has to live on the button itself.
+              aria-label="Search commands"
+              aria-haspopup="dialog"
+              aria-keyshortcuts="Meta+K Control+K"
+            >
+              <NavIcon>
+                <circle cx="11" cy="11" r="7" />
+                <line x1="16.5" y1="16.5" x2="21" y2="21" />
+              </NavIcon>
+              <span>Search</span>
+              <kbd className={`${KBD} ml-auto`}>{paletteShortcutLabel()}</kbd>
+            </button>
+          </div>
+        </div>
+      )}
+      {teamId !== null ? (
+        <TeamNav teamId={teamId} onNavigate={onNavigate} />
+      ) : (
+        <div className="flex-1" />
+      )}
       <SidebarFoot teamId={teamId} onNavigate={onNavigate} />
       {onToggleCollapsed !== undefined && (
         <button
@@ -131,35 +173,6 @@ interface TeamNavItem {
   icon: ReactElement;
 }
 
-const MAIN_NAV_ITEMS: readonly TeamNavItem[] = [
-  {
-    key: "apps",
-    label: "Apps",
-    segment: "apps",
-    icon: (
-      <NavIcon>
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <rect x="14" y="14" width="7" height="7" rx="1.5" />
-      </NavIcon>
-    ),
-  },
-  {
-    key: "metrics",
-    label: "Metrics",
-    segment: "metrics",
-    icon: (
-      <NavIcon>
-        <path d="M3 3v18h18" />
-        <rect x="7" y="11" width="3" height="6" rx="1" fill="currentColor" stroke="none" />
-        <rect x="12.5" y="7" width="3" height="10" rx="1" fill="currentColor" stroke="none" />
-        <rect x="18" y="13" width="3" height="4" rx="1" fill="currentColor" stroke="none" />
-      </NavIcon>
-    ),
-  },
-];
-
 const MEMBERS_NAV_ITEM: TeamNavItem = {
   key: "members",
   label: "Members",
@@ -180,18 +193,165 @@ function TeamNav({
   teamId: string;
   onNavigate?: () => void;
 }) {
+  const { pathname } = useLocation();
+  const { appId } = useParams();
+  const appsQuery = useApps(teamId);
+  const appsPath = `/teams/${teamId}/apps`;
+  // Nested deployments only for the app currently in the apps tree, not for
+  // leftover :appId params on other sections (metrics bookmarks, etc.).
+  const inAppsTree =
+    appId !== undefined &&
+    (pathname === `${appsPath}/${appId}` ||
+      pathname.startsWith(`${appsPath}/${appId}/`));
+
   return (
-    <div className="px-3 pb-1 pt-1">
-      <nav className="flex flex-col gap-[2px] px-3" aria-label="Team">
-        {MAIN_NAV_ITEMS.map((item) => (
-          <SidebarNavLink
-            key={item.key}
-            teamId={teamId}
-            item={item}
-            onNavigate={onNavigate}
-          />
-        ))}
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-1 pt-1">
+      <nav className="flex flex-col gap-[2px] px-3" aria-label="Apps">
+        <NavLink
+          to={appsPath}
+          end
+          className={({ isActive }) =>
+            `${NAV_ITEM} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE}`
+          }
+          onClick={onNavigate}
+        >
+          <NavIcon>
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+          </NavIcon>
+          <span>Apps</span>
+        </NavLink>
+        {appsQuery.isPending ? (
+          <div className="px-[9px] py-1" role="status" aria-label="Loading apps">
+            <Skeleton width="80%" variant="text" />
+            <Skeleton width="65%" variant="text" />
+            <Skeleton width="72%" variant="text" />
+          </div>
+        ) : appsQuery.isError ? (
+          <button
+            type="button"
+            className={`${NAV_ITEM} ${NAV_ITEM_IDLE} text-[13px]`}
+            onClick={() => {
+              void appsQuery.refetch();
+            }}
+          >
+            <span>Retry loading apps</span>
+          </button>
+        ) : appsQuery.data.length === 0 ? (
+          <p className="px-[9px] py-2 text-[12.5px] text-sb-text group-data-collapsed/app:hidden">
+            No apps yet
+          </p>
+        ) : (
+          appsQuery.data.map((app) => {
+            const appPath = `${appsPath}/${app.id}`;
+            const onAppPage = pathname === appPath;
+            const inThisApp =
+              onAppPage || pathname.startsWith(`${appPath}/`);
+            return (
+              <div key={app.id}>
+                <Link
+                  to={appPath}
+                  title={app.name}
+                  className={`${NAV_ITEM} ${onAppPage ? NAV_ITEM_ACTIVE : inThisApp ? `${NAV_ITEM_IDLE} text-fg` : NAV_ITEM_IDLE}`}
+                  aria-current={onAppPage ? "page" : undefined}
+                  onClick={onNavigate}
+                >
+                  <div
+                    className="hidden w-4 text-center text-[12px] font-semibold group-data-collapsed/app:block"
+                    aria-hidden="true"
+                  >
+                    {app.name.charAt(0)}
+                  </div>
+                  <span className="min-w-0 truncate">{app.name}</span>
+                </Link>
+                {inAppsTree && app.id === appId ? (
+                  <AppDeployments
+                    appId={app.id}
+                    appPath={appPath}
+                    pathname={pathname}
+                    onNavigate={onNavigate}
+                  />
+                ) : null}
+              </div>
+            );
+          })
+        )}
       </nav>
+    </div>
+  );
+}
+
+const DEP_NAV_ITEM =
+  "nav-active-bar relative flex items-center gap-2 whitespace-nowrap rounded-[8px] py-[6px] pl-3 pr-2 text-[14px] font-medium [transition:.15s]";
+
+function AppDeployments({
+  appId,
+  appPath,
+  pathname,
+  onNavigate,
+}: {
+  appId: string;
+  appPath: string;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const deploymentsQuery = useDeployments(appId);
+
+  if (deploymentsQuery.isPending) {
+    return (
+      <div
+        className="ml-3 mt-0.5 flex flex-col gap-[2px] border-l border-sb-border pl-2 group-data-collapsed/app:hidden"
+        role="status"
+        aria-label="Loading deployments"
+      >
+        <Skeleton width="70%" variant="text" />
+        <Skeleton width="55%" variant="text" />
+      </div>
+    );
+  }
+
+  if (deploymentsQuery.isError) {
+    return (
+      <button
+        type="button"
+        className={`${DEP_NAV_ITEM} ${NAV_ITEM_IDLE} ml-3 mt-0.5 border-l border-sb-border pl-2 group-data-collapsed/app:hidden`}
+        onClick={() => {
+          void deploymentsQuery.refetch();
+        }}
+      >
+        Retry deployments
+      </button>
+    );
+  }
+
+  if (deploymentsQuery.data.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className="ml-3 mt-0.5 flex flex-col gap-[2px] border-l border-sb-border pl-2 group-data-collapsed/app:hidden"
+      aria-label="Deployments"
+    >
+      {deploymentsQuery.data.map((deployment) => {
+        const depPath = `${appPath}/deployments/${deployment.id}`;
+        const isActive =
+          pathname === depPath || pathname.startsWith(`${depPath}/`);
+        return (
+          <Link
+            key={deployment.id}
+            to={depPath}
+            title={deployment.name}
+            className={`${DEP_NAV_ITEM} ${isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE}`}
+            aria-current={isActive ? "page" : undefined}
+            onClick={onNavigate}
+          >
+            <span className="min-w-0 truncate">{deployment.name}</span>
+          </Link>
+        );
+      })}
     </div>
   );
 }

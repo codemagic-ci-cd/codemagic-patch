@@ -1,14 +1,14 @@
 ---
 title: SDK reference
 description: Reference for the @codemagic/react-native-patch JavaScript API.
-llmsDescription: 'JS API — @codemagic/react-native-patch sync, install modes, error codes.'
+llmsDescription: 'JS API — @codemagic/react-native-patch wrap, sync, install modes, error codes.'
 ---
 
 # SDK reference
 
 JavaScript API for [`@codemagic/react-native-patch`](https://www.npmjs.com/package/@codemagic/react-native-patch): the React Native client SDK.
 
-For integration steps (native wiring, Expo plugin, first `sync()` call), see [Native setup](/docs/setup/native-setup) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
+For integration steps (native wiring, Expo plugin, root wrapper), see [Native setup](/docs/setup/native-setup) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
 
 ## Requirements
 
@@ -26,6 +26,7 @@ The SDK reads configuration from native resources, not from a JS `configure()` c
 | `CodemagicPatchApiUrl` | yes | Patch API origin (server `SERVER_URL`), e.g. `https://updates.example.com`. The SDK calls `/v1/...` under this host |
 | `CodemagicPatchDownloadBaseUrl` | yes | Artifact origin (server `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch` |
 | `CodemagicPatchPublicKey` | no | PEM public key when the app enforces release signature verification |
+| `CodemagicPatchMaxLaunchAttempts` | no | Positive integer. Consecutive launches a pending update may boot without `notifyAppReady()` before the SDK rolls it back. Default `3`; see [`notifyAppReady()`](#notifyappready) |
 
 Bare RN: set in `Info.plist` / `strings.xml` and wire bundle selection in AppDelegate / `MainApplication`. Expo: use the config plugin, [Native setup](/docs/setup/native-setup).
 
@@ -35,16 +36,44 @@ If native code cannot determine the app binary version (`CFBundleShortVersionStr
 
 ## Functions
 
+### `wrap(Root, options?)` {#wraproot-options}
+
+Returns a React component that renders `Root` immediately and calls `sync(options)` from its mount effect. Define the wrapped component at module scope, outside render:
+
+```tsx
+import * as Patch from "@codemagic/react-native-patch";
+import App from "./App";
+
+export default Patch.wrap(App, {
+  installMode: Patch.InstallMode.ON_NEXT_RESUME,
+});
+```
+
+- **Options:** `WrapOptions`, extending `SyncOptions` with `checkFrequency: "ON_APP_START" | "ON_APP_RESUME"` (optional, defaults to `"ON_APP_START"`). Defaults: ordinary updates → `ON_NEXT_RESTART`, mandatory updates → `IMMEDIATE`.
+- **Returns:** `WrappedRootComponent`, with the root's props and ref types preserved. Props and refs are forwarded; the root must itself support the ref you pass. Custom static properties such as `App.navigationOptions` are not copied.
+- **Lifecycle:** each mount starts a `sync()`. Overlapping calls, including React Strict Mode's repeated effect or nested wrappers, use the `sync()` concurrency guard. A later remount can start a new check; this is not a once-per-process guarantee.
+- **Foreground checks:** `"ON_APP_RESUME"` checks on mount and on `background`/`inactive` to `active` transitions. Repeated `active` events are ignored; the listener is removed on unmount. `minimumBackgroundDuration` controls installation only, not check frequency.
+- **Scope:** no loading screen, update dialog, or progress/status callbacks. There is no `MANUAL` frequency; use direct `sync(options, onProgress)` without the wrapper for manual checks, progress, and the final status.
+
+Because `sync()` calls `notifyAppReady()` first, root mount confirms the running bundle as healthy. If your app must complete asynchronous initialization before confirming readiness, call `sync()` or `notifyAppReady()` yourself after it succeeds instead of using `wrap()`. See [Checking for updates](/docs/setup/checking-for-updates#minimal-integration).
+
+---
+
 ### `sync(options?, onProgress?)`
 
 End-to-end update flow: confirm running bundle → check → download → install.
 
 ```ts
-import { sync } from "@codemagic/react-native-patch";
+import { InstallMode, sync } from "@codemagic/react-native-patch";
 
 const status = await sync(
-  { installMode: "ON_NEXT_RESTART", mandatoryInstallMode: "IMMEDIATE" },
-  ({ receivedBytes, totalBytes }) => { /* progress */ },
+  {
+    installMode: InstallMode.ON_NEXT_RESTART,
+    mandatoryInstallMode: InstallMode.IMMEDIATE,
+  },
+  ({ receivedBytes, totalBytes }) => {
+    /* progress */
+  },
 );
 ```
 
@@ -101,7 +130,9 @@ const local = await downloadUpdate(result.remotePackage, onProgress);
 Stage or apply a downloaded package, or handle an embedded revert from `checkForUpdate()`.
 
 ```ts
-await installUpdate(local, { installMode: "ON_NEXT_RESTART" });
+import { InstallMode, installUpdate } from "@codemagic/react-native-patch";
+
+await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
 ```
 
 | | |
@@ -128,6 +159,8 @@ await notifyAppReady();
 | **Throws** | Does not throw |
 
 If a pending update is running for the first time, this promotes it to the confirmed good bundle. `sync()` calls this automatically at the start of each run.
+
+A pending update that boots without reaching `notifyAppReady()` counts one unconfirmed launch. After `CodemagicPatchMaxLaunchAttempts` consecutive unconfirmed launches (default 3) the SDK rolls back to the previous bundle and reports `Failed`. The count is unconfirmed launches, not crashes: the OS ending a healthy process before JS runs also spends one, and a confirmed launch resets it. A lower value catches a broken bundle sooner but rolls back more healthy updates after such kills. Change it in native config (`Info.plist` / `strings.xml`, or `maxLaunchAttempts` in the Expo plugin) and ship a new binary; an OTA update cannot change it.
 
 ---
 
@@ -193,7 +226,7 @@ await hydrate();
 
 ---
 
-## Types
+## Types and constants {#types}
 
 ### `SyncOptions`
 
@@ -203,7 +236,13 @@ await hydrate();
 | `mandatoryInstallMode` | `InstallMode` | `IMMEDIATE` | When mandatory releases apply |
 | `minimumBackgroundDuration` | `number` | `0` | Min background time (ms) before `ON_NEXT_RESUME` / `ON_NEXT_SUSPEND` activate |
 
+### `CheckFrequency`
+
+Exported as a constant object and a same-name TypeScript type. Use `Patch.CheckFrequency.ON_APP_START` (default, mount only) or `Patch.CheckFrequency.ON_APP_RESUME` (mount plus foreground return). Existing string literals remain supported. There is no `MANUAL` value; use the direct APIs without `wrap()` for manual timing.
+
 ### `InstallMode`
+
+Exported as a constant object and a same-name TypeScript type. Use `Patch.InstallMode.ON_NEXT_RESTART`, for example, for either `installMode` or `mandatoryInstallMode`. Named imports (`import { InstallMode } from "@codemagic/react-native-patch"`) and existing string literals are also supported.
 
 | Value | Behavior |
 | --- | --- |
@@ -222,7 +261,7 @@ Values returned by `sync()`:
 | `"update-installed"` | Downloaded and installed (may still be pending activation per install mode) |
 | `"embedded-revert-applied"` | Reverted to the embedded bundle per server manifest |
 | `"sync-in-progress"` | Another `sync()` is already running |
-| `"error"` | Check, download, or install failed (see internal state / logs; `sync()` does not throw) |
+| `"error"` | Check, download, or install failed (`sync()` does not throw; development builds log the reason with `console.warn`) |
 
 ### `UpdateCheckResult`
 

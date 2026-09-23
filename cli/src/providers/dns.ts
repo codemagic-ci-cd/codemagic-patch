@@ -13,6 +13,11 @@ export type SetupDnsRecord = {
 export type DnsRecordWriter = {
   /** True means an API write or browser handoff was handled, not that DNS is ready. */
   apply(record: SetupDnsRecord, shouldStop?: () => boolean): Promise<boolean>;
+  /**
+   * The setup token for a hostname whose zone this run writes through the
+   * Cloudflare API, or null when its records are someone else's to add.
+   */
+  cloudflareSetupToken(hostname: string): Promise<string | null>;
   dispose(): void;
 };
 export type CloudflareDnsRecord = {
@@ -46,6 +51,23 @@ export function validateDnsRecord(record: SetupDnsRecord, zone: string): void {
     throw new DnsPreparationError("DNS record has an invalid target.");
 }
 
+/** The id of exactly the named zone, as the setup token sees it. */
+export async function lookupCloudflareZoneId(input: {
+  fetch: typeof fetch;
+  apiToken: string;
+  zone: string;
+}): Promise<string> {
+  const zones = await cloudflareRequest<{ id: string; name: string }[]>({
+    ...input,
+    path: `/zones?name=${encodeURIComponent(input.zone)}`,
+  });
+  if (zones.length !== 1 || normalize(zones[0]!.name) !== input.zone)
+    throw new DnsPreparationError(
+      "Cloudflare zone is unavailable. Check Zone Read permission and the token's zone scope.",
+    );
+  return zones[0]!.id;
+}
+
 /** Reads the whole exact-name set before deciding whether a write is safe. */
 export async function planCloudflareDns(input: {
   fetch: typeof fetch;
@@ -58,15 +80,8 @@ export async function planCloudflareDns(input: {
   unchanged: boolean;
 }> {
   validateDnsRecord(input.record, input.zone);
-  const zones = await cloudflareRequest<{ id: string; name: string }[]>({
-    ...input,
-    path: `/zones?name=${encodeURIComponent(input.zone)}`,
-  });
-  if (zones.length !== 1 || normalize(zones[0]!.name) !== input.zone)
-    throw new DnsPreparationError(
-      "Cloudflare zone is unavailable. Check Zone Read permission and the token's zone scope.",
-    );
-  const path = `/zones/${encodeURIComponent(zones[0]!.id)}/dns_records`;
+  const zoneId = await lookupCloudflareZoneId(input);
+  const path = `/zones/${encodeURIComponent(zoneId)}/dns_records`;
   const records = await cloudflareRequest<CloudflareDnsRecord[]>({
     ...input,
     path: `${path}?name=${encodeURIComponent(normalize(input.record.hostname))}&per_page=100`,
@@ -103,6 +118,40 @@ export async function planCloudflareDns(input: {
         existing.settings?.flatten_cname === true
       ),
   };
+}
+
+/**
+ * Turns the Cloudflare proxy on for the record this run pointed at the
+ * server, and for nothing else: a record that has since changed, or that
+ * never was this server's, is left exactly as it is.
+ */
+export async function enableCloudflareProxy(input: {
+  fetch: typeof fetch;
+  apiToken: string;
+  zone: string;
+  record: SetupDnsRecord;
+  /** Checked right before the write, so a cancelled run submits nothing. */
+  shouldStop?: () => boolean;
+}): Promise<"enabled" | "already-proxied" | "stopped"> {
+  const plan = await planCloudflareDns(input);
+  const existing = plan.existing;
+  if (
+    existing === null ||
+    existing.type !== input.record.type ||
+    normalize(existing.content) !== normalize(input.record.value)
+  )
+    throw new DnsPreparationError(
+      `${input.record.hostname} does not point at this server in Cloudflare, so the proxy was left as it is.`,
+    );
+  if (existing.proxied === true) return "already-proxied";
+  if (input.shouldStop?.() === true) return "stopped";
+  await cloudflareRequest({
+    ...input,
+    path: `${plan.path}/${encodeURIComponent(existing.id)}`,
+    method: "PATCH",
+    body: { proxied: true },
+  });
+  return "enabled";
 }
 
 export async function writeCloudflareDns(input: {

@@ -165,9 +165,11 @@ Fix:
 2. Use a gentler client mode if the update is mandatory on the server but does not need an instant reload:
 
 ```ts
+import { InstallMode, sync } from "@codemagic/react-native-patch";
+
 void sync({
-  installMode: "ON_NEXT_RESTART",
-  mandatoryInstallMode: "ON_NEXT_RESTART", // or ON_NEXT_RESUME
+  installMode: InstallMode.ON_NEXT_RESTART,
+  mandatoryInstallMode: InstallMode.ON_NEXT_RESTART, // or ON_NEXT_RESUME
 });
 ```
 
@@ -190,7 +192,7 @@ The command must run from the React Native project root (where `package.json` an
 
 ### Missing `notifyAppReady()` with manual flows
 
-If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Otherwise the SDK may roll back on the next launch.
+If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Repeated launches without confirmation exhaust the pending bundle's launch-attempt budget (`CodemagicPatchMaxLaunchAttempts`, default 3) and trigger rollback. See [`notifyAppReady()`](/docs/reference/sdk-reference#notifyappready).
 
 ### CI cannot reach the server
 
@@ -200,14 +202,16 @@ GitHub Actions and remote CI runners cannot call `http://127.0.0.1` or `localhos
 
 ### Server won't boot / OAuth errors
 
-- At least one OAuth provider is configured: `GITHUB_OAUTH_CLIENT_ID` + `_SECRET` and/or `BITBUCKET_OAUTH_CLIENT_ID` + `_SECRET`
+- At least one OAuth provider is configured: `GITHUB_OAUTH_CLIENT_ID` + `_SECRET` and/or `BITBUCKET_OAUTH_CLIENT_ID` + `_SECRET` and/or `GITLAB_OAUTH_CLIENT_ID` + `_SECRET`
 - `OAUTH_CLI_AUTH_SECRET` (legacy name: `OAUTH_DEVICE_POLL_TOKEN_SECRET`) and `WORKER_SHARED_SECRET` are each ≥ 32 chars
 - Under `REGISTRATION_MODE=invite_only`, `INITIAL_ADMIN_EMAILS` is non-empty
 
+If sign-in rejects the OAuth app credentials, run `cmpatch selfhost install --repair` to correct them, then try again.
+
 ### First admin sign-in rejected
 
-- `INITIAL_ADMIN_EMAILS` matches the GitHub (or Bitbucket) account's verified primary email
-- OAuth callback URL is `https://<api-domain>/auth/callback` ([OAuth Apps](https://github.com/settings/developers))
+- `INITIAL_ADMIN_EMAILS` matches the chosen sign-in account's verified primary email
+- OAuth callback URL is `https://<api-domain>/auth/callback` ([OAuth setup](/docs/install#github-oauth-app))
 
 ### cmpatch selfhost cannot connect over SSH
 

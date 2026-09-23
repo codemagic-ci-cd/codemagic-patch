@@ -12,6 +12,7 @@ If you need to separate the steps, e.g. download silently but let the user decid
 
 ```ts
 import {
+  InstallMode,
   checkForUpdate,
   downloadUpdate,
   installUpdate,
@@ -34,7 +35,7 @@ if (check.action === "ota-update") {
 
   // 3) Install. With IMMEDIATE the bundle reloads now; with ON_NEXT_RESTART it
   //    waits for the next launch.
-  await installUpdate(local, { installMode: "ON_NEXT_RESTART" });
+  await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
 
   // 4) Optionally force a reload yourself (e.g. after the user taps "Update now").
   await restartApp(/* onlyIfUpdateIsPending */ true);
@@ -47,8 +48,65 @@ allowRestart();
 ```
 
 :::warning
-If you do not use `sync()`, you must call `notifyAppReady()` yourself once the app has booted successfully. Otherwise the SDK treats the new bundle as unverified and rolls it back on the next launch.
+If you do not call `sync()` on every successful startup, call `notifyAppReady()` yourself once the app has booted successfully. A `sync()` call behind a user action does not replace startup readiness confirmation. Repeated launches without confirmation eventually exhaust the pending bundle's launch-attempt budget and trigger rollback.
 :::
+
+## Stage-specific UI
+
+For download progress and the final result alone, [call `sync(options, onProgress)`](/docs/setup/checking-for-updates#download-progress-and-status) and await its status. For checking, downloading, and installing indicators, own the steps and update your app's state around each call:
+
+```ts
+import {
+  checkForUpdate,
+  downloadUpdate,
+  installUpdate,
+  InstallMode,
+  type DownloadProgress,
+} from "@codemagic/react-native-patch";
+
+type UpdateStage =
+  | "checking" | "downloading" | "installing"
+  | "up-to-date" | "skipped-failed" | "ready-on-restart" | "error";
+
+// Call from your chosen lifecycle or button handler, without Patch.wrap().
+// Confirm startup readiness separately as described above.
+async function checkAndStageUpdate(
+  setStage: (stage: UpdateStage) => void,
+  onProgress: (progress: DownloadProgress) => void,
+) {
+  try {
+    setStage("checking");
+    const check = await checkForUpdate();
+    if (check.action === "up-to-date") {
+      setStage("up-to-date");
+      return;
+    }
+
+    if (check.action === "ota-update") {
+      if (check.remotePackage.previouslyFailed) {
+        setStage("skipped-failed");
+        return;
+      }
+      // If your app needs user confirmation, request it here before download.
+      setStage("downloading");
+      const local = await downloadUpdate(check.remotePackage, onProgress);
+      setStage("installing");
+      await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
+    } else {
+      // Server-requested embedded revert has no package to download.
+      setStage("installing");
+      await installUpdate(check, { installMode: InstallMode.ON_NEXT_RESTART });
+    }
+
+    setStage("ready-on-restart");
+  } catch (error) {
+    setStage("error");
+    console.error("Update failed", error); // Replace with your error reporting.
+  }
+}
+```
+
+These stages are app-owned UI state, not SDK callbacks. Disable repeated checks while this operation runs. This example deliberately stages all updates, including mandatory releases, for the next restart. To preserve `sync()`'s default immediate installation of mandatory updates, select the install mode from `check.remotePackage.isMandatory`; see [Applying updates](/docs/setup/applying-updates). An immediate install may reload the app before a completion indicator is visible.
 
 ## API summary
 

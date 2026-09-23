@@ -3,10 +3,10 @@
 // there is NO single-deployment GET — so an unknown `:depId` renders a
 // synthetic `not-found` problem through ErrorState plus a breadcrumb-up link
 // back to the app. Three independent regions (loading skeletons are
-// per-region): header (deployments list), metrics summary strip
-// (`useDeploymentMetrics`, derived EXCLUSIVELY via model/metrics.ts
-// aggregateMetrics/successRate — a strip failure degrades to "—" cards + a
-// retry callout without touching the table), and the release history table
+// per-region): header (deployments list), the overview card
+// (`useDeploymentTimeseries` with a shared range — in-range totals plus the
+// adoption chart; a failure degrades to this card's retry without touching
+// the table), and the release history table
 // (`useReleases` infinite query, newest-first offset pages; "Load more" =
 // fetchNextPage, exhaustion computed from `pagination.total` by the hook's
 // getNextPageParam → hasNextPage). Actions are gated by role
@@ -25,14 +25,12 @@ import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "r
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router";
 import type {
-  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
 
 import { useApp } from "../api/hooks/apps";
 import { useDeployments } from "../api/hooks/deployments";
-import { useDeploymentMetrics } from "../api/hooks/metrics";
 import { useReleases } from "../api/hooks/releases";
 import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { useUserLabel } from "../api/hooks/userLabels";
@@ -44,7 +42,6 @@ import { ErrorState } from "../components/ui/ErrorState";
 import { RolloutBar } from "../components/ui/RolloutBar";
 import { Skeleton } from "../components/ui/Skeleton";
 import { StatusChip } from "../components/ui/StatusChip";
-import { aggregateMetrics, successRate } from "../model/metrics";
 import {
   canDisable,
   canEnable,
@@ -52,6 +49,8 @@ import {
   canRollback,
 } from "../model/release";
 import { useTeamRole } from "../rbac/useTeamRole";
+import { OverviewCard } from "./deployment/OverviewCard";
+import { metricsDeploymentPath } from "./metrics/metricsPaths";
 import { NewReleaseModal } from "./release/modals/NewReleaseModal";
 import {
   ReleaseHistoryTableHead,
@@ -61,27 +60,16 @@ import {
 import { useReleaseActions } from "./release/modals/useReleaseActions";
 import type { ReleaseListItem } from "../api/types";
 import type { Deployment } from "../model/deployment";
-import type { ReleaseMetrics } from "../model/metrics";
 import type { Release } from "../model/release";
 import {
   formatCount,
   formatDate,
   formatRelativeTime,
-  formatSuccessRate,
 } from "../model/format";
 import { buttonVariants } from "../components/ui/Button";
-import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { CELL_MAIN, CELL_SUB } from "../components/ui/cell";
 import { CHIP, CHIP_TONE } from "../components/ui/chip";
 import { PIN, PIN_TONE } from "../components/ui/pin";
-import {
-  STAT,
-  STAT_ICO_ACCENT,
-  STAT_ICO_BASE,
-  STAT_META,
-  STAT_TOP,
-  STAT_VAL,
-} from "../components/ui/stat";
 import {
   TBL,
   TBL_TR,
@@ -349,6 +337,12 @@ function DeploymentDetail({
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {newReleaseButton}
+          <Link
+            className={buttonVariants({ intent: "ghost" })}
+            to={metricsDeploymentPath(teamId, appId, deployment.id)}
+          >
+            Metrics
+          </Link>
           <span className="tip" data-tip={deployTip}>
             <button
               type="button"
@@ -367,7 +361,7 @@ function DeploymentDetail({
         </div>
       </div>
 
-      <MetricsSummaryStrip deploymentId={deployment.id} />
+      <OverviewCard deploymentId={deployment.id} />
 
       {historyCard}
 
@@ -600,160 +594,6 @@ function DetailsChevron({ open }: { open: boolean }) {
     >
       <polyline points="6 9 12 15 18 9" />
     </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Metrics summary strip (independent region)
-// ---------------------------------------------------------------------------
-
-function MetricsSummaryStrip({ deploymentId }: { deploymentId: string }) {
-  // limit=100 is the server page maximum — the widest single-call aggregate
-  // window (counters are hash-keyed, duplicates collapse in the derivation).
-  const metricsQuery = useDeploymentMetrics(deploymentId, { limit: 100 });
-
-  if (metricsQuery.isPending) {
-    return (
-      <div
-        className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]"
-        role="status"
-        aria-label="Loading deployment metrics"
-      >
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-      </div>
-    );
-  }
-
-  if (metricsQuery.isError) {
-    // Independent failure: "—" cards + retry; header/table stay usable.
-    return (
-      <>
-        <StatCards totals={null} rate={null} />
-        <div className={`${CALLOUT} ${CALLOUT_TONE.warn} mb-[18px]`} role="alert">
-          <AlertIcon />
-          <div>
-            Couldn't load deployment metrics — the release history below is
-            unaffected.{" "}
-            <button
-              type="button"
-              className={buttonVariants({ intent: "ghost", size: "sm" })}
-              onClick={() => {
-                void metricsQuery.refetch();
-              }}
-            >
-              <RefreshIcon /> Retry
-            </button>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // All derivation via model/metrics.ts — no math re-derived here.
-  const entries = metricsQuery.data.releases;
-  const totals = aggregateMetrics(entries.map((entry) => entry.metrics));
-  const rate = successRate(totals);
-
-  return <StatCards totals={totals} rate={rate} />;
-}
-
-/** The `.stat` strip; null totals render the "—" degraded variant. */
-function StatCards({
-  totals,
-  rate,
-}: {
-  totals: ReleaseMetrics | null;
-  rate: number | null;
-}) {
-  return (
-    <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
-      <div
-        className={STAT}
-        style={
-          {
-            "--accent": "var(--color-green)",
-            "--accent-tint": "var(--color-green-tint)",
-          } as CSSProperties
-        }
-      >
-        <div className={STAT_TOP}>
-          <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
-            <CheckCircleIcon />
-          </span>{" "}
-          Success
-        </div>
-        <div className={STAT_VAL}>
-          {totals === null ? "—" : formatCount(totals.success)}
-        </div>
-        <div className={STAT_META}>successful installs</div>
-      </div>
-      <div
-        className={STAT}
-        style={{ "--accent": "var(--color-blue)" } as CSSProperties}
-      >
-        <div className={STAT_TOP}>
-          <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
-            <DownloadIcon />
-          </span>{" "}
-          Downloads
-        </div>
-        <div className={STAT_VAL}>
-          {totals === null ? "—" : formatCount(totals.downloaded)}
-        </div>
-        <div className={STAT_META}>lifetime, this deployment</div>
-      </div>
-      <div
-        className={STAT}
-        style={
-          {
-            "--accent": "var(--color-green)",
-            "--accent-tint": "var(--color-green-tint)",
-          } as CSSProperties
-        }
-      >
-        <div className={STAT_TOP}>
-          <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
-            <CheckCircleIcon />
-          </span>{" "}
-          Success rate
-        </div>
-        <div className={STAT_VAL}>
-          {rate === null ? (
-            // successRate is null when no Success/Failed events exist.
-            "—"
-          ) : (
-            <>
-              {formatSuccessRate(rate)}
-              <small>%</small>
-            </>
-          )}
-        </div>
-        <div className={STAT_META}>install success</div>
-      </div>
-      <div
-        className={STAT}
-        style={
-          {
-            "--accent": "var(--color-red)",
-            "--accent-tint": "var(--color-red-tint)",
-          } as CSSProperties
-        }
-      >
-        <div className={STAT_TOP}>
-          <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
-            <AlertIcon />
-          </span>{" "}
-          Failed
-        </div>
-        <div className={STAT_VAL}>
-          {totals === null ? "—" : formatCount(totals.failed)}
-        </div>
-        <div className={STAT_META}>failed installs</div>
-      </div>
-    </div>
   );
 }
 
@@ -1104,11 +944,8 @@ function DeploymentDetailSkeleton() {
           <Skeleton width={72} height={28} />
         </div>
       </div>
-      <div className="mb-[18px] grid-cols-[repeat(4,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-        <Skeleton height={118} />
-        <Skeleton height={118} />
+      <div className="mb-[18px] rounded-lg border border-border bg-surface p-[22px] shadow-sm">
+        <Skeleton height={280} />
       </div>
       <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
         <Skeleton variant="line" />
@@ -1182,25 +1019,6 @@ function IconSvg({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <IconSvg>
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </IconSvg>
-  );
-}
-
-function CheckCircleIcon() {
-  return (
-    <IconSvg>
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="16 9.5 11 14.5 8.5 12" />
-    </IconSvg>
   );
 }
 

@@ -2,7 +2,7 @@ import {
   CodemagicPatchError,
   CodemagicPatchErrorCode,
   type EmbeddedRevertUpdate,
-  type InstallMode,
+  InstallMode,
   type InstallOptions,
   type InstallTarget,
   type LocalPackage,
@@ -30,7 +30,7 @@ import {
 } from "./failurePayload";
 import { nativeDownloadRequest, positiveByteCount } from "./downloadUpdate";
 
-export const DEFAULT_INSTALL_MODE: InstallMode = "ON_NEXT_RESTART";
+export const DEFAULT_INSTALL_MODE: InstallMode = InstallMode.ON_NEXT_RESTART;
 
 function isEmbeddedRevertUpdate(target: InstallTarget): target is EmbeddedRevertUpdate {
   return "action" in target && target.action === "embedded-revert";
@@ -51,31 +51,30 @@ function createRuntimePackage(
   };
 }
 
-function createInstalledMetricEvent(
+function createReadyMetricEvent(
   localPackage: LocalPackage,
   installMode: InstallMode,
 ): MetricsEvent {
-  return createMetricEvent("Installed", {
+  return createMetricEvent("Ready", {
     packageHash: localPackage.packageHash,
     deliveryType: localPackage.source,
     status: installMode,
   });
 }
 
-async function enqueueInstalledMetricEvent(
+async function enqueueReadyMetricEvent(
   localPackage: LocalPackage,
   installMode: InstallMode,
 ): Promise<MetricsEvent> {
-  const installedEvent = createInstalledMetricEvent(localPackage, installMode);
-  await enqueueMetricEvent(installedEvent);
-  return installedEvent;
+  const readyEvent = createReadyMetricEvent(localPackage, installMode);
+  await enqueueMetricEvent(readyEvent);
+  return readyEvent;
 }
 
 async function installNativeDownloadedPackage(
   localPackage: LocalPackage,
   remotePackage: RuntimeRemotePackage,
-  installMode: InstallMode,
-): Promise<{ localPackage: LocalPackage; installedEvent: MetricsEvent }> {
+): Promise<LocalPackage> {
   try {
     await NativeCodemagicPatch.installUpdate({ packageHash: localPackage.packageHash });
   } catch (error) {
@@ -141,21 +140,10 @@ async function installNativeDownloadedPackage(
       throw installError;
     }
 
-    const installedEvent = await enqueueInstalledMetricEvent(
-      fallbackPackage,
-      installMode,
-    );
-    return {
-      localPackage: fallbackPackage,
-      installedEvent,
-    };
+    return fallbackPackage;
   }
 
-  const installedEvent = await enqueueInstalledMetricEvent(
-    localPackage,
-    installMode,
-  );
-  return { localPackage, installedEvent };
+  return localPackage;
 }
 
 export async function installUpdate(
@@ -198,12 +186,10 @@ export async function installUpdate(
   }
 
   const installMode = options?.installMode ?? DEFAULT_INSTALL_MODE;
-  const nativeInstallResult = await installNativeDownloadedPackage(
+  const installedLocalPackage = await installNativeDownloadedPackage(
     localPackage,
     downloadedRemotePackage,
-    installMode,
   );
-  const installedLocalPackage = nativeInstallResult.localPackage;
 
   const runtimePackage = createRuntimePackage(installedLocalPackage, downloadedRemotePackage);
 
@@ -215,17 +201,20 @@ export async function installUpdate(
   state.blockedActivation = false;
   state.failedInstall = null;
 
-  state.events.push(nativeInstallResult.installedEvent);
+  state.events.push(await enqueueReadyMetricEvent(installedLocalPackage, installMode));
 
   await activateInstalledUpdate();
 }
 
 async function activateInstalledUpdate(): Promise<void> {
-  if (state.pendingInstallMode === "ON_NEXT_SUSPEND" && isCurrentlyBackgrounded()) {
+  if (
+    state.pendingInstallMode === InstallMode.ON_NEXT_SUSPEND &&
+    isCurrentlyBackgrounded()
+  ) {
     scheduleSuspendActivationIfDue();
   }
 
-  if (state.pendingInstallMode !== "IMMEDIATE") {
+  if (state.pendingInstallMode !== InstallMode.IMMEDIATE) {
     return;
   }
 

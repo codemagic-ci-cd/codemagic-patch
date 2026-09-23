@@ -169,7 +169,10 @@ export async function executeReleaseCreate(
       });
     }
 
-    progress.write(`Archiving ${command.bundlePath}`);
+    // The path is a detail, not the step: from `release-react` it is an
+    // internally generated temp directory that has no business in a CI log.
+    progress.write("Archiving bundle...");
+    progress.detail(command.bundlePath);
     const bundleArchivePath = await prepareBundleArchive(
       deps,
       command.bundlePath,

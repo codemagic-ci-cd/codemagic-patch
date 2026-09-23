@@ -170,7 +170,7 @@ export function DeploymentCounters({
             <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`}>
               <CheckCircleIcon />
             </span>{" "}
-            Success rate
+            Application success rate
           </div>
           <div className={STAT_VAL}>
             {rate === null ? (
@@ -182,7 +182,7 @@ export function DeploymentCounters({
               </>
             )}
           </div>
-          <div className={STAT_META}>success / (success + failed)</div>
+          <div className={STAT_META}>applied / (applied + failed)</div>
         </div>
         <div
           className={STAT}
@@ -289,7 +289,7 @@ export function DeploymentCounters({
                 <div className="mt-[14px] flex flex-wrap gap-[14px]">
                   <span className="flex items-center gap-[7px] text-[12.5px] text-fg-2 [&_b]:tabular-nums [&_b]:text-fg">
                     <span className="size-[10px] flex-none rounded-[4px] bg-green" />
-                    Succeeded <b>{formatCount(totals.success)}</b>
+                    Applied <b>{formatCount(totals.success)}</b>
                   </span>
                   <span className="flex items-center gap-[7px] text-[12.5px] text-fg-2 [&_b]:tabular-nums [&_b]:text-fg">
                     <span className="size-[10px] flex-none rounded-[4px] bg-red" />
@@ -329,9 +329,9 @@ export function DeploymentCounters({
               <dd className={`${DL_DD} mono`}>{formatCount(totals.active)}</dd>
               <dt className={DL_DT}>Downloaded</dt>
               <dd className={`${DL_DD} mono`}>{formatCount(totals.downloaded)}</dd>
-              <dt className={DL_DT}>Installed</dt>
+              <dt className={DL_DT}>Ready</dt>
               <dd className={`${DL_DD} mono`}>{formatCount(totals.installed)}</dd>
-              <dt className={DL_DT}>Success</dt>
+              <dt className={DL_DT}>Applied</dt>
               <dd className={`${DL_DD} mono`}>{formatCount(totals.success)}</dd>
               <dt className={DL_DT}>Failed</dt>
               <dd className={`${DL_DD} mono text-red`}>

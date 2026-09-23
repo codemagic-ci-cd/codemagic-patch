@@ -1,13 +1,14 @@
-import { createRequire } from "node:module";
 import path from "node:path";
 
-import { parseText as parseGradleText } from "gradle-to-js/lib/parser";
 import { parse as parsePlist } from "plist";
 
 import { ValidationError, type CommandDeps } from "./commands/shared";
 
-const requireFromCurrentFile = createRequire(__filename);
-const xcodeParser = requireFromCurrentFile("xcode") as typeof import("xcode");
+import {
+  parseXcodeProject,
+  resolveXcodeSetting,
+  unquoteXcode,
+} from "./xcodeProject";
 
 type TargetBinaryPlatform = "android" | "ios";
 
@@ -21,16 +22,6 @@ type ResolveTargetBinaryVersionInput = {
   projectRoot: string;
   xcodeProjectFile?: string;
   xcodeTargetName?: string;
-};
-
-type GradleModel = {
-  android?: unknown;
-};
-
-type GradleAndroidBlock = {
-  defaultConfig?: {
-    versionName?: unknown;
-  };
 };
 
 type PlistModel = {
@@ -72,72 +63,142 @@ async function detectIosTargetBinaryVersion(
   deps: Pick<CommandDeps, "readDirectory" | "readFile" | "stat">,
   input: ResolveTargetBinaryVersionInput,
 ): Promise<{ sourcePath: string; version: string }> {
-  const candidates =
-    input.plistFile === undefined
-      ? await findIosInfoPlistCandidates(
-          deps,
-          input.projectRoot,
-          input.plistFilePrefix,
-        )
-      : [resolveProjectPath(input.projectRoot, input.plistFile)];
-
-  if (candidates.length === 0) {
+  const fail = (detail: string): never => {
     throw new ValidationError(
-      `Could not detect target binary version for ios project at ${input.projectRoot}. Pass --target-binary-version or --plist-file.`,
+      `${detail} Pass --target-binary-version or --plist-file explicitly.`,
     );
-  }
-
-  let sawUnresolvedPlaceholder = false;
-
-  for (const candidate of candidates) {
-    const content = await readUtf8FileOrNull(deps, candidate);
-    if (content === null) {
-      continue;
-    }
-
-    let plistVersion: string | null;
+  };
+  const readVersion = async (file: string): Promise<string> => {
+    const content = await readUtf8FileOrNull(deps, file);
+    if (content === null) return fail(`Could not read Info.plist at ${file}.`);
+    let version: string | null;
     try {
-      plistVersion = parseInfoPlistVersion(content);
+      version = parseInfoPlistVersion(content);
     } catch {
-      throw new ValidationError(
-        `Could not parse Info.plist at ${candidate}. Pass --target-binary-version explicitly.`,
-      );
+      return fail(`Could not parse Info.plist at ${file}.`);
     }
-    if (plistVersion === null) {
-      continue;
-    }
-
-    if (plistVersion === "$(MARKETING_VERSION)") {
-      const marketingVersion = await detectIosMarketingVersion(
-        deps,
-        input,
-        candidate,
-      );
-      if (marketingVersion !== null) {
-        return marketingVersion;
-      }
-
-      sawUnresolvedPlaceholder = true;
-      continue;
-    }
-
-    if (containsBuildSettingPlaceholder(plistVersion)) {
-      sawUnresolvedPlaceholder = true;
-      continue;
-    }
-
-    return { sourcePath: candidate, version: plistVersion };
+    return (
+      version ?? fail(`Could not read CFBundleShortVersionString from ${file}.`)
+    );
+  };
+  const explicitPlist =
+    input.plistFile === undefined
+      ? undefined
+      : resolveProjectPath(input.projectRoot, input.plistFile);
+  const explicitVersion =
+    explicitPlist === undefined ? undefined : await readVersion(explicitPlist);
+  if (
+    explicitVersion !== undefined &&
+    !containsBuildSettingPlaceholder(explicitVersion)
+  ) {
+    return { sourcePath: explicitPlist!, version: explicitVersion };
   }
-
-  if (sawUnresolvedPlaceholder) {
-    throw new ValidationError(
-      `Could not resolve the build setting placeholder in CFBundleShortVersionString from ${formatCandidateList(candidates)}. Pass --target-binary-version explicitly.`,
+  if (
+    explicitVersion !== undefined &&
+    !/^\$[({]MARKETING_VERSION[)}]$/.test(explicitVersion)
+  ) {
+    return fail(
+      `Could not resolve the build setting placeholder in ${explicitPlist}.`,
     );
   }
-
-  throw new ValidationError(
-    `Could not read CFBundleShortVersionString from ${formatCandidateList(candidates)}. Pass --target-binary-version explicitly.`,
-  );
+  const projects = await findXcodeProjectCandidates(deps, input);
+  if (projects.length === 0) {
+    throw new ValidationError(
+      `No Xcode project found under ${path.join(input.projectRoot, "ios")}. Pass --xcode-project-file, --plist-file or --target-binary-version explicitly.`,
+    );
+  }
+  const targets = [];
+  for (const project of projects) {
+    const content = await readUtf8FileOrNull(deps, project);
+    if (content === null)
+      return fail(`Could not read Xcode project ${project}.`);
+    let parsed: ReturnType<typeof parseXcodeProject>;
+    try {
+      parsed = parseXcodeProject(content);
+    } catch {
+      return fail(`Could not parse Xcode project ${project}.`);
+    }
+    const root = path.dirname(path.dirname(project));
+    for (const target of parsed.targets) {
+      const name = unquoteXcode(target.name);
+      if (input.xcodeTargetName !== undefined && name !== input.xcodeTargetName)
+        continue;
+      const configurations = parsed
+        .configurations(target)
+        .filter(
+          (config) =>
+            input.buildConfigurationName === undefined ||
+            config.name === input.buildConfigurationName,
+        );
+      const mapped = configurations.map((config) => {
+        const plist = resolveXcodeSetting(
+          "INFOPLIST_FILE",
+          config.settings,
+          root,
+        );
+        const file =
+          plist === undefined ? undefined : path.resolve(root, plist);
+        return { ...config, file };
+      });
+      if (
+        explicitPlist !== undefined &&
+        !mapped.some((config) => config.file === explicitPlist)
+      )
+        continue;
+      targets.push({ project, root, name, configurations: mapped });
+    }
+  }
+  if (targets.length !== 1) {
+    return fail(
+      `Could not select one iOS application target${input.xcodeTargetName ? ` named "${input.xcodeTargetName}"` : ""}. Candidates: ${targets.map((t) => `${t.name} (${t.project})`).join(", ") || "none"}. Select --xcode-project-file / --xcode-target-name.`,
+    );
+  }
+  const selected = targets[0];
+  let configurations = selected.configurations;
+  if (explicitPlist !== undefined)
+    configurations = configurations.filter(
+      (config) => config.file === explicitPlist,
+    );
+  if (!configurations.length)
+    return fail(
+      `No matching build configuration for ${selected.name}. Select --build-configuration-name.`,
+    );
+  const versions = new Set<string>();
+  for (const config of configurations) {
+    if (config.file === undefined) {
+      return fail(
+        `Could not resolve build settings for ${selected.name} (${config.name}); conditional settings, xcconfig values, or generated Info.plist settings require an explicit version.`,
+      );
+    }
+    const file =
+      explicitPlist ??
+      (input.plistFilePrefix === undefined
+        ? config.file
+        : path.join(
+            path.dirname(config.file),
+            `${normalizePlistFilePrefix(input.plistFilePrefix)}Info.plist`,
+          ));
+    let version = explicitVersion ?? (await readVersion(file));
+    if (/^\$\(MARKETING_VERSION\)$|^\$\{MARKETING_VERSION\}$/.test(version)) {
+      version =
+        resolveXcodeSetting(
+          "MARKETING_VERSION",
+          config.settings,
+          selected.root,
+        ) ?? "";
+    }
+    if (!version || containsBuildSettingPlaceholder(version)) {
+      return fail(
+        `Could not resolve the build setting placeholder in CFBundleShortVersionString for ${selected.name} (${config.name}); conditional or unresolved settings require --target-binary-version explicitly.`,
+      );
+    }
+    versions.add(version);
+  }
+  if (versions.size !== 1)
+    return fail(
+      `Binary versions differ across build configurations for ${selected.name}. Select --build-configuration-name.`,
+    );
+  return { sourcePath: selected.project, version: [...versions][0] };
 }
 
 async function detectAndroidTargetBinaryVersion(
@@ -152,11 +213,7 @@ async function detectAndroidTargetBinaryVersion(
       continue;
     }
 
-    const version = await parseGradleVersionName(
-      deps,
-      input.projectRoot,
-      content,
-    );
+    const version = await parseGradleVersionName(deps, candidate, content);
     if (version !== null) {
       return { sourcePath: candidate, version };
     }
@@ -256,30 +313,9 @@ function parseInfoPlistVersion(content: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-async function detectIosMarketingVersion(
-  deps: Pick<CommandDeps, "readDirectory" | "readFile" | "stat">,
-  input: ResolveTargetBinaryVersionInput,
-  plistPath: string,
-): Promise<{ sourcePath: string; version: string } | null> {
-  const candidates = await findXcodeProjectCandidates(deps, input, plistPath);
-
-  for (const candidate of candidates) {
-    const version = readXcodeMarketingVersion(candidate, input);
-    if (version !== null) {
-      return {
-        sourcePath: candidate,
-        version,
-      };
-    }
-  }
-
-  return null;
-}
-
 async function findXcodeProjectCandidates(
   deps: Pick<CommandDeps, "readDirectory" | "stat">,
   input: ResolveTargetBinaryVersionInput,
-  plistPath: string,
 ): Promise<string[]> {
   if (input.xcodeProjectFile !== undefined) {
     const resolved = resolveProjectPath(
@@ -294,21 +330,20 @@ async function findXcodeProjectCandidates(
   }
 
   const candidates: string[] = [];
-  for (const iosRootName of ["ios", "iOS"]) {
-    await collectXcodeProjectFiles(
-      deps,
-      path.join(input.projectRoot, iosRootName),
-      candidates,
-      0,
-    );
+  // Use directory entries to avoid counting ios and iOS twice on macOS.
+  const roots = await deps.readDirectory(input.projectRoot);
+  for (const entry of roots) {
+    if (entry.isDirectory() && entry.name.toLowerCase() === "ios") {
+      await collectXcodeProjectFiles(
+        deps,
+        path.join(input.projectRoot, entry.name),
+        candidates,
+        0,
+      );
+    }
   }
 
-  return [...new Set(candidates)].sort((left, right) => {
-    const leftScore = xcodeCandidateScore(left, plistPath);
-    const rightScore = xcodeCandidateScore(right, plistPath);
-
-    return leftScore - rightScore || left.localeCompare(right);
-  });
+  return [...new Set(candidates)].sort();
 }
 
 async function collectXcodeProjectFiles(
@@ -346,138 +381,162 @@ async function collectXcodeProjectFiles(
   }
 }
 
-function readXcodeMarketingVersion(
-  pbxprojPath: string,
-  input: Pick<
-    ResolveTargetBinaryVersionInput,
-    "buildConfigurationName" | "xcodeTargetName"
-  >,
-): string | null {
-  let marketingVersion: unknown;
-
-  try {
-    const project = xcodeParser.project(pbxprojPath).parseSync();
-    marketingVersion = project.getBuildProperty(
-      "MARKETING_VERSION",
-      input.buildConfigurationName,
-      input.xcodeTargetName,
-    );
-  } catch {
-    return null;
-  }
-
-  if (typeof marketingVersion !== "string") {
-    return null;
-  }
-
-  const version = trimWrappingQuotes(marketingVersion.trim());
-  if (version.length === 0 || containsBuildSettingPlaceholder(version)) {
-    return null;
-  }
-
-  return version;
+function androidVersionError(reason: string): ValidationError {
+  return new ValidationError(
+    `${reason} Pass --target-binary-version <version> explicitly.`,
+  );
 }
 
 async function parseGradleVersionName(
   deps: Pick<CommandDeps, "readFile" | "stat">,
-  projectRoot: string,
+  gradleFile: string,
   content: string,
 ): Promise<string | null> {
-  const parsed = (await parseGradleText(content)) as GradleModel;
-  const versionName = extractGradleVersionName(parsed);
-
-  if (versionName === null) {
-    return null;
-  }
-
-  const appVersion = trimWrappingQuotes(versionName).trim();
-  if (appVersion.length === 0) {
-    return null;
-  }
-
-  if (/^\d/u.test(appVersion)) {
-    return appVersion;
-  }
-
-  const propertyName = appVersion.replace(/^project\./u, "");
-  const resolved = await readGradleProperty(deps, projectRoot, propertyName);
-  if (resolved !== null) {
-    return resolved.trim().length > 0 ? resolved : null;
-  }
-
-  // gradle.properties didn't define it. If the token is a Gradle variable
-  // expression (dotted member access like `rootProject.ext.versionName`, or a
-  // `$`-interpolation), DO NOT fall back to the literal text: it would become
-  // the targetBinaryVersion verbatim and match zero installed devices, with a
-  // success-looking publish. Fail loudly so the user passes an explicit
-  // version. A bare literal token (e.g. "latest", "beta1") is preserved here
-  // and validated later by assertExplicitBinaryVersion at release time.
-  if (isUnresolvedGradleVariable(appVersion)) {
-    throw new ValidationError(
-      `Android versionName "${appVersion}" is an unresolved Gradle variable ` +
-        "(not defined in gradle.properties). Pass --target-binary-version <version> explicitly.",
-    );
-  }
-
-  return appVersion.trim().length > 0 ? appVersion : null;
-}
-
-// A dotted identifier path (rootProject.ext.versionName, project.VERSION_NAME):
-// every dot-separated segment is a Java/Kotlin identifier. This deliberately
-// excludes letter-prefixed literal versions like `v1.2.3`, whose numeric
-// segments don't start with an identifier character.
-const GRADLE_DOTTED_IDENTIFIER =
-  /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+$/u;
-
-function isUnresolvedGradleVariable(value: string): boolean {
-  return value.includes("$") || GRADLE_DOTTED_IDENTIFIER.test(value);
-}
-
-function extractGradleVersionName(parsed: GradleModel): string | null {
-  const androidBlocks = Array.isArray(parsed.android)
-    ? parsed.android
-    : [parsed.android];
-
-  for (const androidBlock of androidBlocks) {
-    if (!isGradleAndroidBlock(androidBlock)) {
-      continue;
+  // Only interpret direct static declarations. Keep strings intact and check
+  // every scope, including conditional blocks that could override the version.
+  const tokens = (
+    content.match(
+      /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:[\w$]+|`[^`\r\n]+`)(?:\.(?:[\w$]+|`[^`\r\n]+`))*|\n|[^\s]/gu,
+    ) ?? []
+  ).filter((token) => !token.startsWith("//") && !token.startsWith("/*"));
+  const scopes: string[] = [];
+  let statement: string[] = [];
+  const values = new Map<string, string>();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "{") {
+      scopes.push(statement.join(""));
+      statement = [];
+    } else if (token === "}") {
+      scopes.pop();
+      statement = [];
+    } else if (token === "\n" || token === ";") {
+      statement = [];
+    } else if (isGradleVersionWrite(tokens, index)) {
+      if (
+        scopes.join("/") !== "android/defaultConfig" ||
+        statement.length > 0 ||
+        (token !== "versionName" && token !== "versionNameSuffix") ||
+        values.has(token)
+      ) {
+        const scope = scopes.length
+          ? `the ${scopes.join(".")} block`
+          : "the top-level script";
+        throw androidVersionError(
+          `Android ${token} is written in ${scope}; only one direct versionName/versionNameSuffix declaration in android.defaultConfig is supported.`,
+        );
+      }
+      const expression: string[] = [];
+      while (
+        index + 1 < tokens.length &&
+        !["\n", ";", "}"].includes(tokens[index + 1])
+      ) {
+        expression.push(tokens[++index]);
+      }
+      if (expression[0] === "=") expression.shift();
+      if (expression.length !== 1) {
+        throw androidVersionError(`Android ${token} is not a static value.`);
+      }
+      const raw = expression[0];
+      const literal = /^(?:"[^"\\$]*"|'[^'\\]*')$/u.test(raw);
+      let value: string | null;
+      if (literal) {
+        value = raw.slice(1, -1);
+      } else if (
+        token === "versionName" &&
+        /^(?:project\.)?[A-Za-z_][A-Za-z0-9_]*$/u.test(raw)
+      ) {
+        value = await readGradleProperty(
+          deps,
+          gradleFile,
+          raw.replace(/^project\./u, ""),
+        );
+      } else {
+        throw androidVersionError(
+          `Android ${token} is not a supported static value.`,
+        );
+      }
+      if (value === null) {
+        throw androidVersionError(
+          `Android ${token} "${raw}" is an unresolved Gradle variable.`,
+        );
+      }
+      values.set(token, value);
+    } else {
+      statement.push(token);
     }
-
-    const versionName = androidBlock.defaultConfig?.versionName;
-    if (typeof versionName === "string") {
-      return versionName;
-    }
   }
-
-  return null;
+  const version = values.get("versionName");
+  return version?.trim()
+    ? version + (values.get("versionNameSuffix") ?? "")
+    : null;
 }
 
-function isGradleAndroidBlock(value: unknown): value is GradleAndroidBlock {
-  return typeof value === "object" && value !== null;
+// Gradle properties whose writes change the versionName devices report,
+// including AGP's per-output override. Only the first two are supported as
+// direct android.defaultConfig declarations; every other write is rejected.
+const GRADLE_VERSION_PROPERTY_PATTERN =
+  /(?:^|\.)(versionName(?:Suffix|Override)?|setVersionName(?:Suffix|Override)?)(?:\.(.*))?$/u;
+
+function isGradleVersionWrite(tokens: string[], index: number): boolean {
+  // Escaped Kotlin identifiers name the same properties; detect their writes
+  // even though only ordinary direct declarations are supported above.
+  const member = GRADLE_VERSION_PROPERTY_PATTERN.exec(
+    tokens[index].replace(/`/gu, ""),
+  );
+  if (member === null) return false;
+
+  const next = tokens[index + 1];
+  const following = tokens[index + 2];
+  if (next === "as" || next === "is") return false;
+  // Calls on the value (e.g. versionName.toString()) only read it; a
+  // Property.set(...) call changes it and must still be rejected.
+  if (member[2] !== undefined) return member[2] === "set" && next === "(";
+  if (next === "=" && following !== "=") return true;
+  if (["+", "-", "*", "/", "%"].includes(next) && following === "=")
+    return true;
+  if (
+    (["+", "-"].includes(next) && following === next) ||
+    (["+", "-"].includes(tokens[index - 1]) &&
+      tokens[index - 2] === tokens[index - 1])
+  )
+    return true;
+
+  // Both Groovy command syntax and parenthesized setter calls are writes.
+  // Delimiters/operators following a property reference are reads instead.
+  return next === "(" || /^(?:["']|[A-Za-z_$0-9])/u.test(next ?? "");
 }
 
 async function readGradleProperty(
   deps: Pick<CommandDeps, "readFile" | "stat">,
-  projectRoot: string,
+  gradleFile: string,
   propertyName: string,
 ): Promise<string | null> {
-  const candidates = [
-    path.join(projectRoot, "android", "app", "gradle.properties"),
-    path.join(projectRoot, "android", "gradle.properties"),
-  ];
-
-  for (const candidate of candidates) {
-    const content = await readUtf8FileOrNull(deps, candidate);
-    if (content === null) {
-      continue;
+  const moduleDirectory = path.dirname(gradleFile);
+  let root = moduleDirectory;
+  while (
+    (await readUtf8FileOrNull(deps, path.join(root, "settings.gradle"))) ===
+      null &&
+    (await readUtf8FileOrNull(deps, path.join(root, "settings.gradle.kts"))) ===
+      null
+  ) {
+    const parent = path.dirname(root);
+    if (parent === root) {
+      throw androidVersionError(
+        "Could not locate the Gradle settings file for Android version properties.",
+      );
     }
-
-    const value = parseGradlePropertiesValue(content, propertyName);
-    if (value !== null) {
-      return value;
-    }
+    root = parent;
   }
-
+  for (const directory of new Set([moduleDirectory, root])) {
+    const content = await readUtf8FileOrNull(
+      deps,
+      path.join(directory, "gradle.properties"),
+    );
+    if (content === null) continue;
+    const value = parseGradlePropertiesValue(content, propertyName);
+    if (value !== null) return value;
+  }
   return null;
 }
 
@@ -523,10 +582,6 @@ function androidGradleCandidates(
   ];
 }
 
-function trimWrappingQuotes(value: string): string {
-  return value.replace(/^["']|["']$/gu, "");
-}
-
 async function readUtf8FileOrNull(
   deps: Pick<CommandDeps, "readFile" | "stat">,
   filePath: string,
@@ -549,22 +604,9 @@ function resolveProjectPath(projectRoot: string, inputPath: string): string {
     : path.resolve(projectRoot, inputPath);
 }
 
-function formatCandidateList(candidates: string[]): string {
-  return candidates.length === 1
-    ? candidates[0]
-    : `any of: ${candidates.join(", ")}`;
-}
-
 function iosCandidateScore(candidate: string): number {
   const normalized = candidate.replaceAll("\\", "/").toLowerCase();
   return normalized.includes("test") ? 1 : 0;
-}
-
-function xcodeCandidateScore(candidate: string, plistPath: string): number {
-  const xcodeProjectName = path.basename(path.dirname(candidate), ".xcodeproj");
-  const plistDirectoryName = path.basename(path.dirname(plistPath));
-
-  return xcodeProjectName === plistDirectoryName ? 0 : 1;
 }
 
 function containsBuildSettingPlaceholder(value: string): boolean {
@@ -606,7 +648,9 @@ export function assertExplicitBinaryVersion(value: string): void {
     throw new ValidationError(message);
   }
 
-  if (value.split(".").some((segment) => WILDCARD_VERSION_SEGMENTS.has(segment))) {
+  if (
+    value.split(".").some((segment) => WILDCARD_VERSION_SEGMENTS.has(segment))
+  ) {
     throw new ValidationError(message);
   }
 }

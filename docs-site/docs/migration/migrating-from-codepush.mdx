@@ -19,10 +19,10 @@ The Patch SDK ships in the native binary. Plan a store release (or internal dist
 | CodePush fork (typical) | Codemagic Patch |
 | --- | --- |
 | Hosted or self-hosted CodePush-compatible server | [Self-hosted](/docs/install) Patch stack on your domains |
-| App access key / service token | GitHub OAuth (dashboard) + `cm_pat_…` API tokens (CLI/CI) |
+| App access key / service token | OAuth sign-in (CLI/dashboard) + `cm_pat_…` API tokens (CI/automation) |
 | Deployment key in native config | `CodemagicPatchDeploymentKey` ([same idea](/docs/setup/native-setup#create-apps-and-deployments)) |
 | `Staging` / `Production` deployments | Same channel names by default |
-| `codePush.sync()` / HOC wrapper | [`sync()`](/docs/setup/checking-for-updates) from `@codemagic/react-native-patch` |
+| `codePush.sync()` / HOC wrapper | [`sync()` / `Patch.wrap(App, options?)`](/docs/setup/checking-for-updates) from `@codemagic/react-native-patch` |
 | `release-react` (CodePush CLI) | `cmpatch release-react` |
 | `--mandatory`, rollout, target binary version | Same flags on `cmpatch release-react` / `release patch` |
 | `notifyAppReady()` | Called automatically by `sync()`; [manual](/docs/setup/manual-control) if not using `sync()` |
@@ -51,11 +51,9 @@ Remove your CodePush client package and native wiring (package name varies by fo
 
 ```bash
 yarn remove @code-push-next/react-native-code-push   # or your fork's package
-yarn add @codemagic/react-native-patch
-cd ios && pod install && cd ..
 ```
 
-Wire Patch per [Native setup](/docs/setup/native-setup): bare RN (Info.plist / `strings.xml` + bundle selection) or Expo (config plugin + `prebuild`).
+While CodePush is still referenced from the native hosts, the wiring `cmpatch init` runs reports it as a conflict and leaves the native and JavaScript steps for later; once it is gone, run `cmpatch wire` to install the SDK, run `pod install`, and apply the native changes described in [Native setup](/docs/setup/native-setup).
 
 Replace CodePush calls in JS (example uses `@code-push-next`; adjust the import for your fork):
 
@@ -65,11 +63,74 @@ import codePush from "@code-push-next/react-native-code-push";
 codePush.sync({ installMode: codePush.InstallMode.ON_NEXT_RESTART });
 
 // After (Patch)
-import { sync } from "@codemagic/react-native-patch";
-void sync({ installMode: "ON_NEXT_RESTART" });
+import { InstallMode, sync } from "@codemagic/react-native-patch";
+void sync({ installMode: InstallMode.ON_NEXT_RESTART });
 ```
 
-Remove the `codePush(...)(App)` HOC if you used it, call `sync()` from a `useEffect` or app entry instead. Class-component HOC hooks (`codePushDownloadDidProgress`, etc.) have no direct equivalent; use `sync(options, onProgress)` or [manual control](/docs/setup/manual-control).
+If you used the `codePush(...)(App)` HOC, replace it with `Patch.wrap(App, options)`:
+
+```diff
+- import codePush from "@code-push-next/react-native-code-push";
++ import * as Patch from "@codemagic/react-native-patch";
+
+- export default codePush({ installMode: codePush.InstallMode.ON_NEXT_RESUME })(App);
++ export default Patch.wrap(App, { installMode: Patch.InstallMode.ON_NEXT_RESUME });
+```
+
+The wrapper is for basic automatic updates: it renders your root immediately and calls `sync()` after mount. `checkFrequency` accepts `"ON_APP_START"` (default) or `"ON_APP_RESUME"` (mount plus foreground return). Use `Patch.CheckFrequency` and `Patch.InstallMode` constants, or their string values; do not reuse CodePush's numeric constants or copy the old options object wholesale.
+
+For progress UI, user confirmation, or readiness that depends on asynchronous initialization, use direct APIs instead of the wrapper. See [Manual control](/docs/setup/manual-control). The [wrapper reference](/docs/reference/sdk-reference#wraproot-options) covers its props, refs, and lifecycle.
+
+### Convert background duration to milliseconds
+
+CodePush's `minimumBackgroundDuration` is in **seconds**; Patch's is in **milliseconds**. Convert the value when migrating `ON_NEXT_RESUME` or `ON_NEXT_SUSPEND`:
+
+```diff
+- minimumBackgroundDuration: 60,     // CodePush: one minute
++ minimumBackgroundDuration: 60_000, // Patch: one minute
+```
+
+Keeping `60` would reduce the threshold to 60 milliseconds. This option controls installation timing, not how often the wrapper checks for updates; see [Applying updates](/docs/setup/applying-updates#minimumbackgroundduration).
+
+### Replace a MANUAL wrapper without losing readiness confirmation
+
+The legacy `codePush({ checkFrequency: codePush.CheckFrequency.MANUAL })(App)` wrapper still called `notifyAppReady()` on mount. Patch has no `MANUAL` wrapper policy. Remove the wrapper and preserve that startup responsibility separately from your user-triggered checks:
+
+```tsx
+import * as Patch from "@codemagic/react-native-patch";
+
+export default App; // no update wrapper
+
+// Call from your successful startup path, after required initialization.
+async function onAppStarted() {
+  await Patch.notifyAppReady();
+}
+
+// Connect separately to your "Check for updates" button.
+async function onCheckForUpdates() {
+  const status = await Patch.sync();
+  return status; // Use the result in your UI.
+}
+```
+
+Do not wait for the user to press the button to confirm readiness: an unconfirmed healthy update can eventually roll back after repeated launches without confirmation. If your startup path already calls `sync()` after initialization succeeds, it confirms readiness itself and no separate `notifyAppReady()` call is needed.
+
+### Move custom behavior to direct APIs
+
+The legacy HOC discovered methods on the wrapped class component; these were not callback fields in its options. Choose the manual integration that matches what those methods did:
+
+| Legacy behavior | Patch migration |
+| --- | --- |
+| `codePushDownloadDidProgress` | Use `sync(options, onProgress)` for download progress; see [progress and status](/docs/setup/checking-for-updates#download-progress-and-status). |
+| `codePushStatusDidChange` for completion or errors | Await `sync()` and handle its returned status. Patch returns status strings, not CodePush's numeric `SyncStatus` values. |
+| `codePushStatusDidChange` for checking / downloading / installing UI | Update your UI around each direct API call; see the [manual example](/docs/setup/manual-control#stage-specific-ui). `sync()` does not expose intermediate status callbacks. |
+| `updateDialog` | Show your own confirmation UI before download or installation using [manual control](/docs/setup/manual-control). |
+| `codePushOnBinaryVersionMismatch` | Use `checkForUpdate()` and its store-version fields; see [store updates](/docs/setup/checking-for-updates#binary-version-mismatch-and-store-updates). `sync()` returns only a status. |
+| Custom static properties on the wrapped component | `wrap()` does not hoist them. Keep the original component where consumers need its statics, or explicitly expose the properties your integration requires. |
+| Per-call `deploymentKey` override | Not supported by Patch's JS APIs. Configure deployment keys in the native build; see [per-build configuration](/docs/using-patch/preparing-for-production#3-tune-client-sync-by-build). Apps that switch deployments at runtime need to revise that integration. |
+| `ignoreFailedUpdates` / `rollbackRetryOptions` | No equivalent `sync()` options. Patch's `sync()` skips packages marked `previouslyFailed`; it does not provide CodePush's configurable rollback retry policy. |
+
+Use one owner for automatic checks. When replacing the wrapper with manual lifecycle code, remove `Patch.wrap()` rather than adding a second `sync()` call to observe its work: overlapping calls return `"sync-in-progress"` and do not attach callbacks to the running operation.
 
 ## 3. Point CI at Patch
 
@@ -104,9 +165,12 @@ See [CI integration](/docs/using-patch/ci-integration).
 
 ## Checklist
 
-- [ ] Patch server running with HTTPS and GitHub OAuth configured
+- [ ] Patch server running with HTTPS and an OAuth sign-in provider configured
 - [ ] Apps and deployments created; keys copied into native config
 - [ ] CodePush package and native wiring removed; Patch SDK integrated
-- [ ] `sync()` (or manual API) replaces CodePush sync/HOC
+- [ ] `Patch.wrap()`, `sync()`, or manual APIs replace CodePush sync/HOC
+- [ ] Background duration converted to milliseconds; Patch constants replace CodePush constants
+- [ ] Startup readiness preserved when removing a `MANUAL` HOC
+- [ ] Legacy callbacks, custom statics, and unsupported options reviewed against the migration table
 - [ ] CI secrets and release commands updated to `cmpatch`
 - [ ] New store/internal binary shipped; OTA tested on Staging before Production

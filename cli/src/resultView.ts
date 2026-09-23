@@ -58,6 +58,8 @@ export type ActionSummary = {
    */
   hint?: string;
   summary: string;
+  /** How the action went, for the summary's mark and colour; success when left out. */
+  tone?: "ok" | "warn" | "err";
 };
 
 /** One sentence about what changed, and where to look for more. */
@@ -65,7 +67,9 @@ export function renderActionView(
   action: ActionSummary,
   palette: Palette,
 ): string {
-  const head = `${palette.ok("✓")} ${action.summary}\n`;
+  const tone = action.tone ?? "ok";
+  const mark = { err: "✗", ok: "✓", warn: "!" }[tone];
+  const head = `${palette[tone](mark)} ${action.summary}\n`;
   const details =
     action.details === undefined || action.details.length === 0
       ? ""
