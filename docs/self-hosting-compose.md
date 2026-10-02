@@ -76,8 +76,9 @@ differ.
     exchange when Bitbucket sign-in is configured.
   - **GitLab** (`gitlab.com`, or your self-hosted GitLab origin) — OAuth token
     exchange and identity lookup when GitLab sign-in is configured.
-  - **A container registry** (Docker Hub) — the PostgreSQL/MinIO images and the
-    image build base layers.
+  - **A container registry** (Docker Hub) — the PostgreSQL and MinIO images
+    (MinIO ships as PGSTY Silo, a maintained MinIO fork) and the image build
+    base layers.
   - **The Cloudflare API** — only if you enable the CDN.
 
 ### DNS — must resolve before you install

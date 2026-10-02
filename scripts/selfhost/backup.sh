@@ -91,7 +91,13 @@ backup_cleanup() {
 
   if [ "$SERVER_WAS_RUNNING" -eq 1 ]; then
     log_selfhost "restarting server after backup"
-    if ! compose_selfhost up -d server; then
+    # `--no-deps`: only the server was stopped, so only the server is brought
+    # back. Without it, `up` also recreates any depends_on service whose
+    # config changed in the checkout (e.g. a newly pinned postgres/minio image
+    # after a `git pull`) — switching storage or the database to a new image
+    # here, before upgrade.sh has confirmed its pre-upgrade backup and outside
+    # its rollback path.
+    if ! compose_selfhost up -d --no-deps server; then
       exit_code=1
     else
       # `up -d` only proves the container was created: a server that

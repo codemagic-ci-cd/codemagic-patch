@@ -356,17 +356,20 @@ TEST_S3_SECRET_ACCESS_KEY=minio12345 \
 yarn workspace @codemagic/patch-server test test/adapters/s3-storage.test.ts
 ```
 
-A throwaway MinIO container suitable for local runs:
+A throwaway S3-compatible container suitable for local runs (PGSTY Silo, the
+MinIO fork the dev stack bundles; it reads the same `MINIO_*` variables):
 
 ```bash
-docker run --rm -d -p 9000:9000 -p 9001:9001 \
+docker run --rm -d --name s3-test -p 9000:9000 -p 9001:9001 \
   -e MINIO_ROOT_USER=minio \
   -e MINIO_ROOT_PASSWORD=minio12345 \
-  quay.io/minio/minio server /data --console-address ":9001"
+  pgsty/silo:RELEASE.2026-09-16T00-00-00Z server /data --console-address ":9001"
 
-mc alias set local http://localhost:9000 minio minio12345
-mc mb --ignore-existing local/codemagic-patch-test
+docker exec s3-test mc alias set local http://localhost:9000 minio minio12345
+docker exec s3-test mc mb --ignore-existing local/codemagic-patch-test
 ```
+
+The server image ships `mc`, so no host-side client install is needed.
 
 To run the artifact correctness gate without DB/S3 skips, including
 `test/delivery/public-path.e2e.test.ts`, run
