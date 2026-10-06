@@ -1,0 +1,56 @@
+---
+title: CLI for Capacitor
+sidebar_label: CLI for Capacitor
+description: Release notes for the cmpatch-capacitor CLI (@codemagic/capacitor-patch-cli), by version.
+llmsDescription: 'cmpatch-capacitor CLI (@codemagic/capacitor-patch-cli) release notes by version.'
+toc_max_heading_level: 2
+---
+
+# CLI for Capacitor release notes
+
+Release notes for `cmpatch-capacitor`, published as
+`@codemagic/capacitor-patch-cli`. It publishes and manages releases for apps
+that use the [Capacitor SDK](/docs/releases/capacitor-sdk). Self-host operator
+commands (`selfhost install`, `upgrade`, `backup`) are in
+[`cmpatch`](/docs/releases/cli) for all frameworks. The other surfaces'
+releases and the compatibility table are on the
+[Release Notes](/docs/releases) page.
+
+```bash
+npm install -g @codemagic/capacitor-patch-cli@latest
+```
+
+Reference: [CLI reference](/docs/reference/cli-reference) ·
+[Binary versions for Capacitor](/docs/using-patch/binary-version-capacitor) ·
+[GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=capacitor-patch-cli)
+
+## 0.1.0 {#v0-1-0}
+
+*6th October 2026* ·
+**Requires server 0.6.0 or newer**
+
+First published version. Flags may still change before 1.0.
+
+`cmpatch-capacitor` is a standalone CLI for Capacitor apps and does not
+require `cmpatch`. It signs in, creates apps and deployments, publishes built
+web assets with `release create`, and manages existing releases with
+`release patch`, `disable`, `enable`, `promote`, `rollback`, and adoption
+metrics. CI can sign in with personal access tokens.
+
+- **Web root check:** `release create` checks that the bundle has
+  `index.html` at its top level before uploading. A bundle rooted one folder
+  too high installs but boots to a blank screen.
+- **Binary version targeting:** The CLI does not compute a native
+  fingerprint; `--target-binary-version` ties a release to a native build. See
+  [Binary versions for Capacitor](/docs/using-patch/binary-version-capacitor).
+  `release patch` and `promote` refuse a target override that moves a
+  Capacitor release to another binary version.
+- **Framework scoping:** `app create` records the app as a Capacitor app, and
+  app lists and pickers show only Capacitor apps. Server 0.6.0 stores the
+  framework, and the dashboard shows the `cmpatch-capacitor` release command
+  for these apps.
+- **Shared default server:** `cmpatch-capacitor` reads the default server from
+  the same `~/.codemagic-patch/config.json` as `cmpatch`, and `config set`
+  writes to it. Sign-ins are stored separately in `credentials-capacitor.json`.
+
+See the [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch-cli%400.1.0).

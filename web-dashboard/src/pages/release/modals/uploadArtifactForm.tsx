@@ -618,6 +618,11 @@ function isSignatureRequiredProblem(error: unknown): boolean {
   if (error.typeSuffix !== "validation-error") {
     return false;
   }
+  if (error.extensions.reason === "signature_required") {
+    return true;
+  }
+  // Servers that predate the top-level reason say the same thing through the
+  // field error alone.
   return (
     error.errors?.some(
       (fieldError) =>

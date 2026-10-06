@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./cli/tsconfig.json" },
+    { "path": "./cli-capacitor/tsconfig.json" },
     { "path": "./client/tsconfig.json" },
     { "path": "./server/tsconfig.json" }
   ]

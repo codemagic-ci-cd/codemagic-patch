@@ -1127,14 +1127,16 @@ List/metrics commands accept `--format table|json`.
 | ------------------ | ------------------------- | ------------------------------------------------------------------- |
 | `server/`          | `@codemagic/patch-server` | Fastify API + release/manifest worker                               |
 | `client/`          | `@codemagic/react-native-patch` | React Native SDK + Expo config plugin (`app.plugin.js`)             |
-| `cli/`             | `codemagic-patch`         | The `cmpatch` CLI                                                    |
+| `client-capacitor/` | `@codemagic/capacitor-patch` | Capacitor / Ionic SDK (0.x) and its [example app](client-capacitor/example-app/README.md) |
+| `cli/`             | `@codemagic/patch-cli`    | The `cmpatch` CLI                                                    |
+| `cli-capacitor/`   | `@codemagic/capacitor-patch-cli` | The [`cmpatch-capacitor`](cli-capacitor/README.md) CLI: sets up, publishes and operates OTA releases of Capacitor / Ionic apps, without `cmpatch` (0.x) |
 | `web-dashboard/`   | `web-dashboard`           | React SPA dashboard (served by Caddy)                               |
 | `shared/`          | `@codemagic/patch-shared` | Types and helpers shared across packages                            |
 | `deploy/selfhost/` | —                         | Caddyfile, MinIO bucket policy, dashboard image build               |
 | `scripts/selfhost/`| —                         | `install.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `smoke.sh`   |
 | `scripts/local-eval/` | —                      | Local evaluation stack bootstrap (`up.sh`) and its smoke checks     |
 | `examples/`        | —                         | Evaluation-stack seed data, bundle fixtures, and the [on-device demo app](examples/on-device-demo/README.md) |
-| `docs/`            | —                         | Guides — e.g. [migrating from CodePush](docs/migrate-from-codepush.md)  |
+| `docs/`            | —                         | Guides — e.g. migrating from [CodePush](docs/migrate-from-codepush.md) or [Appflow Live Updates](docs/migrate-from-appflow.md) |
 
 
 ## Feedback

@@ -7,6 +7,7 @@
 // command says so. That policy is the boundary: this module will never ask for
 // a flag the command did not declare as config-resolvable.
 
+import { teamAppsPath } from "./appFramework";
 import { hasBooleanOption, readOptionValue } from "./argv";
 import {
   CONFIG_DEFAULTED_FLAGS,
@@ -384,7 +385,7 @@ async function askForServerResources(
     const apps = await listNamedResources(
       deps,
       serverUrl,
-      `/v1/teams/${encodeURIComponent(teamId)}/apps`,
+      teamAppsPath(teamId),
       token,
       "apps",
     );

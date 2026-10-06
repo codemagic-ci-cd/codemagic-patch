@@ -20,7 +20,9 @@ RUN apk add --no-cache build-base python3 linux-headers
 # first so the install layer is cached when only source changes.
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY cli/package.json ./cli/
+COPY cli-capacitor/package.json ./cli-capacitor/
 COPY client/package.json ./client/
+COPY client-capacitor/package.json ./client-capacitor/
 COPY server/package.json ./server/
 COPY shared/package.json ./shared/
 COPY web-dashboard/package.json ./web-dashboard/

@@ -1,0 +1,61 @@
+---
+title: Binary version compatibility
+description: >-
+  How the target binary version scopes Capacitor releases, and when to bump the
+  native app version.
+llmsDescription: >-
+  Capacitor: no native fingerprint; --target-binary-version scopes each release;
+  bump the native version on native changes; releases cannot be retargeted.
+sidebar_label: Binary version
+sidebar_custom_props:
+  sdk: capacitor
+---
+
+# Binary version compatibility
+
+A Capacitor release is delivered only to devices whose native app version exactly matches the release's `--target-binary-version`. Patch does not compare native builds for Capacitor apps, so the native app version is the only compatibility check between a web bundle and the binary it runs on.
+
+## Why it matters
+
+Web code calls into native code through Capacitor plugins, custom native classes, and native configuration. A bundle that works on one native build can fail on another. For example, a bundle that calls `Camera.getPhoto()` fails on a binary built before `@capacitor/camera` was added.
+
+`cmpatch-capacitor` does not compute a native fingerprint. It sends a `binary-version:<version>` label in the release's fingerprint field, so the server never widens a release to other binary versions. The [fingerprint checks and expansion](/docs/using-patch/fingerprinting) used for React Native do not apply.
+
+## Versioning rules
+
+- Bump the native app version whenever the native side changes: a plugin added, removed, or upgraded, native code edited, or native configuration changed (including `capacitor.config.ts` values that `npx cap sync` copies into the native projects).
+- Builds that share a version must be interchangeable for the web bundle.
+- To ship the same bundle to several binary versions, publish one release per version.
+
+The target binary version is `CFBundleShortVersionString` on iOS (Marketing Version in Xcode) and `versionName` on Android (`android/app/build.gradle`). Ranges and wildcards such as `^1.2.0` are rejected. In CI, read the version from the store binary you are updating; see [Target the version from a published iOS binary](/docs/using-patch/ci-integration#target-the-version-from-a-published-ios-binary) and [Android binary](/docs/using-patch/ci-integration#target-the-version-from-a-published-android-binary).
+
+## Releases cannot be retargeted
+
+`release patch` and `release promote` accept `--target-binary-version`, but `cmpatch-capacitor` rejects it for releases it uploaded. The `binary-version:<version>` label stays with the release, so retargeting would make the server treat both versions as the same native build and deliver releases for one to the other.
+
+To ship a bundle to another version, publish it again:
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Production --target-binary-version 1.5.0
+```
+
+:::warning
+The check runs in the CLI only. Do not change the target binary version of these releases in the [dashboard](/docs/using-patch/dashboard).
+:::
+
+## Use one CLI per deployment
+
+Publish to a Capacitor app's deployments with `cmpatch-capacitor` only. If another tool has already recorded a native fingerprint for a binary version, `cmpatch-capacitor` still publishes but prints a warning that the values differ.
+
+`cmpatch-capacitor` only resolves Capacitor apps by name, which prevents most mix-ups. Apps and deployments selected by ID (`--app-id`, `--deployment-id`) are not checked.
+
+## Example: shipping a native change
+
+Production runs `1.4.0`, and the next feature needs a new native plugin:
+
+1. Set the native version to `1.5.0`, then build and submit it to the stores.
+2. Publish web bundles that use the plugin with `--target-binary-version 1.5.0`. Devices on `1.4.0` do not receive them.
+3. To fix a bug for users still on `1.4.0`, build the fix from the `1.4.0` web code and publish it with `--target-binary-version 1.4.0`.
+
+Each update check returns `isStoreUpdateAvailable` and `latestBinaryVersion`, which you can use to prompt `1.4.0` users to update from the store. See [Checking for updates](/docs/setup/checking-for-updates#binary-version-mismatch-and-store-updates).

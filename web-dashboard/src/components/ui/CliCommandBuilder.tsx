@@ -1,13 +1,18 @@
-// Interactive CLI command builder (v1: release-react), rendered inside the
-// New release modal. App and deployment come from the caller; the user picks
-// platform and options. Bare form only — the modal supplies title and chrome.
+// Interactive CLI command builder, rendered inside the New release modal. App
+// and deployment come from the caller; the user picks the options. Bare form
+// only — the modal supplies title and chrome. One component serves both CLIs:
+// everything but the command itself and one field is shared, and the two
+// frameworks differ in what the release IS — a platform's JS bundle for React
+// Native, a directory of built web assets for Capacitor.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { buildCapacitorReleaseCommand } from "../../cli/buildCapacitorReleaseCommand";
 import {
   buildReleaseReactCommand,
   type ReleaseReactPlatform,
 } from "../../cli/buildReleaseReactCommand";
+import type { KnownFramework } from "../../model/framework";
 import {
   CODEBLOCK,
   CODEBLOCK_COPY_BTN,
@@ -61,14 +66,35 @@ const BUILDER_LABEL =
 
 const BUILDER_CONTROL = "flex items-center";
 
-const DEFAULT_PRIVATE_KEY_PATH = "./cmpatch-private.pem";
+/** The frameworks whose CLI this builder can write a command for: every known one. */
+export type CliBuilderFramework = KnownFramework;
+
+/** Each CLI's own README uses its own key filename in the signing example. */
+const DEFAULT_PRIVATE_KEY_PATH: Record<CliBuilderFramework, string> = {
+  "react-native": "./cmpatch-private.pem",
+  capacitor: "./patch-private-key.pem",
+};
+
+/** The `webDir` of a stock Capacitor project. */
+const DEFAULT_BUNDLE_PATH = "www";
 
 const PLATFORMS: readonly { value: ReleaseReactPlatform; label: string }[] = [
   { value: "ios", label: "iOS" },
   { value: "android", label: "Android" },
 ];
 
+function isBlank(value: string): boolean {
+  return value.trim().length === 0;
+}
+
+// A flag the CLI requires stays in the command as a placeholder while its field is
+// blank; the field shows why the command is not ready to paste.
+function requiredInputState(value: string): string {
+  return isBlank(value) ? INPUT_STATE.invalid : INPUT_STATE.normal;
+}
+
 export interface CliCommandBuilderProps {
+  framework: CliBuilderFramework;
   serverUrl: string;
   appName: string;
   deploymentName: string;
@@ -78,13 +104,16 @@ export interface CliCommandBuilderProps {
 }
 
 export function CliCommandBuilder({
+  framework,
   serverUrl,
   appName,
   deploymentName,
   suggestedTargetBinaryVersion = "",
   codeSigningRequired = false,
 }: CliCommandBuilderProps) {
+  const capacitor = framework === "capacitor";
   const [platform, setPlatform] = useState<ReleaseReactPlatform>("ios");
+  const [bundlePath, setBundlePath] = useState(DEFAULT_BUNDLE_PATH);
   const [targetBinaryVersion, setTargetBinaryVersion] = useState(
     suggestedTargetBinaryVersion,
   );
@@ -93,7 +122,9 @@ export function CliCommandBuilder({
   const [mandatory, setMandatory] = useState(false);
   const [disabled, setDisabled] = useState(false);
   const [dryRun, setDryRun] = useState(false);
-  const [privateKeyPath, setPrivateKeyPath] = useState(DEFAULT_PRIVATE_KEY_PATH);
+  const [privateKeyPath, setPrivateKeyPath] = useState(
+    DEFAULT_PRIVATE_KEY_PATH[framework],
+  );
 
   // Re-prefill the target version when a newer release changes the suggestion.
   // React's "adjust state during render" pattern — avoids an effect that would
@@ -111,36 +142,38 @@ export function CliCommandBuilder({
       ? parsedRollout
       : 100;
 
-  const command = useMemo(
-    () =>
-      buildReleaseReactCommand({
-        serverUrl,
-        appName,
-        deploymentName,
-        platform,
-        targetBinaryVersion,
-        releaseNotes,
-        rolloutPercentage: rollout,
-        mandatory,
-        disabled,
-        dryRun,
-        privateKeyPath: codeSigningRequired ? privateKeyPath : undefined,
-      }),
-    [
+  const command = useMemo(() => {
+    const shared = {
       serverUrl,
       appName,
       deploymentName,
-      platform,
       targetBinaryVersion,
       releaseNotes,
-      rollout,
+      rolloutPercentage: rollout,
       mandatory,
       disabled,
       dryRun,
-      codeSigningRequired,
-      privateKeyPath,
-    ],
-  );
+      privateKeyPath: codeSigningRequired ? privateKeyPath : undefined,
+    };
+    return capacitor
+      ? buildCapacitorReleaseCommand({ ...shared, bundlePath })
+      : buildReleaseReactCommand({ ...shared, platform });
+  }, [
+    capacitor,
+    serverUrl,
+    appName,
+    deploymentName,
+    bundlePath,
+    platform,
+    targetBinaryVersion,
+    releaseNotes,
+    rollout,
+    mandatory,
+    disabled,
+    dryRun,
+    codeSigningRequired,
+    privateKeyPath,
+  ]);
 
   const { state, copy } = useCopyState();
   const codeRef = useRef<HTMLElement>(null);
@@ -167,29 +200,46 @@ export function CliCommandBuilder({
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
-        <div className={BUILDER_FIELD}>
-          <span className={BUILDER_LABEL}>Platform</span>
-          <div className={BUILDER_CONTROL}>
-            <div className={SEGMENTED} role="group" aria-label="Platform">
-              {PLATFORMS.map((option) => {
-                const active = platform === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`${SEGMENTED_BTN} ${
-                      active ? SEGMENTED_BTN_ACTIVE : SEGMENTED_BTN_IDLE
-                    }`}
-                    aria-pressed={active}
-                    onClick={() => setPlatform(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+        {capacitor ? (
+          <label className={`${BUILDER_FIELD} w-[9rem] shrink-0`}>
+            <span className={BUILDER_LABEL}>Bundle path</span>
+            <div className={BUILDER_CONTROL}>
+              <input
+                type="text"
+                required
+                aria-invalid={isBlank(bundlePath)}
+                className={`${BUILDER_INPUT} ${requiredInputState(bundlePath)} w-full`}
+                value={bundlePath}
+                title="The webDir of capacitor.config, or a ZIP of its contents"
+                onChange={(event) => setBundlePath(event.target.value)}
+              />
+            </div>
+          </label>
+        ) : (
+          <div className={BUILDER_FIELD}>
+            <span className={BUILDER_LABEL}>Platform</span>
+            <div className={BUILDER_CONTROL}>
+              <div className={SEGMENTED} role="group" aria-label="Platform">
+                {PLATFORMS.map((option) => {
+                  const active = platform === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`${SEGMENTED_BTN} ${
+                        active ? SEGMENTED_BTN_ACTIVE : SEGMENTED_BTN_IDLE
+                      }`}
+                      aria-pressed={active}
+                      onClick={() => setPlatform(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <label className={`${BUILDER_FIELD} w-[4.5rem] shrink-0`}>
           <span className={BUILDER_LABEL}>Rollout %</span>
@@ -210,10 +260,18 @@ export function CliCommandBuilder({
           <div className={BUILDER_CONTROL}>
             <input
               type="text"
-              className={`${BUILDER_INPUT} ${INPUT_STATE.normal} w-full`}
+              required={capacitor}
+              aria-invalid={capacitor && isBlank(targetBinaryVersion)}
+              className={`${BUILDER_INPUT} ${
+                capacitor ? requiredInputState(targetBinaryVersion) : INPUT_STATE.normal
+              } w-full`}
               value={targetBinaryVersion}
-              placeholder="e.g. ^1.8.0"
-              title="Optional semver range for native app versions"
+              placeholder={capacitor ? "e.g. 1.4.0" : "e.g. ^1.8.0"}
+              title={
+                capacitor
+                  ? "Required: the exact native app version this release is for"
+                  : "Optional semver range for native app versions"
+              }
               onChange={(event) => setTargetBinaryVersion(event.target.value)}
             />
           </div>

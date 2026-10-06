@@ -8,6 +8,9 @@ llmsDescription: >-
   Datadog/Sentry vs Patch storage.
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Analytics and metrics
 
 Patch records download, ready, applied, and failure events from the client SDK. Use the dashboard and CLI to monitor rollout health.
@@ -16,7 +19,7 @@ The client posts events to `{apiUrl}/v1/metrics/events`. Metrics failures never 
 
 ## Dashboard
 
-The web dashboard is your team's control plane in the browser: apps, deployments, release history, New release (command builder or `.cmpatch` upload), promote/rollback/rollout actions, members, and API tokens.
+The web dashboard is your team's control plane in the browser: apps, deployments, release history, New release (command builder, or `.cmpatch` upload for React Native), promote/rollback/rollout actions, members, and API tokens.
 
 Under **Metrics**, drill from apps to deployments for rollups. See [Web dashboard](/docs/using-patch/dashboard) for a full walkthrough. Open it at your API URL after [install](/docs/install) (e.g. `https://updates.example.com/`).
 
@@ -24,17 +27,43 @@ Under **Metrics**, drill from apps to deployments for rollups. See [Web dashboar
 
 ### Deployment-level metrics
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch deployment metrics --app MyApp-iOS --deployment Production --format table
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor deployment metrics --app MyApp-iOS --deployment Production
+```
+
+  </TabItem>
+</SdkTabs>
 
 Useful for overall adoption and health across all releases in a deployment.
 
 ### Per-release metrics
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release metrics --app MyApp-iOS --deployment Production --label v4 --format table
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release metrics --app MyApp-iOS --deployment Production --label v4
+```
+
+  </TabItem>
+</SdkTabs>
 
 Typical event types include Downloaded, Ready, Applied, Failed, and Active.
 
@@ -68,7 +97,18 @@ Tools like Datadog or Sentry need extra information to see which OTA release a d
 
 OTA JS ships minified, so without a map your crash tool only shows a wall of names. Upload the map to a tool such as Datadog or Sentry. Keeping a copy on Patch alone does not symbolicate those stack traces.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 You can still attach a map when you publish (`cmpatch release create --sourcemap …`, or `cmpatch release-react --sourcemap-output …`). Patch stores it privately under `_internal`. Apps never download it for OTA, and Patch does not push it to your crash tool for you.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch-capacitor` does not upload source maps. Upload them to your crash reporting tool from the CI job that builds `webDir`. Any `.map` files in `webDir` are included in the release and downloaded to devices; remove them before publishing if needed.
+
+  </TabItem>
+</SdkTabs>
 
 In practice: build the map in the same CI job as the release, then run your tracker’s upload step (for example Datadog’s React Native / `datadog-ci` flow). Use a version tag that matches how you label that OTA release in RUM or errors.
 

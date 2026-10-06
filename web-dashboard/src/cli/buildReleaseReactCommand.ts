@@ -1,6 +1,8 @@
 // Assembles a `cmpatch release-react` snippet for the dashboard CLI builder.
 // Mirrors flag names from cli/src/commandParsers.ts — string only, no CLI import.
 
+import { pushBooleanFlag, pushFlag } from "./commandFlags";
+
 export type ReleaseReactPlatform = "android" | "ios";
 
 export interface ReleaseReactCommandInput {
@@ -15,27 +17,6 @@ export interface ReleaseReactCommandInput {
   disabled?: boolean;
   dryRun?: boolean;
   privateKeyPath?: string;
-}
-
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9._:/-]+$/.test(value)) {
-    return value;
-  }
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-// Value flags are string flags in the CLI parser: a bare `--flag` with no value
-// is a parse error, so an absent or blank value must omit the flag entirely.
-function pushFlag(parts: string[], flag: string, value: string): void {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return;
-  }
-  parts.push(`--${flag} ${shellQuote(trimmed)}`);
-}
-
-function pushBooleanFlag(parts: string[], flag: string): void {
-  parts.push(`--${flag}`);
 }
 
 export function buildReleaseReactCommand(

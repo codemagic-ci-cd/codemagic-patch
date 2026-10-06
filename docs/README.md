@@ -5,6 +5,9 @@ the [root README](../README.md) — product overview, quickstart, and end-to-end
 
 - [Migrate from CodePush](migrate-from-codepush.md) — swap `react-native-code-push`
   for `@codemagic/react-native-patch` and map your CLI workflow to `cmpatch`.
+- [Migrate from Appflow Live Updates](migrate-from-appflow.md) — swap
+  `@capacitor/live-updates` for `@codemagic/capacitor-patch` and map
+  Appflow channels and dashboard actions to deployments and the `cmpatch-capacitor` CLI.
 - [Self-hosting with Docker Compose](self-hosting-compose.md) — the supported
   production deployment path: one Docker host, bundled PostgreSQL and MinIO, Caddy
   for HTTPS.

@@ -1,6 +1,7 @@
 import type { ApiTokenMetadata } from "../model/apiToken";
 import type { App } from "../model/app";
 import type { Deployment } from "../model/deployment";
+import { DEFAULT_FRAMEWORK } from "../model/framework";
 import type {
   RoleBinding,
   RoleDefinition,
@@ -12,6 +13,7 @@ import type {
   FailureDistribution,
   FailureDistributionEntry,
   FailureEventPage,
+  ReleaseDelivery,
   ReleaseMetrics,
 } from "../model/metrics";
 import type { Release, ReleaseJob } from "../model/release";
@@ -39,6 +41,7 @@ import type {
   ReleaseCreationWarning,
   ReleaseLifecycleResponse,
   ReleaseListItem,
+  ReleaseMetricsDetail,
   ReleaseMetricsEntry,
   ReleaseReadResponse,
   ReleasesListResponse,
@@ -59,6 +62,8 @@ export interface TeamWire {
 
 export interface AppWire {
   created_at: string;
+  /** Absent on servers that predate the field — see fromAppWire. */
+  framework?: string;
   id: string;
   name: string;
   require_code_signing: boolean;
@@ -240,6 +245,18 @@ export interface ReleaseMetricsWire {
   success: number;
 }
 
+export interface ReleaseDeliveryLaneWire {
+  downloads: number;
+  size_bytes: number | null;
+}
+
+export interface ReleaseDeliveryWire {
+  full_bundle: ReleaseDeliveryLaneWire;
+  patch: ReleaseDeliveryLaneWire & {
+    from_release_label: string | null;
+  };
+}
+
 export interface FailureDistributionEntryWire {
   count: number;
   value: string;
@@ -276,6 +293,7 @@ export interface FailureEventsWireResponse {
 }
 
 export interface ReleaseMetricsRowWire {
+  delivery?: ReleaseDeliveryWire;
   metrics: ReleaseMetricsWire;
   release_id: string;
   release_label: string;
@@ -363,7 +381,17 @@ export interface DeploymentMetricsWireResponse {
   releases: ReleaseMetricsRowWire[];
 }
 
+export interface ReleaseBinaryVersionMetricsWire {
+  binary_version: string | null;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
 export interface ReleaseMetricsWireResponse {
+  /** Absent from servers older than the per-binary breakdown. */
+  binary_versions?: ReleaseBinaryVersionMetricsWire[];
   release: ReleaseMetricsRowWire;
 }
 
@@ -384,6 +412,8 @@ export interface TimeseriesSeriesWire {
 }
 
 export interface DeploymentTimeseriesWireResponse {
+  /** Absent from servers older than the binary version filter. */
+  binary_versions?: string[];
   bucket: "day";
   from: string;
   series: TimeseriesSeriesWire[];
@@ -457,6 +487,8 @@ export function fromTeamWire(team: TeamWire): Team {
 export function fromAppWire(app: AppWire): App {
   return {
     createdAt: app.created_at,
+    // A server older than the field only ever hosted React Native clients.
+    framework: app.framework ?? DEFAULT_FRAMEWORK,
     id: app.id,
     name: app.name,
     requireCodeSigning: app.require_code_signing,
@@ -706,6 +738,7 @@ export function fromReleaseMetricsRowWire(
   row: ReleaseMetricsRowWire,
 ): ReleaseMetricsEntry {
   return {
+    delivery: row.delivery ? fromReleaseDeliveryWire(row.delivery) : null,
     metrics: fromReleaseMetricsWire(row.metrics),
     releaseId: row.release_id,
     releaseLabel: row.release_label,
@@ -714,10 +747,42 @@ export function fromReleaseMetricsRowWire(
   };
 }
 
+export function fromReleaseMetricsWireResponse(
+  response: ReleaseMetricsWireResponse,
+): ReleaseMetricsDetail {
+  return {
+    ...fromReleaseMetricsRowWire(response.release),
+    binaryVersions: (response.binary_versions ?? []).map((row) => ({
+      binaryVersion: row.binary_version,
+      downloaded: row.downloaded,
+      failed: row.failed,
+      installed: row.installed,
+      success: row.success,
+    })),
+  };
+}
+
+function fromReleaseDeliveryWire(
+  delivery: ReleaseDeliveryWire,
+): ReleaseDelivery {
+  return {
+    fullBundle: {
+      downloads: delivery.full_bundle.downloads,
+      sizeBytes: delivery.full_bundle.size_bytes,
+    },
+    patch: {
+      downloads: delivery.patch.downloads,
+      fromReleaseLabel: delivery.patch.from_release_label,
+      sizeBytes: delivery.patch.size_bytes,
+    },
+  };
+}
+
 export function fromDeploymentTimeseriesWire(
   response: DeploymentTimeseriesWireResponse,
 ): DeploymentTimeseries {
   return {
+    binaryVersions: response.binary_versions ?? [],
     bucket: response.bucket,
     from: response.from,
     series: response.series.map((series) => ({

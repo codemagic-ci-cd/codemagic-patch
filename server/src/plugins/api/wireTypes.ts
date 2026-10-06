@@ -25,6 +25,7 @@ export interface TeamWire {
 
 export interface AppWire {
   created_at: Date;
+  framework: string;
   id: App["id"];
   name: string;
   require_code_signing: boolean;
@@ -233,7 +234,18 @@ export interface ReleaseMetricsWire {
   success: number;
 }
 
-/** One distinct `payload.message` under a failure code, with its count. */
+export interface ReleaseDeliveryLaneWire {
+  downloads: number;
+  size_bytes: number | null;
+}
+
+export interface ReleaseDeliveryWire {
+  full_bundle: ReleaseDeliveryLaneWire;
+  patch: ReleaseDeliveryLaneWire & {
+    from_release_label: string | null;
+  };
+}
+
 /** One value and its count inside a code bucket's distribution. */
 export interface FailureDistributionEntryWire {
   count: number;
@@ -274,11 +286,20 @@ export interface FailureEventsWireResponse {
 }
 
 export interface ReleaseMetricsRowWire {
+  delivery?: ReleaseDeliveryWire;
   metrics: ReleaseMetricsWire;
   release_id: string;
   release_label: string;
   target_binary_version: string;
   target_package_hash: string | null;
+}
+
+export interface ReleaseBinaryVersionMetricsWire {
+  binary_version: string | null;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
 }
 
 export interface TimeseriesBucketWire {
@@ -298,6 +319,8 @@ export interface TimeseriesSeriesWire {
 }
 
 export interface DeploymentTimeseriesWire {
+  /** Versions that reported in the range, ignoring `binary_version`. */
+  binary_versions: string[];
   bucket: "day";
   from: string;
   series: TimeseriesSeriesWire[];

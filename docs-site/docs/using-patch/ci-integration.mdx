@@ -3,8 +3,11 @@ title: CI integration
 description: >-
   Publish OTA updates automatically from GitHub Actions, GitLab CI, Codemagic,
   or other CI systems.
-llmsDescription: 'Automate cmpatch release-react in GitHub Actions, GitLab CI, Codemagic, other CI.'
+llmsDescription: 'Automate cmpatch release-react (React Native) or cmpatch-capacitor release create (Capacitor) in GitHub Actions, GitLab CI, Codemagic, other CI.'
 ---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # CI integration
 
@@ -12,17 +15,39 @@ Patch updates can be published from a developer machine or automated in CI. Rele
 
 Typical flow:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```text
 commit → CI build → tests pass → cmpatch release-react → update deployed
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```text
+commit → CI web build → tests pass → cmpatch-capacitor release create → update deployed
+```
+
+Capacitor apps publish with `cmpatch-capacitor`, which uploads the `webDir` built by your CI. Pass `--target-binary-version` on every publish.
+
+  </TabItem>
+</SdkTabs>
+
 ## Prerequisites
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Your pipeline needs:
+
+<div>
 
 1. Node.js `>=20` and the `cmpatch` CLI installed (see below)
 2. A Patch API token (`cm_pat_…`) with permission to publish
 3. Your server URL reachable from the CI runner (not `localhost` unless the runner is on the same host)
+
+</div>
 
 ### Install cmpatch in CI
 
@@ -40,16 +65,45 @@ cmpatch token create --name ci
 
 Store the `cm_pat_…` value as a secret. It is shown only once.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Your pipeline needs:
+
+<div>
+
+1. Node.js `20.19+` or `22.12+` and `cmpatch-capacitor`
+2. A Patch API token (`cm_pat_…`) with permission to publish
+3. Your server URL reachable from the CI runner (not `localhost` unless the runner is on the same host)
+
+</div>
+
+The examples below install the CLI with `npm install -g @codemagic/capacitor-patch-cli`. The package is a 0.x release; its flags may still change.
+
+Create a token from the CLI or from the dashboard's **API tokens** page:
+
+```bash
+cmpatch-capacitor token create --name ci --expires-in-days 365
+```
+
+Store the `cm_pat_…` value as a secret. It is shown only once.
+
+  </TabItem>
+</SdkTabs>
+
 ## Environment variables
 
 | Variable | Purpose |
 | --- | --- |
-| `CODEMAGIC_PATCH_TOKEN` | API token for `cmpatch` (or pass `--token`) |
+| `CODEMAGIC_PATCH_TOKEN` | API token for the CLI (or pass `--token`) |
 | `CODEMAGIC_PATCH_SERVER_URL` | Your Patch API URL, e.g. `https://updates.example.com` |
 
-Auth precedence: `--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`.
+Auth precedence: `--token` → `CODEMAGIC_PATCH_TOKEN` → the credential stored by `login`.
 
 ## Keep bundle environment in sync with the native build
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Values read at bundling time, such as Expo's `EXPO_PUBLIC_*` variables, are inlined into the JavaScript bundle. `cmpatch release-react` runs the Metro or Expo bundler with the environment of the shell it is invoked from. If that environment differs from the one the store binary was bundled with, the update ships different values than the binary did. The CLI does not read EAS build profiles or the `env` blocks in `eas.json`, so you keep the two in sync yourself.
 
@@ -77,9 +131,22 @@ A committed dotenv file also works: `release-react` bundles with `--dev false`, 
 
 Anything that changes the native binary itself (deployment keys, native config) still needs a new store build; see [Build for different deployments](/docs/setup/native-setup#build-for-different-deployments).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Build-time values, such as Vite `VITE_*` variables or Angular environment files, are compiled into the web assets when CI builds `webDir`. Build OTA bundles with the same environment and configuration as the web assets in the store binary. Otherwise the update ships different values than the binary.
+
+Changes to the native binary (deployment keys, native config, plugins) require a new store build; see [Build for different deployments](/docs/setup/native-setup-capacitor#build-for-different-deployments).
+
+  </TabItem>
+</SdkTabs>
+
 ## Codemagic
 
 Run the same commands you would locally after a successful build:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```yaml
 scripts:
@@ -97,11 +164,52 @@ scripts:
         --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```yaml
+scripts:
+  - name: Install cmpatch-capacitor
+    script: |
+      npm install -g @codemagic/capacitor-patch-cli
+
+  - name: Build web assets
+    script: |
+      npm ci
+      npm run build
+
+  - name: Release OTA update
+    script: |
+      cmpatch-capacitor release create \
+        --bundle-path www \
+        --app MyApp-Android \
+        --deployment Staging \
+        --target-binary-version "$APP_VERSION" \
+        --yes
+```
+
+  </TabItem>
+</SdkTabs>
+
 Store `CODEMAGIC_PATCH_TOKEN` and `CODEMAGIC_PATCH_SERVER_URL` as secure environment variables.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 If the project has `codemagic-patch.config.json` from `cmpatch init`, you can omit `--server-url` and app flags when defaults are set.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch-capacitor` has no project config file. Set the server with `CODEMAGIC_PATCH_SERVER_URL` or `--server-url`, and pass the app and deployment as flags.
+
+  </TabItem>
+</SdkTabs>
+
 ## GitHub Actions
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```yaml
 - name: Install cmpatch
@@ -120,7 +228,40 @@ If the project has `codemagic-patch.config.json` from `cmpatch init`, you can om
       --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```yaml
+- name: Install cmpatch-capacitor
+  run: npm install -g @codemagic/capacitor-patch-cli
+
+- name: Build web assets
+  run: |
+    npm ci
+    npm run build
+
+- name: Release OTA update
+  env:
+    CODEMAGIC_PATCH_TOKEN: ${{ secrets.CODEMAGIC_PATCH_TOKEN }}
+    CODEMAGIC_PATCH_SERVER_URL: ${{ secrets.CODEMAGIC_PATCH_SERVER_URL }}
+  run: |
+    cmpatch-capacitor release create \
+      --bundle-path www \
+      --deployment-id "${{ vars.PATCH_IOS_STAGING_DEPLOYMENT_ID }}" \
+      --target-binary-version "$APP_VERSION" \
+      --yes --format json > release.json
+    cmpatch-capacitor release inspect --release-id "$(jq -r .release.id release.json)" --wait
+```
+
+`--deployment-id` avoids name lookups and is not affected by renames, so it is recommended in CI. `--app` with `--deployment` also works. `release inspect --wait` fails the job if processing fails on the server.
+
+  </TabItem>
+</SdkTabs>
+
 ## GitLab CI
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```yaml
 stages:
@@ -160,11 +301,57 @@ Configure these in GitLab project Settings > CI/CD > Variables:
 
 The CLI reads the token from the environment, so no `--token` flag is needed. `--non-interactive` keeps the job from hanging on a prompt. For a monorepo, run the job from the React Native project directory or pass `--project-root`. On tag pipelines, pass `--target-binary-version` explicitly.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```yaml
+stages:
+  - release
+
+variables:
+  PATCH_APP: "MyApp-Android"
+  PATCH_DEPLOYMENT: "Staging"
+
+publish_ota:
+  stage: release
+  image: node:22
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+    - when: never
+  script:
+    - npm install --global @codemagic/capacitor-patch-cli
+    - npm ci && npm run build
+    - |
+      cmpatch-capacitor release create \
+        --bundle-path www \
+        --app "$PATCH_APP" \
+        --deployment "$PATCH_DEPLOYMENT" \
+        --target-binary-version "$APP_VERSION" \
+        --yes
+```
+
+Configure these in GitLab project Settings > CI/CD > Variables:
+
+- `CODEMAGIC_PATCH_TOKEN` — Patch API token (`cm_pat_…`), masked and protected
+- `CODEMAGIC_PATCH_SERVER_URL` — e.g. `https://updates.example.com`
+- `PATCH_APP`, `PATCH_DEPLOYMENT`, `APP_VERSION` — regular variables
+
+The CLI reads the token and server URL from the environment, so `--token` and `--server-url` are not needed. In CI, commands that need confirmation fail without `--yes`. There is no `--platform` flag; each app is a single platform.
+
+  </TabItem>
+</SdkTabs>
+
 ## Target the version from a published iOS binary
 
 For projects with SDK-dependent plist paths or version settings, read the version from the IPA you shipped. This avoids guessing which source build settings produced the installed app. Keep that IPA, or its extracted version, with your release artifacts and use it in later OTA jobs.
 
 In an existing Fastlane pipeline, read the built app's plist and pass its version explicitly:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```ruby
 lane :publish_patch do
@@ -180,13 +367,41 @@ lane :publish_patch do
 end
 ```
 
-Set `PATCH_PROJECT_ROOT` to the absolute path of your configured React Native project and `PUBLISHED_IPA_PATH` to the absolute IPA path. Use the Patch CI credentials above. `PUBLISHED_IPA_PATH` must point to the store binary you intend to update; reading a newly built, unreleased IPA would target that new version instead. See Fastlane's [`get_ipa_info_plist_value`](https://docs.fastlane.tools/actions/get_ipa_info_plist_value/) action.
+Set `PATCH_PROJECT_ROOT` to the absolute path of your configured React Native project and `PUBLISHED_IPA_PATH` to the absolute IPA path.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ruby
+lane :publish_patch do
+  version = get_ipa_info_plist_value(
+    ipa: ENV.fetch("PUBLISHED_IPA_PATH"),
+    key: "CFBundleShortVersionString"
+  )
+  UI.user_error!("The published IPA has no app version") if version.to_s.strip.empty?
+
+  sh("cmpatch-capacitor", "release", "create",
+     "--bundle-path", ENV.fetch("WEB_DIR"),
+     "--app", "MyApp-iOS", "--deployment", "Staging",
+     "--target-binary-version", version, "--yes")
+end
+```
+
+Set `WEB_DIR` to the built Capacitor `webDir` (usually `www`) and `PUBLISHED_IPA_PATH` to the absolute IPA path.
+
+  </TabItem>
+</SdkTabs>
+
+Use the Patch CI credentials above. `PUBLISHED_IPA_PATH` must point to the store binary you intend to update; reading a newly built, unreleased IPA would target that new version instead. See Fastlane's [`get_ipa_info_plist_value`](https://docs.fastlane.tools/actions/get_ipa_info_plist_value/) action.
 
 ## Target the version from a published Android binary
 
 For flavor-specific versions, dynamic Gradle expressions, or CI property overrides, extract `versionName` from the APK or AAB you shipped and retain it for OTA jobs. Use the published binary you intend to update, not a newly built, unreleased binary. `versionCode` is the build number and is not the Patch target version.
 
 With the Android SDK's [`apkanalyzer`](https://developer.android.com/tools/apkanalyzer):
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 set -euo pipefail
@@ -196,6 +411,21 @@ cmpatch release-react --platform android \
   --project-root "$PATCH_PROJECT_ROOT" \
   --deployment Staging --target-binary-version "$version" --yes
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+set -euo pipefail
+version="$(apkanalyzer manifest version-name "$PUBLISHED_APK_PATH")"
+[[ -n "${version//[[:space:]]/}" ]] || { echo "Published APK has no versionName" >&2; exit 1; }
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-Android --deployment Staging \
+  --target-binary-version "$version" --yes
+```
+
+  </TabItem>
+</SdkTabs>
 
 For an AAB, replace the extraction command with [`bundletool`](https://developer.android.com/tools/bundletool):
 
@@ -211,11 +441,28 @@ Set the artifact, tool, and project paths to absolute paths, and use the Patch C
 
 A release is processed by a worker after the upload returns, and a deployment accepts one queued or running release job at a time. A pipeline that changes the same deployment twice in a row (publish, then mark mandatory, promote, or roll back) should wait for the first job before the second command. `--format json` prints the new release's id, so a script can capture it and wait on it:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 release_id="$(cmpatch release-react --platform ios --deployment Staging --yes --format json | jq -r '.release.id')"
 cmpatch release inspect --release-id "$release_id" --wait
 cmpatch release patch --release-id "$release_id" --mandatory --yes
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+release_id="$(cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version "$APP_VERSION" \
+  --yes --format json | jq -r '.release.id')"
+cmpatch-capacitor release inspect --release-id "$release_id" --wait
+cmpatch-capacitor release patch --release-id "$release_id" --mandatory --yes
+```
+
+  </TabItem>
+</SdkTabs>
 
 If the first job is still queued or running when the second command runs, it fails with an `active-release-job` conflict that names the release to wait on:
 
@@ -247,11 +494,35 @@ Developer runs the workflow when ready to ship an OTA update.
 
 ## Best practices
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 - Store tokens as CI secrets; never commit them
 - Restrict who can trigger release pipelines
 - Release to `Staging` first; [promote to Production](/docs/using-patch/releasing-updates) after validation
 - On each store build, register that binary's fingerprint with a [disabled release](/docs/using-patch/fingerprinting#register-each-store-build)
 - Run `cmpatch doctor` in CI before publishing when debugging integration issues
 - [Monitor metrics](/docs/using-patch/analytics) after deployment
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- Store tokens as CI secrets; never commit them
+- Restrict who can trigger release pipelines
+- Release to `Staging` first; [promote to Production](/docs/using-patch/releasing-updates) after validation
+- Target the binary version of the store build you are updating, and bump the native version whenever native code or configuration changes. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor)
+- Run `npx codemagic-patch-check-config` in the native build job to detect a deployment key shared by iOS and Android. See [Native setup](/docs/setup/native-setup-capacitor#validate-the-config-in-ci)
+- [Monitor metrics](/docs/using-patch/analytics) after deployment
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 See also: [CLI reference](/docs/reference/cli-reference) · [Security](/docs/using-patch/security)

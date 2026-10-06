@@ -1,0 +1,115 @@
+// Adapted from codemagic-ci-cd/codemagic-patch@f22294f7c2599b79979b8620e5cb6db4bf3bdf0a
+// client/android/src/main/java/io/codemagic/patch/CodemagicPatchState.kt (Apache-2.0).
+// No logic changes from upstream — same state.json schema, same launch-attempt budget
+// mechanism (specs/adr/0004-update-application-and-boot-selection.md). Ported verbatim
+// because the RN/Capacitor divergence lives in how this state is *read* (this package's
+// CodemagicPatch.kt resolves a boot selection for the plugin's load(), not a JS bundle
+// file path for ReactNativeHost), not in the schema itself.
+package io.codemagic.patch
+
+import org.json.JSONObject
+
+internal data class CodemagicPatchPackagePointer(
+    val packageHash: String,
+) {
+    fun toJson(): JSONObject = JSONObject().put("package_hash", packageHash)
+}
+
+internal data class CodemagicPatchFailedInstall(
+    val packageHash: String,
+    val reason: String,
+    val failedAt: String,
+) {
+    fun toJson(): JSONObject =
+        JSONObject()
+            .put("package_hash", packageHash)
+            .put("reason", reason)
+            .put("failed_at", failedAt)
+}
+
+internal data class CodemagicPatchState(
+    var current: CodemagicPatchPackagePointer? = null,
+    var previous: CodemagicPatchPackagePointer? = null,
+    var pending: CodemagicPatchPackagePointer? = null,
+    var failedInstall: CodemagicPatchFailedInstall? = null,
+    var pendingStarted: String? = null,
+    var pendingStartCount: Int = 0,
+) {
+    val packageHashes: List<String>
+        get() = listOfNotNull(pending?.packageHash, current?.packageHash, previous?.packageHash)
+
+    /**
+     * Charges one launch against [hash]'s attempt budget. A different pending hash
+     * restarts the budget, so a freshly installed package always gets the full
+     * allowance.
+     */
+    fun chargePendingLaunch(hash: String) {
+        pendingStartCount = if (pendingStarted == hash) pendingStartCount + 1 else 1
+        pendingStarted = hash
+    }
+
+    /**
+     * Clears the launch-attempt tracking pair. The marker and its counter are only
+     * ever meaningful together, so they are always cleared together.
+     */
+    fun clearPendingLaunchTracking() {
+        pendingStarted = null
+        pendingStartCount = 0
+    }
+
+    fun toJson(): JSONObject {
+        val json = JSONObject()
+        current?.let { json.put("current", it.toJson()) }
+        previous?.let { json.put("previous", it.toJson()) }
+        pending?.let { json.put("pending", it.toJson()) }
+        failedInstall?.let { json.put("failed_install", it.toJson()) }
+        pendingStarted?.let {
+            json.put("pending_started", it)
+            json.put("pending_start_count", pendingStartCount)
+        }
+        return json
+    }
+
+    companion object {
+        fun fromJson(
+            json: JSONObject,
+            isSafePackageHash: (String) -> Boolean,
+        ): CodemagicPatchState {
+            fun pointer(name: String): CodemagicPatchPackagePointer? {
+                val hash = json.optJSONObject(name)?.optString("package_hash") ?: return null
+                return if (isSafePackageHash(hash)) CodemagicPatchPackagePointer(hash) else null
+            }
+
+            val failed =
+                json.optJSONObject("failed_install")?.let {
+                    val hash = it.optString("package_hash")
+                    if (isSafePackageHash(hash)) {
+                        CodemagicPatchFailedInstall(
+                            packageHash = hash,
+                            reason = it.optString("reason"),
+                            failedAt = it.optString("failed_at"),
+                        )
+                    } else {
+                        null
+                    }
+                }
+            val pendingStarted = json.optString("pending_started").takeIf { isSafePackageHash(it) }
+
+            return CodemagicPatchState(
+                current = pointer("current"),
+                previous = pointer("previous"),
+                pending = pointer("pending"),
+                failedInstall = failed,
+                pendingStarted = pendingStarted,
+                // Absent on state written by an SDK older than the launch-attempt
+                // budget: such a device reads as 0 and is granted the full budget.
+                pendingStartCount =
+                    if (pendingStarted == null) {
+                        0
+                    } else {
+                        json.optInt("pending_start_count", 0).coerceAtLeast(0)
+                    },
+            )
+        }
+    }
+}

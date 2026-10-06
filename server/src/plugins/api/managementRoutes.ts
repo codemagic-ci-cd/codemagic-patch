@@ -7,6 +7,7 @@ import {
   parseAppUpdateInput,
   parseDeploymentCreateInput,
   parseDeploymentUpdateInput,
+  parseTeamAppsListFilter,
   parseTeamCreateInput,
   prepareAppCreateResponse,
   prepareAppDeleteResponse,
@@ -311,8 +312,14 @@ export function registerManagementRoutes(
         return sendProblem(reply, authorization.problem);
       }
 
+      const filter = parseTeamAppsListFilter(request.query);
+      if (filter.kind === "error") {
+        return sendProblem(reply, filter.problem);
+      }
+
       const result = await options.teamAppsListHandler(
         request.params.teamId,
+        filter.value,
       );
 
       if (result.outcome === "found") {

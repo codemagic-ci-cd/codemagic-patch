@@ -3,8 +3,11 @@ title: Core concepts
 description: >-
   Apps, deployments, binary versions, and what can ship over the air versus in a
   store build.
-llmsDescription: 'OTA concepts — apps, deployments, binary version, JS vs native.'
+llmsDescription: 'OTA concepts — apps, deployments, binary version, payload vs native.'
 ---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # Core concepts
 
@@ -26,6 +29,9 @@ This process is slow and rigid: reviews take hours or days, urgent fixes are del
 
 ## The idea: over-the-air (OTA) updates
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Codemagic Patch enables OTA updates for React Native apps. Instead of distributing a new binary, the app downloads an updated JavaScript bundle from your server:
 
 ```mermaid
@@ -36,6 +42,22 @@ flowchart TD
   download --> apply[Update applied on restart / resume / immediately]
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Codemagic Patch enables OTA updates for Capacitor and Ionic apps. Instead of distributing a new binary, the app downloads an updated `webDir` from your server:
+
+```mermaid
+flowchart TD
+  release[Developer releases web-asset update] --> store[Patch server stores update]
+  store --> check[App checks server for updates]
+  check --> download[New bundle downloaded]
+  download --> apply[Update applied on restart / resume / immediately]
+```
+
+  </TabItem>
+</SdkTabs>
+
 Typical OTA use cases:
 
 - Hotfixes for production bugs
@@ -43,7 +65,10 @@ Typical OTA use cases:
 - Feature flag or configuration changes
 - Staged feature rollouts
 
-## JavaScript layer vs native layer
+## What can ship over the air {#javascript-layer-vs-native-layer}
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 React Native apps contain two layers.
 
@@ -51,9 +76,9 @@ The native layer is compiled platform code (Swift/Objective-C on iOS, Java/Kotli
 
 The JavaScript layer is your React Native application: UI, business logic, navigation, state, and bundled static assets. Patch updates this JavaScript bundle and its assets as long as they remain compatible with the installed native binary.
 
-### What can and cannot be updated
-
 OTA-safe (JavaScript layer):
+
+<div>
 
 - JavaScript bug fixes
 - UI or layout adjustments
@@ -61,13 +86,55 @@ OTA-safe (JavaScript layer):
 - Bundled images or static assets
 - Feature flags or configuration logic
 
+</div>
+
 Requires a new app store release (native layer):
+
+<div>
 
 - Adding or modifying native modules
 - Upgrading React Native or native dependencies
 - Editing native config (`build.gradle`, `Info.plist`, etc.)
 - Changing app permissions
 - New platform-specific integrations
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Capacitor apps contain two layers.
+
+The native layer is compiled platform code plus Capacitor plugins: platform integrations, permissions, and the app binary. Changes here require a new store release.
+
+The web layer is the content of `webDir` (usually `www/`): HTML, JS, CSS, and images. Patch updates that directory as long as it remains compatible with the installed native binary.
+
+OTA-safe (`webDir`):
+
+<div>
+
+- HTML, JS, or CSS fixes
+- UI or layout adjustments
+- Styling changes
+- Bundled images or static assets
+- Feature flags or configuration logic in the web app
+
+</div>
+
+Requires a new app store release (native layer):
+
+<div>
+
+- Adding or modifying Capacitor plugins
+- Upgrading Capacitor or native dependencies
+- Editing native config (`build.gradle`, `Info.plist`, etc.)
+- Changing app permissions
+- New platform-specific integrations
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 ### Delta updates
 
@@ -81,10 +148,22 @@ Patch organizes updates using apps and deployments.
 | --- | --- |
 | App | A logical application. Use a separate app per platform (e.g. `MyApp-iOS`, `MyApp-Android`). |
 | Deployment | A release channel inside an app. Every app is created with `Staging` and `Production`. |
-| Deployment key | The public identifier the SDK uses to fetch updates. Found via `cmpatch deployment list`. Not a secret, it's baked into the app binary. |
+| Deployment key | The public identifier the SDK uses to fetch updates. Found via `deployment list` in the CLI or on the deployment's dashboard page. Not a secret, it's baked into the app binary. |
 | Release | A published bundle targeting one deployment + binary version. Identified by a label like `v1`. Supports gradual rollout, mandatory updates, and rollback. |
 | Binary version | The native app version a release targets (e.g. `1.2.3`). The SDK only installs releases that match the running binary version. |
-| Fingerprint | A hash of the native code in your project, recorded with releases. A later release whose fingerprint disagrees with the stored value is blocked until you confirm. Matching fingerprints can also widen delivery to other binary versions. See [Fingerprinting](/docs/using-patch/fingerprinting). |
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+Fingerprint is a hash of the native code in your project, recorded with releases. A later release whose fingerprint disagrees with the stored value is blocked until you confirm. Matching fingerprints can also widen delivery to other binary versions. See [Fingerprinting](/docs/using-patch/fingerprinting).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Capacitor releases have no native fingerprint. A release is delivered only to the exact binary version it targets, so bump the native app version whenever native code or configuration changes. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+
+  </TabItem>
+</SdkTabs>
 
 Recommended workflow:
 
@@ -102,14 +181,42 @@ Always use separate deployment keys for iOS and Android. The manifest path does 
 
 ## Prerequisite: a native build with the SDK
 
-The SDK must already be present in the native binary on each user's device. A store build without the SDK cannot install OTA updates, `cmpatch release-react` will still publish, but no client will pick it up.
+The SDK must already be present in the native binary on each user's device. A store build without the SDK cannot install OTA updates.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+`cmpatch release-react` will still publish, but no client will pick it up.
 
 When you first add Patch to an existing app:
+
+<div>
 
 1. Integrate the SDK ([Native setup](/docs/setup/native-setup)).
 2. Produce a native build that includes the SDK and the deployment key you want to target.
 3. Install that build on the devices that should receive updates, local/QA for `Staging`, App Store / Play Store for `Production`.
 4. Only then ship JS changes to that deployment as OTA updates.
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch-capacitor release create` will still publish, but no client will pick it up.
+
+When you first add Patch to an existing app:
+
+<div>
+
+1. Integrate the SDK ([Native setup](/docs/setup/native-setup-capacitor)).
+2. Produce a native build that includes the SDK and the deployment key you want to target.
+3. Install that build on the devices that should receive updates, local/QA for `Staging`, App Store / Play Store for `Production`.
+4. Only then ship web-asset changes to that deployment as OTA updates.
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 After that, the usual pattern applies: occasional native releases for native changes, OTA releases for everything else.
 
@@ -130,7 +237,7 @@ With Patch:
 flowchart TD
   commit[commit] --> ci[CI build]
   ci --> native[store release, initial binary]
-  native --> ota[OTA updates via cmpatch]
+  native --> ota[OTA updates via the Patch CLI]
   ota --> occasional[occasional store releases for native changes]
 ```
 

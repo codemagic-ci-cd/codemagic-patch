@@ -75,8 +75,8 @@ export function LocalConsentPage() {
           </h1>
           <p className="mt-2 text-[14px] text-fg-2">
             This page only has work to do in the middle of a sign-in.
-            Browser sign-in starts from the login screen;{" "}
-            <code>cmpatch login</code> opens it for you.
+            Browser sign-in starts from the login screen; your CLI&apos;s login
+            command opens it for you.
           </p>
           <a
             className={`${buttonVariants({ intent: "primary", block: true })} mt-6`}

@@ -13,6 +13,11 @@ import type {
   DeploymentUpdateRouteHandler,
 } from "../../app/types";
 import {
+  APP_FRAMEWORK_PATTERN,
+  DEFAULT_APP_FRAMEWORK,
+  INVALID_APP_FRAMEWORK_ERROR,
+} from "./routeConstants";
+import {
   createAppNotFoundProblem,
   createDeploymentNotFoundProblem,
   createTeamNotFoundProblem,
@@ -371,6 +376,70 @@ export function prepareDeploymentDeleteResponse(
   };
 }
 
+/**
+ * The `framework` filter of the team apps list: absent means every app. The
+ * server compares the value and knows nothing else about it — which apps a
+ * client wants to see is the client's business.
+ */
+export function parseTeamAppsListFilter(query: unknown):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: { framework?: string };
+    } {
+  const framework = isJsonObject(query) ? query.framework : undefined;
+  if (framework === undefined) {
+    return { kind: "success", value: {} };
+  }
+
+  // A repeated parameter arrives as an array, which is not a string either.
+  const parsed = parseAppFramework(framework);
+  return parsed.kind === "error"
+    ? parsed
+    : { kind: "success", value: { framework: parsed.value } };
+}
+
+/** Shared by every app route that takes a `framework`, on the same terms. */
+function parseAppFramework(value: unknown):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: string;
+    } {
+  if (typeof value !== "string") {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        INVALID_APP_FRAMEWORK_ERROR,
+        "framework",
+        "invalid_type",
+      ),
+    };
+  }
+
+  if (!APP_FRAMEWORK_PATTERN.test(value)) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        INVALID_APP_FRAMEWORK_ERROR,
+        "framework",
+        "invalid_format",
+      ),
+    };
+  }
+
+  return {
+    kind: "success",
+    value,
+  };
+}
+
 export function parseAppCreateInput(body: unknown):
   | {
       kind: "error";
@@ -379,6 +448,7 @@ export function parseAppCreateInput(body: unknown):
   | {
       kind: "success";
       value: {
+        framework: string;
         name: string;
         requireCodeSigning: boolean;
         teamId: string;
@@ -433,9 +503,19 @@ export function parseAppCreateInput(body: unknown):
     };
   }
 
+  let framework = DEFAULT_APP_FRAMEWORK;
+  if (body.framework !== undefined) {
+    const parsed = parseAppFramework(body.framework);
+    if (parsed.kind === "error") {
+      return parsed;
+    }
+    framework = parsed.value;
+  }
+
   return {
     kind: "success",
     value: {
+      framework,
       name,
       requireCodeSigning: body.require_code_signing === true,
       teamId,
@@ -455,6 +535,7 @@ export function parseAppUpdateInput(
       kind: "success";
       value: {
         appId: string;
+        framework?: string;
         name?: string;
         requireCodeSigning?: boolean;
       };
@@ -472,17 +553,19 @@ export function parseAppUpdateInput(
 
   const hasName = body.name !== undefined;
   const hasRequireCodeSigning = body.require_code_signing !== undefined;
-  if (!hasName && !hasRequireCodeSigning) {
+  const hasFramework = body.framework !== undefined;
+  if (!hasName && !hasRequireCodeSigning && !hasFramework) {
     return {
       kind: "error",
       problem: createValidationProblem(
-        "app update body must include name or require_code_signing",
+        "app update body must include name, require_code_signing or framework",
       ),
     };
   }
 
   const value: {
     appId: string;
+    framework?: string;
     name?: string;
     requireCodeSigning?: boolean;
   } = {
@@ -516,6 +599,14 @@ export function parseAppUpdateInput(
       };
     }
     value.requireCodeSigning = body.require_code_signing;
+  }
+
+  if (hasFramework) {
+    const framework = parseAppFramework(body.framework);
+    if (framework.kind === "error") {
+      return framework;
+    }
+    value.framework = framework.value;
   }
 
   return {

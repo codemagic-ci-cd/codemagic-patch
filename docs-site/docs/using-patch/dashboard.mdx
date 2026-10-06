@@ -6,9 +6,12 @@ description: >-
 llmsDescription: 'Web UI — releases, metrics, team IAM, bundle uploads, host status.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Web dashboard
 
-After [Install](/docs/install), the dashboard is served from your API domain (e.g. `https://updates.example.com/`). Sign in with GitHub, Bitbucket Cloud, or GitLab OAuth, the same identity model as `cmpatch login`.
+After [Install](/docs/install), the dashboard is served from your API domain (e.g. `https://updates.example.com/`). Sign in with GitHub, Bitbucket Cloud, or GitLab OAuth, the same identity model as the CLI's `login`.
 
 On the [local evaluation stack](/docs/) (`cmpatch selfhost local-eval`), open [http://localhost:8080](http://localhost:8080) and sign in as `local-admin@example.com` (prefilled, one click). Same UI; auth is local-only.
 
@@ -24,7 +27,7 @@ After sign-in you land in your team's workspace:
 
 | Area | What you do there |
 | --- | --- |
-| Apps | Create and rename apps; toggle code-signing requirements |
+| Apps | Create and rename apps, set each app's framework (React Native or Capacitor), and toggle code-signing requirements |
 | Deployments | Staging and Production channels per app; copy deployment keys and SDK URLs |
 | Deployment detail | Release history (including release notes), New release, deployment-level rollback |
 | Release detail | Per-release metrics, status, and lifecycle actions |
@@ -33,11 +36,27 @@ After sign-in you land in your team's workspace:
 | API tokens | Create and revoke `cm_pat_…` tokens for CI |
 | Status | Confirm this install is running and up to date |
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 On a deployment detail page, expand the SDK configuration panel to copy `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` together. Those match the values you embed in the app; see [Native setup](/docs/setup/native-setup).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Set the framework to **Capacitor** when you create a Capacitor app. The framework determines which commands and guides the dashboard shows, and `cmpatch-capacitor` can only look up Capacitor apps by name.
+
+On a deployment detail page, expand the SDK configuration panel to copy the deployment key, API URL, and download base URL. These correspond to `deploymentKey`, `apiUrl`, and `downloadBaseUrl` in `capacitor.config.ts`; see [Native setup](/docs/setup/native-setup-capacitor).
+
+  </TabItem>
+</SdkTabs>
 
 ## Publishing a release
 
 On a deployment detail page, click New release. You can choose how to publish:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ### Via CLI (command builder)
 
@@ -62,6 +81,29 @@ Upload a pre-built `.cmpatch` artifact (from `cmpatch bundle`) directly in the b
 
 Use this when CI already produced the bundle, or you built offline and only need to publish.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+**Via CLI (command builder)**: generates a `cmpatch-capacitor release create` command from these fields:
+
+<div>
+
+- Bundle path: the built `webDir`, or a ZIP of its contents (required)
+- Target binary version: the exact native app version (required)
+- Rollout percentage
+- Release notes
+- Mandatory flag
+- Code-signing private key path (when required by the app)
+
+</div>
+
+The command includes your server URL, app, and deployment. Run it after your web build, or add it to a CI job. The dashboard does not build the app.
+
+Bundle upload is not available for Capacitor apps. The dashboard accepts `.cmpatch` artifacts, which only the React Native CLI produces.
+
+  </TabItem>
+</SdkTabs>
+
 ## Managing existing releases
 
 From release detail or the deployment release table, open actions on a release:
@@ -76,7 +118,22 @@ From release detail or the deployment release table, open actions on a release:
 
 Deployment-level rollback is also available from the deployment header when you need to revert without picking a specific row.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 These map to `cmpatch release patch`, `release promote`, `release enable`/`release disable`, and `release rollback`, see [Production control](/docs/using-patch/production-control).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+These map to `cmpatch-capacitor release patch`, `release promote`, `release enable`/`release disable`, and `release rollback`, see [Production control](/docs/using-patch/production-control).
+
+:::warning
+Do not change the target binary version of a release published with `cmpatch-capacitor`. The server would treat both versions as the same native build and deliver releases for one version to the other. To target another version, publish the bundle again. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+:::
+
+  </TabItem>
+</SdkTabs>
 
 ## Metrics
 
@@ -94,9 +151,9 @@ Open **Status** in the sidebar to confirm this Patch install is fully running an
 
 | Prefer the dashboard | Prefer the CLI |
 | --- | --- |
-| Copy a `release-react` command with the right flags | Run releases from CI/CD |
-| Upload a `.cmpatch` without a terminal | Script bulk or repeated operations |
-| Promote, roll out, or roll back with confirmation dialogs | `cmpatch doctor`, `inspect --wait`, JSON output |
+| Copy a release command with the right flags | Run releases from CI/CD |
+| Upload a `.cmpatch` without a terminal (React Native) | Script bulk or repeated operations |
+| Promote, roll out, or roll back with confirmation dialogs | `inspect --wait`, JSON output, `cmpatch doctor` (React Native) |
 | Browse release history and keys with the team | Air-gapped or SSH-only environments |
 
 For the Staging → Production workflow, see [Releasing updates](/docs/using-patch/releasing-updates).

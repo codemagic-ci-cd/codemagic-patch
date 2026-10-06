@@ -38,6 +38,7 @@ import {
   toFailureCodesWire,
   toFailureDistributionWire,
   toFailureEventsWire,
+  toReleaseBinaryVersionMetricsWire,
   toReleaseMetricsRowWire,
 } from "./wireSerializers";
 
@@ -537,6 +538,9 @@ export function registerMetricsQueryRoutes(
       }
 
       return {
+        binary_versions: result.binaryVersions.map(
+          toReleaseBinaryVersionMetricsWire,
+        ),
         release: toReleaseMetricsRowWire(result.release),
       };
     },

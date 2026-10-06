@@ -45,6 +45,12 @@ backups/**
 server/test/fixture-app/*
 !server/test/fixture-app/package.json
 
+# client-capacitor is a root workspace, so both Dockerfiles COPY its package.json
+# for yarn workspace resolution — but no image builds it, and its native trees
+# (vendored C, Gradle/Xcode build output, the example app) only bloat the context.
+client-capacitor/*
+!client-capacitor/package.json
+
 # Compose / dev assets — built separately, not part of image context
 docker-compose*.yml
 **/docker-compose*.yml

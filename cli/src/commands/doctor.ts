@@ -1,3 +1,4 @@
+import { teamAppsPath } from "../appFramework";
 import { prepareDoctorFix, applyDoctorFix, type DoctorFix } from "../doctor/fixes";
 import { canPromptOnStderr } from "./shared";
 import { doctorBlockers } from "../doctor/report";
@@ -1333,7 +1334,7 @@ async function checkAppResolution(
     const response = await doctorGet(
       deps,
       state.serverUrl,
-      `/v1/teams/${encodeURIComponent(state.teamId!)}/apps`,
+      teamAppsPath(state.teamId!),
       state.token,
     );
     const apps = parseNamedResourceList(response, "apps");

@@ -270,7 +270,7 @@ export function parseOAuthCliExchangeInput(body: unknown):
 export function createOAuthCliExchangeFailedProblem(): ProblemDetails {
   return createProblem({
     detail:
-      "CLI authorization code is invalid or expired — run `cmpatch login` again",
+      "CLI authorization code is invalid or expired. Start the sign-in again from the CLI.",
     extensions: {
       outcome: "auth_failed",
       reason: "invalid_cli_authorization_code",

@@ -1,14 +1,20 @@
 ---
 title: Publish your first release
 description: 'Publish your first OTA release after server, CLI, app, and SDK setup.'
-llmsDescription: 'First OTA publish — cmpatch init, release-react, verify server processing.'
+llmsDescription: 'First OTA publish — cmpatch init + release-react (React Native) or cmpatch-capacitor release create (Capacitor), verify server processing.'
 ---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # Publish your first release
 
 This is the last step in Setup; it confirms your server, CLI, app, and SDK are wired correctly. After this, see Using Patch for ongoing release workflows.
 
-From your React Native project root, link the project once:
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+From your project root, link the project once:
 
 ```bash
 cmpatch init
@@ -69,6 +75,47 @@ cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
 :::tip
 `cmpatch bundle --platform ios` builds a `.cmpatch` artifact without uploading, useful for inspecting or publishing later via `cmpatch release create --bundle-path file.cmpatch`. When the app requires code signing, pass `--private-key-path` to `cmpatch bundle` as well.
 :::
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Before you start, complete [Native setup](/docs/setup/native-setup-capacitor) and install a native build that includes the SDK on a device or simulator.
+
+Build the web app. `cmpatch-capacitor` uploads the build output directory, which is the `webDir` in your Capacitor config (`www/` for Ionic Angular, `dist/` for most Vite projects). The CLI does not run the build, and you do not need to run `npx cap sync` before publishing.
+
+```bash
+ionic build   # or ng build, npx vite build, ...
+```
+
+Run a dry run, then publish one release per platform:
+
+```bash
+# Validate, archive, and hash the bundle without uploading
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version 1.2.3 --dry-run
+
+# Publish
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version 1.2.3 \
+  --release-notes "Fix onboarding crash"
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-Android --deployment Staging --target-binary-version 1.2.3 \
+  --release-notes "Fix onboarding crash"
+```
+
+- `--bundle-path` is the `webDir` directory or a ZIP of its contents. `index.html` must be at the top level; otherwise the update installs but the app shows a blank screen. `release create` checks this before uploading.
+- `--target-binary-version` is required and must exactly match the installed app version (`CFBundleShortVersionString` on iOS, `versionName` on Android). The CLI does not detect it. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+- `release create` asks for confirmation in a terminal. Pass `--yes` to skip the prompt.
+
+Wait for the server to finish processing. Devices receive the release only after processing completes:
+
+```bash
+cmpatch-capacitor release list --app MyApp-iOS --deployment Staging
+cmpatch-capacitor release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
+```
+
+  </TabItem>
+</SdkTabs>
 
 ## Next steps
 

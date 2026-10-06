@@ -5,6 +5,7 @@ import type { AuthorizationService } from "./authorizationService";
 import type {
   ApiTokenMetadata,
   App,
+  BinaryVersionFilter,
   ControlPlaneAction,
   Deployment,
   FailureCodeBreakdown,
@@ -12,6 +13,7 @@ import type {
   FailureEventPage,
   MetricEvent,
   Release,
+  ReleaseDeliveryBreakdown,
   ReleaseJob,
   ReleaseMetrics,
   Team,
@@ -95,6 +97,7 @@ export interface TeamReadRouteHandler {
 }
 
 export interface AppCreateHandlerInput {
+  framework: string;
   name: string;
   requireCodeSigning: boolean;
   teamId: string;
@@ -125,6 +128,7 @@ export interface AppCreateRouteHandler {
 
 export interface AppUpdateHandlerInput {
   appId: string;
+  framework?: string;
   name?: string;
   requireCodeSigning?: boolean;
 }
@@ -231,8 +235,16 @@ export type TeamAppsListHandlerResult =
       reason: "team_not_found";
     };
 
+/** Which of a team's apps to list; an empty filter lists them all. */
+export interface TeamAppsListFilter {
+  framework?: string;
+}
+
 export interface TeamAppsListRouteHandler {
-  (teamId: string): Promise<TeamAppsListHandlerResult>;
+  (
+    teamId: string,
+    filter?: TeamAppsListFilter,
+  ): Promise<TeamAppsListHandlerResult>;
 }
 
 export type AppReadHandlerResult =
@@ -1064,6 +1076,8 @@ export interface ReleaseReadRouteHandler {
 }
 
 export interface ReleaseListHandlerInput {
+  /** When set, lists only releases whose explicit or resolved targets match. */
+  binaryVersion: BinaryVersionFilter | null;
   deploymentId: string;
   includeMetrics: boolean;
   limit: number;
@@ -1127,6 +1141,8 @@ export interface DeploymentMetricsRouteHandler {
 }
 
 export interface DeploymentTimeseriesHandlerInput {
+  /** When set, series and totals include only events matching this filter. */
+  binaryVersion: BinaryVersionFilter | null;
   deploymentId: string;
   /** Inclusive, already truncated down to the UTC day boundary. */
   from: Date;
@@ -1156,6 +1172,11 @@ export interface TimeseriesSeries {
 
 export type DeploymentTimeseriesHandlerResult =
   | {
+      /**
+       * Binary versions that reported in the range, independent of
+       * `binaryVersion`, newest comparable token first.
+       */
+      binaryVersions: string[];
       outcome: "found";
       series: TimeseriesSeries[];
       seriesTruncated: boolean;
@@ -1179,8 +1200,20 @@ export interface DeploymentTimeseriesRouteHandler {
 
 export type ReleaseMetricsReadHandlerResult =
   | {
+      /**
+       * Lifetime counters for this package hash split by the reporting
+       * binary version, newest comparable first; null version last.
+       */
+      binaryVersions: Array<{
+        binaryVersion: string | null;
+        downloaded: number;
+        failed: number;
+        installed: number;
+        success: number;
+      }>;
       outcome: "found";
       release: {
+        delivery: ReleaseDeliveryBreakdown;
         releaseId: string;
         releaseLabel: string;
         targetBinaryVersion: string;

@@ -1,5 +1,9 @@
 export const INVALID_BINARY_VERSION_ERROR =
   "binary_version must start with an alphanumeric character, contain only alphanumeric characters, '.', '_', '+', or '-', and be at most 128 characters";
+export const INVALID_BINARY_VERSION_PREFIX_ERROR =
+  "binary_version_prefix must be dot-separated digits such as 1 or 1.0, at most 128 characters";
+export const INVALID_BINARY_VERSION_FILTER_COMBINATION_ERROR =
+  "binary_version and binary_version_prefix cannot be combined";
 export const INVALID_MULTIPART_ORDER_ERROR =
   "metadata must be the first multipart part";
 export const DUPLICATE_METADATA_PART_ERROR = "metadata multipart part must be unique";
@@ -77,6 +81,16 @@ export const METRICS_TIMESERIES_RANGE_TOO_LARGE_ERROR =
 export const DUPLICATE_RELEASE_DETAIL =
   "release content is identical to the latest published release";
 export const MANAGEMENT_NOT_ENABLED_ERROR = "management api is not enabled";
+/** Every client that predates `framework` is a React Native client. */
+export const DEFAULT_APP_FRAMEWORK = "react-native";
+/**
+ * The shape of a framework name, not the set of them: a CLI for a framework
+ * that does not exist yet must be able to label its apps on a server installed
+ * before that framework did, and no server behaviour reads the value.
+ */
+export const APP_FRAMEWORK_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+export const INVALID_APP_FRAMEWORK_ERROR =
+  "framework must be 1-32 characters: a lowercase letter, then lowercase letters, digits or hyphens";
 export const MAX_API_TOKEN_EXPIRATION_DAYS = 3650;
 export const INVALID_API_TOKEN_EXPIRATION_DAYS_ERROR =
   `expires_in_days must be a positive integer no greater than ${MAX_API_TOKEN_EXPIRATION_DAYS}`;

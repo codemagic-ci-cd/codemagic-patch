@@ -1,0 +1,149 @@
+---
+title: Migrating from Appflow
+description: >-
+  Move from Ionic Appflow Live Updates to self-hosted Codemagic Patch.
+llmsDescription: >-
+  Appflow Live Updates to Patch: SDK swap, per-platform deployment keys, start(),
+  cmpatch-capacitor CLI mapping.
+sidebar_label: Migrating from Appflow
+sidebar_custom_props:
+  sdk: capacitor
+---
+
+# Migrating from Appflow
+
+This guide covers moving from Ionic Appflow Live Updates (`@capacitor/live-updates`) to self-hosted Codemagic Patch. The migration has two parts:
+
+1. Replace `@capacitor/live-updates` with `@codemagic/capacitor-patch` in your app.
+2. Replace the Appflow dashboard and build service with your Patch server and `cmpatch-capacitor`.
+
+This guide assumes you already have a Patch server. To set one up, see the [Local quickstart](/docs/) or [Install](/docs/install). For a feature comparison, see [How Patch compares](/docs/introduction/comparison-capacitor).
+
+:::note
+`@codemagic/capacitor-patch` and `cmpatch-capacitor` are 0.x releases; their API and flags may still change. Install both as described in [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk).
+:::
+
+:::warning
+The Patch SDK is part of the native binary. You need a store release (or internal distribution build) that includes the SDK before devices can receive updates from your Patch server. The update client cannot be replaced over the air.
+:::
+
+## Key differences
+
+Most Appflow concepts have a direct equivalent: apps, release channels, signing keys, update checks, and rollback. The main differences are:
+
+| Appflow | Codemagic Patch |
+| --- | --- |
+| A channel (`Production`, `Staging`) is shared by both platforms | A deployment is per app, and each platform is a separate app with its own deployment key. Sharing a key across platforms causes releases to overwrite each other |
+| A single `appId` resolves everything against Ionic's cloud | You configure two URLs: `apiUrl` for the API server and `downloadBaseUrl` for artifact storage or a CDN |
+| `getConfig()` / `setConfig()` read and change config at runtime | Config is read once at plugin `load()`, from `capacitor.config.ts` or native resource overrides. There is no runtime config API |
+| Web builds can be restricted with [minimum, maximum, and equivalent native versions](https://ionic.io/docs/appflow/deploy/deploy-live-update#web-build-versioning) | Each release targets an exact native app version. Bump that version whenever the native side changes; see [Binary version compatibility](/docs/using-patch/binary-version-capacitor) |
+| Apps, channels, and release history live in Appflow | Nothing is imported. Create new apps and deployments and start a new release history |
+
+Devices running the old plugin cannot receive Patch releases, so the switch ships as a regular store or binary release.
+
+## Prerequisites
+
+- A Patch server you can reach ([Local quickstart](/docs/) or [Install](/docs/install))
+- `cmpatch-capacitor`, installed and signed in ([Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk))
+
+Create one app per platform and list the deployment keys:
+
+```bash
+export CODEMAGIC_PATCH_SERVER_URL=https://updates.example.com
+cmpatch-capacitor login
+cmpatch-capacitor app create --name my-app-ios
+cmpatch-capacitor app create --name my-app-android
+cmpatch-capacitor deployment list --app my-app-ios
+cmpatch-capacitor deployment list --app my-app-android
+```
+
+Each app is created with `Staging` and `Production` deployments. The deployment keys are new values; Appflow channel names cannot be reused.
+
+## 1. Migrate the client SDK
+
+### Replace the package
+
+Remove the Live Updates plugin and install `@codemagic/capacitor-patch`:
+
+```bash
+npm uninstall @capacitor/live-updates
+npm install @codemagic/capacitor-patch
+npx cap sync
+```
+
+### Replace the config block
+
+| Appflow (`plugins.LiveUpdates`) | Patch (`plugins.CodemagicPatch.<platform>`) | Notes |
+| --- | --- | --- |
+| `appId` | — | The deployment key identifies the app, platform, and deployment |
+| `channel` | `deploymentKey` | One key per platform, from `cmpatch-capacitor deployment list` |
+| — | `apiUrl` | Patch API server origin |
+| — | `downloadBaseUrl` | Artifact storage or CDN origin |
+| `autoUpdateMethod` | — | Call `start()` for automatic updates, or omit it for none. See [Migrate the JS integration](#migrate-the-js-integration) |
+| `maxVersions` | — | Old packages are removed automatically; the previous package is kept for rollback |
+| `key` (self-hosted Live Updates) | `publicKey` | The PEM text of the public key, not a file name. Sign releases with `release create --private-key-path`. Optional |
+| — | `maxLaunchAttempts` | Launches a new update can run without reporting ready before it is rolled back. Optional, default `3` |
+
+For required keys and native resource overrides, see [Native setup](/docs/setup/native-setup-capacitor#configure-capacitorconfigts).
+
+### Migrate the JS integration
+
+Call `start()` after your first screen renders. With `CheckFrequency.ON_APP_RESUME`, it also checks for updates each time the app returns to the foreground:
+
+```ts
+import { CheckFrequency, start } from "@codemagic/capacitor-patch";
+
+start({ checkFrequency: CheckFrequency.ON_APP_RESUME });
+```
+
+| `@capacitor/live-updates` | `@codemagic/capacitor-patch` | Notes |
+| --- | --- | --- |
+| `autoUpdateMethod: 'background'` | `start({ checkFrequency })` | Checks on start, and on foreground return with `ON_APP_RESUME` |
+| `LiveUpdates.sync()` | `sync(options?, onProgress?)` | Patch checks, downloads, and installs in one call. No per-call channel override |
+| `LiveUpdates.getConfig()` / `setConfig()` | — | Not supported. In Appflow, call `setConfig({ channel })` to change the channel before `sync()` |
+| `LiveUpdates.reload()` | `restartApp()` | Applies a downloaded update immediately |
+| — | `notifyAppReady()` | Marks a new update as working. If it is not called within `maxLaunchAttempts` launches, the update is rolled back. `start()` and `sync()` call it for you |
+| — | `checkForUpdate()`, `downloadUpdate()`, `installUpdate()` | Individual steps of `sync()`, for custom progress or prompt UI |
+| — | `getRunningBundleUpdateMetadata()` | Returns `{ label, packageHash, releaseNotes }` for the running update, or `null` for the embedded bundle |
+| — | `isNextVersionReady()` | Returns whether an installed update is waiting for the next reload |
+| — | `allowRestart()` / `disallowRestart()` | Prevents automatic restarts during critical flows |
+
+For install timing (`ON_NEXT_RESTART`, `IMMEDIATE`, `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`), see [Applying updates](/docs/setup/applying-updates). For option types, see the [SDK reference](/docs/reference/sdk-reference).
+
+### Ship the new binary
+
+1. Release a store or binary build that includes `@codemagic/capacitor-patch`, configured for your Patch server.
+2. Keep the Appflow-based build (or Appflow) running until most users have updated to the new binary.
+3. Publish OTA updates with `cmpatch-capacitor release create`, targeting the new binary versions only.
+
+Before shipping, test the integration with [Verify a test release](/docs/using-patch/verify-test-release).
+
+## 2. Replace Appflow dashboard workflows
+
+| Appflow | `cmpatch-capacitor` | Notes |
+| --- | --- | --- |
+| Create an app | `app create --name <name>` | Creates `Staging` and `Production` deployments. Create one app per platform |
+| Create or manage a channel | `deployment create`, `list`, `rename`, `remove` | `deployment list` shows deployment keys |
+| Deploy a build to a channel | `release create --bundle-path <dir>` | Uploads a web build directory or a ZIP of its contents |
+| Move a build between channels | `release promote` | Reuses the same bundle, for example from Staging to Production |
+| Roll back a channel | `release rollback` | |
+| View metrics | `deployment metrics`, `release metrics` | |
+
+The [web dashboard](/docs/using-patch/dashboard) supports the same operations. When creating apps there, set the framework to **Capacitor** so the dashboard shows `cmpatch-capacitor` commands.
+
+Patch does not build your app. Build the web assets in your existing CI and publish the output:
+
+```bash
+export CODEMAGIC_PATCH_SERVER_URL=https://updates.example.com
+export CODEMAGIC_PATCH_TOKEN=<access token>   # from cmpatch-capacitor token create --name ci
+
+cmpatch-capacitor release create \
+  --bundle-path www \
+  --app my-app-ios --deployment Production \
+  --target-binary-version 1.2.0 \
+  --yes
+```
+
+`--target-binary-version` is required and must match the installed app version exactly. In CI, pass `--yes`; the command does not prompt for confirmation outside a terminal and fails without it.
+
+See also: [CLI reference](/docs/reference/cli-reference#cmpatch-capacitor), [CI integration](/docs/using-patch/ci-integration).

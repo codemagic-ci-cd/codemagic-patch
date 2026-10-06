@@ -1,0 +1,67 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>Codemagic Patch example</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true">
+  <ion-header collapse="condense">
+    <ion-toolbar>
+      <ion-title size="large">Codemagic Patch example</ion-title>
+    </ion-toolbar>
+  </ion-header>
+
+  <ion-card>
+    <ion-card-header>
+      <ion-card-title>Running package</ion-card-title>
+    </ion-card-header>
+    <ion-card-content>
+      @if (runningUpdate; as update) {
+        <p>
+          <strong>{{ update.label }}</strong> ({{ update.packageHash.slice(0, 12) }}…)
+          <br />
+          @if (update.releaseNotes) {
+            <span>{{ update.releaseNotes }}</span>
+          }
+        </p>
+      } @else {
+        <p>Running the embedded (store-shipped) bundle — no OTA package installed.</p>
+      }
+    </ion-card-content>
+  </ion-card>
+
+  <ion-list>
+    <ion-item>
+      <ion-button (click)="onSync()" [disabled]="busy" expand="block">
+        sync()
+      </ion-button>
+    </ion-item>
+    <ion-item>
+      <ion-button (click)="onCheckForUpdate()" [disabled]="busy" fill="outline" expand="block">
+        checkForUpdate() only
+      </ion-button>
+    </ion-item>
+  </ion-list>
+
+  @if (progress; as p) {
+    <ion-card>
+      <ion-card-content>
+        Downloading… {{ p.receivedBytes }} / {{ p.totalBytes || '?' }} bytes
+      </ion-card-content>
+    </ion-card>
+  }
+
+  @if (lastResult) {
+    <ion-card>
+      <ion-card-content>{{ lastResult }}</ion-card-content>
+    </ion-card>
+  }
+
+  <div id="container">
+    <p>
+      See <a target="_blank" rel="noopener noreferrer" href="https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client-capacitor#usage">the SDK README's Usage section</a>
+      for the full step-by-step API this page calls through <code>PatchService</code>
+      (<code>src/app/services/patch.service.ts</code>).
+    </p>
+  </div>
+</ion-content>

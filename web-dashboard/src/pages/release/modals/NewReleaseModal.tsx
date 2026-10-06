@@ -1,12 +1,16 @@
 // New-release wizard: pick Via CLI or Bundle upload, then follow that path
 // inside one modal. Replaces the separate header upload button + inline CLI
-// builder on the deployment detail page.
+// builder on the deployment detail page. What the wizard offers depends on the
+// app's framework — see offersBundleUpload.
 
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Modal } from "../../../components/overlay/Modal";
-import { CliCommandBuilder } from "../../../components/ui/CliCommandBuilder";
+import {
+  CliCommandBuilder,
+  type CliBuilderFramework,
+} from "../../../components/ui/CliCommandBuilder";
 import { buttonVariants } from "../../../components/ui/Button";
 import {
   RC_DESC,
@@ -14,14 +18,23 @@ import {
   RADIO_CARD,
   RADIO_CARD_STATE,
 } from "../../../components/ui/form";
+import { isKnownFramework, offersBundleUpload } from "../../../model/framework";
 import { UploadIcon, useUploadArtifactForm } from "./uploadArtifactForm";
 
 type Step = "choose" | "cli" | "upload";
+
+// A framework with no bundle upload has one publishing path, so nothing to choose:
+// it goes straight to its CLI. One this build does not know has no builder either.
+function cliBuilderFramework(framework: string): CliBuilderFramework | null {
+  return isKnownFramework(framework) ? framework : null;
+}
 
 export interface NewReleaseModalProps {
   open: boolean;
   deploymentId: string;
   deploymentName: string;
+  /** The app's framework; an unknown value gets neutral guidance. */
+  framework: string;
   serverUrl: string;
   appName: string;
   suggestedTargetBinaryVersion?: string;
@@ -33,6 +46,7 @@ export function NewReleaseModal({
   open,
   deploymentId,
   deploymentName,
+  framework,
   serverUrl,
   appName,
   suggestedTargetBinaryVersion = "",
@@ -46,6 +60,7 @@ export function NewReleaseModal({
     <NewReleaseModalContent
       deploymentId={deploymentId}
       deploymentName={deploymentName}
+      framework={framework}
       serverUrl={serverUrl}
       appName={appName}
       suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
@@ -58,15 +73,17 @@ export function NewReleaseModal({
 function NewReleaseModalContent({
   deploymentId,
   deploymentName,
+  framework,
   serverUrl,
   appName,
   suggestedTargetBinaryVersion,
   codeSigningRequired,
   onClose,
 }: Omit<NewReleaseModalProps, "open">) {
+  const canChoose = offersBundleUpload(framework);
   // No step/form reset on close: the wrapper unmounts this component while
   // closed, so all wizard state starts fresh on every open.
-  const [step, setStep] = useState<Step>("choose");
+  const [step, setStep] = useState<Step>(canChoose ? "choose" : "cli");
 
   const uploadForm = useUploadArtifactForm({
     deploymentId,
@@ -91,8 +108,10 @@ function NewReleaseModalContent({
     setStep("choose");
   };
 
-  const header = stepMeta(step, deploymentName);
+  const builderFramework = cliBuilderFramework(framework);
+  const header = stepMeta(step, deploymentName, builderFramework);
   const footer = footerForStep(step, {
+    canGoBack: canChoose,
     onClose: handleClose,
     onBack: goBack,
     uploadFooter: uploadForm.footer,
@@ -163,13 +182,21 @@ function NewReleaseModalContent({
       ) : null}
 
       {step === "cli" ? (
-        <CliCommandBuilder
-          serverUrl={serverUrl}
-          appName={appName}
-          deploymentName={deploymentName}
-          suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
-          codeSigningRequired={codeSigningRequired}
-        />
+        builderFramework === null ? (
+          <p className="m-0 text-[13.5px] leading-relaxed text-fg-2">
+            Publish an update to this deployment with the CLI for this app&apos;s
+            framework, pointed at {serverUrl}.
+          </p>
+        ) : (
+          <CliCommandBuilder
+            framework={builderFramework}
+            serverUrl={serverUrl}
+            appName={appName}
+            deploymentName={deploymentName}
+            suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
+            codeSigningRequired={codeSigningRequired}
+          />
+        )
       ) : null}
 
       {step === "upload" ? uploadForm.content : null}
@@ -180,13 +207,19 @@ function NewReleaseModalContent({
 function stepMeta(
   step: Step,
   deploymentName: string,
+  builderFramework: CliBuilderFramework | null,
 ): { title: string; description?: string } {
   switch (step) {
     case "cli":
       return {
         title: `Release via CLI to ${deploymentName}`,
-        description:
-          "Copy the command below and run it from your project directory or CI pipeline.",
+        // No builder, no command to point at: the body says what there is to say.
+        ...(builderFramework === null
+          ? {}
+          : {
+              description:
+                "Copy the command below and run it from your project directory or CI pipeline.",
+            }),
       };
     case "upload":
       return {
@@ -206,6 +239,8 @@ function stepMeta(
 function footerForStep(
   step: Step,
   options: {
+    /** False when the wizard opened straight into a step: nothing to go back to. */
+    canGoBack: boolean;
     onClose: () => void;
     onBack: () => void;
     uploadFooter: ReactNode;
@@ -224,16 +259,21 @@ function footerForStep(
     );
   }
 
+  const backButton = options.canGoBack ? (
+    <button
+      type="button"
+      className={buttonVariants({ intent: "ghost" })}
+      onClick={options.onBack}
+      disabled={step === "upload" && options.uploadBusy}
+    >
+      <BackIcon /> Back
+    </button>
+  ) : null;
+
   if (step === "cli") {
     return (
       <>
-        <button
-          type="button"
-          className={buttonVariants({ intent: "ghost" })}
-          onClick={options.onBack}
-        >
-          <BackIcon /> Back
-        </button>
+        {backButton}
         <button
           type="button"
           className={buttonVariants({ intent: "subtle" })}
@@ -247,14 +287,7 @@ function footerForStep(
 
   return (
     <>
-      <button
-        type="button"
-        className={buttonVariants({ intent: "ghost" })}
-        onClick={options.onBack}
-        disabled={options.uploadBusy}
-      >
-        <BackIcon /> Back
-      </button>
+      {backButton}
       {options.uploadFooter}
     </>
   );

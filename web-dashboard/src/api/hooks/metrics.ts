@@ -23,6 +23,7 @@ import {
   fromFailureDistributionWire,
   fromFailureEventsWire,
   fromReleaseMetricsRowWire,
+  fromReleaseMetricsWireResponse,
   type DeploymentMetricsWireResponse,
   type DeploymentTimeseriesWireResponse,
   type FailureCodesWireResponse,
@@ -30,6 +31,11 @@ import {
   type FailureEventsWireResponse,
   type ReleaseMetricsWireResponse,
 } from "../wire";
+import {
+  binaryVersionFilterParams,
+  binaryVersionFilterValue,
+  type BinaryVersionFilter,
+} from "../../model/binaryVersionFilter";
 import type { FailureEventPage } from "../../model/metrics";
 
 export interface DeploymentMetricsParams {
@@ -54,8 +60,18 @@ export const metricsKeys = {
   failureEvents: (kind: string, id: string, reason: string, code: string | null) =>
     [...metricsKeys.all, kind, id, "failures", reason, "events", code] as const,
   release: (releaseId: string) => [...metricsKeys.all, "release", releaseId] as const,
-  timeseries: (deploymentId: string, rangeDays: number | "default" = "default") =>
-    [...metricsKeys.all, "timeseries", deploymentId, rangeDays] as const,
+  timeseries: (
+    deploymentId: string,
+    rangeDays: number | "default" = "default",
+    binaryVersion: BinaryVersionFilter | null = null,
+  ) =>
+    [
+      ...metricsKeys.all,
+      "timeseries",
+      deploymentId,
+      rangeDays,
+      binaryVersion === null ? null : binaryVersionFilterValue(binaryVersion),
+    ] as const,
 };
 
 /**
@@ -92,12 +108,19 @@ export function useDeploymentMetrics(
  */
 export function useDeploymentTimeseries(
   deploymentId: string,
-  { rangeDays }: { rangeDays?: number } = {},
+  {
+    binaryVersion = null,
+    rangeDays,
+  }: { binaryVersion?: BinaryVersionFilter | null; rangeDays?: number } = {},
 ) {
   return useQuery({
-    queryKey: metricsKeys.timeseries(deploymentId, rangeDays ?? "default"),
+    queryKey: metricsKeys.timeseries(
+      deploymentId,
+      rangeDays ?? "default",
+      binaryVersion,
+    ),
     queryFn: ({ signal }) =>
-      fetchDeploymentTimeseries(deploymentId, rangeDays, signal),
+      fetchDeploymentTimeseries(deploymentId, rangeDays, binaryVersion, signal),
     placeholderData: keepPreviousData,
   });
 }
@@ -106,20 +129,24 @@ export function prefetchDeploymentTimeseries(
   queryClient: QueryClient,
   deploymentId: string,
   rangeDays: number,
+  binaryVersion: BinaryVersionFilter | null = null,
 ) {
   return queryClient.prefetchQuery({
-    queryKey: metricsKeys.timeseries(deploymentId, rangeDays),
+    queryKey: metricsKeys.timeseries(deploymentId, rangeDays, binaryVersion),
     queryFn: ({ signal }) =>
-      fetchDeploymentTimeseries(deploymentId, rangeDays, signal),
+      fetchDeploymentTimeseries(deploymentId, rangeDays, binaryVersion, signal),
   });
 }
 
 function fetchDeploymentTimeseries(
   deploymentId: string,
   rangeDays: number | undefined,
+  binaryVersion: BinaryVersionFilter | null,
   signal?: AbortSignal,
 ) {
-  const params: Record<string, string | number | undefined> = {};
+  const params: Record<string, string | number | undefined> = {
+    ...binaryVersionFilterParams(binaryVersion),
+  };
   if (rangeDays !== undefined) {
     const to = new Date();
     params.from = new Date(
@@ -136,18 +163,16 @@ function fetchDeploymentTimeseries(
   }).then(fromDeploymentTimeseriesWire);
 }
 
-/** `GET /v1/metrics/releases/:releaseId` (`release.view`) — unwraps to the release's counter entry. */
+/** `GET /v1/metrics/releases/:releaseId` (`release.view`) — the release's counter entry plus its per-binary split. */
 export function useReleaseMetrics(releaseId: string) {
   return useQuery({
     queryKey: metricsKeys.release(releaseId),
-    queryFn: async ({ signal }) => {
-      const { release } = await authenticatedRequest<ReleaseMetricsWireResponse>({
+    queryFn: ({ signal }) =>
+      authenticatedRequest<ReleaseMetricsWireResponse>({
         method: "GET",
         path: `/metrics/releases/${encodeURIComponent(releaseId)}`,
         signal,
-      });
-      return fromReleaseMetricsRowWire(release);
-    },
+      }).then(fromReleaseMetricsWireResponse),
   });
 }
 

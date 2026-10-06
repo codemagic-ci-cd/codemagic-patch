@@ -1,0 +1,39 @@
+---
+title: Capacitor SDK
+sidebar_label: Capacitor SDK
+description: Release notes for the Capacitor SDK (@codemagic/capacitor-patch), by version.
+llmsDescription: 'Capacitor SDK (@codemagic/capacitor-patch) release notes by version.'
+toc_max_heading_level: 2
+---
+
+# Capacitor SDK release notes
+
+Release notes for `@codemagic/capacitor-patch`, the client SDK for Capacitor,
+Ionic, and Cordova-on-Capacitor apps. Releases for these apps are published
+with the [CLI for Capacitor](/docs/releases/capacitor-cli). The other
+surfaces' releases and the compatibility table are on the
+[Release Notes](/docs/releases) page.
+
+```bash
+npm install @codemagic/capacitor-patch@latest
+```
+
+Reference: [Native setup for Capacitor](/docs/setup/native-setup-capacitor) ·
+[SDK reference](/docs/reference/sdk-reference) ·
+[GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=capacitor-patch%40)
+
+## 0.1.0 {#v0-1-0}
+
+*6th October 2026*
+
+First published version. The API may still change before 1.0.
+
+The SDK applies over-the-air updates to the web assets of a Capacitor, Ionic,
+or Cordova-on-Capacitor app. It uses the same protocol and server as the React
+Native SDK. A release is a directory of web assets; applying it points the
+WebView at that directory with Capacitor's `setServerBasePath`. There is no
+bundler integration and no native fingerprint; releases are scoped by the
+native app version. To set it up, install the package, run `npx cap sync`, and
+follow [Native setup for Capacitor](/docs/setup/native-setup-capacitor).
+
+See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch%400.1.0).

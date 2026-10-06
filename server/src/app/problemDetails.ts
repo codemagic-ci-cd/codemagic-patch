@@ -65,10 +65,16 @@ export function createProblem(input: {
 export function createValidationProblem(
   detail: string,
   errors?: ProblemFieldError[],
+  extensions?: Record<string, unknown>,
 ): ProblemDetails {
   return createProblem({
     detail,
-    extensions: errors && errors.length > 0 ? { errors } : undefined,
+    // The caller's first: an extension adds to a validation problem, and must not be
+    // able to replace its field errors.
+    extensions: {
+      ...extensions,
+      ...(errors && errors.length > 0 ? { errors } : {}),
+    },
     status: 400,
     typeSuffix: "validation-error",
   });

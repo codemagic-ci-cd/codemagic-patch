@@ -12,8 +12,14 @@ llmsDescription: >-
 ---
 
 import CopyLlmsFullLink from '@site/src/components/CopyLlmsFullLink';
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # Local quickstart
+
+:::note
+These docs cover React Native and Capacitor. Use the selector at the top of the sidebar to switch between them.
+:::
 
 Evaluate the full Codemagic Patch service on your machine before provisioning domains or OAuth. The **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. If you want to see an OTA update before integrating your own app, try the optional [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) to watch an OTA update apply on a simulator or emulator.
 
@@ -68,7 +74,10 @@ Evaluation only, not a production install. Authentication is disabled and all po
 
 ## 2. Try it with your own app {#5-try-it-with-your-own-app}
 
-You can start here as soon as the stack is running; the demo is optional. To use Patch in your project, wire the SDK against localhost:
+You can start here as soon as the stack is running; the demo is optional. To use Patch in your project, wire the SDK against localhost.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 | Config key | Local value |
 | --- | --- |
@@ -85,11 +94,72 @@ adb reverse tcp:9100 tcp:9100
 
 Repeat the forwarding after restarting the device or adb server. The guided demo handles it automatically. The evaluation stack binds only to your laptop's loopback interface, so replacing localhost with a LAN IP does not make it reachable from an iPhone or another machine. For those devices, use a reachable server from the [Install guide](/docs/install).
 
+<div>
+
 - [Native setup](/docs/setup/native-setup) for bare React Native or the Expo config plugin
 - Coming from Expo Updates: [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) (local PoC path first)
 - Coming from a CodePush fork: [Migrating from CodePush](/docs/migration/migrating-from-codepush)
 
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Install the Capacitor CLI with `npm install -g @codemagic/capacitor-patch-cli` and the SDK with `npm install @codemagic/capacitor-patch`; see [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk). Both are 0.x releases, so their API and flags may still change.
+
+Create one app per platform on the local stack and copy each app's `Staging` deployment key. Do not use the `demo-app-*` apps; they belong to the React Native demo.
+
+```bash
+cmpatch-capacitor login --server-url http://localhost:3000
+cmpatch-capacitor app create --name MyApp-iOS --server-url http://localhost:3000
+cmpatch-capacitor app create --name MyApp-Android --server-url http://localhost:3000
+cmpatch-capacitor deployment list --app MyApp-iOS --server-url http://localhost:3000
+cmpatch-capacitor deployment list --app MyApp-Android --server-url http://localhost:3000
+```
+
+To skip `--server-url` in later commands, run `cmpatch-capacitor config set --server-url http://localhost:3000`.
+
+Add the local URLs to `capacitor.config.ts`, with a separate deployment key for each platform:
+
+```ts
+plugins: {
+  CodemagicPatch: {
+    ios: {
+      deploymentKey: "<ios-deployment-key>",
+      apiUrl: "http://localhost:3000",
+      downloadBaseUrl: "http://localhost:9100/codemagic-patch",
+    },
+    android: {
+      deploymentKey: "<android-deployment-key>",
+      apiUrl: "http://localhost:3000",
+      downloadBaseUrl: "http://localhost:9100/codemagic-patch",
+    },
+  },
+},
+```
+
+Run `npx cap sync`. The iOS Simulator can reach these localhost URLs directly. For an Android emulator or a USB-connected device, keep the same URLs and forward the API and download ports with `adb` (add `-s <serial>` if more than one device is connected):
+
+```bash
+adb reverse tcp:3000 tcp:3000
+adb reverse tcp:9100 tcp:9100
+```
+
+Repeat the forwarding after restarting the device or adb server. The evaluation stack binds only to your laptop's loopback interface, so a LAN IP does not make it reachable from an iPhone or another machine. For those devices, use a server set up with the [Install guide](/docs/install).
+
+:::warning
+Android blocks plain HTTP by default. For local evaluation only, add `android:usesCleartextTraffic="true"` to the `<application>` element in `android/app/src/main/AndroidManifest.xml`. Remove it before building for the store.
+:::
+
+Next, follow [Native setup](/docs/setup/native-setup-capacitor) and [Checking for updates](/docs/setup/checking-for-updates). If you use Appflow Live Updates, see [Migrating from Appflow](/docs/migration/migrating-from-appflow).
+
+  </TabItem>
+</SdkTabs>
+
 ## Optional: watch an update apply (on-device demo) {#3-watch-an-update-apply-on-device-demo}
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 If you would like to try Patch with a ready-made app, run the guided walkthrough:
 
@@ -109,6 +179,14 @@ The command checks the demo prerequisites, signs you in to the local stack if ne
 If automatic app switching fails, follow the CLI's instructions to background the app and bring it back manually. A published release alone does not confirm that the device applied it; check the storefront after it reloads.
 
 For prerequisites, troubleshooting, or the optional walkthrough by hand, see the [on-device demo README](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch demo` runs a React Native app. For Capacitor, use the [example app](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client-capacitor/example-app) in the repository, an Ionic + Angular app that uses the SDK. Its README covers checking, downloading, installing, restarting, and crash rollback against the local stack. You can also [connect your own app](#5-try-it-with-your-own-app) and [publish a release](/docs/setup/first-release).
+
+  </TabItem>
+</SdkTabs>
 
 ## Optional: explore the dashboard {#4-confirm-in-the-dashboard-optional}
 
@@ -153,6 +231,9 @@ The seeded API token (`cm_pat_local-dev-token-change-me-00000001`) is for local 
 
 ## Where to go next
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 | Goal | Page |
 | --- | --- |
 | Install and configure the app SDK | [Native setup](/docs/setup/native-setup) |
@@ -160,3 +241,16 @@ The seeded API token (`cm_pat_local-dev-token-change-me-00000001`) is for local 
 | Coming from Expo Updates | [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) |
 | Coming from a CodePush fork | [Migrating from CodePush](/docs/migration/migrating-from-codepush) |
 | Deploy with your own domains | [Install](/docs/install) |
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+| Goal | Page |
+| --- | --- |
+| Install and configure the app SDK | [Native setup](/docs/setup/native-setup-capacitor) |
+| Confirm update behavior on your app | [Verify a test release](/docs/using-patch/verify-test-release) |
+| Coming from Appflow Live Updates | [Migrating from Appflow](/docs/migration/migrating-from-appflow) |
+| Deploy with your own domains | [Install](/docs/install) |
+
+  </TabItem>
+</SdkTabs>

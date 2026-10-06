@@ -1,0 +1,126 @@
+---
+title: React Native SDK
+description: Release notes for @codemagic/react-native-patch, by version.
+llmsDescription: 'React Native SDK (@codemagic/react-native-patch) release notes by version.'
+toc_max_heading_level: 2
+---
+
+# React Native SDK release notes
+
+Release notes for `@codemagic/react-native-patch`. The server version each SDK
+version requires, and the notes for the other surfaces, are on the
+[Release Notes](/docs/releases) page.
+
+```bash
+npm install @codemagic/react-native-patch@latest
+```
+
+Reference: [SDK reference](/docs/reference/sdk-reference) ·
+[GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=react-native-patch)
+
+## 0.5.0 {#v0-5-0}
+
+*23rd September 2026* ·
+**Requires server 0.5.0 or newer**
+
+### `Patch.wrap`
+
+`Patch.wrap` wraps your root component and runs an update check after it
+mounts:
+
+```tsx
+import * as Patch from "@codemagic/react-native-patch";
+
+export default Patch.wrap(App);
+```
+
+The app renders without waiting for the check. Set
+`checkFrequency: CheckFrequency.ON_APP_RESUME` to also check whenever the app
+returns to the foreground. Other options are passed through to `sync()`, and
+install behavior is unchanged. Mounting the wrapped root marks the running
+update as healthy. If your app needs to finish an async startup step first,
+call `sync()` after that step instead of using `Patch.wrap`.
+
+### `CodemagicPatchMaxLaunchAttempts`
+
+Added the optional `CodemagicPatchMaxLaunchAttempts` setting (Info.plist on
+iOS, strings.xml on Android). It sets how many launches a pending update may
+make without `notifyAppReady()` before it is rolled back. The default is still
+3. In Expo projects, set it with the config plugin's `maxLaunchAttempts` option.
+
+- **Lifecycle names** (requires server 0.5.0): `Installed` is now `Ready` (the
+  update is prepared for the next launch), and `Success` is now `Applied` (the
+  update is running and confirmed by `notifyAppReady()`). Servers 0.4.x and
+  earlier drop these events, so upgrade the server before shipping an app build
+  with this SDK.
+- **Development warning:** In development builds, a failed `sync()` now logs a
+  warning with the reason, even when nothing reads its result, as with
+  `Patch.wrap`. Release builds do not log it. A wrong deployment key or server
+  path returns "no update" and does not trigger the warning.
+- **Duplicate Applied events:** Concurrent `notifyAppReady()` calls no longer
+  report the same update as applied more than once.
+- **React Native 0.87:** Fixed type errors in strict TypeScript apps.
+
+See the [SDK reference](/docs/reference/sdk-reference#wraproot-options) and
+[SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.5.0).
+
+## 0.4.0 {#v0-4-0}
+
+*14th September 2026*
+
+### `isNextVersionReady()`
+
+Added `isNextVersionReady()`, which reports whether a different OTA package is
+installed and waiting for the next reload. Use it to show an “Update ready”
+prompt while the current bundle keeps running. It does not report a staged
+return to the embedded bundle.
+
+- **Embedded revert fix:** Returning to the embedded bundle now honors the
+  selected install mode, including next suspend, resume, or restart.
+
+See the [SDK reference](/docs/reference/sdk-reference) and
+[SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.4.0).
+
+## 0.3.0 {#v0-3-0}
+
+*7th September 2026*
+
+### Failure details
+
+Failed installs now include diagnostic details that the dashboard displays:
+HTTP status, the origin or platform error message, and on Android 11+ the
+previous process exit reason. Previously the dashboard showed only a `network`
+count. See the [server notes](/docs/releases/server#v0-3-0) for the dashboard
+side.
+
+- **Three launches before rollback:** A pending package now gets three
+  consecutive launches to call `notifyAppReady()` before the SDK rolls back
+  and reports `Failed`. This reduces false crash rollbacks caused by OS process
+  kills, while a broken bundle is still rolled back. See
+  [Analytics and metrics](/docs/using-patch/analytics).
+
+See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.3.0).
+
+## 0.2.0 {#v0-2-0}
+
+*22nd August 2026*
+
+### `getRunningBundleUpdateMetadata()`
+
+`getRunningBundleUpdateMetadata()` returns `label`, `packageHash`, and
+`releaseNotes` for the OTA release active in the current process, or `null`
+when the app is still on the embedded store binary. Use it for an in-app
+"About this build" screen or for QA.
+
+```ts
+import { getRunningBundleUpdateMetadata } from "@codemagic/react-native-patch";
+
+const running = await getRunningBundleUpdateMetadata();
+if (running) {
+  console.log(running.label, running.packageHash, running.releaseNotes);
+}
+```
+
+The value does not change until the next reload. See
+[SDK reference](/docs/reference/sdk-reference#getrunningbundleupdatemetadata)
+and the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.2.0).

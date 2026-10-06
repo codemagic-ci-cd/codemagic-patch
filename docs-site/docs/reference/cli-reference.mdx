@@ -1,12 +1,28 @@
 ---
 title: CLI command reference
-description: 'Reference for cmpatch commands, flags, and release workflows.'
-llmsDescription: 'cmpatch commands and flags — init, selfhost, demo, release-react, promote, rollback, doctor.'
+description: 'Reference for cmpatch and cmpatch-capacitor commands, flags, and release workflows.'
+llmsDescription: 'cmpatch commands and flags (init, selfhost, demo, release-react, promote, rollback, doctor), plus cmpatch-capacitor for Capacitor apps.'
 ---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # CLI command reference
 
 Install with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then run `cmpatch help` for grouped topics, or `cmpatch <command> --help` for full flags.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+React Native apps use `cmpatch` for server setup, sign-in, apps, releases, and diagnostics.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Capacitor apps use a separate CLI, [`cmpatch-capacitor`](#cmpatch-capacitor). Use `cmpatch` to run the server ([Local evaluation and self-hosting](#self-hosting)). The two CLIs store sign-ins separately, so sign in with each one you use.
+
+  </TabItem>
+</SdkTabs>
 
 ## Auth and config
 
@@ -107,7 +123,7 @@ Replacing storage keys later is a manual edit of `.env.selfhost`. See
 
 | Command | Description |
 | --- | --- |
-| `cmpatch release-react` | Build and publish from an RN project |
+| `cmpatch release-react` | Build and publish from a React Native project |
 | `cmpatch bundle` | Build a `.cmpatch` artifact without uploading |
 | `cmpatch release create` | Publish a pre-built bundle / `.cmpatch` |
 | `cmpatch release list \| show \| inspect` | Browse releases; `inspect --wait` to poll |
@@ -116,7 +132,7 @@ Replacing storage keys later is a manual edit of `.env.selfhost`. See
 | `cmpatch release rollback` | Revert to the previous release |
 | `cmpatch release metrics` | Metrics for one release |
 
-For iOS, `release-react` and `bundle` detect the binary version from the Xcode application target, excluding extensions. If the project has multiple apps, select one with `--xcode-project-file` and/or `--xcode-target-name`. Use `--build-configuration-name` when configurations have different versions. `--plist-file` selects a plist directly; `--plist-file-prefix` selects a prefixed plist in the chosen app's directory. If SDK/architecture conditions affect the detected version, or the project or build settings cannot be resolved, pass `--target-binary-version` with the installed app's version. `cmpatch doctor --platform ios` accepts the same selection flags.
+`release-react` bundles JS, resolves a target binary version, and uploads in one step. For iOS, `release-react` and `bundle` detect the binary version from the Xcode application target, excluding extensions. If the project has multiple apps, select one with `--xcode-project-file` and/or `--xcode-target-name`. Use `--build-configuration-name` when configurations have different versions. `--plist-file` selects a plist directly; `--plist-file-prefix` selects a prefixed plist in the chosen app's directory. If SDK/architecture conditions affect the detected version, or the project or build settings cannot be resolved, pass `--target-binary-version` with the installed app's version. `cmpatch doctor --platform ios` accepts the same selection flags.
 
 Android auto-detection supports a static `defaultConfig.versionName` and a literal common `versionNameSuffix`. Simple properties are read from the selected module and its Gradle root. Flavor/build-type version overrides and dynamic expressions require `--target-binary-version`; the CLI does not evaluate Gradle or CI overrides. For those projects, [extract the version from the published APK/AAB](/docs/using-patch/ci-integration#target-the-version-from-a-published-android-binary).
 
@@ -125,7 +141,51 @@ Android auto-detection supports a static `defaultConfig.versionName` and a liter
 | Command | Description |
 | --- | --- |
 | `cmpatch member add \| invite \| provision \| list \| remove …` | Team membership and invitations |
-| `cmpatch doctor` | Diagnose RN/Expo setup on configured platforms; optionally verify delivery with `--verify-delivery` |
+| `cmpatch doctor` | Diagnose React Native / Expo setup on configured platforms; optionally verify delivery with `--verify-delivery` |
 | `cmpatch fingerprint --platform ios\|android` | Compute the native fingerprint |
 
 List/metrics commands accept `--format table|json`.
+
+## `cmpatch-capacitor` {#cmpatch-capacitor}
+
+CLI for Capacitor and Ionic apps. Install it with `npm install -g @codemagic/capacitor-patch-cli` (Node.js `20.19+` or `22.12+`). It is a 0.x release, so its flags may still change. Run `cmpatch-capacitor --help` for the command list, or `cmpatch-capacitor <command> --help` for a command's flags.
+
+| Command | Description |
+| --- | --- |
+| `cmpatch-capacitor login` / `logout` / `whoami` | Sign in through the browser (or with `--token`), sign out, show the current user. `--no-browser` prints the sign-in URL |
+| `cmpatch-capacitor token create \| list \| revoke` | Manage personal access tokens |
+| `cmpatch-capacitor config list \| set \| unset` | Manage the default server URL |
+| `cmpatch-capacitor app create \| list \| show \| rename \| setting \| remove` | Manage apps (one per platform). `app create` adds `Staging` and `Production` deployments |
+| `cmpatch-capacitor deployment create \| list \| rename \| remove \| clear \| metrics \| history` | Manage deployments and view deployment keys and metrics |
+| `cmpatch-capacitor release create` | Publish built web assets. `release` with no subcommand is the same |
+| `cmpatch-capacitor release list \| show \| inspect \| metrics` | View releases and metrics. `inspect --wait` waits for processing to finish |
+| `cmpatch-capacitor release patch \| disable \| enable \| promote \| rollback` | Change rollout, availability, or metadata, promote, or roll back |
+
+### Differences from `cmpatch`
+
+| | `cmpatch-capacitor` |
+| --- | --- |
+| Project config | None. There is no `init`, `context`, or `codemagic-patch.config.json`. Select the app and deployment with `--app` and `--deployment` (or `--deployment-id`), and the server with `--server-url`, `CODEMAGIC_PATCH_SERVER_URL`, or `config set` |
+| Platform | No `--platform` flag. Each app is a single platform |
+| Publishing | `release create --bundle-path <dir\|zip>` uploads a built `webDir` (or a ZIP of its contents) with `index.html` at the top level. No build step |
+| Binary version | `--target-binary-version` is required and must be exact. No native fingerprint. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor) |
+| App lookup | Names resolve only to Capacitor apps. IDs (`--app-id`, `--deployment-id`, `--release-id`) skip the lookup and are recommended in CI |
+| Output | `--format text` (default) or `--format json` (raw server response). `table` is not accepted |
+| Not included | Server management (`cmpatch selfhost`), team members (dashboard **Members** page), `doctor` |
+
+Credentials are resolved in this order: `--token`, `CODEMAGIC_PATCH_TOKEN`, then the stored sign-in in `~/.codemagic-patch/credentials-capacitor.json`.
+
+### Confirmation
+
+Commands that change what devices receive or delete data (`release create`, `patch`, `disable`, `enable`, `promote`, `rollback`, `app remove`, `deployment remove`, `deployment clear`) show a summary and ask for confirmation. The prompt appears only in an interactive terminal. In CI (when `CI` is set), when stdin or stderr is not a terminal, or with `--format json`, these commands fail unless you pass `-y` / `--yes`. There is no `--non-interactive` flag.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | Server or runtime error (not found, duplicate release, network failure, …), or confirmation declined |
+| 2 | Usage error, missing `--yes`, not signed in, or token rejected by the server |
+| 3 | Validation error, release processing failed or timed out (`inspect --wait`), stored sign-in expired or revoked, or browser sign-in denied or timed out |
+| 4 | Account disabled |
+| 130 | Confirmation prompt interrupted (Ctrl-C) |

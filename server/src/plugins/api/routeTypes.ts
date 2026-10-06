@@ -68,6 +68,8 @@ export interface PaginationQuery {
 }
 
 export interface ReleaseListQuery extends PaginationQuery {
+  binary_version?: unknown;
+  binary_version_prefix?: unknown;
   include?: unknown;
 }
 
@@ -86,6 +88,8 @@ export interface FailureEventsQuery extends FailureBucketQuery {
 }
 
 export interface TimeseriesRangeQuery {
+  binary_version?: unknown;
+  binary_version_prefix?: unknown;
   from?: unknown;
   series_limit?: unknown;
   to?: unknown;
@@ -112,12 +116,14 @@ export interface TeamCreateBody {
 }
 
 export interface AppCreateBody {
+  framework?: unknown;
   name?: unknown;
   require_code_signing?: unknown;
   team_id?: unknown;
 }
 
 export interface AppUpdateBody {
+  framework?: unknown;
   name?: unknown;
   require_code_signing?: unknown;
 }

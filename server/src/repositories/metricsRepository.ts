@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 
 import type {
+  BinaryVersionFilter,
   DeploymentId,
   FailureCodeBreakdownList,
   FailureDistribution,
@@ -8,9 +9,15 @@ import type {
   FailureEventPage,
   MetricEvent,
   MetricEventName,
+  ReleaseDeliveryBreakdown,
+  ReleaseId,
   ReleaseMetrics,
 } from "../domain";
 import { withTransaction, type DatabasePool } from "../db";
+import {
+  binaryVersionFilterValues,
+  binaryVersionMatchSql,
+} from "./binaryVersionFilterSql";
 import {
   mapMetricEventRow,
   type DeploymentRow,
@@ -63,7 +70,18 @@ export interface TimeseriesBucketRow {
   success: number;
 }
 
+export interface BinaryVersionReleaseMetrics {
+  /** Null for events that reported no binary version. */
+  binaryVersion: string | null;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
 export interface DeploymentTimeseriesRows {
+  /** Distinct non-null binary versions in the range, ignoring any filter. */
+  binaryVersions: string[];
   /** One series per selected target_package_hash, ranked by in-range volume. */
   series: Array<{
     points: TimeseriesBucketRow[];
@@ -72,6 +90,14 @@ export interface DeploymentTimeseriesRows {
   seriesTruncated: boolean;
   /** Deployment-wide rollup: each device counted once per bucket. */
   totals: TimeseriesBucketRow[];
+}
+
+export interface ReleaseDeliveryLookup {
+  createdAt: Date;
+  deploymentId: DeploymentId;
+  releaseId: ReleaseId;
+  targetBinaryVersion: string;
+  targetPackageHash: string | null;
 }
 
 export interface ListFailureCodesOptions {
@@ -99,9 +125,17 @@ export interface ListFailureEventsOptions extends ListFailureBucketOptions {
 }
 
 export interface MetricsRepository {
+  getReleaseDeliveryBreakdown(
+    input: ReleaseDeliveryLookup,
+  ): Promise<ReleaseDeliveryBreakdown>;
   listDeploymentTimeseries(
     deploymentId: DeploymentId,
-    range: { from: Date; seriesLimit: number; to: Date },
+    range: {
+      binaryVersion: BinaryVersionFilter | null;
+      from: Date;
+      seriesLimit: number;
+      to: Date;
+    },
   ): Promise<DeploymentTimeseriesRows>;
   listFailureCodes(
     deploymentId: DeploymentId,
@@ -119,6 +153,11 @@ export interface MetricsRepository {
     deploymentId: DeploymentId,
     targetPackageHashes: Array<string | null>,
   ): Promise<Map<string, ReleaseMetrics>>;
+  /** Lifetime counters for one package hash, one row per reported binary version. */
+  listReleaseMetricsByBinaryVersion(
+    deploymentId: DeploymentId,
+    targetPackageHash: string,
+  ): Promise<BinaryVersionReleaseMetrics[]>;
   persistMetricEvent(
     input: PersistMetricEventInput,
   ): Promise<PersistMetricEventResult>;
@@ -138,10 +177,45 @@ export const ZERO_RELEASE_METRICS: ReleaseMetrics = {
   success: 0,
 };
 
+export const ZERO_RELEASE_DELIVERY: ReleaseDeliveryBreakdown = {
+  fullBundle: { downloads: 0, sizeBytes: null },
+  patch: { downloads: 0, sizeBytes: null, fromReleaseLabel: null },
+};
+
 export function createPostgresMetricsRepository(
   pool: DatabasePool | Pool,
 ): MetricsRepository {
   return {
+    async getReleaseDeliveryBreakdown(input) {
+      const [downloads, artifacts, previous] = await Promise.all([
+        countDownloadsByDeliveryType(
+          pool,
+          input.deploymentId,
+          input.targetPackageHash,
+        ),
+        loadReleaseArtifactSizes(pool, input),
+        findPreviousReleaseJump(pool, input),
+      ]);
+
+      const previousHash = previous?.targetPackageHash ?? null;
+      const previousPatchSize =
+        previousHash === null
+          ? null
+          : (artifacts.patchSizes.get(previousHash) ?? null);
+
+      return {
+        fullBundle: {
+          downloads: downloads.fullBundle,
+          sizeBytes: artifacts.fullBundleSize,
+        },
+        patch: {
+          downloads: downloads.patch,
+          sizeBytes: previousPatchSize,
+          fromReleaseLabel: previous?.releaseLabel ?? null,
+        },
+      };
+    },
+
     async persistMetricEvent(input) {
       const deployment = await findDeploymentByKey(pool, input.deploymentKey);
       if (!deployment) {
@@ -219,8 +293,19 @@ export function createPostgresMetricsRepository(
       // One GROUPING SETS pass yields both the per-hash series rows and the
       // deployment-wide rollup. Ranking happens over those bucketed rows so
       // only the requested number of series leaves PostgreSQL, while totals
-      // still cover every hash in the range.
-      const result = await pool.query<{
+      // still cover every hash in the range. The version list ignores
+      // `binaryVersion` so a filtered chart can still name the other versions.
+      const eventNames = [
+        "Downloaded",
+        "Ready",
+        "Installed",
+        "Applied",
+        "Success",
+        "Failed",
+        "Active",
+      ];
+      const [result, binaryVersions] = await Promise.all([
+        pool.query<{
         active_devices: number;
         bucket_start: Date;
         downloaded: number;
@@ -246,7 +331,8 @@ export function createPostgresMetricsRepository(
             WHERE deployment_id = $1
               AND emitted_at >= $2
               AND emitted_at < $3
-              AND event_name = ANY('{Downloaded,Ready,Installed,Applied,Success,Failed,Active}')
+              AND event_name = ANY($5::text[])
+              AND ${binaryVersionMatchSql("binary_version", "$6", "$7")}
             GROUP BY GROUPING SETS (
               (date_trunc('day', emitted_at), target_package_hash),
               (date_trunc('day', emitted_at))
@@ -281,8 +367,28 @@ export function createPostgresMetricsRepository(
           WHERE bucketed.is_total OR ranked_hashes.series_rank <= $4
           ORDER BY ranked_hashes.series_rank NULLS LAST, bucketed.bucket_start
         `,
-        [deploymentId, range.from, range.to, range.seriesLimit],
-      );
+          [
+            deploymentId,
+            range.from,
+            range.to,
+            range.seriesLimit,
+            eventNames,
+            ...binaryVersionFilterValues(range.binaryVersion),
+          ],
+        ),
+        pool.query<{ binary_version: string }>(
+          `
+            SELECT DISTINCT binary_version
+            FROM metric_event
+            WHERE deployment_id = $1
+              AND emitted_at >= $2
+              AND emitted_at < $3
+              AND binary_version IS NOT NULL
+              AND event_name = ANY($4::text[])
+          `,
+          [deploymentId, range.from, range.to, eventNames],
+        ),
+      ]);
 
       const totals: TimeseriesBucketRow[] = [];
       const pointsByHash = new Map<string | null, TimeseriesBucketRow[]>();
@@ -315,7 +421,12 @@ export function createPostgresMetricsRepository(
         ([targetPackageHash, points]) => ({ points, targetPackageHash }),
       );
 
-      return { series, seriesTruncated, totals };
+      return {
+        binaryVersions: binaryVersions.rows.map((row) => row.binary_version),
+        series,
+        seriesTruncated,
+        totals,
+      };
     },
 
     async listReleaseMetricsForDeployment(deploymentId, targetPackageHashes) {
@@ -410,6 +521,39 @@ export function createPostgresMetricsRepository(
       }
 
       return metrics;
+    },
+
+    async listReleaseMetricsByBinaryVersion(deploymentId, targetPackageHash) {
+      const result = await pool.query<{
+        binary_version: string | null;
+        downloaded: number;
+        failed: number;
+        installed: number;
+        success: number;
+      }>(
+        `
+          SELECT
+            binary_version,
+            COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
+            COUNT(*) FILTER (WHERE event_name = 'Failed')::integer AS failed,
+            COUNT(*) FILTER (WHERE event_name IN ('Ready', 'Installed'))::integer AS installed,
+            COUNT(*) FILTER (WHERE event_name IN ('Applied', 'Success'))::integer AS success
+          FROM metric_event
+          WHERE deployment_id = $1
+            AND target_package_hash = $2
+            AND event_name IN ('Downloaded', 'Ready', 'Installed', 'Applied', 'Success', 'Failed')
+          GROUP BY binary_version
+        `,
+        [deploymentId, targetPackageHash],
+      );
+
+      return result.rows.map((row) => ({
+        binaryVersion: row.binary_version,
+        downloaded: row.downloaded,
+        failed: row.failed,
+        installed: row.installed,
+        success: row.success,
+      }));
     },
 
     async listFailureCodes(deploymentId, options) {
@@ -585,6 +729,149 @@ export function createPostgresMetricsRepository(
       };
     },
   };
+}
+
+async function countDownloadsByDeliveryType(
+  client: Queryable,
+  deploymentId: DeploymentId,
+  targetPackageHash: string | null,
+): Promise<{ fullBundle: number; patch: number }> {
+  if (targetPackageHash === null) {
+    return { fullBundle: 0, patch: 0 };
+  }
+
+  const result = await client.query<{ full_bundle: number; patch: number }>(
+    `
+      SELECT
+        COUNT(*) FILTER (
+          WHERE attributes ->> 'delivery_type' = 'full_bundle'
+        )::integer AS full_bundle,
+        COUNT(*) FILTER (
+          WHERE attributes ->> 'delivery_type' = 'patch'
+        )::integer AS patch
+      FROM metric_event
+      WHERE deployment_id = $1
+        AND target_package_hash = $2
+        AND event_name = 'Downloaded'
+    `,
+    [deploymentId, targetPackageHash],
+  );
+
+  const row = result.rows[0];
+  return {
+    fullBundle: row?.full_bundle ?? 0,
+    patch: row?.patch ?? 0,
+  };
+}
+
+async function loadReleaseArtifactSizes(
+  client: Queryable,
+  input: ReleaseDeliveryLookup,
+): Promise<{
+  fullBundleSize: number | null;
+  patchSizes: Map<string, number>;
+}> {
+  const result = await client.query<{
+    artifact_type: "bundle" | "patch";
+    file_size: string | number | null;
+    from_package_hash: string | null;
+  }>(
+    `
+      SELECT
+        artifact_type,
+        file_size,
+        metadata ->> 'fromPackageHash' AS from_package_hash
+      FROM release_artifact
+      WHERE release_id = $1
+        AND artifact_type IN ('bundle', 'patch')
+        AND (
+          artifact_type = 'bundle'
+          OR (
+            metadata ->> 'binaryVersion' = $2
+            AND metadata ->> 'toPackageHash' = $3
+          )
+        )
+    `,
+    [input.releaseId, input.targetBinaryVersion, input.targetPackageHash],
+  );
+
+  let fullBundleSize: number | null = null;
+  const patchSizes = new Map<string, number>();
+
+  for (const row of result.rows) {
+    const sizeBytes = readByteCount(row.file_size);
+    if (row.artifact_type === "bundle") {
+      if (fullBundleSize === null || (sizeBytes !== null && sizeBytes > fullBundleSize)) {
+        fullBundleSize = sizeBytes;
+      }
+      continue;
+    }
+
+    if (row.from_package_hash !== null && sizeBytes !== null) {
+      patchSizes.set(row.from_package_hash, sizeBytes);
+    }
+  }
+
+  return { fullBundleSize, patchSizes };
+}
+
+async function findPreviousReleaseJump(
+  client: Queryable,
+  input: ReleaseDeliveryLookup,
+): Promise<{ releaseLabel: string; targetPackageHash: string } | null> {
+  const result = await client.query<{
+    release_label: string;
+    target_package_hash: string;
+  }>(
+    `
+      SELECT r.release_label, r.target_package_hash
+      FROM release r
+      WHERE r.deployment_id = $1
+        AND r.status = 'published'
+        AND (r.created_at, r.id) < ($3, $4)
+        AND r.target_package_hash IS NOT NULL
+        AND r.target_package_hash IS DISTINCT FROM $5
+        AND EXISTS (
+          SELECT 1
+          FROM release_target rt
+          WHERE rt.release_id = r.id
+            AND rt.binary_version = $2
+            AND rt.status = 'active'
+            AND rt.reconcile_generation = (
+              SELECT MAX(latest.reconcile_generation)
+              FROM release_target latest
+              WHERE latest.release_id = r.id
+                AND latest.status = 'active'
+            )
+        )
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT 1
+    `,
+    [
+      input.deploymentId,
+      input.targetBinaryVersion,
+      input.createdAt,
+      input.releaseId,
+      input.targetPackageHash,
+    ],
+  );
+
+  const row = result.rows[0];
+  return row
+    ? {
+        releaseLabel: row.release_label,
+        targetPackageHash: row.target_package_hash,
+      }
+    : null;
+}
+
+function readByteCount(value: string | number | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 /**

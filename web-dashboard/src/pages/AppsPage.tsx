@@ -2,8 +2,8 @@
 // only: the App DTO carries no deployment count / platform / per-app metrics,
 // so the "Deployments", "Active users" and "30-day success" columns
 // (and the platform filter) are omitted — columns are App
-// (name → detail link), Code signing (`.pin.sign` / `.chip outline`), and
-// Created. "Create app" is gated `app.create`: denied roles see the button
+// (name → detail link, with the app's framework underneath), Code signing
+// (`.pin.sign` / `.chip outline`), and Created. "Create app" is gated `app.create`: denied roles see the button
 // DISABLED inside the `.tip` wrapper with a "Requires admin" tooltip
 // (RBAC matrix convention "Disabled = greyed with tooltip" — never hidden).
 // The create modal posts via useCreateApp (the Idempotency-Key is minted in
@@ -16,7 +16,6 @@ import { useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { useApps, useCreateApp } from "../api/hooks/apps";
-import { SOURCE_REPO_URL } from "../branding";
 import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { Modal } from "../components/overlay/Modal";
@@ -29,13 +28,20 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { useTeamRole } from "../rbac/useTeamRole";
 import { apiServerUrl } from "../lib/cliSnippet";
 import { formatDate } from "../model/format";
+import {
+  connectGuideUrl,
+  DEFAULT_FRAMEWORK,
+  frameworkLabel,
+  KNOWN_FRAMEWORKS,
+  sdkConfigKeyNames,
+} from "../model/framework";
 import type { App } from "../model/app";
 import { initialsFor } from "../lib/appTile";
 import type { Deployment } from "../model/deployment";
 import type { FormEvent } from "react";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
-import { APP_ICO, CELL_APP, CELL_MAIN } from "../components/ui/cell";
+import { APP_ICO, CELL_APP, CELL_MAIN, CELL_SUB } from "../components/ui/cell";
 import { CHIP } from "../components/ui/chip";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import {
@@ -45,6 +51,7 @@ import {
   FIELD_LABEL,
   INPUT,
   INPUT_STATE,
+  SELECT_EXTRA,
   TOGGLE,
   TOGGLE_INPUT,
   TOGGLE_TRACK,
@@ -98,7 +105,7 @@ export function AppsPage() {
     <>
       <PageHeader
         title="Apps"
-        description="React Native OTA targets in this team. Each app auto-creates a Staging and Production deployment."
+        description="Over-the-air update targets in this team. Each app auto-creates a Staging and Production deployment."
         actions={
           showDeniedTip ? (
             // RBAC "Disabled" convention: rendered greyed (never hidden) with
@@ -213,6 +220,9 @@ function AppTable({ teamId, apps }: { teamId: string; apps: App[] }) {
                       <div className={CELL_MAIN}>
                         <Link to={detailPath}>{app.name}</Link>
                       </div>
+                      <div className={CELL_SUB}>
+                        {frameworkLabel(app.framework)}
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -298,6 +308,7 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("");
+  const [framework, setFramework] = useState<string>(DEFAULT_FRAMEWORK);
   const [requireCodeSigning, setRequireCodeSigning] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -331,6 +342,7 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
     setNameError(null);
     createApp.mutate(
       {
+        framework,
         name: trimmed,
         team_id: teamId,
         ...(requireCodeSigning ? { require_code_signing: true } : {}),
@@ -391,6 +403,7 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
     return (
       <AppCreatedSuccess
         appName={created.app.name}
+        framework={created.app.framework}
         deployments={created.deployments}
         onClose={onClose}
         onGoToApp={() => {
@@ -460,6 +473,28 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
             </span>
           )}
         </label>
+        <label className={FIELD}>
+          <span className={FIELD_LABEL}>Framework</span>
+          {/* `select` class kept for the data-URI chevron (form.ts contract). */}
+          <select
+            className={`${INPUT} ${INPUT_STATE.normal} ${SELECT_EXTRA} select`}
+            value={framework}
+            onChange={(event) => {
+              setFramework(event.target.value);
+            }}
+            disabled={pending}
+            aria-label="Framework"
+          >
+            {KNOWN_FRAMEWORKS.map((value) => (
+              <option key={value} value={value}>
+                {frameworkLabel(value)}
+              </option>
+            ))}
+          </select>
+          <span className={FIELD_HINT}>
+            Decides which commands and guides the dashboard shows for this app.
+          </span>
+        </label>
         <label className={`${TOGGLE} mt-1 mb-1.5`}>
           <input
             type="checkbox"
@@ -496,15 +531,15 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
 
 // --- Presentation helpers ----------------------------------------------------
 
-const CONNECT_APP_DOCS_URL = `${SOURCE_REPO_URL}#part-4--connect-your-react-native-app`;
-
 function AppCreatedSuccess({
   appName,
+  framework,
   deployments,
   onClose,
   onGoToApp,
 }: {
   appName: string;
+  framework: string;
   deployments: Deployment[];
   onClose: () => void;
   onGoToApp: () => void;
@@ -512,6 +547,10 @@ function AppCreatedSuccess({
   const sdkConfigQuery = useSdkConfig();
   const apiUrl = apiServerUrl();
   const downloadBaseUrl = sdkConfigQuery.data?.downloadBaseUrl;
+  // Each SDK spells these two values its own way; show the names the
+  // developer will actually type into their config.
+  const keyNames = sdkConfigKeyNames(framework);
+  const guideUrl = connectGuideUrl(framework);
 
   return (
     <Modal
@@ -557,19 +596,19 @@ function AppCreatedSuccess({
         </p>
         <div className="flex items-center justify-between gap-[14px]">
           <span className="shrink-0 font-mono text-[12.5px] font-semibold text-fg-2">
-            CodemagicPatchApiUrl
+            {keyNames.apiUrl}
           </span>
           <Copyable
             value={apiUrl}
             display="masked"
             maskHead={14}
             maskTail={8}
-            ariaLabel="Copy CodemagicPatchApiUrl"
+            ariaLabel={`Copy ${keyNames.apiUrl}`}
           />
         </div>
         <div className="flex items-center justify-between gap-[14px]">
           <span className="shrink-0 font-mono text-[12.5px] font-semibold text-fg-2">
-            CodemagicPatchDownloadBaseUrl
+            {keyNames.downloadBaseUrl}
           </span>
           {sdkConfigQuery.isPending ? (
             <Skeleton width={160} variant="text" />
@@ -583,20 +622,22 @@ function AppCreatedSuccess({
               display="masked"
               maskHead={14}
               maskTail={8}
-              ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+              ariaLabel={`Copy ${keyNames.downloadBaseUrl}`}
             />
           )}
         </div>
-        <p className="m-0 text-[12.5px] leading-snug text-fg-3">
-          <a
-            className="font-semibold text-blue hover:underline"
-            href={CONNECT_APP_DOCS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Connect your React Native app
-          </a>
-        </p>
+        {guideUrl === null ? null : (
+          <p className="m-0 text-[12.5px] leading-snug text-fg-3">
+            <a
+              className="font-semibold text-blue hover:underline"
+              href={guideUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Connect your {frameworkLabel(framework)} app
+            </a>
+          </p>
+        )}
       </div>
     </Modal>
   );

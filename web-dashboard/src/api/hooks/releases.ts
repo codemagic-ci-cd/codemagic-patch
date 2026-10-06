@@ -25,6 +25,11 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 
+import {
+  binaryVersionFilterParams,
+  binaryVersionFilterValue,
+  type BinaryVersionFilter,
+} from "../../model/binaryVersionFilter";
 import { isTerminalJobStatus } from "../../model/release";
 import {
   authenticatedMultipartRequest,
@@ -55,6 +60,8 @@ export const RELEASE_LIST_PAGE_SIZE = 50;
 export const RELEASE_POLL_INTERVAL_MS = 3_000;
 
 export interface ReleaseListParams {
+  /** `binaryVersionFilterValue` of the filter, or null for every release. */
+  binaryVersion: string | null;
   includeMetrics: boolean;
   limit: number;
 }
@@ -77,10 +84,13 @@ export interface UseReleasesOptions {
   limit?: number;
   /** Append `include=metrics` so rows carry counters (default true — the history table needs them). */
   includeMetrics?: boolean;
+  /** Only releases whose explicit or resolved targets match (default: all). */
+  binaryVersion?: BinaryVersionFilter | null;
 }
 
 /**
  * `GET /v1/deployments/:deploymentId/releases?include=metrics&limit&offset`
+ * (plus `binary_version` / `binary_version_prefix` when filtered)
  * (`release.view`) → pages of `{ releases: [{ release, job, metrics? }],
  * pagination }`.
  *
@@ -90,15 +100,25 @@ export interface UseReleasesOptions {
  */
 export function useReleases(
   deploymentId: string,
-  { limit = RELEASE_LIST_PAGE_SIZE, includeMetrics = true }: UseReleasesOptions = {},
+  {
+    limit = RELEASE_LIST_PAGE_SIZE,
+    includeMetrics = true,
+    binaryVersion = null,
+  }: UseReleasesOptions = {},
 ) {
   return useInfiniteQuery({
-    queryKey: releaseKeys.list(deploymentId, { includeMetrics, limit }),
+    queryKey: releaseKeys.list(deploymentId, {
+      binaryVersion:
+        binaryVersion === null ? null : binaryVersionFilterValue(binaryVersion),
+      includeMetrics,
+      limit,
+    }),
     queryFn: ({ pageParam, signal }) =>
       authenticatedRequest<ReleasesListWireResponse>({
         method: "GET",
         path: `/deployments/${encodeURIComponent(deploymentId)}/releases${searchString(
           {
+            ...binaryVersionFilterParams(binaryVersion),
             include: includeMetrics ? "metrics" : undefined,
             limit,
             offset: pageParam,

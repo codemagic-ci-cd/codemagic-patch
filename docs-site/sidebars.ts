@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'introduction/how-it-works',
         'introduction/core-concepts',
         'introduction/comparison',
+        'introduction/comparison-capacitor',
         'introduction/pricing',
         'introduction/support',
       ],
@@ -40,6 +41,7 @@ const sidebars: SidebarsConfig = {
           collapsible: false,
           items: [
             'setup/native-setup',
+            'setup/native-setup-capacitor',
             'setup/checking-for-updates',
             'setup/applying-updates',
             'setup/manual-control',
@@ -62,6 +64,7 @@ const sidebars: SidebarsConfig = {
             'using-patch/dashboard',
             'using-patch/releasing-updates',
             'using-patch/fingerprinting',
+            'using-patch/binary-version-capacitor',
             'using-patch/verify-test-release',
             'using-patch/preparing-for-production',
             'using-patch/production-control',
@@ -87,6 +90,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'migration/migrating-from-codepush',
+        'migration/migrating-from-appflow',
         'migration/migrating-from-expo-updates',
       ],
     },
@@ -104,7 +108,20 @@ const sidebars: SidebarsConfig = {
     },
     'troubleshooting',
     'faq',
-    'releases',
+    {
+      type: 'category',
+      label: 'Release Notes',
+      collapsible: false,
+      collapsed: false,
+      items: [
+        'releases/index',
+        'releases/react-native',
+        'releases/cli',
+        'releases/capacitor-sdk',
+        'releases/capacitor-cli',
+        'releases/server',
+      ],
+    },
   ],
 };
 

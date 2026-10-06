@@ -6,6 +6,9 @@ description: >-
 llmsDescription: 'Auth — OAuth sign-in, API tokens, team roles, optional code signing.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Security and access
 
 Patch separates who can publish updates (CLI and dashboard auth) from whether clients trust updates (optional code signing).
@@ -20,6 +23,9 @@ See [Install](/docs/install#github-oauth-app) for OAuth app setup.
 
 ### CLI sign-in
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Developers sign in through the browser — `cmpatch login` opens the dashboard and completes over a localhost redirect (pass `--token` to sign in with a personal access token instead):
 
 ```bash
@@ -29,18 +35,45 @@ cmpatch login --server-url https://updates.example.com
 In a project set up with `cmpatch init`, the server URL is already known and
 `cmpatch login` needs no flag. Credentials are stored locally in `~/.codemagic-patch/`.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch-capacitor login` opens the dashboard in a browser and completes sign-in through a localhost redirect. To sign in with a personal access token, pass `--token`:
+
+```bash
+cmpatch-capacitor login --server-url https://updates.example.com
+```
+
+If `CODEMAGIC_PATCH_SERVER_URL` or a default server (`cmpatch-capacitor config set --server-url`) is set, `--server-url` is not needed. Credentials are stored in `~/.codemagic-patch/credentials-capacitor.json`, readable only by your user and separate from `cmpatch` credentials. `--no-browser` prints the sign-in URL instead of opening it. The URL must be opened on the same machine, so use `--token` over SSH.
+
+  </TabItem>
+</SdkTabs>
+
 ### API tokens (CI and automation)
 
 For CI and scripting, create personal access tokens:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch token create --name ci
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor token create --name ci --expires-in-days 365
+```
+
+  </TabItem>
+</SdkTabs>
+
 - Prefix: `cm_pat_…`
 - Shown once at creation: store in your secret manager
 - Supply via `CODEMAGIC_PATCH_TOKEN` or `--token`
-- Revoke with `cmpatch token revoke` (or from the dashboard) when compromised
+- Revoke with `token revoke` (or from the dashboard) when compromised
 
 :::warning
 Treat `cm_pat_…` tokens like production credentials. Scope pipeline access and rotate on schedule.
@@ -48,7 +81,7 @@ Treat `cm_pat_…` tokens like production credentials. Scope pipeline access and
 
 ### Auth precedence
 
-`--token` → `CODEMAGIC_PATCH_TOKEN` → credential from `cmpatch login`
+`--token` → `CODEMAGIC_PATCH_TOKEN` → the credential stored by `login`
 
 ## Code signing (update integrity)
 
@@ -56,10 +89,24 @@ Beyond server authentication, Patch supports cryptographic signing of release ma
 
 Enable at app creation or later:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch app create --name MySignedApp-iOS --require-code-signing
 cmpatch app setting --app MyApp-iOS --require-code-signing=true
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor app create --name MySignedApp-iOS --require-code-signing
+cmpatch-capacitor app setting --app MyApp-iOS --require-code-signing=true
+```
+
+  </TabItem>
+</SdkTabs>
 
 Create a private and public key pair with OpenSSL:
 
@@ -71,20 +118,61 @@ openssl genrsa -out patch-private-key.pem 2048
 openssl rsa -in patch-private-key.pem -pubout -out patch-public-key.pem
 ```
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Copy the public key (`cat patch-public-key.pem`, including the `BEGIN` / `END` lines) into native config as `CodemagicPatchPublicKey`. See [Native setup](/docs/setup/native-setup) for `Info.plist`, `strings.xml`, or Expo plugin wiring.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Copy the public key (`cat patch-public-key.pem`, including the `BEGIN` / `END` lines) into `capacitor.config.ts` as `publicKey` in each platform block. A `CodemagicPatchPublicKey` native resource overrides this value. See [Native setup](/docs/setup/native-setup-capacitor).
+
+  </TabItem>
+</SdkTabs>
+
 Publish signed releases with the private key:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release-react --platform ios --deployment Staging \
   --private-key-path ./patch-private-key.pem --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version "1.2.0" \
+  --private-key-path ./patch-private-key.pem
+```
+
+The signature is an RS256 JWT of the bundle's package hash. The SDK verifies it on the device.
+
+  </TabItem>
+</SdkTabs>
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 When building a `.cmpatch` artifact with code signing enabled, pass `--private-key-path` to `cmpatch bundle` as well.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch-capacitor release create` signs the bundle during upload; there is no separate bundle step.
+
+  </TabItem>
+</SdkTabs>
 
 The SDK reads the public key from the binary at launch, so ship a new native build (and reinstall on devices) before clients can verify signed OTAs. OTA updates cannot add or change the public key.
 
 With the key in the binary, the client rejects releases with missing or invalid signatures.
+
+If no public key is configured, the client does not verify signatures and installs both signed and unsigned releases.
 
 ## Server secrets
 

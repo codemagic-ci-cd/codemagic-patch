@@ -1,0 +1,99 @@
+{
+  "name": "@codemagic/capacitor-patch",
+  "version": "0.1.0",
+  "description": "Capacitor client SDK for Codemagic Patch — over-the-air web-asset updates for Capacitor, Ionic and Cordova-on-Capacitor apps.",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "unpkg": "dist/plugin.js",
+  "bin": {
+    "codemagic-patch-check-config": "bin/check-deployment-keys.mjs"
+  },
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "android/CMakeLists.txt",
+    "android/proguard-rules.pro",
+    "bin/",
+    "dist/",
+    "ios/Sources",
+    "ios/Tests",
+    "native/libs",
+    "Package.swift",
+    "CodemagicCapacitorPatch.podspec"
+  ],
+  "author": "Marijan Kozic <marijan@todah.hr>",
+  "license": "Apache-2.0",
+  "homepage": "https://patch.codemagic.io/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codemagic-ci-cd/codemagic-patch.git",
+    "directory": "client-capacitor"
+  },
+  "bugs": {
+    "url": "https://github.com/codemagic-ci-cd/codemagic-patch/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "capacitor",
+    "capacitor-plugin",
+    "ionic",
+    "ota",
+    "over-the-air",
+    "live-update",
+    "appflow",
+    "codemagic",
+    "codemagic-patch"
+  ],
+  "scripts": {
+    "verify": "yarn verify:ios && yarn verify:android && yarn verify:web",
+    "verify:ios": "xcodebuild -scheme CodemagicCapacitorPatch -destination generic/platform=iOS",
+    "verify:android": "cd android && ./gradlew clean build test ktlintCheck && cd ..",
+    "verify:web": "yarn typecheck && yarn test && yarn build",
+    "lint": "yarn eslint && yarn prettier --check && yarn swiftlint lint",
+    "fmt": "yarn eslint --fix && yarn prettier --write && yarn swiftlint --fix --format",
+    "eslint": "eslint \"src/**/*.ts\"",
+    "prettier": "prettier \"**/*.{css,html,ts,js}\"",
+    "swiftlint": "node-swiftlint",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "yarn clean && tsc -p tsconfig.build.json && echo '{\"type\":\"module\"}' > dist/esm/package.json && rollup -c rollup.config.mjs",
+    "clean": "rimraf ./dist",
+    "watch": "tsc --watch -p tsconfig.build.json",
+    "prepublishOnly": "yarn build"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.5.1",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/ios": "8.5.1",
+    "@ionic/prettier-config": "^4.0.0",
+    "@ionic/swiftlint-config": "^2.0.0",
+    "@vitest/coverage-v8": "^5.0.0",
+    "eslint": "^9.36.0",
+    "prettier": "^3.9.6",
+    "rimraf": "^6.1.0",
+    "rollup": "^4.53.2",
+    "swiftlint": "^2.0.0",
+    "typescript": "5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=7.0.0"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "prettier": "@ionic/prettier-config",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  }
+}

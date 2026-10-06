@@ -9,7 +9,7 @@ import type { ApiTokenMetadata } from "../model/apiToken";
 import type { App } from "../model/app";
 import type { Deployment } from "../model/deployment";
 import type { RoleBinding, RoleDefinition, TeamInvitation } from "../model/iam";
-import type { ReleaseMetrics } from "../model/metrics";
+import type { ReleaseDelivery, ReleaseMetrics } from "../model/metrics";
 import type { Release, ReleaseJob } from "../model/release";
 import type { Team } from "../model/team";
 import type { User } from "../model/user";
@@ -23,14 +23,19 @@ export interface TeamCreateBody {
   name: string;
 }
 
-/** `POST /v1/apps` */
+/** `POST /v1/apps` — an omitted `framework` is stored as `react-native`. */
 export interface AppCreateBody {
+  framework?: string;
   name: string;
   require_code_signing?: boolean;
   team_id: string;
 }
 
-/** `PATCH /v1/apps/:appId` — at least one field is required. */
+/**
+ * `PATCH /v1/apps/:appId` — at least one field is required. The route also
+ * accepts `framework`; the dashboard never sends it, because an app's framework
+ * is set when the app is created.
+ */
 export interface AppUpdateBody {
   name?: string;
   require_code_signing?: boolean;
@@ -245,6 +250,7 @@ export interface ReleaseLifecycleResponse {
 
 /** Per-release counter element emitted by both metrics query endpoints (hash-keyed aggregation). */
 export interface ReleaseMetricsEntry {
+  delivery: ReleaseDelivery | null;
   releaseId: string;
   releaseLabel: string;
   targetBinaryVersion: string;
@@ -258,9 +264,25 @@ export interface DeploymentMetricsResponse {
   pagination: Pagination;
 }
 
+/** One package's lifetime counters from devices on one binary version. */
+export interface ReleaseBinaryVersionMetrics {
+  /** Null when the events carried no binary version. */
+  binaryVersion: string | null;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}
+
 /** `GET /v1/metrics/releases/:releaseId` */
 export interface ReleaseMetricsResponse {
   release: ReleaseMetricsEntry;
+}
+
+/** What `useReleaseMetrics` resolves to: the entry plus its per-binary split. */
+export interface ReleaseMetricsDetail extends ReleaseMetricsEntry {
+  /** Newest binary version first; null version last. */
+  binaryVersions: ReleaseBinaryVersionMetrics[];
 }
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,13 @@
   padding-bottom: 0 !important;
 }
 
+.titleActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
 /*
  * MDX emits the page title as <header><h1>, so it sits as a second <header>
  * after our title row. Hide that duplicate (and a bare follow-on h1).

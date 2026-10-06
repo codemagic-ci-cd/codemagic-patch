@@ -1,5 +1,6 @@
 // App detail / settings screen. Header
-// with inline-editable app name, Settings card with the code-signing toggle
+// with inline-editable app name and the app's framework (read-only: it is set
+// when the app is created), Settings card with the code-signing toggle
 // (optimistic vs async: the toggle flips the cached app optimistically
 // and ROLLS BACK on error — the plain useUpdateApp hook reconciles via its
 // own success invalidation), Danger Zone (Transfer with destination-team
@@ -36,6 +37,7 @@ import { useTeamRole } from "../rbac/useTeamRole";
 import { DeploymentTable } from "./app/DeploymentTable";
 import type { ProblemBehavior } from "../api/problem";
 import type { App } from "../model/app";
+import { frameworkLabel } from "../model/framework";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { CELL_SUB } from "../components/ui/cell";
@@ -298,6 +300,10 @@ export function AppDetailPage() {
               </span>
             </div>
           ) : null}
+          {/* Shown, not chosen: an app's framework is set when it is created. */}
+          <div className={`${CELL_SUB} mt-1.5`}>
+            {frameworkLabel(app.framework)} app
+          </div>
           {app.requireCodeSigning ? (
             <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
               <span className={`${PIN} ${PIN_TONE.sign}`}>

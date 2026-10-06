@@ -33,8 +33,11 @@ const STATE_PATTERN = /^[A-Za-z0-9\-._~]{1,256}$/;
 
 const ISSUE_FAILED_MESSAGE =
   "Couldn't authorize the CLI — try approving again.";
+// More than one CLI opens this page, and nothing in the request says which —
+// so no command is named here. The name must never come from the query
+// either: that would put attacker-chosen text on a consent screen.
 const INVALID_REQUEST_MESSAGE =
-  "This CLI sign-in link is incomplete or malformed. Re-run `cmpatch login` and use the link it opens.";
+  "This CLI sign-in link is incomplete or malformed. Run the login command again and use the link it opens.";
 
 interface CliAuthorizeRequest {
   codeChallenge: string;
@@ -138,9 +141,8 @@ export function CliAuthorizePage() {
               as <strong className="text-fg-1">{user.email}</strong>
             </>
           ) : null}
-          . Only approve if you just ran{" "}
-          <code className="font-mono text-[12.5px]">cmpatch login</code>{" "}
-          yourself.
+          . Only approve if you just started this sign-in yourself, by running
+          your CLI&apos;s login command in that terminal.
         </p>
         <div className="mt-6 flex flex-col gap-3">
           <button

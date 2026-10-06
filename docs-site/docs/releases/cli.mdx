@@ -1,0 +1,203 @@
+---
+title: CLI
+description: Release notes for the cmpatch CLI (@codemagic/patch-cli), by version.
+llmsDescription: 'cmpatch CLI (@codemagic/patch-cli) release notes by version, for app developers and self-host operators.'
+toc_max_heading_level: 2
+---
+
+# CLI release notes
+
+Release notes for `cmpatch`, published as `@codemagic/patch-cli`. The CLI has
+commands for app developers (`release-react`, `wire`, `doctor`) and for
+self-host operators (`selfhost install`, `upgrade`, `backup`); entries name the
+audience where it matters. The other surfaces' releases and the compatibility
+table are on the [Release Notes](/docs/releases) page.
+
+```bash
+npm install -g @codemagic/patch-cli@latest
+```
+
+Reference: [CLI reference](/docs/reference/cli-reference) ·
+[GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=patch-cli)
+
+## 0.6.0 {#v0-6-0}
+
+*6th October 2026*
+
+### React Native app filtering
+
+Teams can now include Capacitor apps, which are managed with
+[`cmpatch-capacitor`](/docs/releases/capacitor-cli). `cmpatch` now shows only
+React Native apps: `app create` records the app as React Native, and
+`app list`, the interactive pickers, `init`, and `doctor` request only React
+Native apps from the server. Apps selected by id (`--app-id`,
+`--deployment-id`) are not checked. `app show` prints the framework when the
+server reports one. On servers older than 0.6.0, all apps are listed; every app
+on such a server is a React Native app.
+
+- **Server error hints:** Server 0.6.0 error messages no longer name a
+  `cmpatch` command, so the CLI now prints the remedy itself. For example, an
+  upload rejected for a missing signature still prints the
+  `--private-key-path` commands to run.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.6.0).
+
+## 0.5.0 {#v0-5-0}
+
+*23rd September 2026*
+
+### `cmpatch wire`
+
+`cmpatch wire` installs the Patch SDK in a supported React Native or Expo
+project and configures it. It sets the deployment key and server URLs, adds the
+native bundle-loading hooks, and wraps your root component with `Patch.wrap`.
+`cmpatch init` now runs it automatically; pass `--skip-wire` to only connect
+the app. Run `cmpatch wire --dry-run --diff` to preview the changes. If wire
+cannot finish the setup automatically, it prints a `Patch.wrap` snippet to add
+by hand.
+
+`init` does not run wiring while CodePush or `expo-updates` is still in the
+project. See [Native setup](/docs/setup/native-setup#install-the-sdk).
+
+### GitLab and Bitbucket sign-in in the self-host wizard
+
+For operators: `cmpatch selfhost install` now supports Bitbucket Cloud and
+GitLab sign-in, in the wizard and in non-interactive setup. For a self-managed
+GitLab instance, enter its address when asked or pass `--gitlab-oauth-base-url`.
+
+- **Release conflict hints:** When a release change is blocked by a 409
+  conflict, the CLI now names the release to wait for and the
+  `cmpatch release inspect --release-id <id> --wait` command to run before
+  retrying.
+- **React Native 0.87:** Fixed `cmpatch release-react` on React Native 0.87,
+  which removed `react-native/cli.js` from its package exports. Previously the
+  command failed with "Could not resolve react-native from project root",
+  mostly in npm projects.
+- **Binary version detection:** Improved iOS and Android version detection,
+  so OTA releases target the correct app version. It now handles Android
+  `versionNameSuffix` and asks you to pass the target explicitly when the
+  project is ambiguous.
+- **`cmpatch doctor`:** No longer fails the credential check for logins made
+  with `cmpatch login --token`. Added `--xcode-project-file`,
+  `--xcode-target-name`, and `--build-configuration-name`.
+- **CI logs:** Progress steps now appear in non-interactive output, including
+  during long builds and bundle uploads.
+- **`cmpatch debug`:** Now shows only Patch SDK logs and filters out unrelated
+  system messages.
+- **`cmpatch release metrics`:** Columns are now labeled `ready` and `applied`.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.5.0).
+
+## 0.4.0 {#v0-4-0}
+
+*14th September 2026*
+
+### `cmpatch demo`
+
+With the local evaluation stack running, `cmpatch demo` runs an OTA update on a
+demo app, without integrating Patch into your own app. The wizard checks
+prerequisites, builds a bundled demo app on an iOS simulator or Android
+emulator, and shows a bug in its catalog. After you approve publishing the fix,
+it resumes the app, which downloads, installs, and applies the update.
+
+### `cmpatch doctor`
+
+`cmpatch doctor` checks React Native and Expo integration on iOS and Android,
+including native configuration, authentication, and deployment settings. The
+report lists likely causes and separates confirmed failures from incomplete
+checks. Add `--verify-delivery` to probe manifests and artifacts; JSON output
+is available for CI. The optional `--fix --server-url <url>` creates missing
+server configuration after a readiness check, if you approve it.
+
+### External storage and DNS in the self-host wizard
+
+For operators: `cmpatch selfhost install` now offers Cloudflare R2, Amazon S3,
+and Google Cloud Storage alongside bundled MinIO. The wizard configures storage
+automatically or prints console instructions, then verifies public downloads
+and private-object protection. DNS setup supports Cloudflare and compatible
+Domain Connect providers, with manual instructions as a fallback.
+
+When a setup step fails, the wizard lets you correct it and retry. These
+options apply to new installations; they do not migrate existing storage.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.4.0).
+
+## 0.3.0 {#v0-3-0}
+
+*7th September 2026*
+
+### Self-host install wizard
+
+For operators: `cmpatch selfhost install` installs and operates a production
+server from your own machine. The wizard pairs with the host over SSH, checks
+it, can install Docker and Git with your consent, then sets up domains, DNS,
+GitHub OAuth, and optional Cloudflare or CloudFront. The CLI also runs backup,
+restore, and upgrade.
+
+```bash
+cmpatch selfhost install
+```
+
+If you have no server URL yet, `cmpatch init` offers to run the install, then
+continues with sign-in and app creation. An interrupted backup restarts the
+server before it exits, so the server is not left stopped. Interrupted restore
+and upgrade runs print the rollback command instead. The wizard sets up the
+bundled Postgres and MinIO stack with GitHub sign-in. Bitbucket, external
+databases, and S3/GCS still require running `install.sh` directly. See
+[Install](/docs/install) and [Operations](/docs/reference/operations).
+
+### `cmpatch selfhost local-eval`
+
+The evaluation stack is unchanged, but you no longer clone the repo first.
+`cmpatch` keeps its own copy and updates it on later runs. If Docker is missing
+or not running, it asks before installing or starting it.
+
+```bash
+cmpatch selfhost local-eval
+```
+
+See [Local quickstart](/docs/) and the
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.3.0).
+
+## 0.2.0 {#v0-2-0}
+
+*25th August 2026*
+
+### Interactive prompts
+
+When a flag is missing, `cmpatch` now prompts for it instead of exiting with a
+usage line. It also shows progress and offers sign-in and retry options when
+browser login fails. In CI and scripts the CLI stays non-interactive: pass the
+flags you need, or use `--yes` where supported. See
+[CLI command reference](/docs/reference/cli-reference).
+
+### Fingerprint mismatch check
+
+The CLI now blocks a release aimed at the wrong native binary unless you
+confirm it. It compares the release fingerprint against the value already
+recorded for that deployment and binary version. When they differ, the CLI
+shows the details and lets you cancel or proceed.
+
+In CI, where there is no prompt, pass `--allow-fingerprint-mismatch` only after
+you have verified the release targets the intended native binary:
+
+```bash
+cmpatch release-react \
+  --deployment Production \
+  --allow-fingerprint-mismatch \
+  --yes
+```
+
+The CLI sends `block_on_fingerprint_mismatch: true` by default, so on server
+0.2.0 or newer a mismatch returns `409` and no release is created. See
+[Fingerprinting](/docs/using-patch/fingerprinting).
+
+- **Failure reasons:** `cmpatch release metrics` now breaks failures down by
+  category (integrity, signature, rollout, or another category) instead of
+  showing a single `failed` count. See
+  [Analytics and metrics](/docs/using-patch/analytics).
+
+See the [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.2.0).

@@ -4,6 +4,7 @@ import type {
   ReleaseSelector,
   TeamSelector,
 } from "../commandTypes";
+import { teamAppsPath } from "../appFramework";
 import { authenticatedRequest } from "../authenticatedRequest";
 import { promptResource } from "../flagPrompts";
 import { isRecord } from "../output";
@@ -238,7 +239,7 @@ export async function resolveAppId(
   const apps = await requestNamedResourceList(
     deps,
     serverUrl,
-    `/v1/teams/${encodeURIComponent(teamId)}/apps`,
+    teamAppsPath(teamId),
     token,
     "apps",
   );

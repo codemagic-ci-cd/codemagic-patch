@@ -180,3 +180,8 @@ export function selectLatestBinaryVersion(
 ): string | null {
   return [...versions].sort(compareForSelection).at(-1) ?? null;
 }
+
+/** Newest comparable token first. Opaque tokens follow, lexically descending. */
+export function sortBinaryVersionsDescending(versions: Iterable<string>): string[] {
+  return [...versions].sort((left, right) => compareForSelection(right, left));
+}

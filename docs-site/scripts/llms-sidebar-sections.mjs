@@ -16,6 +16,7 @@ export const LLMS_SECTIONS = [
       'introduction/how-it-works',
       'introduction/core-concepts',
       'introduction/comparison',
+      'introduction/comparison-capacitor',
       'introduction/pricing',
       'introduction/support',
     ],
@@ -29,6 +30,7 @@ export const LLMS_SECTIONS = [
       'setup/infrastructure',
       'setup/ongoing-maintenance',
       'setup/native-setup',
+      'setup/native-setup-capacitor',
       'setup/checking-for-updates',
       'setup/applying-updates',
       'setup/manual-control',
@@ -41,6 +43,7 @@ export const LLMS_SECTIONS = [
       'using-patch/dashboard',
       'using-patch/releasing-updates',
       'using-patch/fingerprinting',
+      'using-patch/binary-version-capacitor',
       'using-patch/verify-test-release',
       'using-patch/preparing-for-production',
       'using-patch/production-control',
@@ -54,6 +57,7 @@ export const LLMS_SECTIONS = [
     label: 'Migration',
     docIds: [
       'migration/migrating-from-codepush',
+      'migration/migrating-from-appflow',
       'migration/migrating-from-expo-updates',
     ],
   },
@@ -68,6 +72,15 @@ export const LLMS_SECTIONS = [
   },
   {
     label: 'Optional',
-    docIds: ['troubleshooting', 'faq', 'releases'],
+    docIds: [
+      'troubleshooting',
+      'faq',
+      'releases/index',
+      'releases/react-native',
+      'releases/cli',
+      'releases/capacitor-sdk',
+      'releases/capacitor-cli',
+      'releases/server',
+    ],
   },
 ];

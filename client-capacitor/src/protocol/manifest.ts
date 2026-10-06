@@ -1,0 +1,128 @@
+// Ported near-verbatim from codemagic-ci-cd/codemagic-patch@b41c6f556e13346ff9b666eb82490900672f1dd9
+// client/src/manifest.ts (Apache-2.0). Only the `./types` import path changed to match
+// this repository's ./types.ts (see specs/adr/0008-unified-error-taxonomy.md for what
+// moved out of it) — none of the logic below was touched.
+
+import type { ManifestResponse } from './types';
+
+// ---------------------------------------------------------------------------
+// Selected target — the result of manifest evaluation
+// ---------------------------------------------------------------------------
+
+export interface SelectedTarget {
+  packageHash: string;
+  releaseLabel: string;
+  patchUrl: string | undefined;
+  patchSize: number | undefined;
+  fullBundleUrl: string;
+  fullBundleSize: number;
+  isMandatory: boolean;
+  releaseNotes: string | undefined;
+  signature: string | undefined;
+  /** Whether this target came from previous_package_info fallback. */
+  isPreviousFallback: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Manifest evaluation helpers
+// ---------------------------------------------------------------------------
+
+/** True when target_package_hash equals the currently running package — no update needed. */
+export function isNoOp(manifest: ManifestResponse, runningPackageHash: string): boolean {
+  return manifest.target_package_hash === runningPackageHash;
+}
+
+/** True when target_package_hash is null — revert to embedded binary. */
+export function isBinaryRevert(manifest: ManifestResponse): boolean {
+  return manifest.target_package_hash === null;
+}
+
+// ---------------------------------------------------------------------------
+// Target selection — PROTOCOL.md manifest handling steps
+// ---------------------------------------------------------------------------
+
+export interface SignatureVerifier {
+  (signature: string | undefined, packageHash: string): boolean;
+}
+
+/**
+ * Select the target package from a manifest.
+ *
+ * Implements the manifest-handling sequence from PROTOCOL.md:
+ * 1. validate manifest (done by parser.parseManifest)
+ * 2-3. binary revert handling (done by caller checking isBinaryRevert)
+ * 4-5. no-op check (done by caller checking isNoOp)
+ * 6-9. rollout evaluation + previous_package_info fallback
+ * 10. pending-package skip (done by caller against the selected target)
+ *
+ * @param manifest - Validated manifest (non-null target, not no-op)
+ * @param runningPackageHash - Currently running OTA package hash
+ * @param rolloutEligible - Whether the installation passes rollout for the root target
+ * @param verifySignature - Optional signature verifier. Returns true if valid.
+ * @returns Selected target, or null if no eligible target exists
+ */
+export function selectTarget(
+  manifest: ManifestResponse,
+  runningPackageHash: string,
+  rolloutEligible: boolean,
+  verifySignature?: SignatureVerifier,
+): SelectedTarget | null {
+  const targetHash = manifest.target_package_hash;
+
+  if (targetHash === null) {
+    return null;
+  }
+
+  // Rollout allows the latest target → select the root manifest package
+  if (rolloutEligible) {
+    // When a verifier is supplied, enforce the selected target's signature
+    if (verifySignature) {
+      if (!verifySignature(manifest.signature, targetHash)) {
+        return null;
+      }
+    }
+
+    return {
+      packageHash: targetHash,
+      releaseLabel: manifest.release_label!,
+      patchUrl: manifest.patch_url,
+      patchSize: manifest.patch_size,
+      fullBundleUrl: manifest.full_bundle_url!,
+      fullBundleSize: manifest.full_bundle_size!,
+      isMandatory: manifest.is_mandatory!,
+      releaseNotes: manifest.release_notes,
+      signature: manifest.signature,
+      isPreviousFallback: false,
+    };
+  }
+
+  // Rollout blocks the latest target → try the previous_package_info fallback
+  const prev = manifest.previous_package_info;
+
+  if (!prev || prev.package_hash === runningPackageHash) {
+    // No fallback available or already on previous
+    return null;
+  }
+
+  // Verify the previous_package_info signature when a verifier is supplied
+  if (verifySignature) {
+    if (!verifySignature(prev.signature, prev.package_hash)) {
+      // Signature verification failed for fallback — discard, no-op
+      return null;
+    }
+  }
+
+  // Select previous_package_info with its own artifact URLs
+  return {
+    packageHash: prev.package_hash,
+    releaseLabel: prev.release_label,
+    patchUrl: prev.patch_url,
+    patchSize: prev.patch_size,
+    fullBundleUrl: prev.full_bundle_url,
+    fullBundleSize: prev.full_bundle_size,
+    isMandatory: prev.is_mandatory,
+    releaseNotes: prev.release_notes,
+    signature: prev.signature,
+    isPreviousFallback: true,
+  };
+}

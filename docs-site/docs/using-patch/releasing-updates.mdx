@@ -4,13 +4,30 @@ description: 'Publish and manage OTA updates from the dashboard, cmpatch CLI, or
 llmsDescription: 'Publish and manage OTA releases via CLI, dashboard, or CI pipelines.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Releasing updates
 
-This guide explains how to publish and manage OTA updates, from the dashboard, the `cmpatch` CLI, or CI.
+This guide explains how to publish and manage OTA updates, from the dashboard, the CLI, or CI.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 If you use the CLI and do not have `cmpatch` yet, install it with `npm install -g @codemagic/patch-cli` (Node.js `>=20`), then run `cmpatch init` from your project root: it signs you in and links the project so the commands below need no `--server-url` or `--app` flags.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Capacitor apps use `cmpatch-capacitor`. To install it and sign in, see [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk). The CLI has no project config file: pass the app and deployment as flags, and set the server with `--server-url`, `CODEMAGIC_PATCH_SERVER_URL`, or `cmpatch-capacitor config set --server-url <url>`.
+
+  </TabItem>
+</SdkTabs>
+
 ## Ways to publish
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 | Method | Best for |
 | --- | --- |
@@ -18,17 +35,45 @@ If you use the CLI and do not have `cmpatch` yet, install it with `npm install -
 | CLI | Local dev, scripts, and pipelines (`cmpatch release-react`) |
 | CI | Automated releases after build/test, [CI integration](/docs/using-patch/ci-integration) |
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+| Method | Best for |
+| --- | --- |
+| [Dashboard → New release](/docs/using-patch/dashboard#publishing-a-release) | Generating a `cmpatch-capacitor release create` command to copy |
+| CLI | Local dev, scripts, and pipelines (`cmpatch-capacitor release create --bundle-path www`) |
+| CI | Automated releases after the web build, [CI integration](/docs/using-patch/ci-integration) |
+
+  </TabItem>
+</SdkTabs>
+
 ### Dashboard: command builder or bundle upload
 
-On a deployment page, New release offers two main UI paths:
+On a deployment page, **New release** offers options based on the app's framework:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 **Via CLI**: the dashboard builds a `cmpatch release-react` command from your choices (platform, rollout %, target binary version, release notes, mandatory). Copy and run it from your project directory or CI. Patch does not compile the bundle in the browser.
 
 **Bundle upload**: drag or select a `.cmpatch` file produced by `cmpatch bundle`. Set metadata and upload; the server ingests the artifact and queues processing.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+**Via CLI**: for Capacitor apps, the dashboard generates a `cmpatch-capacitor release create` command from the bundle path, target binary version, rollout percentage, release notes, and mandatory flag. Bundle path and target binary version are required. Run the command after your web build, locally or in CI.
+
+Bundle upload is not available for Capacitor apps. The dashboard accepts `.cmpatch` artifacts, which only the React Native CLI produces.
+
+  </TabItem>
+</SdkTabs>
+
 Full UI walkthrough: [Web dashboard](/docs/using-patch/dashboard).
 
 ### CLI: one-shot publish from source
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 From your React Native project root:
 
@@ -38,6 +83,22 @@ cmpatch release-react --platform ios --deployment Staging --release-notes "Fix o
 
 `release-react` bundles JS, resolves a target binary version, and uploads in one step.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+From your Capacitor project root, after the web build:
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version 1.2.3 \
+  --release-notes "Fix onboarding crash"
+```
+
+`release create` uploads the built directory. Publish one release per platform app. `--target-binary-version` is required.
+
+  </TabItem>
+</SdkTabs>
+
 ## Recommended workflow: Staging → Production
 
 Use a Staging → Production promotion flow so every update is tested before reaching end users.
@@ -46,11 +107,26 @@ Use a Staging → Production promotion flow so every update is tested before rea
 
 Via CLI:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release-react --platform ios --deployment Staging --release-notes "Fix onboarding crash" --yes
 ```
 
-Or use New release in the dashboard (command builder or bundle upload).
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version 1.2.3 \
+  --release-notes "Fix onboarding crash"
+```
+
+  </TabItem>
+</SdkTabs>
+
+Or use New release in the dashboard.
 
 At this stage:
 
@@ -74,6 +150,9 @@ After validation, promote the same release with no rebuild required.
 
 CLI:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release promote \
   --app MyApp-iOS \
@@ -83,6 +162,22 @@ cmpatch release promote \
   --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release promote \
+  --app MyApp-iOS \
+  --source-deployment Staging \
+  --dest-deployment Production \
+  --label v4
+```
+
+The promoted release keeps the target binary version of the source release. You cannot change it during promotion; see [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+
+  </TabItem>
+</SdkTabs>
+
 Dashboard: open the release on Staging and use Promote, or use deployment actions. See [Web dashboard](/docs/using-patch/dashboard#managing-existing-releases).
 
 ```text
@@ -91,11 +186,33 @@ Release to Staging → Internal testing & QA → Promote to Production
 
 ## What gets uploaded
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 A Patch release includes:
+
+<div>
 
 - JavaScript bundle
 - Static assets (images, fonts, etc.)
 - Release metadata (deployment, binary version, rollout, etc.)
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+A Patch release includes:
+
+<div>
+
+- The Capacitor web build (`webDir`, usually `www/`): HTML, JS, CSS, and images
+- Release metadata (deployment, binary version, rollout, etc.)
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 Patch does not include native binaries (`.apk` / `.ipa`). Any native code change must go through the app stores.
 
@@ -111,7 +228,11 @@ The version from the App Store / Play Store (`CFBundleShortVersionString` on iOS
 
 Each release is a JavaScript + asset bundle on top of a native binary. Releases are ordered within a deployment history and can be rolled back independently of store releases.
 
+
 ### Target binary version
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 `cmpatch release-react` auto-detects the target binary version from your native project. You can override it in the CLI or command builder:
 
@@ -127,26 +248,93 @@ cmpatch release-react \
 
 Only apps whose running binary version matches the release's target receive the update. One exception widens delivery automatically: the release is also published to other binary versions whose recorded native fingerprint matches, so store builds with identical native code receive the same update. See [Fingerprinting](/docs/using-patch/fingerprinting).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch-capacitor release create` does not read native project files, so it cannot detect the version. Pass the installed app version (`CFBundleShortVersionString` / `versionName`):
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version "1.2.0"
+```
+
+`--target-binary-version` must be an exact version. Semantic ranges and wildcards (e.g. `^1.2.0`, `~1.2.0`) are rejected by both the CLI and the server.
+
+Only apps whose binary version matches the target receive the update. Capacitor releases have no native fingerprint, so delivery is never extended to other binary versions, and Patch does not check that the bundle is compatible with the native build. To ship the same bundle to several versions, publish it once per version. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+
+  </TabItem>
+</SdkTabs>
+
 ## Dry runs and inspection
 
 Preview without uploading:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release-react --platform ios --deployment Staging --dry-run
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging --target-binary-version 1.2.0 --dry-run
+```
+
+`--dry-run` validates and packages the bundle and prints its package hash without uploading.
+
+  </TabItem>
+</SdkTabs>
+
 Watch processing and inspect a release:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release list --app MyApp-iOS --deployment Staging --format table
 cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release list --app MyApp-iOS --deployment Staging
+cmpatch-capacitor release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
+```
+
+  </TabItem>
+</SdkTabs>
+
 In the dashboard, open the deployment or release detail page to see status and metrics.
 
 ## Next steps
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 - [Fingerprinting](/docs/using-patch/fingerprinting): block incompatible OTAs against a store-build baseline
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- [Binary version compatibility](/docs/using-patch/binary-version-capacitor): how binary versions scope Capacitor releases
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
 - [Verify a test release](/docs/using-patch/verify-test-release): confirm devices receive Staging updates before promoting
 - [Web dashboard](/docs/using-patch/dashboard): UI overview, tokens, team management
 - [Production control](/docs/using-patch/production-control): rollouts, mandatory updates, rollbacks

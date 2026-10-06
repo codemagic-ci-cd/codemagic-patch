@@ -9,11 +9,14 @@
 // the table), and the release history table
 // (`useReleases` infinite query, newest-first offset pages; "Load more" =
 // fetchNextPage, exhaustion computed from `pagination.total` by the hook's
-// getNextPageParam → hasNextPage). Actions are gated by role
-// (`useTeamRole.can("release.deploy")`; denied → disabled + "Requires
+// getNextPageParam → hasNextPage). One page-level Binary version filter
+// narrows both the overview card and the history table. Actions are gated by
+// role (`useTeamRole.can("release.deploy")`; denied → disabled + "Requires
 // developer" tip per the RBAC matrix) × release status via model/release.ts
 // (canDisable/canEnable/canPatchRollout; promote = any published; the header
-// Rollback uses canRollback over the loaded rows' published count). Release
+// Rollback uses canRollback over the unfiltered history's loaded rows). The app
+// record also carries the framework that words every release-publishing hint
+// on this screen. Release
 // `status` (StatusChip) renders in the history table; worker job status is
 // omitted from this table (see release detail for job state). Lifecycle modals: every
 // action funnels into the shared useReleaseActions coordinator's
@@ -36,8 +39,14 @@ import { useSdkConfig } from "../api/hooks/sdkConfig";
 import { useUserLabel } from "../api/hooks/userLabels";
 import { HttpProblemError } from "../api/problem";
 import { apiServerUrl } from "../lib/cliSnippet";
+import {
+  BinaryVersionSelect,
+  useBinaryVersionFilter,
+} from "../components/ui/BinaryVersionSelect";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
+import { useTimeseriesRange } from "../components/ui/TimeseriesRangeSelector";
+import { binaryVersionFilterLabel } from "../model/binaryVersionFilter";
 import { ErrorState } from "../components/ui/ErrorState";
 import { RolloutBar } from "../components/ui/RolloutBar";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -48,6 +57,11 @@ import {
   canPatchRollout,
   canRollback,
 } from "../model/release";
+import {
+  DEFAULT_FRAMEWORK,
+  offersBundleUpload,
+  sdkConfigKeyNames,
+} from "../model/framework";
 import { useTeamRole } from "../rbac/useTeamRole";
 import { OverviewCard } from "./deployment/OverviewCard";
 import { metricsDeploymentPath } from "./metrics/metricsPaths";
@@ -152,6 +166,12 @@ export function DeploymentDetailPage() {
   );
 }
 
+function emptyHistoryDescription(framework: string): string {
+  return offersBundleUpload(framework)
+    ? "Publish your first update via the CLI or by uploading a pre-built .cmpatch bundle."
+    : "Publish your first update with the CLI.";
+}
+
 function deploymentNotFoundError(): HttpProblemError {
   return new HttpProblemError(
     {
@@ -186,7 +206,17 @@ function DeploymentDetail({
   // code-signing requirement for upload hints) — usually a cache hit from the
   // app detail screen; a failure degrades to the id without erroring the page.
   const appQuery = useApp(appId);
-  const releasesQuery = useReleases(deployment.id, { includeMetrics: true });
+  const binaryVersionFilter = useBinaryVersionFilter(deployment.id);
+  const { filter, setFilter } = binaryVersionFilter;
+  const timeseriesRange = useTimeseriesRange(deployment.id, binaryVersionFilter);
+  const releasesQuery = useReleases(deployment.id, {
+    binaryVersion: filter,
+    includeMetrics: true,
+  });
+  // Rollback gating and the New release suggestion are deployment-wide, so
+  // they read the unfiltered history (the same query while no filter is set).
+  const allReleasesQuery = useReleases(deployment.id, { includeMetrics: true });
+  const versions = timeseriesRange.timeseriesQuery.data?.binaryVersions ?? [];
 
   const canDeploy = can("release.deploy");
   // Tooltip only once the role is resolved (no misleading hint mid-load);
@@ -210,17 +240,23 @@ function DeploymentDetail({
   // Freshest known total (every page reports it; the last is newest).
   const total = pages?.[pages.length - 1]?.pagination.total;
 
+  const allRows =
+    allReleasesQuery.data?.pages.flatMap((page) => page.releases) ?? [];
   // Gating over the LOADED rows only — conservative: unloaded pages can
   // only add published releases, and the newest-first 50-row first page
   // contains ≥2 published whenever any deployment realistically does.
-  const publishedCount = rows.reduce(
+  const publishedCount = allRows.reduce(
     (count, row) => (row.release.status === "published" ? count + 1 : count),
     0,
   );
   const rollbackReady = canRollback(publishedCount);
 
   const appName = appQuery.data?.name ?? appId;
-  const suggestedTargetBinaryVersion = rows[0]?.release.targetBinaryVersion ?? "";
+  // Until the app record lands, guidance reads as React Native — the framework
+  // every app had before the field existed.
+  const framework = appQuery.data?.framework ?? DEFAULT_FRAMEWORK;
+  const suggestedTargetBinaryVersion =
+    allRows[0]?.release.targetBinaryVersion ?? "";
   const newReleaseButton = (
     <span className="tip" data-tip={deployTip}>
       <button
@@ -250,12 +286,29 @@ function DeploymentDetail({
         }}
       />
     );
+  } else if (isEmpty && filter !== null) {
+    body = (
+      <EmptyState
+        icon={<ActivityIcon />}
+        title={`No releases for ${binaryVersionFilterLabel(filter)}`}
+        description="No release in this deployment targets that binary version."
+        action={
+          <button
+            type="button"
+            className={buttonVariants({ intent: "ghost" })}
+            onClick={() => setFilter(null)}
+          >
+            Show all versions
+          </button>
+        }
+      />
+    );
   } else if (isEmpty) {
     body = (
       <EmptyState
         icon={<ActivityIcon />}
         title="No releases yet"
-        description="Publish your first update via the CLI or by uploading a pre-built .cmpatch bundle."
+        description={emptyHistoryDescription(framework)}
         action={newReleaseButton}
       />
     );
@@ -315,6 +368,7 @@ function DeploymentDetail({
           <div className={CARD_HEAD_RIGHT}>
             <span className="text-fg-3 text-[12.5px]">
               {total} {total === 1 ? "release" : "releases"}
+              {filter === null ? null : ` · ${binaryVersionFilterLabel(filter)}`}
             </span>
           </div>
         ) : null}
@@ -333,6 +387,7 @@ function DeploymentDetail({
           <DeploymentSdkDetails
             deploymentKey={deployment.deploymentKey}
             deploymentName={deployment.name}
+            framework={framework}
           />
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2.5">
@@ -361,7 +416,17 @@ function DeploymentDetail({
         </div>
       </div>
 
-      <OverviewCard deploymentId={deployment.id} />
+      {versions.length > 0 ? (
+        <div className="mb-[14px] flex items-center">
+          <BinaryVersionSelect
+            onChange={setFilter}
+            value={filter}
+            versions={versions}
+          />
+        </div>
+      ) : null}
+
+      <OverviewCard range={timeseriesRange} />
 
       {historyCard}
 
@@ -370,6 +435,7 @@ function DeploymentDetail({
         open={newReleaseOpen}
         deploymentId={deployment.id}
         deploymentName={deployment.name}
+        framework={framework}
         serverUrl={apiServerUrl()}
         appName={appName}
         suggestedTargetBinaryVersion={suggestedTargetBinaryVersion}
@@ -390,11 +456,16 @@ const DETAILS_VIEWPORT_INSET = 8;
 function DeploymentSdkDetails({
   deploymentKey,
   deploymentName,
+  framework,
 }: {
   deploymentKey: string;
   deploymentName: string;
+  framework: string;
 }) {
   const sdkConfigQuery = useSdkConfig();
+  // Each SDK spells these two values its own way; show the names the
+  // developer will actually type into their config.
+  const keyNames = sdkConfigKeyNames(framework);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -508,17 +579,17 @@ function DeploymentSdkDetails({
           />
         </SdkConfigRow>
         <div className={MENU_SEP} />
-        <SdkConfigRow label="CodemagicPatchApiUrl">
+        <SdkConfigRow label={keyNames.apiUrl}>
           <Copyable
             value={apiUrl}
             display="masked"
             maskHead={14}
             maskTail={8}
-            ariaLabel="Copy CodemagicPatchApiUrl"
+            ariaLabel={`Copy ${keyNames.apiUrl}`}
           />
         </SdkConfigRow>
         <div className={MENU_SEP} />
-        <SdkConfigRow label="CodemagicPatchDownloadBaseUrl">
+        <SdkConfigRow label={keyNames.downloadBaseUrl}>
           {sdkConfigQuery.isPending ? (
             <Skeleton width={160} variant="text" />
           ) : sdkConfigQuery.isError || downloadBaseUrl === undefined ? (
@@ -531,7 +602,7 @@ function DeploymentSdkDetails({
               display="masked"
               maskHead={14}
               maskTail={8}
-              ariaLabel="Copy CodemagicPatchDownloadBaseUrl"
+              ariaLabel={`Copy ${keyNames.downloadBaseUrl}`}
             />
           )}
         </SdkConfigRow>

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { isValidBinaryVersion } from "./binaryVersion";
+import {
+  isValidBinaryVersion,
+  parseBinaryVersionFilterQuery,
+} from "./binaryVersion";
 import type {
   ProblemDetails,
   ProblemFieldError,
@@ -376,6 +379,11 @@ export function parseDeploymentTimeseriesInput(
       kind: "success";
       value: DeploymentTimeseriesHandlerInput;
     } {
+  const binaryVersion = parseBinaryVersionFilterQuery(query);
+  if (binaryVersion.kind === "error") {
+    return binaryVersion;
+  }
+
   const seriesLimit = parseBoundedIntegerQueryParam(query.series_limit, {
     defaultValue: DEFAULT_METRICS_TIMESERIES_SERIES_LIMIT,
     field: "series_limit",
@@ -442,7 +450,8 @@ export function parseDeploymentTimeseriesInput(
 
   return {
     kind: "success",
-    value: {
+      value: {
+      binaryVersion: binaryVersion.value,
       deploymentId,
       from: truncatedFrom,
       seriesLimit: seriesLimit.value,

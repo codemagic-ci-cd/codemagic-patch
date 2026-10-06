@@ -1,0 +1,29 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+
+# iOS
+Pods/
+*.xcworkspace
+.build/
+DerivedData/
+
+# Android
+.gradle/
+build/
+local.properties
+.cxx/
+
+# Tooling
+coverage/
+*.log
+.env
+.idea/
+.vscode/
+
+# Package.swift resolution
+.build/
+/Packages
+Package.resolved
+.swiftpm/

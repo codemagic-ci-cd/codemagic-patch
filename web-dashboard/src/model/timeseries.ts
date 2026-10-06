@@ -23,6 +23,8 @@ export interface TimeseriesSeriesEntry {
 }
 
 export interface DeploymentTimeseries {
+  /** Versions that reported in the range, newest comparable token first. */
+  binaryVersions: string[];
   bucket: "day";
   from: string;
   /** Volume-ranked by the server; capped at its 50 busiest hashes. */

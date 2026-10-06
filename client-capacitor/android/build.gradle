@@ -1,0 +1,109 @@
+ext {
+    junitVersion = project.hasProperty('junitVersion') ? rootProject.ext.junitVersion : '4.13.2'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.3.0'
+    androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.7.0'
+    androidxCoreKTXVersion = project.hasProperty('androidxCoreKTXVersion') ? rootProject.ext.androidxCoreKTXVersion : '1.17.0'
+}
+
+buildscript {
+    ext.kotlin_version = project.hasProperty("kotlin_version") ? rootProject.ext.kotlin_version : '2.2.20'
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        // Kotlin style enforcement — see specs/development.md § Code style. Configured (not just
+        // declared) below via the `ktlint {}` block.
+        classpath "org.jlleitschuh.gradle:ktlint-gradle:14.2.0"
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jlleitschuh.gradle.ktlint'
+
+android {
+    namespace = "io.codemagic.patch"
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    // Pinned to what Phase 0 actually installed and verified
+    // (specs/LOCAL-SETUP.md) — upstream leaves this unpinned, but this is
+    // foundational native-code wiring, worth being explicit about.
+    ndkVersion "27.0.12077973"
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Ported from upstream client/android/build.gradle: -std=c++17 is needed by
+        // codemagic_patch_jni.cpp (the only .cpp — the vendored libraries are plain C,
+        // compiled as C by CMake's own per-file language inference).
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    lintOptions {
+        abortOnError = false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    // Ported from upstream client/android/build.gradle — wires android/CMakeLists.txt,
+    // which builds the vendored hashing/zstd/hdiffpatch/artifacts libraries and the
+    // codemagic_patch_jni shim into libcodemagic_patch_jni.so.
+    externalNativeBuild {
+        cmake {
+            path "CMakeLists.txt"
+        }
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+ktlint {
+    version = "1.5.0"
+    // android=true relaxes a few rules (e.g. 4-space indent) to match Android/Kotlin
+    // style guide conventions rather than plain Kotlin conventions.
+    android = true
+    ignoreFailures = false
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.core:core-ktx:$androidxCoreKTXVersion"
+    testImplementation "junit:junit:$junitVersion"
+    // Test-only: android.jar's org.json classes are stub bodies that throw on a plain
+    // JVM unit test (no real device/emulator, no Robolectric) — this is the actual
+    // reference implementation, needed for any test that exercises JSObject/JSONObject
+    // (e.g. CodemagicPatchCrashRollbackEvent's envelope construction).
+    testImplementation "org.json:json:20240303"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    // Test-only: production code deliberately uses plain HttpURLConnection, not OkHttp
+    // (see CodemagicPatchMetricsDelivery.kt's own header comment) — MockWebServer is
+    // just a real local HTTP server a test points HttpURLConnection at, so it verifies
+    // the actual production networking code path rather than replacing it.
+    androidTestImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
+}

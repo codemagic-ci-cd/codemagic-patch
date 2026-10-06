@@ -1,4 +1,9 @@
-import { HttpProblemError, isProblemDetailsContentType } from "./problem-details";
+import {
+  HttpProblemError,
+  isProblemDetailsContentType,
+  type ProblemDetails,
+} from "./problem-details";
+import { withServerProblemHint } from "./serverProblemHints";
 
 type FetchLike = typeof globalThis.fetch;
 type RequestInitLike = Parameters<FetchLike>[1];
@@ -167,7 +172,13 @@ export async function request(
 
       if (isProblemDetailsContentType(contentType)) {
         const body = parseJsonOrThrow(text, "Invalid problem details response");
-        throw new HttpProblemError(body as Record<string, unknown>, response.status);
+        // The remedy is attached where the problem enters the CLI, not where it
+        // is printed: every command and both output formats read the same
+        // problem from here, and `--format json` forwards it whole.
+        throw new HttpProblemError(
+          withServerProblemHint(body as ProblemDetails),
+          response.status,
+        );
       }
 
       throw new Error(

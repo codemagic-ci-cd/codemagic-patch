@@ -4,13 +4,40 @@ description: Confirm a published update reaches a device or simulator before mov
 llmsDescription: 'Device OTA verification loop — native build, publish, confirm SDK pickup.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Verify a test release
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Publishing with `cmpatch release-react` only confirms the server accepted the bundle. This page closes the loop for **your** app: install a native build, publish a JS change, confirm the device picks it up.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+A successful `cmpatch-capacitor release create` only confirms that the server accepted the bundle. This page shows how to confirm that your app receives it: install a native build, publish a web change, and check that the device applies it.
+
+  </TabItem>
+</SdkTabs>
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 :::tip Demo app available
 The repo includes a ready-made [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) wired to the [local evaluation stack](/docs/). If you would like to try an OTA before integrating your own app, run `cmpatch selfhost local-eval`, then the optional `cmpatch demo` walkthrough. The demo handles sign-in, setup, and publishing the fix after your confirmation. Come back here when verifying a Staging build of your product.
 :::
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+:::tip Example app available
+The repository includes an Ionic + Angular [example app](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client-capacitor/example-app) that uses the SDK. Its README walks through checking, downloading, installing, restarting, and crash rollback against the [local evaluation stack](/docs/). Use this page to verify a Staging build of your own app.
+:::
+
+  </TabItem>
+</SdkTabs>
 
 Use **Staging** (or your local evaluation deployment) until you are confident, not Production.
 
@@ -45,17 +72,34 @@ For Staging on a public install, most teams ship an internal or TestFlight build
 
 ## The test loop
 
-Make one visible change in JS (e.g. button label or debug banner), then run through this sequence.
+Make one visible change, then run through this sequence.
+
 
 ### 1. Confirm the release is published on the server
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release inspect --app MyApp-iOS --deployment Staging --label v1 --wait
+```
+
+  </TabItem>
+</SdkTabs>
+
 Status should reach **published** (not stuck in `uploaded` or `processing`). In the [dashboard](/docs/using-patch/dashboard), open the deployment release table and confirm the label appears as **Published**.
 
-### 2. Publish the JS change
+### 2. Publish the change
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release-react \
@@ -65,15 +109,49 @@ cmpatch release-react \
   --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+npm run build   # rebuild webDir with your change
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Staging \
+  --target-binary-version 1.2.3 \
+  --release-notes "Verify OTA"
+```
+
+`--target-binary-version` must match the version of the build installed on the test device. Devices with a different version do not receive the release.
+
+  </TabItem>
+</SdkTabs>
+
 Wait for processing again (`inspect --wait` or dashboard).
 
 ### 3. Trigger an update check on device
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Cold-start the app or bring it to foreground, however you wired `sync()` ([Checking for updates](/docs/setup/checking-for-updates)).
 
 Default `sync()` uses `ON_NEXT_RESTART` for non-mandatory releases, so you may need to **kill and reopen** the app twice: once to download, once to run the new bundle.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Cold-start the app, or bring it to the foreground if it uses `start({ checkFrequency: CheckFrequency.ON_APP_RESUME })`. See [Checking for updates](/docs/setup/checking-for-updates).
+
+With the default install mode (`ON_NEXT_RESTART`), you may need to close and reopen the app twice: once to download the update and once to run it.
+
+Use a native build without live reload. `ionic serve` and `npx cap run --live-reload` load the app from the dev server, so installed updates have no effect.
+
+  </TabItem>
+</SdkTabs>
+
 For faster iteration during testing, use immediate apply:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```tsx
 import { InstallMode, sync } from "@codemagic/react-native-patch";
@@ -81,14 +159,26 @@ import { InstallMode, sync } from "@codemagic/react-native-patch";
 void sync({ installMode: InstallMode.IMMEDIATE });
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { InstallMode, start } from "@codemagic/capacitor-patch";
+
+start({ installMode: InstallMode.IMMEDIATE });
+```
+
+  </TabItem>
+</SdkTabs>
+
 ### 4. Confirm it worked
 
 | Signal | What to look for |
 | --- | --- |
-| **UI** | Your JS change is visible after reload |
+| **UI** | Your change is visible after reload |
 | **SDK** | `sync()` resolves to `"update-installed"` (or `"up-to-date"` if already on latest) |
 | **Dashboard** | Download / applied metrics tick up on the release, [Analytics](/docs/using-patch/analytics) |
-| **CLI** | `cmpatch release inspect …` shows client activity for the label |
+| **CLI** | `release inspect …` shows client activity for the label, and `release metrics …` shows adoption counts |
 
 Repeat on Android if you ship both platforms, separate apps and deployment keys per platform.
 
@@ -103,9 +193,20 @@ Repeat on Android if you ship both platforms, separate apps and deployment keys 
 
 Full list: [Troubleshooting](/docs/troubleshooting). CLI sanity check before publishing:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch doctor --platform ios --app MyApp-iOS --deployment Staging --verbose
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch doctor` does not support Capacitor projects. Check manually that the deployment key in the packaged `capacitor.config.json` (or the `Info.plist` / `strings.xml` override) matches `cmpatch-capacitor deployment list`, and that the release's target binary version matches the installed app version.
+
+  </TabItem>
+</SdkTabs>
 
 ## After Staging looks good
 
@@ -118,7 +219,29 @@ Production devices must use a native binary built with the **Production** deploy
 
 ## Related
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 - [First release](/docs/setup/first-release): initial publish
 - [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
 - [Local quickstart](/docs/): local evaluation stack and on-device demo
 - [Native setup](/docs/setup/native-setup): SDK and config keys
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- [First release](/docs/setup/first-release): initial publish
+- [Releasing updates](/docs/using-patch/releasing-updates): Staging → Production workflow
+- [Local quickstart](/docs/): local evaluation stack and on-device demo
+- [Native setup](/docs/setup/native-setup-capacitor): SDK and config keys
+
+</div>
+
+  </TabItem>
+</SdkTabs>

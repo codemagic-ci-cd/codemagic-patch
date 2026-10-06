@@ -103,7 +103,7 @@ export const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       // CLI loopback approve page: session-gated but chrome-less — the
-      // visitor is mid-`cmpatch login`, not navigating the dashboard.
+      // visitor is mid-sign-in from some CLI, not navigating the dashboard.
       // RequireAuth's returnTo encoding preserves the port/code_challenge/
       // state query across the sign-in round-trip.
       { path: "cli/authorize", element: <CliAuthorizePage /> },

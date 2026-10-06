@@ -167,7 +167,7 @@ export function LoginPage() {
           Sign in to {PRODUCT_NAME}
         </h1>
         <p className="mt-2 text-[14px] text-fg-2">
-          Manage your React Native OTA releases.
+          Manage your over-the-air releases.
         </p>
 
         {body}

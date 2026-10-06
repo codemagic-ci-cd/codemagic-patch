@@ -1,0 +1,12 @@
+{
+  "ios": {
+    "deploymentKey": "<ios-deployment-key>",
+    "apiUrl": "http://localhost:3000",
+    "downloadBaseUrl": "http://localhost:9100/codemagic-patch"
+  },
+  "android": {
+    "deploymentKey": "<android-deployment-key>",
+    "apiUrl": "http://10.0.2.2:3000",
+    "downloadBaseUrl": "http://10.0.2.2:9100/codemagic-patch"
+  }
+}

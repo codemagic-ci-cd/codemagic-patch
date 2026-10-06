@@ -6,21 +6,45 @@ description: >-
 llmsDescription: 'Pre-prod checklist — signing, sync config, Staging validation, rollout plan.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Preparing for production
 
 Use this checklist after [Staging looks good](/docs/using-patch/verify-test-release#after-staging-looks-good) and before you ship OTA to real users. Each item links to the full guide; the goal is to catch gaps before the first Production release.
 
 ## 1. Confirm Staging end to end
 
-QA should have validated on a build that matches how you test: correct deployment key, reachable server URLs, and a visible JS change after update. If not, finish [Verify a test release](/docs/using-patch/verify-test-release) first.
+QA should have validated on a build that matches how you test: correct deployment key, reachable server URLs, and a visible change after update. If not, finish [Verify a test release](/docs/using-patch/verify-test-release) first.
 
 ## 2. Ship a Production native binary
 
 Production devices need a store (or production-track) build with the **Production** deployment key embedded, not Staging.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 - Copy the Production key from `cmpatch deployment list` or the [dashboard](/docs/using-patch/dashboard)
 - Wire `CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, and `CodemagicPatchDownloadBaseUrl` for Production in [Native setup](/docs/setup/native-setup)
 - Staging OTAs never reach users on the Production key, and vice versa
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- Copy the Production key from `cmpatch-capacitor deployment list` or the [dashboard](/docs/using-patch/dashboard)
+- Wire Production `deploymentKey`, `apiUrl`, and `downloadBaseUrl` in [Native setup](/docs/setup/native-setup-capacitor)
+- Staging OTAs never reach users on the Production key, and vice versa
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 See [Core concepts. Deployment model](/docs/introduction/core-concepts#deployment-model).
 
@@ -34,6 +58,9 @@ Typical pattern:
 | --- | --- | --- |
 | Internal / QA / debug | Staging | `IMMEDIATE` or frequent foreground checks for fast iteration |
 | App Store / Play Production | Production | `ON_NEXT_RESTART` or `ON_NEXT_RESUME` for gentler UX |
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Branch in app code using your existing build flavors (`__DEV__`, Xcode schemes, Gradle product flavors, Expo `extra`, etc.). With `Patch.wrap(App, options)`, pass the selected options to the wrapper. For a direct integration, use your existing `sync()` call:
 
@@ -53,6 +80,31 @@ void sync(
 );
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Choose options based on a build-time flag (such as Vite's `import.meta.env.DEV` or Angular's `environment.production`) and pass them to `start()`:
+
+```ts
+import { CheckFrequency, InstallMode, start } from "@codemagic/capacitor-patch";
+
+start(
+  import.meta.env.DEV
+    ? {
+        installMode: InstallMode.IMMEDIATE,
+        mandatoryInstallMode: InstallMode.IMMEDIATE,
+      }
+    : {
+        checkFrequency: CheckFrequency.ON_APP_RESUME,
+        installMode: InstallMode.ON_NEXT_RESTART,
+        mandatoryInstallMode: InstallMode.ON_NEXT_RESUME,
+      },
+);
+```
+
+  </TabItem>
+</SdkTabs>
+
 Also wire foreground re-checks if updates should download while the app is open. See [Checking for updates](/docs/setup/checking-for-updates).
 
 Reserve server-side `--mandatory` for fixes that truly cannot wait. Immediate mandatory reloads can flash a white screen mid-session, see [Troubleshooting. White flash](/docs/troubleshooting#white-flash-when-applying-an-update).
@@ -61,9 +113,29 @@ Reserve server-side `--mandatory` for fixes that truly cannot wait. Immediate ma
 
 Production phones must reach your Patch API and storage domains over **public HTTPS**, not `localhost` or a dev machine LAN IP.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 - Confirm `CodemagicPatchDownloadBaseUrl` exactly matches the server's
   `PUBLIC_BASE_URL`; only the bundled-storage default necessarily ends with
   `/codemagic-patch`
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- Confirm `downloadBaseUrl` (or a `CodemagicPatchDownloadBaseUrl` override) exactly matches the server's `PUBLIC_BASE_URL`; only the bundled-storage default necessarily ends with `/codemagic-patch`
+- Remove `android:usesCleartextTraffic="true"` if you added it for local evaluation
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 - Put a CDN in front of the storage domain if you expect large install bases; see [Delivery](/docs/using-patch/delivery), [Cloudflare setup](/docs/setup/cloudflare), and [CloudFront setup](/docs/setup/cloudfront)
 
 ## 5. Optional: bundle signing

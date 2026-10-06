@@ -4,10 +4,12 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { prefetchDeploymentTimeseries } from "../../api/hooks/metrics";
 import {
-  prefetchDeploymentTimeseries,
-  useDeploymentTimeseries,
-} from "../../api/hooks/metrics";
+  NO_BINARY_VERSION_FILTER,
+  useAdoptionTimeseries,
+  type BinaryVersionFilterState,
+} from "./BinaryVersionSelect";
 
 export const TIMESERIES_RANGE_OPTIONS = [
   { days: 7, label: "7d", name: "Last 7 days" },
@@ -55,10 +57,16 @@ export function TimeseriesRangeSelector({
   );
 }
 
-export function useTimeseriesRange(deploymentId: string) {
+export function useTimeseriesRange(
+  deploymentId: string,
+  filterState: BinaryVersionFilterState = NO_BINARY_VERSION_FILTER,
+) {
   const queryClient = useQueryClient();
   const [rangeDays, setRangeDays] = useState(DEFAULT_TIMESERIES_RANGE_DAYS);
-  const timeseriesQuery = useDeploymentTimeseries(deploymentId, { rangeDays });
+  const timeseriesQuery = useAdoptionTimeseries(deploymentId, filterState, {
+    rangeDays,
+  });
+  const binaryVersion = filterState.filter;
 
   useEffect(() => {
     if (!timeseriesQuery.isSuccess) {
@@ -66,10 +74,19 @@ export function useTimeseriesRange(deploymentId: string) {
     }
     for (const option of TIMESERIES_RANGE_OPTIONS) {
       if (option.days !== rangeDays) {
-        void prefetchDeploymentTimeseries(queryClient, deploymentId, option.days);
+        void prefetchDeploymentTimeseries(
+          queryClient,
+          deploymentId,
+          option.days,
+          binaryVersion,
+        );
       }
     }
-  }, [deploymentId, queryClient, rangeDays, timeseriesQuery.isSuccess]);
+  }, [binaryVersion, deploymentId, queryClient, rangeDays, timeseriesQuery.isSuccess]);
 
-  return { rangeDays, setRangeDays, timeseriesQuery };
+  return {
+    rangeDays,
+    setRangeDays,
+    timeseriesQuery,
+  };
 }

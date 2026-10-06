@@ -203,6 +203,12 @@ export interface App {
   teamId: TeamId;
   name: string;
   requireCodeSigning: boolean;
+  /**
+   * The framework the app is built with, e.g. "react-native" or "capacitor".
+   * Stored and returned for clients that show framework-specific guidance; no
+   * server behaviour depends on it, so the set of values is open.
+   */
+  framework: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -306,6 +312,14 @@ export interface BinaryVersionFingerprint {
   createdAt: Date;
 }
 
+/**
+ * Narrows a read to one binary version (`exact`), or to a numeric-dotted
+ * group (`prefix` `1` matches `1` and `1.*`; `1.0` matches `1.0` and `1.0.*`).
+ */
+export type BinaryVersionFilter =
+  | { kind: "exact"; version: string }
+  | { kind: "prefix"; prefix: string };
+
 export interface MetricEvent {
   id: string;
   eventId: string;
@@ -355,6 +369,26 @@ export interface ReleaseMetrics {
   installed: number;
   /** Applied count, including historical Success events; retained wire key. */
   success: number;
+}
+
+/** One delivery path on a release: event count plus the artifact's byte size. */
+export interface ReleaseDeliveryLane {
+  downloads: number;
+  sizeBytes: number | null;
+}
+
+/**
+ * Patch vs full-bundle mix for one release. `patch.sizeBytes` is the
+ * one-step jump from the previous published release in the explicit
+ * binary-version chain,
+ * not a range across every from-hash. `patch.downloads` still counts
+ * every `Downloaded(delivery_type=patch)` for this package.
+ */
+export interface ReleaseDeliveryBreakdown {
+  fullBundle: ReleaseDeliveryLane;
+  patch: ReleaseDeliveryLane & {
+    fromReleaseLabel: string | null;
+  };
 }
 
 /**

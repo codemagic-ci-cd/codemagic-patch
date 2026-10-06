@@ -46,6 +46,7 @@ export interface CreateAppWithDefaultDeploymentsInput {
     production: string;
     staging: string;
   };
+  framework: string;
   name: string;
   requireCodeSigning: boolean;
   teamId: TeamId;
@@ -139,6 +140,7 @@ interface SourceBundleDependentActiveJob extends ActiveReleaseJob {
 }
 
 export interface UpdateAppInput {
+  framework?: string;
   name?: string;
   requireCodeSigning?: boolean;
   updatedAt: Date;
@@ -299,6 +301,11 @@ export type GetAppResult =
       reason: "app_not_found";
     };
 
+/** Which of a team's apps to list; an empty filter lists them all. */
+export interface ListAppsForTeamFilter {
+  framework?: string;
+}
+
 export type ListAppsForTeamResult =
   | {
       apps: App[];
@@ -339,7 +346,10 @@ export interface ManagementRepository {
   ): Promise<DeleteDeploymentResult>;
   getAppById(appId: AppId): Promise<GetAppResult>;
   getTeamById(teamId: TeamId): Promise<GetTeamResult>;
-  listAppsForTeam(teamId: TeamId): Promise<ListAppsForTeamResult>;
+  listAppsForTeam(
+    teamId: TeamId,
+    filter?: ListAppsForTeamFilter,
+  ): Promise<ListAppsForTeamResult>;
   listDeploymentsForApp(
     appId: AppId,
   ): Promise<ListDeploymentsForAppResult>;
@@ -440,9 +450,10 @@ export function createPostgresManagementRepository(
                 team_id,
                 name,
                 require_code_signing,
+                framework,
                 created_at,
                 updated_at
-              ) VALUES ($1, $2, $3, $4, $5, $5)
+              ) VALUES ($1, $2, $3, $4, $5, $6, $6)
               RETURNING *
             `,
             [
@@ -450,6 +461,7 @@ export function createPostgresManagementRepository(
               input.teamId,
               input.name,
               input.requireCodeSigning,
+              input.framework,
               input.createdAt,
             ],
           );
@@ -614,7 +626,8 @@ export function createPostgresManagementRepository(
               SET
                 name = $2,
                 require_code_signing = $3,
-                updated_at = $4
+                framework = $4,
+                updated_at = $5
               WHERE id = $1
               RETURNING *
             `,
@@ -622,6 +635,7 @@ export function createPostgresManagementRepository(
               appId,
               input.name ?? before.name,
               input.requireCodeSigning ?? before.require_code_signing,
+              input.framework ?? before.framework,
               input.updatedAt,
             ],
           );
@@ -972,7 +986,7 @@ export function createPostgresManagementRepository(
       });
     },
 
-    async listAppsForTeam(teamId) {
+    async listAppsForTeam(teamId, filter = {}) {
       const teamExists = await existsById(pool, "team", teamId);
       if (!teamExists) {
         return {
@@ -981,14 +995,17 @@ export function createPostgresManagementRepository(
         };
       }
 
+      // The one place `framework` is compared, and only against what the
+      // caller asked for: no value means anything to the server.
       const result = await pool.query<AppRow>(
         `
           SELECT *
           FROM app
           WHERE team_id = $1
+            AND ($2::text IS NULL OR framework = $2)
           ORDER BY created_at ASC, id ASC
         `,
-        [teamId],
+        [teamId, filter.framework ?? null],
       );
 
       return {

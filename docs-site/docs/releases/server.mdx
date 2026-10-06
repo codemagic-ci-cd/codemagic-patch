@@ -1,0 +1,272 @@
+---
+title: Server and dashboard
+description: Release notes for the self-hosted Patch server and its bundled dashboard, by version.
+llmsDescription: 'Patch server and dashboard release notes by version, including migrations and upgrade notes for self-host operators.'
+toc_max_heading_level: 2
+---
+
+# Server and dashboard release notes
+
+Release notes for the server image, tagged `codemagic-patch-server-vX`. The
+dashboard is included in the image and has no separate version. Every entry
+starts with **Upgrade impact**: migrations, configuration changes, and anything
+that restarts or replaces a service. Review it before upgrading. Managed Patch
+runs the latest server; self-host operators upgrade with
+[`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting). The
+other surfaces' releases and the compatibility table are on the
+[Release Notes](/docs/releases) page.
+
+Reference: [Configuration](/docs/reference/configuration) ·
+[Operations](/docs/reference/operations) ·
+[GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=codemagic-patch-server)
+
+## 0.6.0 {#v0-6-0}
+
+*6th October 2026*
+
+### Upgrade impact
+
+- **Migration:** The upgrade runs migration `0017_app_framework`, which adds a
+  `framework` column to the `app` table with the default `react-native`. No
+  index is rebuilt.
+- **Error responses:** Problem details now include a machine-readable
+  `reason`, and `detail` no longer names a `cmpatch` command. CLI 0.6.0 and
+  `cmpatch-capacitor` print the remedy themselves. Update scripts that matched
+  the old `detail` text.
+- No configuration change.
+
+### Capacitor apps
+
+The server now stores each app's framework (`react-native` or `capacitor`);
+`cmpatch-capacitor` sets it on `app create`. `GET /v1/teams/:id/apps` accepts
+`framework=` and returns only apps with that framework; without it, all apps
+are returned. Apps created before this release are treated as React Native.
+
+The dashboard now shows commands for the app's framework. For a Capacitor app,
+the New release dialog takes the built web assets (the `webDir` of
+`capacitor.config`, or a ZIP of its contents), requires a target binary
+version, and shows the `cmpatch-capacitor release` command instead of
+`cmpatch release-react`.
+
+### Binary version filter
+
+The deployment page now has a **Binary version** menu that filters the
+Adoption card and the release history table. It lists the versions that
+reported in the selected range, plus group rows such as `1.x` and `1.0.x` when
+a group covers two or more versions. The Metrics page has the same menu, and
+the Active devices card counts the selected version or group. Release detail
+now has a **By binary version** table with Downloaded, Ready, Applied, Failed,
+and success rate per reported binary version, shown when two or more versions
+reported.
+
+- **API:** `GET /v1/metrics/deployments/:id/timeseries` and
+  `GET /v1/deployments/:id/releases` accept `binary_version` (exact) or
+  `binary_version_prefix` (dot-separated digits; `1` matches `1.0.0` and
+  `1.10.2`, not `10.0.0`). Both together return `400 invalid_combination`.
+  The timeseries response includes `binary_versions`.
+  `GET /v1/metrics/releases/:releaseId` now returns `{ binary_versions, release }`.
+- **Release history filtering:** A release matches when its explicit target
+  binary version matches or any version in its current resolved target set
+  matches, so fingerprint-expanded targets are included and superseded
+  generations are not. Rollback gating and the suggested target for a new
+  release use the unfiltered history.
+
+### Full and diff download metrics
+
+Release detail now has a card with the size and download count of the full
+bundle and of the diff from the previous release. The diff size is measured
+against the previous release only, so it is approximate when devices skip
+releases.
+
+See the [configuration reference](/docs/reference/configuration) and
+[server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.6.0).
+
+## 0.5.1 {#v0-5-1}
+
+*2nd October 2026*
+
+### Upgrade impact
+
+- **Object storage image:** The bundled MinIO images are no longer available
+  to pull, so the stack now uses PGSTY Silo images. The upgrade replaces the
+  storage container; existing storage volumes stay compatible and need no data
+  migration.
+- No database migration or configuration change.
+
+### Fixes
+
+- **Backups:** A backup now restarts only the server service. Dependent
+  services such as object storage or the database are no longer recreated
+  before the backup is confirmed.
+
+See the [server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.5.1).
+
+## 0.5.0 {#v0-5-0}
+
+*23rd September 2026*
+
+### Upgrade impact
+
+- **Migration:** The upgrade runs migration
+  `0016_metric_event_lifecycle_names`, which rebuilds an index on the
+  `metric_event` table while holding an exclusive lock on it. On servers with a
+  large metrics history, the upgrade takes longer.
+- **Lifecycle names:** The server stores events from SDK 0.4.x and earlier
+  under the new `Ready` and `Applied` names. Existing data is kept as is, and
+  the metrics API response keys (`installed`, `success`) are unchanged. SDK
+  0.5.0 needs this server; see the [upgrade order](/docs/releases#upgrade-order-and-compatibility).
+- **New optional setting:** `GITLAB_OAUTH_BASE_URL`, for GitLab sign-in on a
+  self-managed instance. Leaving it unset changes nothing.
+
+### GitLab sign-in
+
+Self-hosted servers can now use GitLab for sign-in, on gitlab.com or a
+self-managed instance set with `GITLAB_OAUTH_BASE_URL`. GitLab accounts that
+have only a confirmed primary email can sign in, and the sign-in button shows
+the GitLab name and icon.
+
+### Command palette and navigation
+
+Added a command palette (⌘K / Ctrl+K) that opens apps, releases, metrics, and
+teams, and runs common actions. The deployment page now shows update adoption
+and links to the Metrics screens, and the sidebar lists apps with their
+deployments. Release details now include a cumulative `Applied` chart of update
+adoption over time.
+
+- **Dashboard fixes:** Fixed page scrolling and removed blank space that a
+  hidden chart table added at the bottom of the page. Cleaned up how the
+  deployment and release detail pages show status, metrics, charts, and history.
+
+See the [configuration reference](/docs/reference/configuration) and
+[server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.5.0).
+
+## 0.4.0 {#v0-4-0}
+
+*14th September 2026*
+
+### Upgrade impact
+
+- **New optional setting:** `S3_INTERNAL_BUCKET`, described below. Leaving it
+  unset keeps single-bucket routing.
+- No database migration.
+
+### Changes
+
+- **Private storage:** S3-compatible storage can use `S3_INTERNAL_BUCKET` to
+  keep internal uploads and worker artifacts in a separate private bucket while
+  release artifacts are served publicly. Leaving it unset keeps single-bucket
+  routing.
+- **Dashboard appearance:** Added light, dark, and system themes, refreshed
+  branding, and improved accessibility. Fixed translucent callouts in dark mode.
+- **Delivery metrics:** Release details no longer show Active counts.
+  Deployment summaries show successful installs, and release history includes
+  downloads. Success counts are installations, not users currently running a
+  version.
+- **Localhost HTTP:** Run `scripts/selfhost/install.sh --allow-http` from a local
+  clone to test the self-hosted stack without TLS certificates or public DNS.
+  Service ports bind to loopback; OAuth setup is still required.
+
+See the [configuration reference](/docs/reference/configuration) and
+[server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.4.0).
+
+## 0.3.0 {#v0-3-0}
+
+*7th September 2026*
+
+### Upgrade impact
+
+- **Migrations:** `0013_metric_event_failure_payload` adds the nullable
+  `failure_payload` column to `metric_event`, without backfilling existing
+  events. `0014_metric_event_failure_feed` and
+  `0015_metric_event_device_outcome` create three indexes on that table for
+  failure details and device outcomes. Index creation is not concurrent and
+  blocks writes to the table; allow extra upgrade time on servers with a large
+  metrics history.
+- **Cloudflare users:** After you upgrade, delete the two-hour Edge TTL Cache
+  Rule for `.json` from the previous setup guide, and remove any
+  `MANIFEST_CACHE_CONTROL` line from `.env.selfhost`. The Cache Rule overrides
+  the origin `s-maxage` and extends the stale window from five minutes to two
+  hours. A leftover `MANIFEST_CACHE_CONTROL` pins the old `no-cache` value, so
+  manifests are never cached at the edge. See
+  [Cloudflare setup](/docs/setup/cloudflare).
+- No configuration change beyond the Cloudflare cleanup.
+
+### CloudFront delivery
+
+Devices can now fetch artifacts from Amazon CloudFront, in addition to
+Cloudflare or the origin host, for bundled MinIO or external S3/GCS. The
+install wizard prints the AWS Console values, generates the origin secret, and
+verifies the distribution before you move DNS. It does not create AWS resources
+or ask for AWS credentials beyond the scoped purge key. See
+[CloudFront setup](/docs/setup/cloudfront).
+
+### Failure details
+
+Failed installs reported by [SDK 0.3.0](/docs/releases/react-native#v0-3-0)
+include diagnostic details: HTTP status, the origin or platform error message,
+and on Android 11+ the previous process exit reason. Previously the dashboard
+showed only a `network` count. On the metrics view, open a failure reason to
+see its codes, then open a code to see the values behind it. See
+[Analytics and metrics](/docs/using-patch/analytics).
+
+### Failure counts exclude later successes
+
+Failure counts now include only devices that never got the update, not network
+retries that later succeeded. When a device later installs the same package
+successfully, its earlier `Failed` events for that package are dropped. A late
+`Failed` after an `Applied` is acknowledged and discarded.
+
+### Status page
+
+The dashboard has a new **Status** page. It shows API and database health,
+whether the download URL is reachable, disk use on a bundled single-host
+install, and the running server version compared with the latest GitHub
+release. The disk and version cards are hidden on topologies where they do not
+apply.
+
+See the [server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.3.0).
+
+## 0.2.0 {#v0-2-0}
+
+*25th August 2026*
+
+### Upgrade impact
+
+- **Fingerprint checks:** Uploads from CLI 0.2.0 and the dashboard are
+  rejected with `409` when the fingerprint disagrees with the one recorded for
+  the deployment and binary version, unless the client overrides it. Older
+  clients keep the warning-only behavior.
+- **New optional setup:** Compose can target an external PostgreSQL database
+  and S3-compatible bucket (see below). The default install is unchanged.
+
+### Fingerprint mismatch check
+
+Uploads can now send `block_on_fingerprint_mismatch: true`. When the release
+fingerprint differs from the value already recorded for that deployment and
+binary version, the server returns `409` and creates no release. The dashboard
+compares fingerprints the same way and shows the details before you proceed.
+CLI 0.2.0 and the dashboard send the flag by default; older clients and
+explicit overrides keep the previous warning-only behavior. See
+[Fingerprinting](/docs/using-patch/fingerprinting).
+
+### Failure reasons
+
+Metrics APIs and the dashboard now expose `failure_reasons` on each release,
+which break failures down by category: integrity, signature, rollout, or
+another category. The counts sum to `failed`. See
+[Analytics and metrics](/docs/using-patch/analytics).
+
+### External Postgres and object storage
+
+Compose can now use a managed PostgreSQL database and an S3-compatible bucket
+instead of the bundled Postgres and MinIO containers. The default
+`scripts/selfhost/install.sh` run still creates the bundled stack. For an
+external database or storage, pass the install script's database and storage
+flags, then configure adapters as described in
+[Infrastructure adapters](/docs/setup/infrastructure) and
+[Configuration reference](/docs/reference/configuration).
+
+Backup and restore depend on the deployment mode: the default backup script
+does not copy external databases or buckets. Use provider-level backups for
+those components. See [Operations](/docs/reference/operations) and the
+[server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.2.0).

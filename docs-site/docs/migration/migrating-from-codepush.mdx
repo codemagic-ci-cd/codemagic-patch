@@ -4,17 +4,38 @@ description: >-
   Move from a CodePush-compatible fork or hosted successor to self-hosted Patch.
 llmsDescription: >-
   CodePush forks to Patch: SDK swap, deployment keys, server URL, CLI mapping.
+sidebar_custom_props:
+  sdk: react-native
 ---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # Migrating from CodePush
 
 This guide covers moving from any CodePush-compatible client and server (community forks, hosted successors, or a self-hosted CodePush-compatible API) to self-hosted Codemagic Patch. The wire protocol and package names differ by fork; the apps / deployments / `sync()` mental model usually transfers. For trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-codepush-forks).
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+The steps below replace a React Native CodePush-compatible SDK with `@codemagic/react-native-patch`.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+CodePush-compatible clients support React Native only. If you use Ionic Appflow Live Updates, see [Migrating from Appflow](/docs/migration/migrating-from-appflow).
+
+  </TabItem>
+</SdkTabs>
 
 :::warning
 The Patch SDK ships in the native binary. Plan a store release (or internal distribution build) that embeds Patch before OTA updates can run through your Patch server. You cannot swap the update client purely over the air.
 :::
 
 ## Concept mapping
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 | CodePush fork (typical) | Codemagic Patch |
 | --- | --- |
@@ -29,9 +50,32 @@ The Patch SDK ships in the native binary. Plan a store release (or internal dist
 
 Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, etc.) and `mandatoryInstallMode` map closely, see [Applying updates](/docs/setup/applying-updates).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+| CodePush fork (typical) | Codemagic Patch (Capacitor) |
+| --- | --- |
+| Hosted or self-hosted CodePush-compatible server | [Self-hosted](/docs/install) Patch stack on your domains |
+| App access key / service token | GitHub OAuth (dashboard) + `cm_pat_…` API tokens (CLI/CI) |
+| Deployment key in native config | `deploymentKey` in `capacitor.config.ts` (`plugins.CodemagicPatch.{ios,android}`) |
+| `Staging` / `Production` deployments | Same channel names by default |
+| HOC wrapper / automatic sync on start and resume | [`start({ checkFrequency })`](/docs/setup/checking-for-updates) from `@codemagic/capacitor-patch` |
+| `codePush.sync()` | [`sync()`](/docs/setup/checking-for-updates) |
+| `release-react` (CodePush CLI) | `cmpatch-capacitor release create --bundle-path www` after your web build |
+| `--mandatory`, rollout, target binary version | Same flags on `cmpatch-capacitor release create` / `release patch`. `--target-binary-version` is required and must be exact |
+| `notifyAppReady()` | Called automatically by `start()` and `sync()`; [manual](/docs/setup/manual-control) if you use neither |
+
+Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`) and `mandatoryInstallMode` work the same way; see [Applying updates](/docs/setup/applying-updates). `InstallMode` and `CheckFrequency` are exported as constants, and string literals are also accepted.
+
+  </TabItem>
+</SdkTabs>
+
 ## 1. Stand up Patch
 
 Follow [Install](/docs/install) (or the [Local quickstart](/docs/) to try the stack locally first). You need:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 - API URL → `CodemagicPatchApiUrl`
 - Download base URL → `CodemagicPatchDownloadBaseUrl`
@@ -43,9 +87,43 @@ cmpatch init
 cmpatch deployment list --app MyApp-iOS --format table
 ```
 
-Copy each deployment key into native config when you integrate the SDK.
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+- API URL → `apiUrl`
+- Download base URL → `downloadBaseUrl`
+
+Create one app per platform with `cmpatch-capacitor`. To install the CLI, see [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk).
+
+```bash
+cmpatch-capacitor login --server-url https://updates.example.com
+cmpatch-capacitor app create --name MyApp-iOS --server-url https://updates.example.com
+cmpatch-capacitor app create --name MyApp-Android --server-url https://updates.example.com
+cmpatch-capacitor deployment list --app MyApp-iOS --server-url https://updates.example.com
+```
+
+  </TabItem>
+</SdkTabs>
+
+Copy each deployment key into config when you integrate the SDK:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+`Info.plist` / `strings.xml`, or the Expo config plugin. See [Native setup](/docs/setup/native-setup).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`capacitor.config.ts` under `plugins.CodemagicPatch.ios` / `.android`. See [Native setup](/docs/setup/native-setup-capacitor).
+
+  </TabItem>
+</SdkTabs>
 
 ## 2. Replace the client SDK
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Remove your CodePush client package and native wiring (package name varies by fork):
 
@@ -81,6 +159,27 @@ The wrapper is for basic automatic updates: it renders your root immediately and
 
 For progress UI, user confirmation, or readiness that depends on asynchronous initialization, use direct APIs instead of the wrapper. See [Manual control](/docs/setup/manual-control). The [wrapper reference](/docs/reference/sdk-reference#wraproot-options) covers its props, refs, and lifecycle.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Install `@codemagic/capacitor-patch` with `npm install @codemagic/capacitor-patch` and run `npx cap sync`; see [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk). Then set `deploymentKey`, `apiUrl`, and `downloadBaseUrl` for each platform in `capacitor.config.ts`.
+
+Replace CodePush automatic sync with a call to `start()` after the first screen renders:
+
+```ts
+import { CheckFrequency, InstallMode, start } from "@codemagic/capacitor-patch";
+
+start({
+  checkFrequency: CheckFrequency.ON_APP_RESUME,
+  installMode: InstallMode.ON_NEXT_RESTART,
+});
+```
+
+`start()` is the Capacitor equivalent of the React Native wrapper and accepts the same options. For progress UI or user confirmation, see [Manual control](/docs/setup/manual-control).
+
+  </TabItem>
+</SdkTabs>
+
 ### Convert background duration to milliseconds
 
 CodePush's `minimumBackgroundDuration` is in **seconds**; Patch's is in **milliseconds**. Convert the value when migrating `ON_NEXT_RESUME` or `ON_NEXT_SUSPEND`:
@@ -90,7 +189,10 @@ CodePush's `minimumBackgroundDuration` is in **seconds**; Patch's is in **millis
 + minimumBackgroundDuration: 60_000, // Patch: one minute
 ```
 
-Keeping `60` would reduce the threshold to 60 milliseconds. This option controls installation timing, not how often the wrapper checks for updates; see [Applying updates](/docs/setup/applying-updates#minimumbackgroundduration).
+Keeping `60` would reduce the threshold to 60 milliseconds. This option controls installation timing, not how often you check for updates; see [Applying updates](/docs/setup/applying-updates#minimumbackgroundduration).
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ### Replace a MANUAL wrapper without losing readiness confirmation
 
@@ -132,7 +234,18 @@ The legacy HOC discovered methods on the wrapped class component; these were not
 
 Use one owner for automatic checks. When replacing the wrapper with manual lifecycle code, remove `Patch.wrap()` rather than adding a second `sync()` call to observe its work: overlapping calls return `"sync-in-progress"` and do not attach callbacks to the running operation.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+There is no wrapper component. `start()` marks the running bundle as healthy when called, so call it after the first screen renders, or after asynchronous initialization completes. If you replace `start()` with a manual flow, call `notifyAppReady()` on every successful startup. Progress UI, confirmation dialogs, and store update prompts use the same [manual APIs](/docs/setup/manual-control) as React Native. Per-call `deploymentKey` overrides are not supported; set keys in `capacitor.config.ts`.
+
+  </TabItem>
+</SdkTabs>
+
 ## 3. Point CI at Patch
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Install and authenticate the Patch CLI:
 
@@ -144,7 +257,24 @@ cmpatch token create --name ci   # store cm_pat_… as a CI secret
 Commit the `codemagic-patch.config.json` that `cmpatch init` wrote, and CI
 needs only the token; without it, set `CODEMAGIC_PATCH_SERVER_URL`.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Create a CI token and store the `cm_pat_…` value as a secret:
+
+```bash
+cmpatch-capacitor token create --name ci --expires-in-days 365
+```
+
+Set `CODEMAGIC_PATCH_TOKEN` and `CODEMAGIC_PATCH_SERVER_URL` in the pipeline. There is no project config file to commit.
+
+  </TabItem>
+</SdkTabs>
+
 Swap your fork's release / `release-react` CI steps for:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release-react \
@@ -154,16 +284,59 @@ cmpatch release-react \
   --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create \
+  --bundle-path www \
+  --app MyApp-iOS \
+  --deployment Production \
+  --target-binary-version "1.2.0" \
+  --release-notes "…" \
+  --yes
+```
+
+  </TabItem>
+</SdkTabs>
+
 See [CI integration](/docs/using-patch/ci-integration).
 
 ## 4. Cut over
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
 
 1. **Publish a native build** with the Patch SDK and deployment keys embedded (Staging first).
 2. **Publish an OTA release** to that deployment with `cmpatch release-react` targeting the same binary version users install.
 3. Validate on Staging, then repeat for Production.
 4. Decommission the old CodePush server or SaaS once no active binaries still call it.
 
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+1. **Publish a native build** with the Patch SDK and deployment keys embedded (Staging first).
+2. **Publish an OTA release** to that deployment with `cmpatch-capacitor release create --bundle-path www` targeting the same binary version users install.
+3. Validate on Staging, then repeat for Production.
+4. Decommission the old CodePush server or SaaS once no active binaries still call it.
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
 ## Checklist
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
 
 - [ ] Patch server running with HTTPS and an OAuth sign-in provider configured
 - [ ] Apps and deployments created; keys copied into native config
@@ -174,3 +347,25 @@ See [CI integration](/docs/using-patch/ci-integration).
 - [ ] Legacy callbacks, custom statics, and unsupported options reviewed against the migration table
 - [ ] CI secrets and release commands updated to `cmpatch`
 - [ ] New store/internal binary shipped; OTA tested on Staging before Production
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- [ ] Patch server running with HTTPS and an OAuth sign-in provider configured
+- [ ] One Capacitor app per platform created; keys copied into `capacitor.config.ts`
+- [ ] `@codemagic/capacitor-patch` installed and `npx cap sync` run
+- [ ] `start()`, `sync()`, or manual APIs replace CodePush-style sync
+- [ ] Background duration converted to milliseconds
+- [ ] Startup readiness confirmed with `start()`, `sync()`, or `notifyAppReady()`
+- [ ] Unsupported options (per-call `deploymentKey`, rollback retry policy) reviewed
+- [ ] CI secrets and release commands updated to `cmpatch-capacitor`, with an exact `--target-binary-version`
+- [ ] New store/internal binary shipped; OTA tested on Staging before Production
+
+</div>
+
+  </TabItem>
+</SdkTabs>

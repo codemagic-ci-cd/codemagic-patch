@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "allowUnreachableCode": false,
+    "declaration": true,
+    "esModuleInterop": true,
+    "inlineSources": true,
+    // es2018, not es2017: Promise.prototype.finally (src/protocol/runtime.ts) is a
+    // runtime API present on every platform this library targets (Node 10+, Safari
+    // 10.1+, Android WebView for years) — this only affects which type declarations
+    // are visible, not `target` below, which still governs syntax downleveling.
+    "lib": ["dom", "es2018"],
+    "module": "esnext",
+    // "bundler", not the create-capacitor-plugin template's "node": paired with
+    // module: esnext this is TS's own recommended modern setting for a library
+    // targeting bundler consumers, and it's what actually resolves vitest 5's
+    // package.json "exports" map (vitest -> vite/module-runner) for `yarn
+    // typecheck`. "node" (classic Node10 resolution) predates conditional exports
+    // and cannot follow that map — see the tsc error this replaces if reverted.
+    "moduleResolution": "bundler",
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "outDir": "dist/esm",
+    "pretty": true,
+    // Only exercised by src/protocol/events.test.ts, importing package.json's version
+    // to assert it against the hardcoded SDK_VERSION constant (see events.ts) — tests
+    // aren't part of tsconfig.build.json's compilation graph (files: ["src/index.ts",
+    // "src/checkDeploymentKeys.ts"]), so this can't reintroduce the rootDir-inference
+    // problem a runtime `require("../../package.json")` used to cause there.
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2017",
+    // Explicitly no auto-included @types/* packages. Without this, typecheck was
+    // silently passing only because @types/node happens to be present as some other
+    // devDependency's transitive dependency — never something this browser/WebView
+    // -target library should rely on. tsconfig.build.json already had this; it's here
+    // too now so `yarn typecheck` and `yarn build` agree on what's actually legal.
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "example-app", "node_modules"]
+}

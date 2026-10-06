@@ -188,6 +188,59 @@ ON CONFLICT (id) DO UPDATE SET
   created_at = EXCLUDED.created_at,
   updated_at = EXCLUDED.updated_at;
 
+-- Production worker history: one succeeded release_created job per release
+-- and the resolved targets it activated. All three share one fingerprint, so
+-- v3 (explicit 1.0.1) also expands to 1.0.0. v1 and v2 resolved before
+-- 1.0.1 was known and stay on 1.0.0 only.
+INSERT INTO release_job (
+  id, release_id, deployment_id, trigger_type, status,
+  attempt_count, claim_generation, created_at, updated_at
+)
+SELECT
+  'rj_demo_ex_prd_' || r.label,
+  'rel_demo_ex_prd_' || r.label,
+  'deployment_demo_example_production',
+  'release_created',
+  'succeeded',
+  1,
+  1,
+  now() - r.age,
+  now() - r.age + interval '40 seconds'
+FROM (VALUES
+  ('v1'::text, interval '28 days'),
+  ('v2', interval '13 days'),
+  ('v3', interval '3 days')
+) AS r(label, age)
+ON CONFLICT (id) DO UPDATE SET
+  status = EXCLUDED.status,
+  attempt_count = EXCLUDED.attempt_count,
+  claim_generation = EXCLUDED.claim_generation,
+  created_at = EXCLUDED.created_at,
+  updated_at = EXCLUDED.updated_at;
+
+DELETE FROM release_target WHERE id LIKE 'rt_demo_ex_%';
+
+INSERT INTO release_target (
+  id, release_id, binary_version, resolution_source, fingerprint,
+  reconcile_generation, status, job_id, created_at
+)
+SELECT
+  'rt_demo_ex_prd_' || t.label || '_' || t.binary_version,
+  'rel_demo_ex_prd_' || t.label,
+  t.binary_version,
+  t.resolution_source,
+  'demo-example-fingerprint',
+  1,
+  'active',
+  'rj_demo_ex_prd_' || t.label,
+  now() - t.age
+FROM (VALUES
+  ('v1'::text, '1.0.0'::text, 'explicit'::text, interval '28 days'),
+  ('v2', '1.0.0', 'explicit', interval '13 days'),
+  ('v3', '1.0.1', 'explicit', interval '3 days'),
+  ('v3', '1.0.0', 'fingerprint', interval '3 days')
+) AS t(label, binary_version, resolution_source, age);
+
 -- Refresh demo metrics on every run (relative timestamps stay recent).
 DELETE FROM metric_event WHERE id LIKE 'me_demo_ex_%';
 
@@ -476,7 +529,8 @@ CROSS JOIN LATERAL (VALUES
 ) AS e(event_name, n)
 CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 
--- Production v3: 10% canary from day 3.
+-- Production v3: 10% canary from day 3, split across its explicit 1.0.1
+-- target (~60%) and the fingerprint-expanded 1.0.0 (~40%).
 INSERT INTO metric_event (
   id, event_id, event_name, emitted_at,
   team_id, app_id, deployment_id, deployment_key,
@@ -498,7 +552,7 @@ SELECT
   'app_demo_example',
   'deployment_demo_example_production',
   'demo_example_production_deployment_key',
-  '1.0.1',
+  CASE WHEN g % 5 < 2 THEN '1.0.0' ELSE '1.0.1' END,
   'demo_ex_prd_pkg_v3',
   'demo_ex_prd_pkg_v3',
   'device_demo_prd_v3_' || lower(e.event_name) || '_' || day.day_offset || '_' || g,
@@ -525,7 +579,8 @@ CROSS JOIN LATERAL generate_series(1, e.n) AS g;
 -- Production Active occupancy (10k device pool, one row per device per UTC
 -- day they were active). Day 0 is today. v1 smoothsteps in from day 28 so
 -- the 30-day chart is not a long zero run; v2 takes over from day 13 (its
--- publish); v3 peels a 10% canary from day 3. Stragglers (devices 1–357)
+-- publish); v3 peels a 10% canary from day 3, with the same 1.0.1 / 1.0.0
+-- split as its funnel. Stragglers (devices 1–357)
 -- never leave v1. Daily cap is ~96% of the pool after the ramp, with a
 -- Saturday/Sunday dip and a small hash wobble so Total is not a flat line.
 -- Presence is hashed across device ids so the version mix stays proportional
@@ -547,8 +602,8 @@ SELECT
   'app_demo_example',
   'deployment_demo_example_production',
   'demo_example_production_deployment_key',
-  CASE ver.pkg
-    WHEN 'v3' THEN '1.0.1'
+  CASE
+    WHEN ver.pkg = 'v3' AND dev.n % 5 >= 2 THEN '1.0.1'
     ELSE '1.0.0'
   END,
   CASE ver.pkg

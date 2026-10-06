@@ -1,0 +1,178 @@
+---
+title: Native setup
+description: Install the Capacitor Patch plugin and its CLI, and configure per-platform keys.
+llmsDescription: >-
+  Install @codemagic/capacitor-patch and cmpatch-capacitor, create one app per
+  platform, set capacitor.config.ts, run cap sync.
+sidebar_label: Native setup
+sidebar_custom_props:
+  sdk: capacitor
+---
+
+# Native setup
+
+Add `@codemagic/capacitor-patch` to a Capacitor app (including Ionic and Cordova-on-Capacitor apps) so release builds can check for, download, and apply OTA updates. Configuration lives in `capacitor.config.ts`, and `npx cap sync` installs the native plugin. No changes to AppDelegate or `MainApplication` are needed.
+
+Capacitor apps use their own CLI, `cmpatch-capacitor`, for sign-in, apps, deployment keys, releases, and release operations.
+
+Requirements:
+
+- A running Patch server ([local quickstart](/docs/) or [Install](/docs/install))
+- Node.js `20.19+` or `22.12+` for `cmpatch-capacitor`
+- Capacitor `7.x` or `8.x`. The two latest Capacitor major versions are supported.
+- Android: `minSdkVersion` 24 or later, with CMake and the NDK available
+- iOS: Swift Package Manager or CocoaPods, with mixed Swift / Objective-C++ compilation
+
+## Install the CLI and the SDK
+
+:::note
+`@codemagic/capacitor-patch` and `@codemagic/capacitor-patch-cli` are 0.x releases. Their API and flags may still change.
+:::
+
+Install the CLI:
+
+```bash
+npm install -g @codemagic/capacitor-patch-cli
+```
+
+Install the SDK in your Capacitor app:
+
+```bash
+npm install @codemagic/capacitor-patch
+npx cap sync
+```
+
+`npx cap sync` copies the plugin into both native projects and updates their dependency manifests (the CocoaPods `Podfile` or SPM package list on iOS, and the Gradle module list on Android). You do not need to run `pod install` separately.
+
+## Create apps and deployments
+
+Sign in and create one app per platform. Each new app has `Staging` and `Production` deployments.
+
+```bash
+export CODEMAGIC_PATCH_SERVER_URL=https://updates.example.com
+cmpatch-capacitor login
+
+cmpatch-capacitor app create --name MyApp-iOS
+cmpatch-capacitor app create --name MyApp-Android
+```
+
+List the deployment keys:
+
+```bash
+cmpatch-capacitor deployment list --app MyApp-iOS
+cmpatch-capacitor deployment list --app MyApp-Android
+```
+
+Use a separate deployment key for each platform. The manifest path has no platform segment, so a shared key causes iOS and Android releases to overwrite each other.
+
+To set the server, use `CODEMAGIC_PATCH_SERVER_URL`, the `--server-url` flag, or a stored default (`cmpatch-capacitor config set --server-url <url>`). `login` does not set a default server.
+
+You can also create apps in the [web dashboard](/docs/using-patch/dashboard). Set the framework to **Capacitor**, then copy the deployment key and SDK URLs from the deployment's SDK configuration panel.
+
+:::note
+`cmpatch-capacitor` looks up apps by name only among Capacitor apps. Apps created as React Native (for example, with `cmpatch init`) do not appear in `cmpatch-capacitor app list` and cannot be selected with `--app <name>`.
+:::
+
+## Configure `capacitor.config.ts`
+
+Set `deploymentKey`, `apiUrl`, and `downloadBaseUrl` for each platform. Get the API and download URLs from [Install](/docs/install), or from the [local quickstart](/docs/#5-try-it-with-your-own-app) for a local server.
+
+```ts
+import type { CapacitorConfig } from "@capacitor/cli";
+
+const config: CapacitorConfig = {
+  appId: "com.example.app",
+  appName: "Example",
+  webDir: "www",
+  plugins: {
+    CodemagicPatch: {
+      ios: {
+        deploymentKey: "ios-staging-deployment-key",
+        apiUrl: "https://updates.example.com",
+        downloadBaseUrl: "https://storage-updates.example.com/codemagic-patch",
+        // publicKey: "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+      },
+      android: {
+        deploymentKey: "android-staging-deployment-key",
+        apiUrl: "https://updates.example.com",
+        downloadBaseUrl: "https://storage-updates.example.com/codemagic-patch",
+      },
+    },
+  },
+};
+
+export default config;
+```
+
+| Key | Required | Value |
+| --- | --- | --- |
+| `deploymentKey` | Yes | Deployment key from `cmpatch-capacitor deployment list`. Use a different key for iOS and Android |
+| `apiUrl` | Yes | Patch API origin (server `SERVER_URL`). The SDK calls `/v1/...` on this host |
+| `downloadBaseUrl` | Yes | Artifact origin (server `PUBLIC_BASE_URL`). The bundled-storage default ends with `/codemagic-patch` |
+| `publicKey` | No | PEM public key for release signature verification. If omitted, signatures are not checked |
+| `maxLaunchAttempts` | No | Number of launches a new update can run without calling `notifyAppReady()` before it is rolled back. Positive integer, default `3`. Invalid values log a warning and fall back to the default |
+
+Configure at least one platform. Each platform block you add must include `deploymentKey`, `apiUrl`, and `downloadBaseUrl`.
+
+Sync the native projects:
+
+```bash
+npx cap sync
+```
+
+Then rebuild the iOS and Android apps. An OTA update cannot add the plugin to a binary that was built without it.
+
+### Validate the config in CI
+
+```bash
+npx codemagic-patch-check-config path/to/capacitor.config.json
+```
+
+The check fails if both platforms use the same `deploymentKey` or if `maxLaunchAttempts` is not a positive integer. It reads JSON only. If you use `capacitor.config.ts`, run it after `npx cap sync` against the generated copy, such as `android/app/src/main/assets/capacitor.config.json`.
+
+## Native resource overrides
+
+To set values per environment in CI without editing `capacitor.config.ts`, define them as native resources in iOS `Info.plist` or Android `strings.xml`. The keys match the React Native SDK:
+
+- `CodemagicPatchDeploymentKey`
+- `CodemagicPatchApiUrl`
+- `CodemagicPatchDownloadBaseUrl`
+- `CodemagicPatchPublicKey`
+- `CodemagicPatchMaxLaunchAttempts`
+
+Native resources take precedence over `capacitor.config.ts`.
+
+Bundle selection needs no extra wiring. The plugin selects the package in its native `load()` method and points the WebView at it.
+
+## Build for different deployments
+
+Select the deployment key at build time to produce Staging and Production binaries from the same project. If both deployments use the same server, the API and download URLs stay the same. Changing any of these values requires a new binary.
+
+Read the keys from environment variables in `capacitor.config.ts`, and run `npx cap sync` before the native build:
+
+```ts
+ios: {
+  deploymentKey: process.env.PATCH_IOS_DEPLOYMENT_KEY,
+  apiUrl: "https://updates.example.com",
+  downloadBaseUrl: "https://storage-updates.example.com/codemagic-patch",
+},
+android: {
+  deploymentKey: process.env.PATCH_ANDROID_DEPLOYMENT_KEY,
+  apiUrl: "https://updates.example.com",
+  downloadBaseUrl: "https://storage-updates.example.com/codemagic-patch",
+},
+```
+
+Alternatively, set the Production keys as native resource overrides in the store build job.
+
+Before distributing a binary, check that the packaged config (or the `Info.plist` / `strings.xml` override) contains the intended deployment key.
+
+:::note
+Live reload (`ionic serve`, `npx cap run --live-reload`) loads the app from the dev server, so OTA updates have no effect. Test updates with a native build that does not use live reload.
+:::
+
+## Next steps
+
+- [Checking for updates](/docs/setup/checking-for-updates): call `start()` after your first screen renders
+- [Binary version compatibility](/docs/using-patch/binary-version-capacitor): read before your first release
+- [SDK reference](/docs/reference/sdk-reference)

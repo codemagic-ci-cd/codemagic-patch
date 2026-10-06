@@ -6,6 +6,9 @@ llmsDescription: >-
   errors.
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Troubleshooting and debugging
 
 When an update does not install or behaves unexpectedly, the cause is usually a configuration mismatch, version targeting problem, SDK integration issue, or bundle error.
@@ -13,6 +16,9 @@ When an update does not install or behaves unexpectedly, the cause is usually a 
 ## Debugging tools
 
 ### `cmpatch doctor`
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Run the read-only setup checks from your React Native or Expo project:
 
@@ -38,6 +44,26 @@ If native target selection is ambiguous, use `--platform ios --plist-file <path>
 
 The optional `--fix --server-url https://patch.example.com` workflow can create a **missing** `codemagic-patch.config.json` with that explicit server URL after a successful readiness check. It previews the file and value, asks for confirmation, and reruns diagnostics. Existing files and package-level server settings are preserved. JSON, redirected output and CI never prompt; add `--yes` to apply this limited fix. This saves a CLI default; native SDK edits, login, installation and publication remain separate actions.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`cmpatch doctor` supports React Native and Expo projects only, and `cmpatch-capacitor` has no equivalent. Check the following manually:
+
+<div>
+
+- `deploymentKey` in each platform block matches the deployment you publish to (`cmpatch-capacitor deployment list`), and iOS and Android use different keys. `npx codemagic-patch-check-config <capacitor.config.json>` detects a shared key
+- No `Info.plist` / `strings.xml` override (`CodemagicPatchDeploymentKey` and others) replaces those values. Native resources take precedence
+- `apiUrl` is the server's `SERVER_URL`, and `downloadBaseUrl` exactly matches its `PUBLIC_BASE_URL`
+- `npx cap sync` was run after the last config change, and the installed build includes it
+- The release's target binary version matches the installed app version
+
+</div>
+
+Then check device logs and `cmpatch-capacitor release inspect` as described below.
+
+  </TabItem>
+</SdkTabs>
+
 ### Server logs
 
 ```bash
@@ -53,15 +79,29 @@ Trace the update lifecycle on device:
 check for update → download bundle → install → restart
 ```
 
-- Android: `adb logcat`, filter for Patch / React Native logs
+- Android: `adb logcat`, filter for Patch logs (the Capacitor SDK logs configuration errors with the `Capacitor/CodemagicPatch` tag)
 - iOS: Xcode console for simulator or connected device
 
 ### Release inspection
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
 cmpatch release list --app MyApp-iOS --deployment Staging --format table
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
+cmpatch-capacitor release list --app MyApp-iOS --deployment Staging
+```
+
+  </TabItem>
+</SdkTabs>
 
 ### HTTP API spot checks
 
@@ -101,18 +141,50 @@ Pair API errors with [server logs](#server-logs) for the full request path on th
 
 ### Native binary without the SDK
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 OTA updates only work on builds that already include `@codemagic/react-native-patch`. If users still run an older store binary from before SDK integration, releases publish successfully but no client picks them up.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+OTA updates only work on builds that already include `@codemagic/capacitor-patch`. If users still run an older store binary from before SDK integration, releases publish successfully but no client picks them up.
+
+  </TabItem>
+</SdkTabs>
 
 Symptoms:
 
-- Release appears in `cmpatch release list` but devices never update
+- Release appears in `release list` but devices never update
 - No update-related activity in device logs
 
 Fix:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 1. Confirm [native setup](/docs/setup/native-setup) is complete
 2. Ship a new native build with the SDK and correct deployment key
 3. For Staging, an internal/dev build is enough; for Production, users need the new store binary
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+1. Confirm [native setup](/docs/setup/native-setup-capacitor) is complete
+2. Ship a new native build with the SDK and correct deployment key
+3. For Staging, an internal/dev build is enough; for Production, users need the new store binary
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 See [Core concepts. SDK prerequisite](/docs/introduction/core-concepts#prerequisite-a-native-build-with-the-sdk).
 
@@ -120,9 +192,24 @@ See [Core concepts. SDK prerequisite](/docs/introduction/core-concepts#prerequis
 
 Updates only install when the device's native version matches the release's target binary version.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release-react --target-binary-version "1.2.0" ...
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create --bundle-path www --target-binary-version "1.2.0" ...
+```
+
+The version is not detected automatically. Pass the installed build's `CFBundleShortVersionString` / `versionName`. A release cannot be retargeted later; to target another version, publish the bundle again. See [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+
+  </TabItem>
+</SdkTabs>
 
 If you shipped a new store build but forgot to target its version, eligible devices will not receive the OTA.
 
@@ -138,6 +225,11 @@ Symptoms:
 
 Fix:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 1. **Cold-start twice** when testing: once to download, once to run the staged bundle, see [Verify a test release](/docs/using-patch/verify-test-release#3-trigger-an-update-check-on-device)
 2. For production, pick an install mode that matches your UX: `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`, or prompt the user then call `restartApp()`, see [Applying updates](/docs/setup/applying-updates#install-modes)
 3. Wire `sync()` on foreground return so pending updates download while the app is open:
@@ -147,6 +239,28 @@ AppState.addEventListener("change", (next) => {
   if (next === "active") void sync();
 });
 ```
+
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+1. **Cold-start twice** when testing: once to download, once to run the staged bundle, see [Verify a test release](/docs/using-patch/verify-test-release#3-trigger-an-update-check-on-device)
+2. For production, pick an install mode that matches your UX: `ON_NEXT_RESUME`, `ON_NEXT_SUSPEND`, or prompt the user then call `restartApp()`, see [Applying updates](/docs/setup/applying-updates#install-modes)
+3. Also check when the app returns to the foreground, so updates download while the app is open:
+
+```ts
+import { CheckFrequency, start } from "@codemagic/capacitor-patch";
+
+start({ checkFrequency: CheckFrequency.ON_APP_RESUME });
+```
+
+</div>
+
+  </TabItem>
+</SdkTabs>
 
 Mandatory releases default to **`IMMEDIATE`** and reload as soon as install finishes, so they do not wait for a restart.
 
@@ -160,6 +274,11 @@ Symptoms:
 - Happens on mandatory releases, not when a non-mandatory release is waiting on `ON_NEXT_RESTART`
 
 Fix:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
 
 1. Reserve `--mandatory` for fixes that truly cannot wait, see [Production control](/docs/using-patch/production-control#mandatory-updates)
 2. Use a gentler client mode if the update is mandatory on the server but does not need an instant reload:
@@ -176,23 +295,86 @@ void sync({
 3. During critical flows (checkout, video call), use `disallowRestart()` / `allowRestart()` so an immediate mandatory update waits until the flow completes, see [Applying updates](/docs/setup/applying-updates#blocking-restarts-during-critical-ux)
 4. Keep your native splash screen configured so a reload shows branded loading instead of a bare white frame
 
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+1. Reserve `--mandatory` for fixes that truly cannot wait, see [Production control](/docs/using-patch/production-control#mandatory-updates)
+2. Use a gentler client mode if the update is mandatory on the server but does not need an instant reload:
+
+```ts
+import { InstallMode, start } from "@codemagic/capacitor-patch";
+
+start({
+  installMode: InstallMode.ON_NEXT_RESTART,
+  mandatoryInstallMode: InstallMode.ON_NEXT_RESTART, // or ON_NEXT_RESUME
+});
+```
+
+3. During critical flows (checkout, video call), use `disallowRestart()` / `allowRestart()` so an immediate mandatory update waits until the flow completes, see [Applying updates](/docs/setup/applying-updates#blocking-restarts-during-critical-ux)
+4. Keep your native splash screen configured so a reload shows branded loading instead of a bare white frame
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
 ### Incorrect deployment key
 
-If the embedded `CodemagicPatchDeploymentKey` does not match the intended deployment, the app checks the wrong channel.
+If the embedded deployment key (`CodemagicPatchDeploymentKey`, or `deploymentKey` for Capacitor) does not match the intended deployment, the app checks the wrong channel.
 
 Common mistakes:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
 
 - Production key in a Staging build (or vice versa)
 - Same key shared across iOS and Android
 - Typo in `Info.plist` / `strings.xml` / Expo plugin config
 
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- Production key in a Staging build (or vice versa)
+- Same key shared across iOS and Android
+- Typo in `capacitor.config.ts`, or a native-resource override that does not match the intended deployment
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ### `cmpatch release-react` run outside the project root
 
 The command must run from the React Native project root (where `package.json` and the bundle entry live).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+### App shows a blank screen after an update
+
+The bundle was published from the wrong directory level. The WebView loads the release root directly, so `index.html` must be at the top level of `--bundle-path`. Pass the `webDir` directory itself (usually `www`), or a ZIP of its contents rather than of the folder. `cmpatch-capacitor release create` checks for a top-level `index.html` before uploading. Build the web app first; the CLI does not run the build.
+
+To validate a bundle without uploading it, run `release create --dry-run`.
+
+  </TabItem>
+</SdkTabs>
+
 ### Missing `notifyAppReady()` with manual flows
 
-If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Repeated launches without confirmation exhaust the pending bundle's launch-attempt budget (`CodemagicPatchMaxLaunchAttempts`, default 3) and trigger rollback. See [`notifyAppReady()`](/docs/reference/sdk-reference#notifyappready).
+If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Repeated launches without confirmation exhaust the pending bundle's launch-attempt budget (`CodemagicPatchMaxLaunchAttempts`, or `maxLaunchAttempts` in `capacitor.config.ts`; default 3) and trigger rollback. See [`notifyAppReady()`](/docs/reference/sdk-reference#notifyappready).
 
 ### CI cannot reach the server
 
@@ -270,19 +452,58 @@ of them connects:
 
 ## Release published but app finds no update
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
+
 - `CodemagicPatchDeploymentKey` matches `cmpatch deployment list`
 - App binary version matches the release's target binary version
 - `CodemagicPatchDownloadBaseUrl` exactly matches the server's `PUBLIC_BASE_URL`;
   only the bundled-storage default necessarily ends with `/codemagic-patch`
 - iOS and Android use separate deployment keys and apps
 
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- `deploymentKey` (or a `CodemagicPatchDeploymentKey` override) matches `cmpatch-capacitor deployment list`
+- App binary version matches the release's target binary version exactly
+- `downloadBaseUrl` exactly matches the server's `PUBLIC_BASE_URL`;
+  only the bundled-storage default necessarily ends with `/codemagic-patch`
+- iOS and Android use separate deployment keys and apps
+- The app calls `start()` or `sync()`, and was built without live reload
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
 ## Release stuck processing
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
 docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
   -f docker-compose.selfhost.yml logs --tail=200 server
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release inspect --app MyApp-iOS --deployment Staging --label <label> --wait
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml logs --tail=200 server
+```
+
+  </TabItem>
+</SdkTabs>
 
 ## Source maps
 

@@ -1,10 +1,13 @@
 ---
 title: Checking for updates
 description: >-
-  Use Patch.wrap() or sync() to check for and download OTA updates on launch,
-  resume, or user action.
-llmsDescription: 'Client update checks — Patch.wrap(), sync(), readiness, AppState re-checks, progress, store fallback.'
+  Use Patch.wrap() (React Native), start() (Capacitor), or sync() to check for
+  and download OTA updates on launch, resume, or user action.
+llmsDescription: 'Client update checks — Patch.wrap() / start(), sync(), readiness, foreground re-checks, progress, store fallback.'
 ---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
 
 # Checking for updates
 
@@ -21,9 +24,12 @@ On each call, in order:
 3. **Download** the new bundle (or a binary patch, with automatic fallback to the full bundle).
 4. **Install** according to the install mode you choose (see [Applying updates](/docs/setup/applying-updates)).
 
-`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. In development builds an `"error"` result is also logged as a warning with its reason (an unreachable server, a failed download or install). A wrong deployment key or path is not an error: the server answers 404, which the SDK treats as "no update", so silence there does not confirm the configuration. With no options, non-mandatory releases wait for the next cold start (`installMode`); mandatory releases apply immediately (`mandatoryInstallMode`).
+`sync()` never throws; it resolves to a `SyncStatus`: `"up-to-date"`, `"update-installed"`, `"embedded-revert-applied"`, `"sync-in-progress"`, or `"error"`. In React Native development builds an `"error"` result is also logged as a warning with its reason (an unreachable server, a failed download or install). A wrong deployment key or path is not an error: the server answers 404, which the SDK treats as "no update", so silence there does not confirm the configuration. With no options, non-mandatory releases wait for the next cold start (`installMode`); mandatory releases apply immediately (`mandatoryInstallMode`).
 
 ## Minimal integration
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Wrap your root component with `Patch.wrap(App)` (`cmpatch wire` adds this for you). Your app renders immediately, and the wrapper calls `sync()` after the root mounts:
 
@@ -42,6 +48,24 @@ Pass `WrapOptions` as the second argument to customize install timing, for examp
 
 If your app must finish asynchronous initialization before confirming readiness, call `sync()` after it succeeds instead of using `wrap()`; see the [readiness guidance](/docs/reference/sdk-reference#wraproot-options).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Call `start()` after your app renders its first screen. `start()` runs `sync()` and is the Capacitor equivalent of `Patch.wrap(App)` in React Native:
+
+```ts
+import { start } from "@codemagic/capacitor-patch";
+
+start();
+```
+
+`start()` marks the running bundle as healthy, so call it after the first screen renders rather than early in app startup. A crash before `start()` counts toward rolling back a bad update; a crash after it does not. In Angular, call it from `ngAfterViewInit()` of `AppComponent` or the first page. In React or Vue, call it from the root component's mount hook. If the app needs asynchronous initialization before it is usable, call `start()` after that completes.
+
+Pass `StartOptions` to change install timing, for example `start({ installMode: InstallMode.ON_NEXT_RESUME })`. By default, regular updates install on the next restart and mandatory updates install immediately. To also check when the app returns to the foreground, set `checkFrequency: CheckFrequency.ON_APP_RESUME`; the default, `ON_APP_START`, checks once. `start()` never throws and resolves to the `SyncStatus` of the first check. See the [`start()` reference](/docs/reference/sdk-reference#startoptions).
+
+  </TabItem>
+</SdkTabs>
+
 For step-by-step control (`checkForUpdate`, `downloadUpdate`, `installUpdate`), see [Manual control](/docs/setup/manual-control). For rollouts and mandatory flags on the server, see [Production control](/docs/using-patch/production-control).
 
 ## When to check for updates
@@ -56,6 +80,9 @@ For step-by-step control (`checkForUpdate`, `downloadUpdate`, `installUpdate`), 
 
 To check on launch and foreground return:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```tsx
 export default Patch.wrap(App, {
   checkFrequency: Patch.CheckFrequency.ON_APP_RESUME,
@@ -65,9 +92,29 @@ export default Patch.wrap(App, {
 
 For manual timing or asynchronous readiness, skip the wrapper and call `sync()` from your own lifecycle code.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { CheckFrequency, InstallMode, start } from "@codemagic/capacitor-patch";
+
+start({
+  checkFrequency: CheckFrequency.ON_APP_RESUME,
+  installMode: InstallMode.ON_NEXT_RESTART,
+});
+```
+
+The plugin detects foreground transitions natively, so you do not need `@capacitor/app` or another plugin. To check at other times, call `sync()` from your own code.
+
+  </TabItem>
+</SdkTabs>
+
 Combine with install modes from [Applying updates](/docs/setup/applying-updates) so resume-based installs do not surprise users mid-flow.
 
 ## Download progress and status
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 For progress UI, remove `Patch.wrap()` and call `sync()` from your chosen lifecycle or button handler with the optional progress callback. Keep startup readiness confirmation as described in [Manual control](/docs/setup/manual-control). A second `sync()` cannot observe the wrapper's in-flight operation: it returns `"sync-in-progress"` without attaching its callback.
 
@@ -87,6 +134,29 @@ const result = await sync(
   },
 );
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+`start()` does not accept a progress callback. For progress UI, call `sync()` with a progress callback from a lifecycle hook or button handler. If a sync is already running (for example, one started by `start()`), the call returns `"sync-in-progress"` and the callback is not attached. If you remove `start()`, confirm readiness on startup as described in [Manual control](/docs/setup/manual-control).
+
+```ts
+import { InstallMode, sync } from "@codemagic/capacitor-patch";
+
+const result = await sync(
+  {
+    installMode: InstallMode.ON_NEXT_RESTART,
+    mandatoryInstallMode: InstallMode.IMMEDIATE,
+  },
+  ({ receivedBytes, totalBytes }) => {
+    const pct = totalBytes > 0 ? receivedBytes / totalBytes : 0;
+    // drive UI
+  },
+);
+```
+
+  </TabItem>
+</SdkTabs>
 
 With [manual control](/docs/setup/manual-control), the same `{ receivedBytes, totalBytes }` shape is passed to `downloadUpdate()`.
 

@@ -6,9 +6,15 @@ description: >-
 llmsDescription: 'Low-level SDK — checkForUpdate, downloadUpdate, installUpdate, notifyAppReady.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Manual control (advanced)
 
 If you need to separate the steps, e.g. download silently but let the user decide when to restart, or gate updates behind a "What's new" prompt, use the lower-level functions instead of `sync()`:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```ts
 import {
@@ -47,6 +53,49 @@ disallowRestart();
 allowRestart();
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import {
+  InstallMode,
+  checkForUpdate,
+  downloadUpdate,
+  installUpdate,
+  notifyAppReady,
+  restartApp,
+  disallowRestart,
+  allowRestart,
+} from "@codemagic/capacitor-patch";
+
+// 1) Confirm the running bundle is healthy (arms rollback). Call this once on
+//    startup if you use neither start() nor sync(), e.g. after the first screen renders.
+await notifyAppReady();
+
+// 2) Check, then download with progress.
+const check = await checkForUpdate();
+if (check.action === "ota-update") {
+  const local = await downloadUpdate(check.remotePackage, (p) =>
+    console.log(p.receivedBytes, "/", p.totalBytes),
+  );
+
+  // 3) Install. With IMMEDIATE the WebView reloads now; with ON_NEXT_RESTART it
+  //    waits for the next launch.
+  await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
+
+  // 4) Optionally force a reload yourself (e.g. after the user taps "Update now").
+  await restartApp(/* onlyIfUpdateIsPending */ true);
+}
+
+// Suppress restarts during a critical flow (checkout, video call, …), then re-enable.
+disallowRestart();
+// … later …
+allowRestart();
+```
+
+  </TabItem>
+</SdkTabs>
+
 :::warning
 If you do not call `sync()` on every successful startup, call `notifyAppReady()` yourself once the app has booted successfully. A `sync()` call behind a user action does not replace startup readiness confirmation. Repeated launches without confirmation eventually exhaust the pending bundle's launch-attempt budget and trigger rollback.
 :::
@@ -54,6 +103,9 @@ If you do not call `sync()` on every successful startup, call `notifyAppReady()`
 ## Stage-specific UI
 
 For download progress and the final result alone, [call `sync(options, onProgress)`](/docs/setup/checking-for-updates#download-progress-and-status) and await its status. For checking, downloading, and installing indicators, own the steps and update your app's state around each call:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```ts
 import {
@@ -106,9 +158,69 @@ async function checkAndStageUpdate(
 }
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import {
+  InstallMode,
+  checkForUpdate,
+  downloadUpdate,
+  installUpdate,
+  type DownloadProgress,
+} from "@codemagic/capacitor-patch";
+
+type UpdateStage =
+  | "checking" | "downloading" | "installing"
+  | "up-to-date" | "skipped-failed" | "ready-on-restart" | "error";
+
+// Call from your chosen lifecycle or button handler.
+// Confirm startup readiness separately as described above.
+async function checkAndStageUpdate(
+  setStage: (stage: UpdateStage) => void,
+  onProgress: (progress: DownloadProgress) => void,
+) {
+  try {
+    setStage("checking");
+    const check = await checkForUpdate();
+    if (check.action === "up-to-date") {
+      setStage("up-to-date");
+      return;
+    }
+
+    if (check.action === "ota-update") {
+      if (check.remotePackage.previouslyFailed) {
+        setStage("skipped-failed");
+        return;
+      }
+      // If your app needs user confirmation, request it here before download.
+      setStage("downloading");
+      const local = await downloadUpdate(check.remotePackage, onProgress);
+      setStage("installing");
+      await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
+    } else {
+      // Server-requested embedded revert has no package to download.
+      setStage("installing");
+      await installUpdate(check, { installMode: InstallMode.ON_NEXT_RESTART });
+    }
+
+    setStage("ready-on-restart");
+  } catch (error) {
+    setStage("error");
+    console.error("Update failed", error); // Replace with your error reporting.
+  }
+}
+```
+
+  </TabItem>
+</SdkTabs>
+
 These stages are app-owned UI state, not SDK callbacks. Disable repeated checks while this operation runs. This example deliberately stages all updates, including mandatory releases, for the next restart. To preserve `sync()`'s default immediate installation of mandatory updates, select the install mode from `check.remotePackage.isMandatory`; see [Applying updates](/docs/setup/applying-updates). An immediate install may reload the app before a completion indicator is visible.
 
 ## API summary
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 | Function | Purpose |
 | --- | --- |
@@ -118,8 +230,29 @@ These stages are app-owned UI state, not SDK callbacks. Disable repeated checks 
 | `installUpdate(target, options?)` | Stages/applies a downloaded package using an `installMode`. |
 | `notifyAppReady()` | Confirms the running bundle as good (rollback protection). |
 | `getRunningBundleUpdateMetadata()` | Returns `{ label, packageHash, releaseNotes }` for the running OTA bundle, or `null` for the embedded bundle. |
+| `isNextVersionReady()` | Whether a different package is already installed and waiting for the next reload. Does not report a staged return to the embedded bundle. |
 | `restartApp(onlyIfUpdateIsPending?)` | Reloads the JS bundle to apply a pending update. |
 | `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+| Function | Purpose |
+| --- | --- |
+| `sync(options?, onProgress?)` | End-to-end: confirm → check → download → install. Returns a `SyncStatus`; never throws. |
+| `checkForUpdate()` | Returns `{ action: "up-to-date" \| "ota-update" \| "embedded-revert", remotePackage? }`. |
+| `downloadUpdate(remotePackage, onProgress?)` | Downloads (patch or full bundle) and returns a `LocalPackage`. |
+| `installUpdate(target, options?)` | Stages/applies a downloaded package using an `installMode`. |
+| `notifyAppReady()` | Confirms the running bundle as good (rollback protection). |
+| `getRunningBundleUpdateMetadata()` | Returns `{ label, packageHash, releaseNotes }` for the running OTA bundle, or `null` for the embedded bundle. |
+| `isNextVersionReady()` | Whether a different package is already installed and waiting for the next reload. Does not report a staged return to the embedded bundle. |
+| `restartApp(onlyIfUpdateIsPending?)` | Reloads the WebView to apply a pending update. |
+| `disallowRestart()` / `allowRestart()` | Block / unblock SDK-triggered restarts during critical flows. |
+
+Most apps use `start(options?)`, which calls `sync()`. If you call the individual steps instead, call `notifyAppReady()` on every successful startup.
+
+  </TabItem>
+</SdkTabs>
 
 For when to check, see [Checking for updates](/docs/setup/checking-for-updates). For install modes and production UX patterns, see [Applying updates](/docs/setup/applying-updates).
 
@@ -132,6 +265,7 @@ Typical mapping:
 - `checkForUpdate()` powers "Check now"
 - `downloadUpdate()` progress powers download indicators
 - `installUpdate(..., { installMode })` decides when a downloaded update becomes active
+- `isNextVersionReady()` powers "Update ready" while the current bundle keeps running
 - `restartApp(true)` powers explicit "Restart now" actions
 - `disallowRestart()` / `allowRestart()` protect critical screens while a pending update exists
 

@@ -1,6 +1,7 @@
 import { basename, isAbsolute, relative } from "node:path";
 
 import type { ConfigCommand, ContextCommand, InitCommand } from "../commandTypes";
+import { APP_FRAMEWORK, teamAppsPath } from "../appFramework";
 import { authenticatedRequest, isAuthenticationFailure } from "../authenticatedRequest";
 import { PRODUCT_NAME, SELFHOST_DOCS_URL } from "../branding";
 import { normalizeServerUrl } from "../credentialStore";
@@ -426,7 +427,7 @@ async function linkProjectFlow(
   const apps = await listNamedResources(
     deps,
     serverUrl,
-    `/v1/teams/${encodeURIComponent(team.id)}/apps`,
+    teamAppsPath(team.id),
     flags.token,
     "apps",
   );
@@ -961,6 +962,7 @@ async function createFirstApp(
   const response = await authenticatedRequest(deps, {
     init: {
       body: JSON.stringify({
+        framework: APP_FRAMEWORK,
         name,
         require_code_signing: false,
         team_id: input.teamId,

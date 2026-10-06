@@ -15,10 +15,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { CSSProperties, ReactNode } from "react";
 
-import {
-  useDeploymentMetrics,
-  useDeploymentTimeseries,
-} from "../../api/hooks/metrics";
+import { useDeploymentMetrics } from "../../api/hooks/metrics";
 import { formatCount, formatSuccessRate } from "../../model/format";
 import {
   activeVersionDistribution,
@@ -28,6 +25,12 @@ import {
 import { latestCompleteDayActive } from "../../model/timeseries";
 import type { Deployment } from "../../model/deployment";
 import { AdoptionChart } from "../../components/ui/AdoptionChart";
+import {
+  BinaryVersionSelect,
+  useAdoptionTimeseries,
+  useBinaryVersionFilter,
+} from "../../components/ui/BinaryVersionSelect";
+import { binaryVersionFilterLabel } from "../../model/binaryVersionFilter";
 import { buttonVariants } from "../../components/ui/Button";
 import { FailureDetailDialog } from "../../components/ui/FailureDetailDialog";
 import { FailureReasonList } from "../../components/ui/FailureReasonList";
@@ -65,7 +68,12 @@ export function DeploymentCounters({
   const metricsQuery = useDeploymentMetrics(deployment.id, { limit: 100 });
   // Server-default trailing 30 days; feeds both the adoption chart and the
   // Active devices card, so they always tell one story from one response.
-  const timeseriesQuery = useDeploymentTimeseries(deployment.id);
+  const binaryVersionFilter = useBinaryVersionFilter(deployment.id);
+  const { filter, setFilter } = binaryVersionFilter;
+  const timeseriesQuery = useAdoptionTimeseries(
+    deployment.id,
+    binaryVersionFilter,
+  );
   // The drill-down lives in a dialog: it is two levels deep and pages on
   // scroll, which would push the rest of the card off screen if inlined.
   const [openReason, setOpenReason] = useState<string | null>(null);
@@ -135,14 +143,23 @@ export function DeploymentCounters({
             </span>{" "}
             Active devices
           </div>
-          <div className={STAT_VAL}>
+          <div
+            className={`${STAT_VAL}${timeseriesQuery.isPlaceholderData ? " opacity-60" : ""}`}
+            aria-busy={timeseriesQuery.isPlaceholderData || undefined}
+          >
             {/* Distinct devices on the last complete UTC day, from the
                 timeseries totals — the counters `active` is device-days and
                 must not be shown as a user count. "—" while loading or when
                 the range has no complete day yet. */}
             {activeDay === null ? "—" : formatCount(activeDay.activeDevices)}
           </div>
-          <div className={STAT_META}>last full day (UTC)</div>
+          <div
+            className={`${STAT_META}${timeseriesQuery.isPlaceholderData ? " opacity-60" : ""}`}
+          >
+            {filter === null
+              ? "last full day (UTC)"
+              : `${binaryVersionFilterLabel(filter)} · last full day (UTC)`}
+          </div>
         </div>
         <div
           className={STAT}
@@ -247,11 +264,18 @@ export function DeploymentCounters({
           </div>
 
           <div className="my-5 h-px bg-border" />
-          <div className="mb-[18px] flex items-center justify-between gap-3.5">
+          <div className="mb-[18px] flex flex-wrap items-center justify-between gap-3.5">
             <div className={SECTION_TITLE}>Adoption over time</div>
-            <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
-              daily active devices · last 30 days
-            </span>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <BinaryVersionSelect
+                onChange={setFilter}
+                value={filter}
+                versions={timeseriesQuery.data?.binaryVersions ?? []}
+              />
+              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>
+                daily active devices · last 30 days
+              </span>
+            </div>
           </div>
           {timeseriesQuery.isPending ? (
             <Skeleton height={220} />
@@ -263,7 +287,12 @@ export function DeploymentCounters({
               }}
             />
           ) : (
-            <AdoptionChart timeseries={timeseriesQuery.data} />
+            <div
+              className={timeseriesQuery.isPlaceholderData ? "opacity-60" : undefined}
+              aria-busy={timeseriesQuery.isPlaceholderData || undefined}
+            >
+              <AdoptionChart timeseries={timeseriesQuery.data} />
+            </div>
           )}
         </div>
 

@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Every native operation this plugin performs unconditionally (fetchManifest,
+         downloadUpdate, the metrics WAL flush) makes a real HTTP request, so declaring
+         this here is what's actually correct for a library that cannot function without
+         it — not something to leave to whatever a consuming app happens to already
+         declare for its own reasons. Found missing while adding real-server delivery
+         tests (CodemagicPatchMetricsDeliveryTest.kt): a self-instrumenting library test
+         APK has no consuming app to inherit this from at all, and a MockWebServer-backed
+         test failed with a listening-socket EPERM without it — a gap masked until now by
+         CodemagicPatchDownloaderTest's own outbound-connection case, which only asserts
+         "some Exception" rather than the connection-refused one it meant to. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

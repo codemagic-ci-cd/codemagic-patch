@@ -1,4 +1,7 @@
-import { isValidBinaryVersion } from "./binaryVersion";
+import {
+  isValidBinaryVersion,
+  parseBinaryVersionFilterQuery,
+} from "./binaryVersion";
 import {
   createProblem,
   type ProblemDetails,
@@ -7,6 +10,7 @@ import {
 import type {
   DeploymentRollbackHandlerInput,
   ReleaseCreationHandlerInput,
+  ReleaseListHandlerInput,
   ReleasePatchHandlerInput,
   ReleasePromoteHandlerInput,
 } from "../../app/types";
@@ -603,12 +607,7 @@ export function parseReleaseListInput(
     }
   | {
       kind: "success";
-      value: {
-        deploymentId: string;
-        includeMetrics: boolean;
-        limit: number;
-        offset: number;
-      };
+      value: ReleaseListHandlerInput;
     } {
   if (
     query.include !== undefined &&
@@ -631,9 +630,15 @@ export function parseReleaseListInput(
     return pagination;
   }
 
+  const binaryVersion = parseBinaryVersionFilterQuery(query);
+  if (binaryVersion.kind === "error") {
+    return binaryVersion;
+  }
+
   return {
     kind: "success",
     value: {
+      binaryVersion: binaryVersion.value,
       deploymentId,
       includeMetrics: query.include === "metrics",
       limit: pagination.value.limit,

@@ -160,7 +160,7 @@ export function registerPublicAuthRoutes(
         reply,
         createProblem({
           detail:
-            "The OAuth device flow has been removed — upgrade the codemagic-patch CLI (its `cmpatch login` signs in through the browser) or use `cmpatch login --token`",
+            "The OAuth device flow has been removed. Upgrade your CLI, which signs in through the browser, or sign in with an API token.",
           status: 501,
         }),
       );

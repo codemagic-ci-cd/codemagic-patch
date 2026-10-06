@@ -1000,6 +1000,10 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseAppList,
+    // No FRAMEWORK column: executeAppList asks the server for this CLI's apps
+    // only, so every row would say the same thing. Neither the help nor the empty message
+    // mentions other frameworks: whoever uses this CLI sees one kind of app and
+    // need not be told that a team can hold another.
     renderTable: (result) =>
       renderTableOrEmpty(
         result,
@@ -1102,6 +1106,9 @@ const commandSpecs: RunnableCommandSpec[] = [
       fields: [
         ["Name", "app.name"],
         ["App ID", "app.id"],
+        // Dropped by the object view when the server returned none, which is
+        // how an app created before the field existed reads.
+        ["Framework", "app.framework"],
         ["Code signing", "app.require_code_signing"],
       ],
       kind: "object",

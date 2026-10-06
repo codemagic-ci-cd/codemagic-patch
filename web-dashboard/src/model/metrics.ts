@@ -19,6 +19,24 @@ export interface ReleaseMetrics {
   success: number;
 }
 
+export interface ReleaseDeliveryLane {
+  downloads: number;
+  sizeBytes: number | null;
+}
+
+/**
+ * Patch vs full-bundle mix for one release. Patch size is the one-step
+ * jump (previous published release in the explicit binary-version chain);
+ * patch downloads count every patch of this package. Absent on list
+ * endpoints; present on the single-release read.
+ */
+export interface ReleaseDelivery {
+  fullBundle: ReleaseDeliveryLane;
+  patch: ReleaseDeliveryLane & {
+    fromReleaseLabel: string | null;
+  };
+}
+
 /** Application success rate as a 0..1 fraction; null when no Applied/Failed events exist. */
 export function successRate(metrics: {
   failed: number;
@@ -30,6 +48,22 @@ export function successRate(metrics: {
   }
 
   return metrics.success / attempts;
+}
+
+/** True when the delivery payload has a size or a download count to show. */
+export function hasDeliveryData(
+  delivery: ReleaseDelivery | null,
+): delivery is ReleaseDelivery {
+  if (delivery === null) {
+    return false;
+  }
+
+  return (
+    delivery.fullBundle.downloads > 0 ||
+    delivery.patch.downloads > 0 ||
+    delivery.fullBundle.sizeBytes !== null ||
+    delivery.patch.sizeBytes !== null
+  );
 }
 
 /** Field-wise sum; an empty list yields all-zero counters. */

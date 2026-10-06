@@ -1,0 +1,8 @@
+/* Framework choice lives in the sidebar selector, not a second tab bar. */
+.sdkTabs :global(.tabs) {
+  display: none;
+}
+
+.sdkTabs :global(.margin-top--md) {
+  margin-top: 0 !important;
+}

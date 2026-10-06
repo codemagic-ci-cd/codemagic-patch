@@ -1,42 +1,108 @@
 ---
 title: SDK reference
-description: Reference for the @codemagic/react-native-patch JavaScript API.
-llmsDescription: 'JS API — @codemagic/react-native-patch wrap, sync, install modes, error codes.'
+description: Reference for the Patch JavaScript client API.
+llmsDescription: 'JS API: wrap (React Native) or start (Capacitor), sync, install modes, error codes.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # SDK reference
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 JavaScript API for [`@codemagic/react-native-patch`](https://www.npmjs.com/package/@codemagic/react-native-patch): the React Native client SDK.
 
 For integration steps (native wiring, Expo plugin, root wrapper), see [Native setup](/docs/setup/native-setup) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+JavaScript API for `@codemagic/capacitor-patch`, the Capacitor client SDK. Install it with `npm install @codemagic/capacitor-patch`. It is a 0.x release, so its API may still change. The update functions (`sync`, `checkForUpdate`, `downloadUpdate`, `installUpdate`, `notifyAppReady`, `isNextVersionReady`, and others) match the React Native SDK. Use [`start()`](#startoptions) instead of `Patch.wrap()`. `InstallMode` and `CheckFrequency` are exported as in the React Native SDK.
+
+For integration steps, see [Native setup](/docs/setup/native-setup-capacitor) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `start()` or `sync()`, see [Manual control](/docs/setup/manual-control).
+
+  </TabItem>
+</SdkTabs>
+
 ## Requirements
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+<div>
 
 - React Native `>=0.73`, React `>=18`. New Architecture support starts at RN 0.76; RN 0.73–0.75 are supported on the Old (Paper) Architecture only
 - Expo SDK 52+ with a development build (Expo Go is not supported)
 - Native config keys set at build time: see below
 
+</div>
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+<div>
+
+- Capacitor `7.x` or `8.x` (the two latest major versions)
+- Configuration in `capacitor.config.ts` under `plugins.CodemagicPatch.{ios,android}`, or native resource overrides
+- Android: `minSdkVersion` 24 or later, with CMake and the NDK available
+- iOS: Swift Package Manager or CocoaPods, with mixed Swift / Objective-C++ compilation
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
 ## Native configuration
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 The SDK reads configuration from native resources, not from a JS `configure()` call.
+
+Bare RN: set in `Info.plist` / `strings.xml` and wire bundle selection in AppDelegate / `MainApplication`. Expo: use the config plugin, [Native setup](/docs/setup/native-setup).
+
+If native code cannot determine the app binary version (`CFBundleShortVersionString` / `versionName`), the SDK no-ops and loads the embedded bundle.
 
 | Key | Required | Description |
 | --- | --- | --- |
 | `CodemagicPatchDeploymentKey` | yes | Deployment key from `cmpatch deployment list` |
 | `CodemagicPatchApiUrl` | yes | Patch API origin (server `SERVER_URL`), e.g. `https://updates.example.com`. The SDK calls `/v1/...` under this host |
 | `CodemagicPatchDownloadBaseUrl` | yes | Artifact origin (server `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch` |
-| `CodemagicPatchPublicKey` | no | PEM public key when the app enforces release signature verification |
+| `CodemagicPatchPublicKey` | no | PEM public key when the app enforces release signature verification. Omit it to skip checks; that is not the same as treating releases as signed |
 | `CodemagicPatchMaxLaunchAttempts` | no | Positive integer. Consecutive launches a pending update may boot without `notifyAppReady()` before the SDK rolls it back. Default `3`; see [`notifyAppReady()`](#notifyappready) |
 
-Bare RN: set in `Info.plist` / `strings.xml` and wire bundle selection in AppDelegate / `MainApplication`. Expo: use the config plugin, [Native setup](/docs/setup/native-setup).
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+The SDK reads configuration from `capacitor.config.ts` (`plugins.CodemagicPatch.ios` and `.android`). Values in native resources (`Info.plist` / `strings.xml`) take precedence. There is no JavaScript `configure()` call.
+
+Each platform block you add must include `deploymentKey`, `apiUrl`, and `downloadBaseUrl`. Run `npx cap sync` after changing the config. See [Native setup](/docs/setup/native-setup-capacitor).
 
 If native code cannot determine the app binary version (`CFBundleShortVersionString` / `versionName`), the SDK no-ops and loads the embedded bundle.
+
+| Key in `plugins.CodemagicPatch.{ios,android}` | Required | Description |
+| --- | --- | --- |
+| `deploymentKey` | yes | Deployment key from `cmpatch-capacitor deployment list` |
+| `apiUrl` | yes | Patch API origin (server `SERVER_URL`), e.g. `https://updates.example.com`. The SDK calls `/v1/...` under this host |
+| `downloadBaseUrl` | yes | Artifact origin (server `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch` |
+| `publicKey` | no | PEM public key for release signature verification. If omitted, signatures are not checked |
+| `maxLaunchAttempts` | no | Positive integer. Number of consecutive launches a pending update can run without `notifyAppReady()` before it is rolled back. Default `3`. Invalid values log a warning and fall back to the default. See [`notifyAppReady()`](#notifyappready) |
+
+Native resource keys (`CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, `CodemagicPatchDownloadBaseUrl`, `CodemagicPatchPublicKey`, `CodemagicPatchMaxLaunchAttempts`) override these values.
+
+  </TabItem>
+</SdkTabs>
 
 ---
 
 ## Functions
 
 ### `wrap(Root, options?)` {#wraproot-options}
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 Returns a React component that renders `Root` immediately and calls `sync(options)` from its mount effect. Define the wrapped component at module scope, outside render:
 
@@ -57,11 +123,64 @@ export default Patch.wrap(App, {
 
 Because `sync()` calls `notifyAppReady()` first, root mount confirms the running bundle as healthy. If your app must complete asynchronous initialization before confirming readiness, call `sync()` or `notifyAppReady()` yourself after it succeeds instead of using `wrap()`. See [Checking for updates](/docs/setup/checking-for-updates#minimal-integration).
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Not available in the Capacitor SDK. Use [`start(options?)`](#startoptions).
+
+  </TabItem>
+</SdkTabs>
+
+---
+
+### `start(options?)` {#startoptions}
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+Capacitor only. In React Native, use [`wrap()`](#wraproot-options).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Runs `sync(options)` immediately and, with `CheckFrequency.ON_APP_RESUME`, each time the app returns to the foreground. Call it after the first screen renders:
+
+```ts
+import { CheckFrequency, InstallMode, start } from "@codemagic/capacitor-patch";
+
+start({
+  checkFrequency: CheckFrequency.ON_APP_RESUME,
+  installMode: InstallMode.ON_NEXT_SUSPEND,
+  minimumBackgroundDuration: 60_000,
+});
+```
+
+<div>
+
+| | |
+| --- | --- |
+| **Options** | `StartOptions`: [`SyncOptions`](#syncoptions) plus `checkFrequency` (`"ON_APP_START"` or `"ON_APP_RESUME"`, default `"ON_APP_START"`) |
+| **Returns** | `Promise<SyncStatus>` for the first check |
+| **Throws** | Never |
+
+- `start()` calls `sync()`, which calls `notifyAppReady()` first. A crash before `start()` counts toward rollback; a crash after it does not. If your app needs asynchronous initialization before it is usable, call `start()` after that completes.
+- With `ON_APP_RESUME`, a check runs on each transition from `background` or `inactive` to `active`. The plugin emits these transitions natively, so no other plugin is required. `minimumBackgroundDuration` affects installation, not check frequency.
+- Each call starts a `sync()`. Overlapping calls return `"sync-in-progress"`. The latest call's options and check frequency replace earlier ones.
+- `start()` has no progress callback or UI. For progress, call `sync(options, onProgress)` or use the [manual APIs](/docs/setup/manual-control).
+
+</div>
+
+  </TabItem>
+</SdkTabs>
+
 ---
 
 ### `sync(options?, onProgress?)`
 
 End-to-end update flow: confirm running bundle → check → download → install.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```ts
 import { InstallMode, sync } from "@codemagic/react-native-patch";
@@ -76,6 +195,26 @@ const status = await sync(
   },
 );
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { InstallMode, sync } from "@codemagic/capacitor-patch";
+
+const status = await sync(
+  {
+    installMode: InstallMode.ON_NEXT_RESTART,
+    mandatoryInstallMode: InstallMode.IMMEDIATE,
+  },
+  ({ receivedBytes, totalBytes }) => {
+    /* progress */
+  },
+);
+```
+
+  </TabItem>
+</SdkTabs>
 
 | | |
 | --- | --- |
@@ -93,11 +232,26 @@ If the server offers an update that [previously failed](/docs/troubleshooting) o
 
 Check the server without downloading.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```ts
 import { checkForUpdate } from "@codemagic/react-native-patch";
 
 const result = await checkForUpdate();
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { checkForUpdate } from "@codemagic/capacitor-patch";
+
+const result = await checkForUpdate();
+```
+
+  </TabItem>
+</SdkTabs>
 
 | | |
 | --- | --- |
@@ -129,11 +283,26 @@ const local = await downloadUpdate(result.remotePackage, onProgress);
 
 Stage or apply a downloaded package, or handle an embedded revert from `checkForUpdate()`.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```ts
 import { InstallMode, installUpdate } from "@codemagic/react-native-patch";
 
 await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { InstallMode, installUpdate } from "@codemagic/capacitor-patch";
+
+await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
+```
+
+  </TabItem>
+</SdkTabs>
 
 | | |
 | --- | --- |
@@ -147,7 +316,7 @@ await installUpdate(local, { installMode: InstallMode.ON_NEXT_RESTART });
 
 ### `notifyAppReady()`
 
-Mark the currently running bundle as healthy (rollback protection). Required on startup when **not** using `sync()`.
+Mark the currently running bundle as healthy (rollback protection). Call it on startup if you do not use `sync()`, `wrap()` (React Native), or `start()` (Capacitor).
 
 ```ts
 await notifyAppReady();
@@ -160,13 +329,13 @@ await notifyAppReady();
 
 If a pending update is running for the first time, this promotes it to the confirmed good bundle. `sync()` calls this automatically at the start of each run.
 
-A pending update that boots without reaching `notifyAppReady()` counts one unconfirmed launch. After `CodemagicPatchMaxLaunchAttempts` consecutive unconfirmed launches (default 3) the SDK rolls back to the previous bundle and reports `Failed`. The count is unconfirmed launches, not crashes: the OS ending a healthy process before JS runs also spends one, and a confirmed launch resets it. A lower value catches a broken bundle sooner but rolls back more healthy updates after such kills. Change it in native config (`Info.plist` / `strings.xml`, or `maxLaunchAttempts` in the Expo plugin) and ship a new binary; an OTA update cannot change it.
+A pending update that boots without reaching `notifyAppReady()` counts one unconfirmed launch. After `CodemagicPatchMaxLaunchAttempts` consecutive unconfirmed launches (default 3) the SDK rolls back to the previous bundle and reports `Failed`. The count is unconfirmed launches, not crashes: the OS ending a healthy process before JS runs also spends one, and a confirmed launch resets it. A lower value catches a broken bundle sooner but rolls back more healthy updates after such kills. Change it in native config (`Info.plist` / `strings.xml`, or `maxLaunchAttempts` in the Expo plugin or `capacitor.config.ts`) and ship a new binary; an OTA update cannot change it.
 
 ---
 
 ### `restartApp(onlyIfUpdateIsPending?)`
 
-Reload the JS bundle to apply a pending update.
+Reload the JS bundle (React Native) or the WebView (Capacitor) to apply a pending update.
 
 ```ts
 await restartApp(true); // only reload if an update is waiting
@@ -199,12 +368,28 @@ allowRestart();
 
 Identify which bundle is running: the OTA release label, package hash, and release notes, or `null` for the embedded binary bundle.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```ts
 import { getRunningBundleUpdateMetadata } from "@codemagic/react-native-patch";
 
 const running = await getRunningBundleUpdateMetadata();
 // { label: "v3", packageHash: "…", releaseNotes: "…" } for an OTA bundle, null for the embedded bundle
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { getRunningBundleUpdateMetadata } from "@codemagic/capacitor-patch";
+
+const running = await getRunningBundleUpdateMetadata();
+// { label: "v3", packageHash: "…", releaseNotes: "…" } for an OTA bundle, null for the embedded bundle
+```
+
+  </TabItem>
+</SdkTabs>
 
 | | |
 | --- | --- |
@@ -215,14 +400,68 @@ The result describes the bundle loaded for this process and does not change unti
 
 ---
 
+### `isNextVersionReady()`
+
+Whether a different package is already installed and takes over on the next reload (`restartApp()`, an install-mode lifecycle trigger, or a cold start). Use it to show an "Update ready" prompt while the current bundle keeps running.
+
+`getRunningBundleUpdateMetadata()` reports what is running now, and returns `null` on the embedded bundle. That is exactly when a first OTA is waiting, so this is a separate call rather than a field on that result.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+```ts
+import { isNextVersionReady, restartApp } from "@codemagic/react-native-patch";
+
+if (await isNextVersionReady()) {
+  await restartApp();
+}
+```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { isNextVersionReady, restartApp } from "@codemagic/capacitor-patch";
+
+if (await isNextVersionReady()) {
+  await restartApp();
+}
+```
+
+  </TabItem>
+</SdkTabs>
+
+| | |
+| --- | --- |
+| **Returns** | `Promise<boolean>` |
+| **Throws** | Does not throw |
+
+`false` at boot; `true` once `sync()` or `installUpdate()` lands a newer package in the same process. A staged return to the embedded bundle is not reported: reverting clears the pending slot instead of filling it, so this stays `false` even though the next reload switches back to the embedded bundle.
+
+---
+
 ### `hydrate()`
 
 Ensure the SDK has loaded on-disk state before other calls. Called automatically by all public async APIs; export alias for `ensureHydrated()`.
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```ts
 import { hydrate } from "@codemagic/react-native-patch";
 await hydrate();
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { hydrate } from "@codemagic/capacitor-patch";
+await hydrate();
+```
+
+  </TabItem>
+</SdkTabs>
 
 ---
 
@@ -238,11 +477,33 @@ await hydrate();
 
 ### `CheckFrequency`
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Exported as a constant object and a same-name TypeScript type. Use `Patch.CheckFrequency.ON_APP_START` (default, mount only) or `Patch.CheckFrequency.ON_APP_RESUME` (mount plus foreground return). Existing string literals remain supported. There is no `MANUAL` value; use the direct APIs without `wrap()` for manual timing.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Exported as a constant object and a TypeScript type of the same name. Used by [`start()`](#startoptions): `CheckFrequency.ON_APP_START` (default) checks when `start()` is called; `CheckFrequency.ON_APP_RESUME` also checks on foreground return. String literals are also accepted.
+
+  </TabItem>
+</SdkTabs>
 
 ### `InstallMode`
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Exported as a constant object and a same-name TypeScript type. Use `Patch.InstallMode.ON_NEXT_RESTART`, for example, for either `installMode` or `mandatoryInstallMode`. Named imports (`import { InstallMode } from "@codemagic/react-native-patch"`) and existing string literals are also supported.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Exported as a constant object and a TypeScript type of the same name (`import { InstallMode } from "@codemagic/capacitor-patch"`). Use it for `installMode` or `mandatoryInstallMode`. String literals are also accepted. All four modes are supported; the plugin detects foreground and background transitions natively. Activating an update reloads the WebView.
+
+  </TabItem>
+</SdkTabs>
 
 | Value | Behavior |
 | --- | --- |
@@ -253,7 +514,7 @@ Exported as a constant object and a same-name TypeScript type. Use `Patch.Instal
 
 ### Sync status
 
-Values returned by `sync()`:
+Values returned by `sync()` (and by `start()` for its first check):
 
 | Status | Meaning |
 | --- | --- |
@@ -261,7 +522,7 @@ Values returned by `sync()`:
 | `"update-installed"` | Downloaded and installed (may still be pending activation per install mode) |
 | `"embedded-revert-applied"` | Reverted to the embedded bundle per server manifest |
 | `"sync-in-progress"` | Another `sync()` is already running |
-| `"error"` | Check, download, or install failed (`sync()` does not throw; development builds log the reason with `console.warn`) |
+| `"error"` | Check, download, or install failed (`sync()` does not throw; React Native development builds log the reason with `console.warn`) |
 
 ### `UpdateCheckResult`
 
@@ -339,6 +600,28 @@ Low-level APIs throw `CodemagicPatchError` with a `code` field. `sync()` catches
 | `NOT_DOWNLOADED` | `installUpdate()` without prior download |
 | `INVALID_UPDATE_TARGET` | Wrong package passed to `installUpdate()` |
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+The React Native SDK throws only the codes above.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+The Capacitor SDK can also throw:
+
+| Code | Typical cause |
+| --- | --- |
+| `UNSUPPORTED_ON_WEB` | Called on the web platform, for example under `ionic serve` in a browser |
+| `CONFIGURATION_INVALID` | A required `plugins.CodemagicPatch` key is missing or invalid for this platform |
+| `INVALID_ARGUMENT` | A native plugin method was called with a missing or empty argument. Only possible when calling the plugin directly, not through the public API |
+
+  </TabItem>
+</SdkTabs>
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```ts
 import { CodemagicPatchError, CodemagicPatchErrorCode } from "@codemagic/react-native-patch";
 
@@ -350,6 +633,24 @@ try {
   }
 }
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { CodemagicPatchError, CodemagicPatchErrorCode } from "@codemagic/capacitor-patch";
+
+try {
+  await checkForUpdate();
+} catch (error) {
+  if (error instanceof CodemagicPatchError) {
+    console.log(error.code, error.message);
+  }
+}
+```
+
+  </TabItem>
+</SdkTabs>
 
 ---
 
@@ -372,4 +673,15 @@ On cold start, native bundle selection prefers, in order:
 2. Current confirmed OTA package
 3. Embedded bundle shipped with the app
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 Wire this in AppDelegate / `MainApplication`, [Native setup](/docs/setup/native-setup).
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+The Capacitor plugin selects the package in its `load()` method and points the WebView at it. No app code is needed. See [Native setup](/docs/setup/native-setup-capacitor).
+
+  </TabItem>
+</SdkTabs>

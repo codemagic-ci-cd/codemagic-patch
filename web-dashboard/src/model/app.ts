@@ -6,6 +6,11 @@ export interface App {
   teamId: string;
   name: string;
   requireCodeSigning: boolean;
+  /**
+   * Which framework the app is built with — `react-native` / `capacitor` on
+   * stock servers, but any value the server accepts (model/framework.ts).
+   */
+  framework: string;
   createdAt: string;
   updatedAt: string;
 }

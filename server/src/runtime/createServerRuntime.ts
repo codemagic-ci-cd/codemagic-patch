@@ -168,6 +168,7 @@ import {
   startupSweep,
   type ReconcileResult,
 } from "../worker/index";
+import { sortBinaryVersionsDescending } from "../worker/binaryVersionPrecedence";
 import { getServerVersion } from "../version";
 import type { RuntimeConfig } from "./config";
 import { createNoopLogger, type RuntimeLogger } from "./logger";
@@ -1399,6 +1400,7 @@ function createManagementHandlers(
             production: productionDeploymentKey,
             staging: stagingDeploymentKey,
           },
+          framework: input.framework,
           name: input.name,
           requireCodeSigning: input.requireCodeSigning,
           teamId: input.teamId as TeamId,
@@ -1482,6 +1484,7 @@ function createManagementHandlers(
 
     async appUpdateHandler(input) {
       return repository.updateApp(input.appId as AppId, {
+        ...(input.framework === undefined ? {} : { framework: input.framework }),
         ...(input.name === undefined ? {} : { name: input.name }),
         ...(input.requireCodeSigning === undefined
           ? {}
@@ -1538,8 +1541,8 @@ function createManagementHandlers(
       return repository.getAppById(appId as AppId);
     },
 
-    async teamAppsListHandler(teamId) {
-      return repository.listAppsForTeam(teamId as TeamId);
+    async teamAppsListHandler(teamId, filter) {
+      return repository.listAppsForTeam(teamId as TeamId, filter);
     },
 
     async teamCreateHandler(input) {
@@ -2263,6 +2266,7 @@ function createReleaseListHandler(
 ): ReleaseListRouteHandler {
   return async (input) => {
     const result = await repository.listReleasesForDeployment({
+      binaryVersion: input.binaryVersion,
       deploymentId: input.deploymentId as DeploymentId,
       limit: input.limit,
       offset: input.offset,
@@ -2351,6 +2355,7 @@ function createDeploymentTimeseriesHandler(
     const buckets = await metricsRepository.listDeploymentTimeseries(
       input.deploymentId as DeploymentId,
       {
+        binaryVersion: input.binaryVersion,
         from: input.from,
         seriesLimit: input.seriesLimit,
         to: input.to,
@@ -2358,6 +2363,7 @@ function createDeploymentTimeseriesHandler(
     );
 
     return {
+      binaryVersions: sortBinaryVersionsDescending(buckets.binaryVersions),
       outcome: "found",
       ...assembleDeploymentTimeseries({
         releases: identities.releases,
@@ -2367,6 +2373,11 @@ function createDeploymentTimeseriesHandler(
       }),
     };
   };
+}
+
+/** Position in newest-first order; rows without a binary version sort last. */
+function binaryVersionRank(order: string[], binaryVersion: string | null): number {
+  return binaryVersion === null ? order.length : order.indexOf(binaryVersion);
 }
 
 function createReleaseMetricsReadHandler(
@@ -2383,15 +2394,39 @@ function createReleaseMetricsReadHandler(
       };
     }
 
-    const metricsByHash =
-      await metricsRepository.listReleaseMetricsForDeployment(
-        release.deploymentId,
-        [release.targetPackageHash],
-      );
+    const [metricsByHash, byBinaryVersion, delivery] = await Promise.all([
+      metricsRepository.listReleaseMetricsForDeployment(release.deploymentId, [
+        release.targetPackageHash,
+      ]),
+      release.targetPackageHash
+        ? metricsRepository.listReleaseMetricsByBinaryVersion(
+            release.deploymentId,
+            release.targetPackageHash,
+          )
+        : Promise.resolve([]),
+      metricsRepository.getReleaseDeliveryBreakdown({
+        createdAt: release.createdAt,
+        deploymentId: release.deploymentId,
+        releaseId: release.id,
+        targetBinaryVersion: release.targetBinaryVersion,
+        targetPackageHash: release.targetPackageHash,
+      }),
+    ]);
+    const versionOrder = sortBinaryVersionsDescending(
+      byBinaryVersion.flatMap((row) =>
+        row.binaryVersion === null ? [] : [row.binaryVersion],
+      ),
+    );
 
     return {
+      binaryVersions: [...byBinaryVersion].sort(
+        (left, right) =>
+          binaryVersionRank(versionOrder, left.binaryVersion) -
+          binaryVersionRank(versionOrder, right.binaryVersion),
+      ),
       outcome: "found",
       release: {
+        delivery,
         releaseId: release.id,
         releaseLabel: release.releaseLabel,
         targetBinaryVersion: release.targetBinaryVersion,

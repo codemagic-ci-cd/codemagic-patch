@@ -15,7 +15,7 @@ import {
   createReleaseNotFoundProblem,
 } from "./routeProblems";
 import type { PreparedJsonResponse } from "./routeResponses";
-import { singleFieldValidationProblem } from "./routeValidation";
+import { fieldError, singleFieldValidationProblem } from "./routeValidation";
 import {
   toActiveJobWire,
   toReleaseCreationWarningWire,
@@ -23,8 +23,33 @@ import {
   toReleaseWire,
 } from "./wireSerializers";
 
-const SIGNATURE_REQUIRED_DETAIL =
-  "This app requires signed releases. Rebuild the release with a code-signing private key, for example `cmpatch bundle --private-key-path <pem>` or `cmpatch release-react --private-key-path <pem>`, then upload or publish the signed release. Start with the README code signing guide: https://github.com/codemagic-ci-cd/codemagic-patch#code-signing-optional";
+const UPLOAD_SIGNATURE_REQUIRED_DETAIL =
+  "This app requires signed releases, and this upload is not signed. Sign the bundle with the app's code-signing private key when creating the release.";
+
+const RELEASE_SIGNATURE_REQUIRED_DETAIL =
+  "This app requires signed releases, and this release is not signed. A release cannot be signed after it is uploaded: publish the bundle again, signed with the app's code-signing private key.";
+
+/**
+ * The two ways a signature can be missing: an upload that arrived unsigned, and
+ * an already-stored release being enabled, promoted or rolled back to. The
+ * top-level `reason` is what a client keys its own remedy on; the `errors[]`
+ * entry stays as it was, because servers without the extension are recognised
+ * by its field and reason.
+ */
+function signatureRequiredProblem(
+  field: "metadata.signature" | "signature",
+): ProblemDetails {
+  const detail =
+    field === "metadata.signature"
+      ? UPLOAD_SIGNATURE_REQUIRED_DETAIL
+      : RELEASE_SIGNATURE_REQUIRED_DETAIL;
+
+  return createValidationProblem(
+    detail,
+    [fieldError(field, "required", detail)],
+    { reason: "signature_required" },
+  );
+}
 
 export function releasePatchInvalidProblem(
   reason:
@@ -34,11 +59,7 @@ export function releasePatchInvalidProblem(
     | "status_transition_not_allowed",
 ): ProblemDetails {
   if (reason === "signature_required") {
-    return singleFieldValidationProblem(
-      SIGNATURE_REQUIRED_DETAIL,
-      "signature",
-      "required",
-    );
+    return signatureRequiredProblem("signature");
   }
 
   if (reason === "rollout_percentage_decrease") {
@@ -125,11 +146,7 @@ export function prepareReleaseLifecycleCreateResponse(
   if (result.outcome === "invalid") {
     const problem =
       result.reason === "signature_required"
-        ? singleFieldValidationProblem(
-            SIGNATURE_REQUIRED_DETAIL,
-            "signature",
-            "required",
-          )
+        ? signatureRequiredProblem("signature")
         : createValidationProblem("release cannot be used as a bundle source");
 
     return {
@@ -276,11 +293,7 @@ export function problemForReleaseCreationFailure(
   }
 
   if (result.outcome === "invalid" && result.reason === "signature_required") {
-    return singleFieldValidationProblem(
-      SIGNATURE_REQUIRED_DETAIL,
-      "metadata.signature",
-      "required",
-    );
+    return signatureRequiredProblem("metadata.signature");
   }
 
   return null;

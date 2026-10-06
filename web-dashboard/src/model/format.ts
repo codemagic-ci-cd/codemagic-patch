@@ -58,6 +58,24 @@ export function formatCount(value: number): string {
   return COUNT_FORMAT.format(value);
 }
 
+/** Human-readable byte size ("1.2 MB"). Invalid/negative → the em-dash placeholder. */
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) {
+    return INVALID_DATE_PLACEHOLDER;
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 || value % 1 === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
 /**
  * Short count for tight UI (chart axes): 999 stays "999", then "1.5k",
  * "10k", "1.2M", "3B". Hover and tables keep {@link formatCount}.

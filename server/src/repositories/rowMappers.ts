@@ -175,6 +175,7 @@ export interface AppRow {
   team_id: string;
   name: string;
   require_code_signing: boolean;
+  framework: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -372,6 +373,7 @@ export function mapTeamInvitationWithRoleRow(
 export function mapAppRow(row: AppRow): App {
   return {
     createdAt: row.created_at,
+    framework: row.framework,
     id: asBrand(row.id),
     name: row.name,
     requireCodeSigning: row.require_code_signing,

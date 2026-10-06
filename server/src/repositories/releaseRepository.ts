@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 
 import type {
+  BinaryVersionFilter,
   DeploymentId,
   Release,
   ReleaseId,
@@ -17,12 +18,37 @@ import {
   type FingerprintDisagreement,
 } from "../fingerprintDisagreement";
 import {
+  binaryVersionFilterValues,
+  binaryVersionMatchSql,
+} from "./binaryVersionFilterSql";
+import {
   mapReleaseJobRow,
   mapReleaseRow,
   type DeploymentRow,
   type ReleaseJobRow,
   type ReleaseRow,
 } from "./rowMappers";
+
+/**
+ * Matches a release (`r`) whose explicit target or latest active resolved
+ * target set (fingerprint expansion included) satisfies the filter params.
+ */
+function releaseTargetsMatchSql(exactParam: string, prefixParam: string): string {
+  return `(${binaryVersionMatchSql("r.target_binary_version", exactParam, prefixParam)}
+    OR EXISTS (
+      SELECT 1
+      FROM release_target rt
+      WHERE rt.release_id = r.id
+        AND rt.status = 'active'
+        AND rt.reconcile_generation = (
+          SELECT MAX(latest.reconcile_generation)
+          FROM release_target latest
+          WHERE latest.release_id = r.id
+            AND latest.status = 'active'
+        )
+        AND ${binaryVersionMatchSql("rt.binary_version", exactParam, prefixParam)}
+    ))`;
+}
 
 export interface CreateReleaseInput {
   bundleStorageKey: string;
@@ -136,6 +162,8 @@ export type GetReleaseResult =
     };
 
 export interface ListReleasesForDeploymentInput {
+  /** Omitted or null lists every release. */
+  binaryVersion?: BinaryVersionFilter | null;
   deploymentId: DeploymentId;
   limit: number;
   offset: number;
@@ -682,15 +710,20 @@ export function createPostgresReleaseRepository(
     },
 
     async listReleasesForDeployment(input) {
+      const [exactVersion, versionPrefix] = binaryVersionFilterValues(
+        input.binaryVersion ?? null,
+      );
       const countResult = await pool.query<{ total: number }>(
         `
           SELECT COUNT(r.id)::integer AS total
           FROM deployment d
-          LEFT JOIN release r ON r.deployment_id = d.id
+          LEFT JOIN release r
+            ON r.deployment_id = d.id
+            AND ${releaseTargetsMatchSql("$2", "$3")}
           WHERE d.id = $1
           GROUP BY d.id
         `,
-        [input.deploymentId],
+        [input.deploymentId, exactVersion, versionPrefix],
       );
       const countRow = countResult.rows[0];
 
@@ -729,10 +762,11 @@ export function createPostgresReleaseRepository(
             LIMIT 1
           ) latest_job ON true
           WHERE r.deployment_id = $1
+            AND ${releaseTargetsMatchSql("$4", "$5")}
           ORDER BY r.created_at DESC, r.id DESC
           LIMIT $2 OFFSET $3
         `,
-        [input.deploymentId, input.limit, input.offset],
+        [input.deploymentId, input.limit, input.offset, exactVersion, versionPrefix],
       );
 
       return {

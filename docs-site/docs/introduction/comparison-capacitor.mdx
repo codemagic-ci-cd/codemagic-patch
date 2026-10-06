@@ -1,0 +1,69 @@
+---
+title: Comparison
+description: 'Compare Codemagic Patch with Appflow Live Updates and other Capacitor OTA options.'
+llmsDescription: 'Patch vs Appflow Live Updates for Capacitor — self-host vs hosted, licensing.'
+sidebar_label: How Patch compares
+sidebar_custom_props:
+  sdk: capacitor
+---
+
+# How Patch compares
+
+This page compares Codemagic Patch with other OTA update options for Capacitor and Ionic apps. For React Native comparisons (Expo Updates, CodePush forks, Hot Updater), switch the SDK selector to React Native.
+
+:::info
+This is a high-level overview, not a detailed feature matrix. Products change over time. The Capacitor SDK (`@codemagic/capacitor-patch`) is a 0.x release; its API may still change.
+:::
+
+## Common features
+
+Patch and hosted Capacitor live update services solve the same problem: delivering web asset changes to installed apps without a store release. Most offer:
+
+- Staged rollouts and rollback
+- Separate release channels, such as Staging and Production
+- A client SDK that checks for, downloads, and applies updates, and rolls back failed ones
+
+All of them still require a store release for native plugin, permission, or Capacitor version changes. They differ mainly in hosting, licensing, and how much infrastructure you run.
+
+---
+
+## vs Appflow Live Updates
+
+Appflow is a hosted service. Patch is self-hosted.
+
+| | Appflow Live Updates | Codemagic Patch |
+| --- | --- | --- |
+| Hosting | Hosted by Ionic | Self-hosted |
+| Payload | Capacitor `webDir` | Capacitor `webDir` |
+| Publishing | Appflow dashboard / Ionic CLI | `cmpatch-capacitor release create --bundle-path www` |
+| Channels | Appflow channels | Deployments (`Staging` and `Production` by default) |
+| Dashboard | Appflow web UI | Patch web dashboard |
+| React Native support | No | Yes, from the same server |
+
+Appflow suits teams that already build and ship Ionic apps through Ionic's cloud. Patch suits teams that want to run updates on their own domains and storage, with the same dashboard, metrics, and team management as Patch for React Native.
+
+To migrate, see [Migrating from Appflow](/docs/migration/migrating-from-appflow).
+
+---
+
+## vs React Native OTA tools
+
+Expo Updates, CodePush-compatible forks, and Hot Updater support React Native only. To compare Patch with them, switch the SDK selector to React Native.
+
+---
+
+## Licensing
+
+The Patch server uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) (based on FSL 1.1; each version converts to Apache 2.0 after two years). The SDK and CLI use Apache 2.0. You can use, modify, and self-host Patch without a paid license up to one million monthly active users. Above that, you need a commercial license from Codemagic. See [Pricing](/docs/introduction/pricing).
+
+---
+
+## Which to choose
+
+| If you… | Consider |
+| --- | --- |
+| Use Appflow and want to stay on a hosted service | Appflow Live Updates |
+| Want to self-host, with a dashboard, metrics, and team access control | Codemagic Patch |
+| Have a React Native app | The React Native comparison (switch the SDK selector) |
+
+To try Patch, start with the [Local quickstart](/docs/) or [Install](/docs/install).

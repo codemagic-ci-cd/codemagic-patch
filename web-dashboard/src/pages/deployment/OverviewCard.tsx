@@ -1,7 +1,8 @@
 // Shared deployment overview: in-range totals and the adoption chart, driven
-// by one timeseries query. A year is the widest preset the endpoint allows
-// (366-day cap after UTC truncation). Failure stays on this card; the release
-// history table is unaffected.
+// by one timeseries query that the page owns (the page-level binary version
+// menu reads its version list). A year is the widest preset the endpoint
+// allows (366-day cap after UTC truncation). Failure stays on this card; the
+// release history table keeps loading.
 
 import { type ReactNode } from "react";
 
@@ -11,7 +12,7 @@ import { ErrorState } from "../../components/ui/ErrorState";
 import { Skeleton } from "../../components/ui/Skeleton";
 import {
   TimeseriesRangeSelector,
-  useTimeseriesRange,
+  type useTimeseriesRange,
 } from "../../components/ui/TimeseriesRangeSelector";
 import { formatCount, formatSuccessRate } from "../../model/format";
 import { successRate } from "../../model/metrics";
@@ -27,10 +28,11 @@ const METRIC_ICO = "text-fg-3 [&_svg]:block [&_svg]:size-[17px]";
 const METRIC_VAL =
   "mt-1.5 text-[32px] font-semibold leading-none tracking-[-.03em] tabular-nums [&_small]:text-[16px] [&_small]:font-semibold [&_small]:text-fg-3";
 
-export function OverviewCard({ deploymentId }: { deploymentId: string }) {
-  const { rangeDays, setRangeDays, timeseriesQuery } =
-    useTimeseriesRange(deploymentId);
-
+export function OverviewCard({
+  range: { rangeDays, setRangeDays, timeseriesQuery },
+}: {
+  range: ReturnType<typeof useTimeseriesRange>;
+}) {
   const totals = timeseriesQuery.data
     ? sumTimeseriesTotals(timeseriesQuery.data.totals)
     : null;

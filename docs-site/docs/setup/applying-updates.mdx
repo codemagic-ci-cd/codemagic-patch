@@ -6,11 +6,27 @@ description: >-
 llmsDescription: 'Client apply timing — install modes, mandatoryInstallMode, per-deployment behavior, restart guards.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Applying updates
 
 After Patch downloads an update, install mode controls when that bundle becomes active. Non-mandatory releases wait for the condition set in `installMode`. Mandatory releases (published with `--mandatory`) use `mandatoryInstallMode` instead and do not wait for that looser timing.
 
-For when the app checks and downloads updates, see [Checking for updates](/docs/setup/checking-for-updates). If you use `Patch.wrap(App, options)`, put the install options shown below in that wrapper call. The `sync()` examples are for direct integrations; adding a separate call does not configure the wrapper.
+For when the app checks and downloads updates, see [Checking for updates](/docs/setup/checking-for-updates).
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+If you use `Patch.wrap(App, options)`, put the install options shown below in that wrapper call. The `sync()` examples are for direct integrations; adding a separate call does not configure the wrapper.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Pass the install options below to `start()`, or to `sync()` if you call it directly. Options passed to a separate `sync()` call do not change the options `start()` uses.
+
+  </TabItem>
+</SdkTabs>
 
 ## Install modes
 
@@ -25,6 +41,9 @@ For when the app checks and downloads updates, see [Checking for updates](/docs/
 
 `ON_NEXT_RESTART` is the default `installMode` and works well for Staging, where developers restart the app on purpose. In Production, an update applying on restart can cause unwanted behavior. `ON_NEXT_SUSPEND` is a common `installMode` for Production: the bundle activates when the user backgrounds the app after `minimumBackgroundDuration`, without interrupting an open session.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```ts
 import { InstallMode, sync } from "@codemagic/react-native-patch";
 
@@ -34,6 +53,24 @@ void sync({
   minimumBackgroundDuration: 60_000, // ms; for ON_NEXT_RESUME / ON_NEXT_SUSPEND
 });
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { InstallMode, start } from "@codemagic/capacitor-patch";
+
+start({
+  installMode: InstallMode.ON_NEXT_SUSPEND,
+  mandatoryInstallMode: InstallMode.IMMEDIATE,
+  minimumBackgroundDuration: 60_000, // ms; for ON_NEXT_RESUME / ON_NEXT_SUSPEND
+});
+```
+
+Activating an update reloads the WebView with the new web assets. The plugin detects foreground and background transitions natively, so `ON_NEXT_RESUME` and `ON_NEXT_SUSPEND` work without another plugin. On iOS, opening Notification Center also moves the app out of the foreground briefly; set `minimumBackgroundDuration` to ignore short interruptions.
+
+  </TabItem>
+</SdkTabs>
 
 ### `minimumBackgroundDuration`
 
@@ -46,6 +83,9 @@ Does not change behavior for `ON_NEXT_RESTART` or `IMMEDIATE`.
 Sync and apply behavior is client-side. The server does not push different `sync()` rules per deployment.
 
 Teams can map Staging and Production to different app builds (different deployment keys baked into native config), then branch `sync()` options on the same build-time signal that selects the deployment key:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```ts
 import { InstallMode, sync } from "@codemagic/react-native-patch";
@@ -70,6 +110,35 @@ void sync(
 
 This matches the common pattern: `ON_NEXT_RESTART` in Staging, `ON_NEXT_SUSPEND` in Production.
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { InstallMode, start } from "@codemagic/capacitor-patch";
+
+// Wire this to whatever selects your Staging deployment key at build time:
+// a build-time env flag, or the environment that generates capacitor.config.ts.
+declare function isStagingBuild(): boolean;
+
+start(
+  isStagingBuild()
+    ? {
+        installMode: InstallMode.ON_NEXT_RESTART,
+        mandatoryInstallMode: InstallMode.IMMEDIATE,
+      }
+    : {
+        installMode: InstallMode.ON_NEXT_SUSPEND,
+        mandatoryInstallMode: InstallMode.ON_NEXT_RESUME,
+        minimumBackgroundDuration: 300_000, // 5 min
+      },
+);
+```
+
+This matches the common pattern: `ON_NEXT_RESTART` in Staging, `ON_NEXT_SUSPEND` in Production.
+
+  </TabItem>
+</SdkTabs>
+
 ## Mandatory updates
 
 Publishing with `--mandatory` (CLI or dashboard) marks a release mandatory on the server. Eligible clients install it under `mandatoryInstallMode` rather than waiting for `installMode` conditions.
@@ -91,6 +160,7 @@ Common hook points:
 - `sync()` result (`"update-installed"`, `"up-to-date"`, `"error"`) to decide whether to show messaging
 - progress callback (`receivedBytes`, `totalBytes`) for progress UI
 - `checkForUpdate()` + `remotePackage.releaseNotes` for "update available" text
+- `isNextVersionReady()` for "Update ready" while the current bundle keeps running
 - `disallowRestart()` / `allowRestart()` to avoid restarts during critical flows
 
 For button-driven flows (check now, download now, apply now), see [Manual control](/docs/setup/manual-control).
@@ -108,6 +178,9 @@ Patch exposes install timing and restart controls; your app owns the splash impl
 
 `disallowRestart()` prevents Patch from programmatically reloading the JS bundle (including after `IMMEDIATE` installs) until `allowRestart()` runs. Typical pattern: block during checkout or onboarding, allow when the flow completes.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```ts
 import { disallowRestart, allowRestart } from "@codemagic/react-native-patch";
 
@@ -115,6 +188,20 @@ disallowRestart();
 // … critical flow …
 allowRestart(); // may flush a queued restart
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```ts
+import { disallowRestart, allowRestart } from "@codemagic/capacitor-patch";
+
+disallowRestart();
+// … critical flow …
+allowRestart(); // may flush a queued restart
+```
+
+  </TabItem>
+</SdkTabs>
 
 Alternatively, prefer `ON_NEXT_RESTART` and call `restartApp()` only when your app knows it is safe. `disallowRestart` is for global `sync()` calls where you still need a no-interruption window.
 

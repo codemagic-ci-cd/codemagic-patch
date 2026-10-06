@@ -1,0 +1,50 @@
+{
+  "name": "codemagic-patch-example-app",
+  "version": "1.0.0",
+  "description": "A real Ionic + Angular reference app for @codemagic/capacitor-patch — see specs/IMPLEMENTATION-PLAN.md Phase 8. Also used for on-device/E2E verification against the local evaluation stack (specs/LOCAL-SETUP.md).",
+  "private": true,
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "lint": "ng lint"
+  },
+  "dependencies": {
+    "@angular/common": "22.0.1",
+    "@angular/compiler": "22.0.1",
+    "@angular/core": "22.0.1",
+    "@angular/forms": "22.0.1",
+    "@angular/platform-browser": "22.0.1",
+    "@angular/platform-browser-dynamic": "22.0.1",
+    "@angular/router": "22.0.1",
+    "@capacitor/android": "8.5.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/ios": "8.5.1",
+    "@capacitor/keyboard": "8.0.5",
+    "@capacitor/status-bar": "8.0.3",
+    "@codemagic/capacitor-patch": "file:..",
+    "@ionic/angular": "^9.0.0",
+    "ionicons": "^8.1.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "zone.js": "^0.16.3"
+  },
+  "devDependencies": {
+    "@angular/build": "22.0.1",
+    "@angular/cli": "22.0.1",
+    "@angular/compiler-cli": "22.0.1",
+    "@angular/language-service": "22.0.1",
+    "@capacitor/cli": "8.5.1",
+    "@ionic/angular-toolkit": "^13.0.0",
+    "angular-eslint": "22.0.0",
+    "eslint": "^9.16.0",
+    "jsdom": "^26.0.0",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.0.8"
+  }
+}

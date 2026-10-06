@@ -1,0 +1,57 @@
+{
+  "name": "@codemagic/capacitor-patch-cli",
+  "version": "0.1.0",
+  "description": "Codemagic Patch CLI for publishing over-the-air updates of Capacitor / Ionic apps",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codemagic-ci-cd/codemagic-patch.git",
+    "directory": "cli-capacitor"
+  },
+  "homepage": "https://patch.codemagic.io/",
+  "bugs": "https://github.com/codemagic-ci-cd/codemagic-patch/issues",
+  "keywords": [
+    "cmpatch-capacitor",
+    "codemagic-patch",
+    "capacitor",
+    "ionic",
+    "ota",
+    "over-the-air",
+    "cli",
+    "deployment"
+  ],
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "cmpatch-capacitor": "./dist/cmpatch-capacitor.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@codemagic/patch-server": "workspace:*",
+    "@codemagic/patch-shared": "workspace:*",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.36.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "yarn exec node scripts/build.mjs",
+    "clean": "yarn exec rimraf dist node_modules/.cache",
+    "dev": "yarn exec tsx src/bin/cmpatch-capacitor.ts",
+    "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "prepack": "node scripts/build.mjs",
+    "test": "yarn workspace @codemagic/patch-shared build && yarn workspace @codemagic/patch-server build && yarn exec vitest run",
+    "typecheck": "yarn workspace @codemagic/patch-shared build && yarn exec tsc -p tsconfig.json"
+  }
+}

@@ -10,7 +10,8 @@
 // model hard rule). Regions degrade independently (loading
 // skeletons are per-region): the release envelope owns the page; the
 // MetricsPanel (useReleaseMetrics + shared timeseries range Applied chart)
-// fails to "—" + retry without touching the rest. Actions are gated by role
+// fails to "—" + retry without touching the rest. The Downloads card reads
+// that same query and renders only when delivery data is present. Actions are gated by role
 // (`useTeamRole.can("release.deploy")`; denied → disabled + "Requires developer" tip per the
 // RBAC matrix) × release status via model/release.ts (canDisable/canEnable/
 // canPatchRollout; promote = any published; Edit metadata = any status,
@@ -45,6 +46,8 @@ import { JobBadge } from "../components/ui/JobBadge";
 import { RolloutBar } from "../components/ui/RolloutBar";
 import { Skeleton } from "../components/ui/Skeleton";
 import { StatusChip } from "../components/ui/StatusChip";
+import { hasDeliveryData, successRate } from "../model/metrics";
+import type { ReleaseMetrics } from "../model/metrics";
 import {
   canDisable,
   canEnable,
@@ -53,7 +56,7 @@ import {
 } from "../model/release";
 import { useTeamRole } from "../rbac/useTeamRole";
 import { useReleaseActions } from "./release/modals/useReleaseActions";
-import type { ReleaseMetrics } from "../model/metrics";
+import type { ReleaseBinaryVersionMetrics } from "../api/types";
 import type { ReleaseJob } from "../model/release";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
@@ -64,7 +67,21 @@ import { DL, DL_DD, DL_DT } from "../components/ui/dl";
 import { ICON_BTN } from "../components/ui/iconButton";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import { PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
-import { formatCount, formatDateTime } from "../model/format";
+import {
+  formatBytes,
+  formatCount,
+  formatDateTime,
+  formatSuccessRate,
+} from "../model/format";
+import {
+  TBL,
+  TBL_NUM,
+  TBL_RIGHT,
+  TBL_TD,
+  TBL_TH,
+  TBL_TR,
+  TBL_WRAP,
+} from "../components/ui/table";
 
 /**
  * Lifecycle actions this screen can trigger; `release` is always THE viewed
@@ -252,7 +269,7 @@ function ReleaseDetail({
 
       <div className="grid-cols-[1fr_360px] items-start gap-[22px] [display:grid] max-cols:grid-cols-[1fr]">
         {/* LEFT: metadata, metrics */}
-        <div className="flex flex-col gap-[22px]">
+        <div className="flex min-w-0 flex-col gap-[22px]">
           <div className={`${CARD} ${CARD_PAD}`}>
             <div className={`${SECTION_TITLE} mb-[18px]`}>Release metadata</div>
             <dl className={DL}>
@@ -369,7 +386,7 @@ function ReleaseDetail({
             </dl>
           </div>
 
-          <MetricsPanel
+          <ReleaseMetricsRegion
             deploymentId={depId}
             releaseId={release.id}
             targetPackageHash={release.targetPackageHash}
@@ -602,11 +619,15 @@ function JobStateReferenceCard() {
   );
 }
 
+type ReleaseMetricsQuery = ReturnType<typeof useReleaseMetrics>;
+
 // ---------------------------------------------------------------------------
-// Metrics panel (independent region, edge case "fetch isolation")
+// Metrics + downloads share one release-metrics read. The metrics card owns
+// loading and failure; the downloads card appears only when that read has
+// delivery data to show.
 // ---------------------------------------------------------------------------
 
-function MetricsPanel({
+function ReleaseMetricsRegion({
   deploymentId,
   releaseId,
   targetPackageHash,
@@ -616,6 +637,31 @@ function MetricsPanel({
   targetPackageHash: string | null;
 }) {
   const metricsQuery = useReleaseMetrics(releaseId);
+
+  return (
+    <>
+      <MetricsPanel
+        deploymentId={deploymentId}
+        metricsQuery={metricsQuery}
+        releaseId={releaseId}
+        targetPackageHash={targetPackageHash}
+      />
+      <DownloadsPanel metricsQuery={metricsQuery} />
+    </>
+  );
+}
+
+function MetricsPanel({
+  deploymentId,
+  metricsQuery,
+  releaseId,
+  targetPackageHash,
+}: {
+  deploymentId: string;
+  metricsQuery: ReleaseMetricsQuery;
+  releaseId: string;
+  targetPackageHash: string | null;
+}) {
   const { rangeDays, setRangeDays, timeseriesQuery } =
     useTimeseriesRange(deploymentId);
   // The drill-down lives in a dialog: it is two levels deep and pages on
@@ -713,6 +759,15 @@ function MetricsPanel({
       body = (
         <>
           <CounterGrid metrics={metrics} />
+          {metricsQuery.data.binaryVersions.length >= 2 ? (
+            <>
+              <div className="my-5 h-px bg-border" />
+              <div className="mb-[14px] text-[13px] font-semibold">
+                By binary version
+              </div>
+              <BinaryVersionBreakdown rows={metricsQuery.data.binaryVersions} />
+            </>
+          ) : null}
           <div className="my-5 h-px bg-border" />
           <div className="mb-[14px] flex items-center justify-between gap-3.5">
             <div className="flex min-w-0 items-center gap-2">
@@ -769,6 +824,53 @@ function MetricsPanel({
 }
 
 /** Counter grid; null metrics render the "—" degraded variant. */
+/** Same counters as the grid, one row per binary version that reported the package. */
+function BinaryVersionBreakdown({
+  rows,
+}: {
+  rows: readonly ReleaseBinaryVersionMetrics[];
+}) {
+  return (
+    <div className={`${TBL_WRAP} rounded-lg border border-border`}>
+      <table className={TBL}>
+        <thead>
+          <tr>
+            <th className={TBL_TH}>Binary version</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloaded</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Ready</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Applied</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Failed</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Success rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const rate = successRate(row);
+            return (
+              <tr key={row.binaryVersion ?? ""} className={TBL_TR}>
+                <td className={TBL_TD}>
+                  {row.binaryVersion === null ? (
+                    <span className="text-fg-3">Unknown</span>
+                  ) : (
+                    <code className="mono">{row.binaryVersion}</code>
+                  )}
+                </td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.downloaded)}</td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.installed)}</td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.success)}</td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.failed)}</td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}>
+                  {rate === null ? "—" : `${formatSuccessRate(rate)}%`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function CounterGrid({ metrics }: { metrics: ReleaseMetrics | null }) {
   return (
     <div className="grid-cols-[repeat(4,1fr)] gap-3 [display:grid] max-cols:grid-cols-[repeat(2,1fr)]">
@@ -795,13 +897,15 @@ function CounterGrid({ metrics }: { metrics: ReleaseMetrics | null }) {
 }
 
 function Counter({
+  accent,
+  caption,
   label,
   value,
-  accent,
 }: {
-  label: string;
-  value: number | null;
   accent?: string;
+  caption?: string;
+  label: string;
+  value: number | string | null;
 }) {
   return (
     <div>
@@ -810,7 +914,72 @@ function Counter({
         className="text-[22px] font-semibold tabular-nums"
         style={{ color: value === null ? undefined : accent }}
       >
-        {value === null ? "—" : formatCount(value)}
+        {value === null
+          ? "—"
+          : typeof value === "number"
+            ? formatCount(value)
+            : value}
+      </div>
+      {caption === undefined ? null : (
+        <div className={CELL_SUB}>{caption}</div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Downloads: patch vs full-bundle (one-step size, all patch downloads)
+// ---------------------------------------------------------------------------
+
+function DownloadsPanel({
+  metricsQuery,
+}: {
+  metricsQuery: ReleaseMetricsQuery;
+}) {
+  if (!metricsQuery.isSuccess) {
+    return null;
+  }
+
+  const delivery = metricsQuery.data.delivery;
+  if (!hasDeliveryData(delivery)) {
+    return null;
+  }
+
+  const fromLabel = delivery.patch.fromReleaseLabel;
+
+  return (
+    <div className={`${CARD} ${CARD_PAD}`}>
+      <div className={`${SECTION_TITLE} mb-[18px]`}>Downloads</div>
+      <div className="grid-cols-[1fr_1fr_auto_1fr_1fr] items-stretch gap-x-5 [display:grid] max-cols:grid-cols-2 max-cols:gap-y-5">
+        <Counter
+          label="Diff downloads"
+          value={delivery.patch.downloads}
+        />
+        <Counter
+          caption={fromLabel === null ? undefined : `from ${fromLabel}`}
+          label="Diff size"
+          value={
+            delivery.patch.sizeBytes === null
+              ? null
+              : formatBytes(delivery.patch.sizeBytes)
+          }
+        />
+        <div
+          className="w-px self-stretch bg-border max-cols:col-span-2 max-cols:h-px max-cols:w-auto"
+          aria-hidden="true"
+        />
+        <Counter
+          label="Full downloads"
+          value={delivery.fullBundle.downloads}
+        />
+        <Counter
+          label="Full size"
+          value={
+            delivery.fullBundle.sizeBytes === null
+              ? null
+              : formatBytes(delivery.fullBundle.sizeBytes)
+          }
+        />
       </div>
     </div>
   );

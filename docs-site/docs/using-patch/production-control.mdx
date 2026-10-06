@@ -4,13 +4,29 @@ description: 'Roll out, promote, roll back, and disable OTA releases in Producti
 llmsDescription: 'Rollout %, mandatory flag, promote, rollback, disable releases.'
 ---
 
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
 # Production control
 
 Once OTA updates are working in Production, use release controls to roll out safely: gradual rollouts, mandatory updates, and rollbacks. New to Production? Work through [Preparing for production](/docs/using-patch/preparing-for-production) first.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 :::info
 Examples assume `codemagic-patch.config.json` exists from `cmpatch init`. Set a default team with `cmpatch config set team default-team` or pass `--team`.
 :::
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+:::info
+Examples assume the server is set with `CODEMAGIC_PATCH_SERVER_URL` or `cmpatch-capacitor config set --server-url`. Pass `--team` if your account belongs to more than one team. Commands ask for confirmation in a terminal; pass `--yes` to skip it.
+:::
+
+  </TabItem>
+</SdkTabs>
 
 For the Staging → Production workflow, see [Releasing updates](/docs/using-patch/releasing-updates).
 
@@ -18,10 +34,25 @@ For the Staging → Production workflow, see [Releasing updates](/docs/using-pat
 
 Rollouts deliver an update to only a percentage of eligible users first.
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release-react --platform ios --deployment Production \
   --rollout-percentage 25 --release-notes "Gradual rollout" --yes
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Production --target-binary-version "1.2.0" \
+  --rollout-percentage 25 --release-notes "Gradual rollout"
+```
+
+  </TabItem>
+</SdkTabs>
 
 Typical progression:
 
@@ -31,15 +62,31 @@ Release at 10% → monitor → increase → 50% → 100%
 
 Adjust an existing rollout without republishing:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release patch --app MyApp-iOS --deployment Production --label v5 \
   --rollout-percentage 50 --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release patch --app MyApp-iOS --deployment Production --label v5 \
+  --rollout-percentage 50
+```
+
+The rollout percentage can only be increased. `release patch` cannot change the target binary version of a Capacitor release; see [Binary version compatibility](/docs/using-patch/binary-version-capacitor).
+
+  </TabItem>
+</SdkTabs>
+
 ### Rollout constraints
 
 - One partial rollout per deployment at a time
-- Complete or disable the current rollout before publishing another update to the same deployment. `cmpatch release inspect --wait` only waits for the release worker; it does not finish a rollout
+- Complete or disable the current rollout before publishing another update to the same deployment. `release inspect --wait` only waits for the release worker; it does not finish a rollout
 - Rollout percentage must be between 1 and 100
 
 These constraints prevent users on the same deployment from receiving conflicting versions.
@@ -48,9 +95,23 @@ These constraints prevent users on the same deployment from receiving conflictin
 
 Mark critical fixes as mandatory so eligible clients apply them under `mandatoryInstallMode` without waiting for `installMode` conditions:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release-react --platform ios --deployment Production --mandatory --yes
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release create --bundle-path www \
+  --app MyApp-iOS --deployment Production --target-binary-version "1.2.0" --mandatory
+```
+
+  </TabItem>
+</SdkTabs>
 
 On the client, `mandatoryInstallMode` controls when that apply happens (default: `IMMEDIATE`). See [Applying updates](/docs/setup/applying-updates).
 
@@ -68,26 +129,71 @@ If a device skipped an older mandatory release in the deployment history, a late
 
 Temporarily stop serving a release without deleting it:
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 ```bash
 cmpatch release disable --app MyApp-iOS --deployment Production --label v3 --yes
 cmpatch release enable  --app MyApp-iOS --deployment Production --label v3 --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release disable --app MyApp-iOS --deployment Production --label v3
+cmpatch-capacitor release enable  --app MyApp-iOS --deployment Production --label v3
+```
+
+When a release is disabled, the deployment serves the previous release instead, including to devices that already installed the disabled one. Devices switch on their next update check: the next launch, or the next foreground return with `CheckFrequency.ON_APP_RESUME`.
+
+  </TabItem>
+</SdkTabs>
+
 ## Roll back to the previous release
 
 Manual rollback for production incidents:
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release rollback --app MyApp-iOS --deployment Production --yes
 ```
 
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release rollback --app MyApp-iOS --deployment Production
+```
+
+Rollback creates a new release with its own label, using the bundle of the previous release (or of the release given with `--label`).
+
+  </TabItem>
+</SdkTabs>
+
 ### Automatic rollback
 
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
 The SDK rolls back if a new bundle crashes before `notifyAppReady()` runs. Because `sync()` calls `notifyAppReady()` first on startup, the default integration arms this protection automatically.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+The SDK rolls back a new bundle that does not call `notifyAppReady()` within `maxLaunchAttempts` launches (default 3). `start()` and `sync()` call `notifyAppReady()` first, so calling `start()` after the first screen renders enables this protection.
+
+  </TabItem>
+</SdkTabs>
 
 If you use [manual control](/docs/setup/manual-control) instead of `sync()`, you must call `notifyAppReady()` after a successful boot, otherwise healthy updates can be reverted.
 
 ## Promote from Staging to Production
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
 
 ```bash
 cmpatch release promote \
@@ -97,6 +203,23 @@ cmpatch release promote \
   --label v4 \
   --yes
 ```
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+```bash
+cmpatch-capacitor release promote \
+  --app MyApp-iOS \
+  --source-deployment Staging \
+  --dest-deployment Production \
+  --label v4 \
+  --rollout-percentage 10
+```
+
+Promote reuses the bundle tested in Staging without re-uploading it. It accepts `--rollout-percentage`, `--mandatory` / `--not-mandatory`, `--release-notes`, and `--disabled`.
+
+  </TabItem>
+</SdkTabs>
 
 ## Example production workflow
 

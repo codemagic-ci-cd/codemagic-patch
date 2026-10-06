@@ -6,6 +6,7 @@ import type {
   FailureDistributionEntry,
   FailureEventSample,
   Release,
+  ReleaseDeliveryBreakdown,
   ReleaseJob,
   Team,
   UserAccount,
@@ -37,6 +38,8 @@ import type {
   OAuthWebConfigWire,
   ReleaseCreationWarningWire,
   DeploymentTimeseriesWire,
+  ReleaseBinaryVersionMetricsWire,
+  ReleaseDeliveryWire,
   ReleaseJobWire,
   ReleaseMetricsRowWire,
   ReleaseMetricsWire,
@@ -64,6 +67,7 @@ export function toTeamWire(team: Team): TeamWire {
 export function toAppWire(app: App): AppWire {
   return {
     created_at: app.createdAt,
+    framework: app.framework,
     id: app.id,
     name: app.name,
     require_code_signing: app.requireCodeSigning,
@@ -333,6 +337,7 @@ export function toReleaseMetricsWire(metrics: {
 }
 
 export function toReleaseMetricsRowWire(row: {
+  delivery?: ReleaseDeliveryBreakdown;
   metrics: {
     active: number;
     downloaded: number;
@@ -348,11 +353,44 @@ export function toReleaseMetricsRowWire(row: {
   targetPackageHash: string | null;
 }): ReleaseMetricsRowWire {
   return {
+    ...(row.delivery ? { delivery: toReleaseDeliveryWire(row.delivery) } : {}),
     metrics: toReleaseMetricsWire(row.metrics),
     release_id: row.releaseId,
     release_label: row.releaseLabel,
     target_binary_version: row.targetBinaryVersion,
     target_package_hash: row.targetPackageHash,
+  };
+}
+
+export function toReleaseBinaryVersionMetricsWire(row: {
+  binaryVersion: string | null;
+  downloaded: number;
+  failed: number;
+  installed: number;
+  success: number;
+}): ReleaseBinaryVersionMetricsWire {
+  return {
+    binary_version: row.binaryVersion,
+    downloaded: row.downloaded,
+    failed: row.failed,
+    installed: row.installed,
+    success: row.success,
+  };
+}
+
+function toReleaseDeliveryWire(
+  delivery: ReleaseDeliveryBreakdown,
+): ReleaseDeliveryWire {
+  return {
+    full_bundle: {
+      downloads: delivery.fullBundle.downloads,
+      size_bytes: delivery.fullBundle.sizeBytes,
+    },
+    patch: {
+      downloads: delivery.patch.downloads,
+      from_release_label: delivery.patch.fromReleaseLabel,
+      size_bytes: delivery.patch.sizeBytes,
+    },
   };
 }
 
@@ -406,12 +444,14 @@ export function toFailureEventsWire(result: {
 export function toDeploymentTimeseriesWire(
   input: DeploymentTimeseriesHandlerInput,
   result: {
+    binaryVersions: string[];
     series: TimeseriesSeries[];
     seriesTruncated: boolean;
     totals: TimeseriesBucket[];
   },
 ): DeploymentTimeseriesWire {
   return {
+    binary_versions: result.binaryVersions,
     bucket: "day",
     from: input.from.toISOString(),
     series: result.series.map(toTimeseriesSeriesWire),
