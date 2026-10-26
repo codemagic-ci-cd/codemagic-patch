@@ -2966,6 +2966,8 @@ export function findCommandSpecRoute(
   defaults: CommandDefaultPolicy | false;
   kind: CommandKind;
   parse: CommandParser;
+  /** The matched route's path segments, e.g. `["deployment", "create"]`. */
+  path: readonly string[];
 } | null {
   for (const spec of commandSpecs) {
     const route = spec.routes.find((candidate) =>
@@ -2978,6 +2980,7 @@ export function findCommandSpecRoute(
         defaults: route.defaults,
         kind: spec.kind,
         parse: route.parse,
+        path: route.path,
       };
     }
   }

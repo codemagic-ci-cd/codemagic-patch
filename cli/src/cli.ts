@@ -49,7 +49,16 @@ export function parseCliArgs(
   const parseRoute = findCommandSpecRoute(argv);
 
   if (parseRoute !== null) {
-    return parseRoute.parse(parseRoute.args, defaults);
+    const parsed = parseRoute.parse(parseRoute.args, defaults);
+
+    // A flag error inside a command we did resolve belongs to that command:
+    // point at its help page, which lists the flags it accepts, rather than
+    // reprinting the root command listing, which does not.
+    if (!parsed.ok && parsed.showHelp && parsed.helpTopic === undefined) {
+      return { ...parsed, helpTopic: parseRoute.path.join(" ") };
+    }
+
+    return parsed;
   }
 
   // A known command group typed without a subcommand (e.g. `cmpatch release`).
