@@ -18,6 +18,35 @@ A fingerprint is a hash of the native code in your project. Patch computes it at
 
 It is a compatibility signal. Matching fingerprints should mean compatible native code but are not a 100% guarantee.
 
+## What goes into it
+
+The hash covers the native side of your project, not your JavaScript. For a bare React Native project the inputs include:
+
+- The `ios` and `android` directories.
+- Your `.gitignore`, hashed as a file in its own right.
+- Autolinked native dependencies, resolved from `node_modules`.
+- The `react-native` package version, and the `scripts` block of `package.json`.
+
+Three consequences are worth knowing before wiring a release into CI.
+
+**Committed lockfiles count; generated output usually does not.** `ios/Podfile.lock` is an input, so it is part of the hash. `ios/Pods/` is not, because `@expo/fingerprint` ignores `**/ios/Pods/**/*` by default, so running `pod install` does not move the fingerprint. Commit `Podfile.lock` and have CI install from it. If CI regenerates the lockfile instead, the fingerprint changes and the next release is blocked as a disagreement.
+
+**Editing `.gitignore` changes the fingerprint**, even when no native code changed, because the file itself is hashed.
+
+**`.gitignore` does not decide what gets hashed.** A file under `ios/` or `android/` still counts even when git ignores it. To exclude paths from the fingerprint, use [`.fingerprintignore`](https://docs.expo.dev/versions/latest/sdk/fingerprint/#fingerprintignore).
+
+Measured on a bare React Native project, changing one thing at a time:
+
+```text
+baseline                            1c7f0558ebe8a7ad903b5de34b2faf49b10dab3b
+ios/Podfile.lock removed            14f7cb0ffcd3a39fbfa86d400aa319c7d2348656   changed
+ios/Pods/ present                   1c7f0558ebe8a7ad903b5de34b2faf49b10dab3b   unchanged
+.gitignore edited                   6a0a7df7936d6f914c95002bbd4b056ccc5543f2   changed
+  then a file it ignores created    a7fcb5d623a44e4366b57bd19db194b02b3eaea1   changed again
+```
+
+The last pair is the one to notice: adding `ios/ScratchDir/` to `.gitignore` changed the hash, and then creating `ios/ScratchDir/file.txt` changed it again. Being ignored by git did not keep the file out of the fingerprint.
+
 ## How it helps
 
 ### Disagreements
