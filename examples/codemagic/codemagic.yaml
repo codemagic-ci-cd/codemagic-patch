@@ -1,0 +1,104 @@
+# Codemagic Patch OTA release from Codemagic CI.
+#
+# Copy this into your React Native project as `codemagic.yaml` (or merge the
+# `ota-staging` workflow into your existing file).
+#
+# Required environment variables (Codemagic UI > Environment variables):
+#   CODEMAGIC_PATCH_TOKEN      — Patch API token (`cm_pat_…`), marked secure
+#   CODEMAGIC_PATCH_SERVER_URL — e.g. https://updates.example.com
+#
+# Regular variables (customize below):
+#   PATCH_APP        — Patch app name from `cmpatch init`
+#   PATCH_DEPLOYMENT — Staging or Production
+#   PATCH_PLATFORM   — android or ios
+#
+# Notes:
+# - The release step is last on purpose. Codemagic stops a workflow at the
+#   first failing script, so lint and test failures mean nothing is published.
+# - `--non-interactive` keeps the build from hanging on a confirm prompt.
+# - Publishing an OTA update bundles JavaScript and uploads it; it never opens
+#   Xcode, so `instance_type: linux_x2` works and costs less. Note that the free
+#   tier is macOS-only, so Linux instances need a paid plan.
+# - For a monorepo, add `--project-root <path>` to the release commands.
+# - To publish only from tags, swap the `branch_patterns` block for
+#   `tag_patterns` and add `--target-binary-version "$CM_TAG"`.
+
+workflows:
+  ota-staging:
+    name: OTA release to Staging
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+
+    environment:
+      node: 22
+      groups:
+        # Variable group holding CODEMAGIC_PATCH_TOKEN, marked secure.
+        - patch
+      vars:
+        CODEMAGIC_PATCH_SERVER_URL: https://updates.example.com
+        PATCH_APP: my-app
+        PATCH_DEPLOYMENT: Staging
+        PATCH_PLATFORM: android
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Lint
+        script: npm run lint
+
+      # Everything below this line only runs on a green test suite.
+      - name: Unit tests
+        script: npm test
+
+      - name: Install cmpatch
+        script: npm install -g @codemagic/patch-cli
+
+      - name: Preflight
+        script: |
+          # Token auth rather than browser sign-in. `doctor` exits non-zero on a
+          # broken setup, so a misconfigured app fails here rather than halfway
+          # through a release.
+          cmpatch doctor \
+            --app "$PATCH_APP" \
+            --deployment "$PATCH_DEPLOYMENT" \
+            --platform "$PATCH_PLATFORM" \
+            --token "$CODEMAGIC_PATCH_TOKEN" \
+            --non-interactive
+
+      - name: What would ship
+        script: |
+          # Reports the target binary version and fingerprint without
+          # uploading, which makes the build log self-documenting.
+          cmpatch release-react \
+            --app "$PATCH_APP" \
+            --deployment "$PATCH_DEPLOYMENT" \
+            --platform "$PATCH_PLATFORM" \
+            --token "$CODEMAGIC_PATCH_TOKEN" \
+            --dry-run \
+            --non-interactive
+
+      - name: Release OTA update
+        script: |
+          # `--yes` satisfies the interactive mutation check. It does not
+          # approve a fingerprint mismatch; that needs
+          # --allow-fingerprint-mismatch after checking the native side.
+          #
+          # $CM_COMMIT_MESSAGE can be empty depending on how the build was
+          # triggered, and release notes end up in the manifest devices fetch,
+          # so fall back to the commit subject.
+          cmpatch release-react \
+            --app "$PATCH_APP" \
+            --deployment "$PATCH_DEPLOYMENT" \
+            --platform "$PATCH_PLATFORM" \
+            --release-notes "${CM_COMMIT_MESSAGE:-$(git log -1 --pretty=%s)}" \
+            --token "$CODEMAGIC_PATCH_TOKEN" \
+            --yes \
+            --non-interactive
