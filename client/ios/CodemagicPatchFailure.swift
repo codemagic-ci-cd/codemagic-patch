@@ -16,7 +16,7 @@ enum CodemagicPatchFailure {
    crash — the OS can reclaim a healthy process before JS runs — so rollback
    waits for the whole budget to be spent.
    */
-  static let defaultMaxLaunchAttempts = 3
+  static let defaultMaxLaunchAttempts = 2
 
   /**
    Info.plist key a host app sets to change the launch-attempt budget. Read

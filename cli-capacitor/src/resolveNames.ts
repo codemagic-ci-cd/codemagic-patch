@@ -225,7 +225,7 @@ async function resolveTeam(
     [
       `The server has ${teams.length} teams and no team was selected.`,
       `Available teams: ${formatNamedResources(teams)}`,
-      "Next: pass --team <name or id>, or select the resource directly by id.",
+      `Next: pass --team <name or id> (\`${CLI_NAME} team list\` shows them), or select the resource directly by id.`,
     ].join("\n"),
   );
 }

@@ -20,6 +20,53 @@ Reference: [Configuration](/docs/reference/configuration) ·
 [Operations](/docs/reference/operations) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=codemagic-patch-server)
 
+## 0.8.0 {#v0-8-0}
+
+*28th October 2026*
+
+### Upgrade impact
+
+- **Migration:** The upgrade runs migration
+  `0019_metricEventDailyAggregates`, which adds the daily aggregate tables and
+  the fold watermark, and builds an index on `metric_event (emitted_at)`.
+  Metrics ingest waits for the index build, which takes longer on a large
+  history. Reads are not blocked.
+- **First fold:** Shortly after startup, the server folds the existing history
+  outside the raw retention window and deletes those raw events, including
+  individual failure details. On a large history, expect one long transaction
+  per folded day on the first run.
+- **Disk:** Postgres keeps the space the fold frees for new rows instead of
+  returning it to the operating system, so the volume stops growing but does
+  not shrink. To shrink it, see [Disk size](/docs/setup/ongoing-maintenance#disk-growth).
+- **Rollback:** A server older than 0.8.0 reads raw rows only, so the days
+  already folded disappear from its metrics. Restore the pre-upgrade backup
+  instead of only switching back to an older image.
+- No configuration change.
+
+### Metrics: 8-day raw retention
+
+- **Raw events kept 8 days:** Metric events older than 8 UTC days are folded
+  once a day into daily aggregates, which are kept indefinitely. Counters, adoption
+  charts, timeseries, and failure reasons are unchanged across the fold. The
+  per-event failure list (`failure-events` in the CLIs, the failure dialog's
+  event list in the dashboard) covers the retained days only, and a later
+  `Applied` clears a device's earlier `Failed` events only within that window.
+- **Ingest window:** An event dated 8 or more days before the day the server
+  receives it, or more than 24 hours ahead, is acknowledged but not stored.
+  SDKs already drop events older than 7 days, so devices with a correct clock
+  are unaffected.
+
+### Self-hosting
+
+- **Install through ngrok:** The self-host scripts now support a local stack
+  reached at an ngrok `https://` address through
+  [`cmpatch selfhost install --ngrok`](/docs/releases/cli#v0-8-0).
+- **Status page:** The upgrade hint now says to run `cmpatch selfhost upgrade`
+  from the machine you installed from, which covers Fly installs as well as
+  SSH ones.
+
+See the [server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.8.0).
+
 ## 0.7.0 {#v0-7-0}
 
 *19th October 2026*

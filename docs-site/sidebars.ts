@@ -45,6 +45,7 @@ const sidebars: SidebarsConfig = {
             'setup/checking-for-updates',
             'setup/applying-updates',
             'setup/manual-control',
+            'setup/testing',
             'setup/first-release',
           ],
         },

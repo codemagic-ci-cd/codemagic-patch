@@ -1,0 +1,75 @@
+# Single-origin site for the ngrok scheme (SELFHOST_SCHEME=ngrok, written by
+# `install.sh --ngrok`). The stack's one public address is the ngrok
+# endpoint: ngrok terminates TLS and forwards plain HTTP to this site, and
+# compose.ngrok.yml publishes no port on the machine, so nothing but the
+# ngrok service reaches it. Because there is a single hostname, storage is not
+# a second site as in Caddyfile: device downloads are served on the same host
+# under /codemagic-patch, which is the path PUBLIC_BASE_URL already carries.
+#
+# The API, health and dashboard blocks mirror Caddyfile's API site; keep them
+# in step. The storage block is narrower than Caddyfile's storage site, which
+# proxies the whole MinIO API: here only what an app downloads is reachable.
+
+{
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy server:3000
+	}
+
+	# /health* covers both /health and /health/ready
+	handle /health* {
+		reverse_proxy server:3000
+	}
+
+	# /worker/* is intentionally NOT exposed, as in Caddyfile.
+
+	# The bundled MinIO's readiness, the one MinIO path install.sh probes
+	# through the public address.
+	handle /minio/health/ready {
+		reverse_proxy minio:9000
+	}
+
+	# OTA artifacts. Read-only by construction: GET/HEAD of an object only —
+	# not the bucket itself, with or without the slash, which is a listing; no
+	# query string, which rules out listing and presigned requests; no
+	# Authorization header, so no signed S3 call reaches MinIO; and never the
+	# private _internal/ prefix, which the bucket policy also denies anonymous
+	# reads of. Everything else on the bucket's path is a 404 here, not left to
+	# the dashboard below, which would answer it with index.html and a 200.
+	@bucket path /codemagic-patch /codemagic-patch/*
+	handle @bucket {
+		@public {
+			method GET HEAD
+			not path /codemagic-patch /codemagic-patch/ /codemagic-patch/_internal/*
+			expression "{http.request.uri.query} == ''"
+		}
+		handle @public {
+			request_header -Authorization
+			reverse_proxy minio:9000
+		}
+		handle {
+			respond 404
+		}
+	}
+
+	handle {
+		root * /srv/dashboard
+		try_files {path} /index.html
+		file_server
+		header {
+			# Same policy as Caddyfile; see the rationale there for
+			# style-src/img-src.
+			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+			-Server
+			# Unconditional, unlike Caddyfile: Caddy itself only ever sees
+			# plain HTTP here, but every browser reaches this site over the
+			# ngrok endpoint's HTTPS.
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		}
+	}
+}

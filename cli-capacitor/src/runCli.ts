@@ -1,7 +1,14 @@
 import { parseCliArgs } from "./args";
-import { FORMAT_FLAG, readRequestedFormat } from "./command";
+import { CLI_NAME } from "./branding";
+import {
+  type CommandDefinition,
+  type FlagValues,
+  FORMAT_FLAG,
+  readRequestedFormat,
+} from "./command";
 import { createDefaultDeps, type CliDeps } from "./deps";
 import {
+  attributeUsageError,
   DeclinedError,
   PromptAbortError,
   UsageError,
@@ -12,7 +19,9 @@ import { renderProblemDetails, selectOutputFormat, writeLine } from "./output";
 import {
   exitCodeForProblemDetails,
   HttpProblemError,
+  ServerFeatureUnavailableError,
 } from "./problem-details";
+import { commandName } from "./registry";
 import { renderOutput } from "./render";
 import { withServerProblemHint } from "./serverProblemHints";
 import { getCliVersion } from "./version";
@@ -32,22 +41,36 @@ export async function runCli(
       case "version":
         writeLine(deps.stdout, getCliVersion());
         return 0;
-      case "command": {
-        // Read before the command runs, so a bad --format is a usage error rather
-        // than something discovered after the command has already changed state.
-        const format = parsed.definition.flags.includes(FORMAT_FLAG)
-          ? selectOutputFormat(readRequestedFormat(parsed.values), deps.stdout)
-          : "text";
-        const output = await parsed.definition.run(parsed.values, deps);
-        if (output !== undefined) {
-          deps.stdout.write(renderOutput(output, format));
+      case "command":
+        try {
+          return await runCommand(parsed.definition, parsed.values, deps);
+        } catch (error) {
+          // A usage error the command itself raised (a flag it reads, a bundle
+          // it rejects) is as much its own as a flag the parser rejected.
+          attributeUsageError(error, commandName(parsed.definition));
+          throw error;
         }
-        return output !== undefined && output.kind === "report" ? (output.exitCode ?? 0) : 0;
-      }
     }
   } catch (error) {
     return reportError(error, deps);
   }
+}
+
+async function runCommand(
+  definition: CommandDefinition,
+  values: FlagValues,
+  deps: CliDeps,
+): Promise<number> {
+  // Read before the command runs, so a bad --format is a usage error rather
+  // than something discovered after the command has already changed state.
+  const format = definition.flags.includes(FORMAT_FLAG)
+    ? selectOutputFormat(readRequestedFormat(values), deps.stdout)
+    : "text";
+  const output = await definition.run(values, deps);
+  if (output !== undefined) {
+    deps.stdout.write(renderOutput(output, format));
+  }
+  return output !== undefined && output.kind === "report" ? (output.exitCode ?? 0) : 0;
 }
 
 // Exit codes are `cmpatch`'s (cli/README.md › Exit codes), so CI logic written
@@ -65,7 +88,15 @@ function reportError(error: unknown, deps: CliDeps): number {
 
   if (error instanceof UsageError) {
     writeLine(deps.stderr, `Error: ${error.message}`);
-    writeLine(deps.stderr, "Run `cmpatch-capacitor --help` for usage.");
+    // The command's own help lists the flags it takes; the root listing does not.
+    // Only an error from before a command resolved (unknown command, a group
+    // without its subcommand) sends the reader to the listing.
+    writeLine(
+      deps.stderr,
+      error.command === undefined
+        ? `Run \`${CLI_NAME} --help\` for usage.`
+        : `Run \`${CLI_NAME} ${error.command} --help\` for usage.`,
+    );
     return 2;
   }
 
@@ -75,7 +106,12 @@ function reportError(error: unknown, deps: CliDeps): number {
   }
 
   if (error instanceof HttpProblemError) {
-    writeLine(deps.stderr, renderProblemDetails(withServerProblemHint(error.problem)));
+    writeLine(
+      deps.stderr,
+      error instanceof ServerFeatureUnavailableError
+        ? `Error: ${error.message}`
+        : renderProblemDetails(withServerProblemHint(error.problem)),
+    );
     if (error.serverUrl !== undefined) {
       writeLine(deps.stderr, `server: ${error.serverUrl}`);
     }

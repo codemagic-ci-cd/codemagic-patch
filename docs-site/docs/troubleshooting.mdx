@@ -90,7 +90,7 @@ Trace the update lifecycle on device:
 check for update → download bundle → install → restart
 ```
 
-- Android: `adb logcat`, filter for Patch logs (the Capacitor SDK logs configuration errors with the `Capacitor/CodemagicPatch` tag)
+- Android: `adb logcat`, filter for Patch logs. The React Native SDK warns once, under the `CodemagicPatchModule` tag, when `CodemagicPatchDeploymentKey` is missing or blank, so no update can be found in that build. The Capacitor SDK logs configuration errors under the `CodemagicPatch` tag; release builds show them only with `loggingBehavior: "production"` in `capacitor.config.ts`
 - iOS: Xcode console for simulator or connected device
 
 ### Release inspection
@@ -114,7 +114,7 @@ cmpatch-capacitor release list --app MyApp-iOS --deployment Staging
   </TabItem>
 </SdkTabs>
 
-When a release reports failed devices, `cmpatch release metrics --format json` counts them by reason under `failure_reasons`. `cmpatch release failures --label <label> --reason <reason>` breaks one reason down by code (for `network`, the HTTP status, or `0` when no response arrived), adding `--code <code>` shows that code's most common messages and Android exit reasons, and `--no-code` does the same for failures that reported no code. `cmpatch release failure-events` with the same `--reason` and `--code` (or `--no-code`) lists the raw events, with the device ID and message of each.
+When a release reports failed devices, `cmpatch release metrics --format json` counts them by reason under `failure_reasons`. `cmpatch release failures --label <label> --reason <reason>` breaks one reason down by code (for `network`, the HTTP status, or `0` when no response arrived), adding `--code <code>` shows that code's most common messages and Android exit reasons, and `--no-code` does the same for failures that reported no code. `cmpatch release failure-events` with the same `--reason` and `--code` (or `--no-code`) lists the raw events, with the device ID and message of each. For a Capacitor app, `cmpatch-capacitor` has the same commands.
 
 ### HTTP API spot checks
 
@@ -387,7 +387,7 @@ To validate a bundle without uploading it, run `release create --dry-run`.
 
 ### Missing `notifyAppReady()` with manual flows
 
-If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Repeated launches without confirmation exhaust the pending bundle's launch-attempt budget (`CodemagicPatchMaxLaunchAttempts`, or `maxLaunchAttempts` in `capacitor.config.ts`; default 3) and trigger rollback. See [`notifyAppReady()`](/docs/reference/sdk-reference#notifyappready).
+If you install updates via [manual control](/docs/setup/manual-control) without `sync()`, call `notifyAppReady()` once the new bundle boots successfully. Repeated launches without confirmation exhaust the pending bundle's launch-attempt budget (`CodemagicPatchMaxLaunchAttempts`, or `maxLaunchAttempts` in `capacitor.config.ts`; default 2) and trigger rollback. See [`notifyAppReady()`](/docs/reference/sdk-reference#notifyappready).
 
 ### CI cannot reach the server
 
@@ -429,6 +429,12 @@ of them connects:
   keys screen
 - `--ssh-key <path>` supplies the first-connection key without the prompt, and
   is the way in for a non-interactive run
+- A [Fly install](/docs/install#fly) is never reached over SSH. If `upgrade`,
+  `backup` or `restore` says no self-hosted server is set up and asks for
+  `user@vps`, this machine has no record of the install, or another server is
+  the active one: record it with
+  `cmpatch selfhost install --fly --register --company "<company>"`, or select
+  it with `cmpatch config set server-url https://<app>.fly.dev`
 
 ### Caddy certificate issuance is slow
 
@@ -437,7 +443,7 @@ of them connects:
 - With bundled CloudFront, keep both the viewer and origin hostnames pointed at
   the Patch host until install and the pre-cutover checks finish. Moving the
   viewer CNAME early prevents Caddy's HTTP-01 challenge; see
-  [CloudFront DNS ordering](/docs/setup/cloudfront#bundled-minio)
+  [CloudFront DNS ordering](/docs/setup/cloudfront#bundled-silo)
 
 ### CloudFront returns 403 or 502
 
@@ -475,6 +481,17 @@ of them connects:
 - `CodemagicPatchDownloadBaseUrl` exactly matches the server's `PUBLIC_BASE_URL`;
   only the bundled-storage default necessarily ends with `/codemagic-patch`
 - iOS and Android use separate deployment keys and apps
+- On SDKs older than 0.5.2, an Android release build with resource shrinking
+  can lose the `CodemagicPatch*` strings. Check with
+  `aapt2 dump resources app-release.apk | grep CodemagicPatch`; for an AAB, run
+  `bundletool build-apks --mode=universal` first. Upgrade the SDK, or add
+  `android/app/src/main/res/raw/codemagic_patch_keep.xml` (not `keep.xml`,
+  which React Native's bundle task replaces):
+
+  ```xml
+  <resources xmlns:tools="http://schemas.android.com/tools"
+      tools:keep="@string/CodemagicPatch*" />
+  ```
 
 </div>
 
@@ -489,6 +506,17 @@ of them connects:
   only the bundled-storage default necessarily ends with `/codemagic-patch`
 - iOS and Android use separate deployment keys and apps
 - The app calls `start()` or `sync()`, and was built without live reload
+- On SDKs older than 0.1.2, an Android release build with resource shrinking
+  can lose the `CodemagicPatch*` overrides, and the app falls back to
+  `capacitor.config.ts`. Check with
+  `aapt2 dump resources app-release.apk | grep CodemagicPatch`; for an AAB, run
+  `bundletool build-apks --mode=universal` first. Upgrade the SDK, or add
+  `android/app/src/main/res/raw/codemagic_patch_keep.xml` (not `keep.xml`):
+
+  ```xml
+  <resources xmlns:tools="http://schemas.android.com/tools"
+      tools:keep="@string/CodemagicPatch*" />
+  ```
 
 </div>
 

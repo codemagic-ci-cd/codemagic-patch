@@ -1,5 +1,6 @@
 import { PRODUCT_NAME, SOURCE_REPO_URL } from "./branding";
 import {
+  findCommandHelpByRoute,
   getCommandHelpEntries,
   getCommandHelpGroups,
   type CommandFlagSection,
@@ -165,6 +166,15 @@ function renderHelpTopic(topic: string, palette: Palette): string {
       palette.heading("Examples:"),
       ...group.examples.map((line) => `  $ ${line}`),
     ].join("\n");
+  }
+
+  // A route alias (`auth login` for `login`) is how a usage error inside that
+  // command points here, so it must land on the command's page, not on
+  // "unknown topic".
+  const aliased = findCommandHelpByRoute(normalizedTopic.split(/\s+/));
+
+  if (aliased !== undefined) {
+    return renderCommandHelp(aliased, palette);
   }
 
   return [

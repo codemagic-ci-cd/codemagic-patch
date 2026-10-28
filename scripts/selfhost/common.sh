@@ -25,6 +25,14 @@ SELFHOST_COMPOSE_STORAGE_GCS_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose
 # adds to the caddy service, so it comes after every Caddyfile-selecting
 # overlay and before the operator override.
 SELFHOST_COMPOSE_HTTP_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.http.yml"
+# ngrok overlay, appended in the same position when the env file records
+# SELFHOST_SCHEME=ngrok: it swaps caddy's Caddyfile for the single-origin
+# Caddyfile.ngrok, publishes no port, and adds the ngrok agent.
+SELFHOST_COMPOSE_NGROK_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.ngrok.yml"
+# The agent image, for the throwaway container selfhost_ngrok_address starts
+# before the stack exists. compose.ngrok.yml pins the same reference; the
+# environment override exists for test harnesses.
+SELFHOST_NGROK_IMAGE="${SELFHOST_NGROK_IMAGE:-ngrok/ngrok:3.39.11-alpine@sha256:187e588f6c4efe3b29cd3eea9fcd768a1afa7342319e3cee9aeb5af6a9cf64fd}"
 # GCS service-account key the gcs storage overlay bind-mounts into the server
 # container (gitignored). The overlay references the fixed repo-root path, so
 # like the operator override the file's presence is part of the deployment's
@@ -252,15 +260,27 @@ selfhost_mode_from_env_file() {
 
 # The scheme the stack serves on, from the env FILE like the mode flags and
 # for the same reason: https (the default, and what an env file written
-# before the flag existed means — Caddy obtains certificates) or http (plain
-# HTTP on port 80, no certificates; written by `install.sh --allow-http`).
-# Prints the raw value; validate_selfhost_stack_shape rejects anything but
-# those two words before any compose invocation, so callers that run after
-# it may build URLs from the output directly.
+# before the flag existed means — Caddy obtains certificates), http (plain
+# HTTP on port 80, no certificates; written by `install.sh --allow-http`), or
+# ngrok (one public https address from ngrok, no certificate on this machine
+# and no published port; written by `install.sh --ngrok`). Prints the raw
+# value; validate_selfhost_stack_shape rejects anything but those three words
+# before any compose invocation. URLs are built with selfhost_url_scheme, not
+# with this value.
 selfhost_scheme_from_env_file() {
   local scheme
   scheme="$(selfhost_env_value_from_file SELFHOST_SCHEME)"
   printf '%s' "${scheme:-https}"
+}
+
+# The URL scheme clients use for a stack scheme: http for the plain-HTTP
+# stack, https for the other two — the ngrok address is https although Caddy
+# behind it serves plain HTTP.
+selfhost_url_scheme() {
+  case "$1" in
+    http) printf 'http' ;;
+    *) printf 'https' ;;
+  esac
 }
 
 selfhost_env_file_has_key() {
@@ -287,13 +307,14 @@ validate_selfhost_stack_shape() {
     *) fail_selfhost "SELFHOST_STORAGE_ORIGIN_MODE=${origin_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: direct, cdn-origin. Fix the flag — falling back to direct here would drop the protected CloudFront origin site from the assembled stack." ;;
   esac
 
-  # The scheme selects the plain-HTTP overlay, so an unrecognized value must
-  # fail here like the mode flags do: falling back to https would recreate a
-  # deployment installed for plain HTTP as one that tries to obtain
-  # certificates it cannot get, and take every URL clients were given with it.
+  # The scheme selects the plain-HTTP or ngrok overlay, so an unrecognized
+  # value must fail here like the mode flags do: falling back to https would
+  # recreate a deployment installed for plain HTTP or ngrok as one that tries
+  # to obtain certificates it cannot get, and take every URL clients were
+  # given with it.
   case "$scheme" in
-    https | http) ;;
-    *) fail_selfhost "SELFHOST_SCHEME=${scheme} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: https, http. Fix the flag — falling back to https here would try to obtain certificates for a stack that was installed for plain HTTP." ;;
+    https | http | ngrok) ;;
+    *) fail_selfhost "SELFHOST_SCHEME=${scheme} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: https, http, ngrok. Fix the flag — falling back to https here would try to obtain certificates for a stack that was installed for plain HTTP or ngrok." ;;
   esac
 
   [ "${origin_mode:-direct}" = "cdn-origin" ] || return 0
@@ -440,11 +461,14 @@ compose_selfhost() {
     *) fail_selfhost "SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag — falling back to bundled storage here could point the stack at an empty MinIO instead of your external bucket." ;;
   esac
   # The plain-HTTP overlay only adds to caddy, so it goes after every overlay
-  # that selects a Caddyfile. validate_selfhost_stack_shape has already
-  # rejected any value other than https/http.
-  if [ "$scheme" = "http" ]; then
-    compose_files+=(-f "$SELFHOST_COMPOSE_HTTP_FILE")
-  fi
+  # that selects a Caddyfile; the ngrok overlay selects one itself and must
+  # win over the storage overlays' choice, so it takes the same position.
+  # validate_selfhost_stack_shape has already rejected any value other than
+  # https/http/ngrok.
+  case "$scheme" in
+    http) compose_files+=(-f "$SELFHOST_COMPOSE_HTTP_FILE") ;;
+    ngrok) compose_files+=(-f "$SELFHOST_COMPOSE_NGROK_FILE") ;;
+  esac
   # Operator overlay stays last so it can tweak whatever the mode overlays set.
   if [ -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ]; then
     compose_files+=(-f "$SELFHOST_COMPOSE_OVERRIDE_FILE")
@@ -576,8 +600,156 @@ wait_for_selfhost_http() {
     sleep 5
   done
 
+  # On the ngrok stack the public address is the agent's, not a DNS record
+  # and a certificate: its log names the cause (a token revoked, the address
+  # taken by another agent), so it is shown next to caddy's.
+  if [ -f "$SELFHOST_ENV_FILE" ] && [ "$(selfhost_scheme_from_env_file)" = "ngrok" ]; then
+    compose_selfhost logs --tail=40 ngrok >&2 || true
+    compose_selfhost logs --tail=40 caddy >&2 || true
+    fail_selfhost "${label} did not become reachable at ${url}; check the ngrok agent's log above (\`docker compose logs ngrok\` in the stack) — a revoked authtoken, or the address already online from another ngrok agent, stops it — and the caddy log"
+  fi
   compose_selfhost logs --tail=80 caddy >&2 || true
   fail_selfhost "${label} did not become reachable at ${url}; check DNS, firewall, and Caddy certificate logs"
+}
+
+# Prints the https:// address ngrok serves for NGROK_AUTHTOKEN's account, by
+# starting a throwaway agent and reading back the endpoint it reports. With no
+# argument that is the account's dev domain, the one address of the free plan,
+# which never changes. A domain given as $1 (a paid plan's reserved domain) is
+# requested with --url instead, so a domain the account cannot serve fails
+# here, before anything is installed. The address has to be known before the
+# stack exists: SERVER_URL, the download URL, and the OAuth callback the
+# provider must allow are all derived from it. The agent API (inside the
+# container) is asked first; the agent's JSON log is the fallback. The token
+# reaches the container by name (-e NGROK_AUTHTOKEN), never as a value on
+# argv. The failure messages are matched by the CLI: "rejected the
+# authtoken", "already online", "cannot serve", "did not report an address",
+# and "Docker".
+selfhost_ngrok_address() {
+  local domain="${1:-}"
+  local timeout_seconds="${SELFHOST_NGROK_TIMEOUT_SECONDS:-45}"
+  local container="codemagic-patch-ngrok-probe-$$"
+  local deadline output url state
+  local -a endpoint=(http 80)
+
+  [ -n "${NGROK_AUTHTOKEN:-}" ] ||
+    fail_selfhost "NGROK_AUTHTOKEN is not set. Copy your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken (a free account works), export NGROK_AUTHTOKEN, and rerun."
+  docker info >/dev/null 2>&1 ||
+    fail_selfhost "Docker is not running, or this user cannot reach it; start Docker and rerun."
+  if [ -n "$domain" ]; then
+    endpoint+=(--url "https://${domain}")
+  fi
+
+  export NGROK_AUTHTOKEN
+  # A lookup stopped part-way — Ctrl+C, a closed terminal, a TERM — must not
+  # leave the probe running: its agent would keep the address online, and the
+  # next lookup would find it busy (ERR_NGROK_334) because of it. These traps
+  # are the calling shell's, which is why this runs as its own process
+  # (ngrok-address.sh) or in a command substitution (install.sh); every way
+  # out below removes the probe and clears them. A kill no trap sees — SIGKILL,
+  # which the CLI sends when its own deadline passes, or a machine going down —
+  # is caught up with here instead: a probe an earlier lookup left behind is
+  # removed before a new one starts. (A lookup running at the same moment in
+  # another terminal loses its probe too, and fails; run it again.)
+  local stale
+  stale="$(docker ps -aq --filter "name=codemagic-patch-ngrok-probe-" 2>/dev/null || true)"
+  if [ -n "$stale" ]; then
+    # shellcheck disable=SC2086  # one container id per word
+    docker rm -f $stale >/dev/null 2>&1 || true
+  fi
+  # shellcheck disable=SC2064  # the name is fixed now, on purpose
+  trap "docker rm -f '${container}' >/dev/null 2>&1 || true" EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  docker run -d --name "$container" -e NGROK_AUTHTOKEN "$SELFHOST_NGROK_IMAGE" \
+    "${endpoint[@]}" --log stdout --log-format json >/dev/null ||
+    fail_selfhost "could not start the ngrok agent container (${SELFHOST_NGROK_IMAGE}); check that Docker can pull it, and rerun."
+
+  deadline=$((SECONDS + timeout_seconds))
+  while :; do
+    url="$(docker exec "$container" wget -qO- http://127.0.0.1:4040/api/endpoints 2>/dev/null |
+      sed -n 's/.*"url":"\(https:\/\/[^"]*\)".*/\1/p' | head -n 1 || true)"
+    output="$(docker logs "$container" 2>&1 || true)"
+    if [ -z "$url" ]; then
+      url="$(printf '%s\n' "$output" | grep 'started tunnel' |
+        sed -n 's/.*"url":"\(https:\/\/[^"]*\)".*/\1/p' | head -n 1 || true)"
+    fi
+    if [ -n "$url" ]; then
+      selfhost_ngrok_probe_done "$container"
+      printf '%s\n' "$url"
+      return 0
+    fi
+    state="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)"
+    if printf '%s\n' "$output" | grep -q 'ERR_NGROK_' || [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+      selfhost_ngrok_probe_done "$container"
+      selfhost_ngrok_fail "$output" "$domain"
+    fi
+    [ "$SECONDS" -lt "$deadline" ] || break
+    sleep 1
+  done
+  selfhost_ngrok_probe_done "$container"
+  fail_selfhost "ngrok did not report an address within ${timeout_seconds}s; check that this machine can reach ngrok (a proxy or firewall can block the agent), and rerun."
+}
+
+# Removes selfhost_ngrok_address's probe, and the traps that were standing by
+# to remove it.
+selfhost_ngrok_probe_done() {
+  docker rm -f "$1" >/dev/null 2>&1 || true
+  trap - EXIT INT TERM HUP
+}
+
+# The stack's ngrok agent reports its endpoint, or an ERR_NGROK_ code, within
+# seconds of starting. Failing on the code here beats the five-minute public
+# wait that would otherwise end in a generic timeout. An agent that has said
+# neither when the time is up is left to the public wait, which shows its log
+# if the address never answers.
+wait_for_selfhost_ngrok_online() {
+  local timeout_seconds="${SELFHOST_NGROK_TIMEOUT_SECONDS:-45}"
+  local deadline output
+  deadline=$((SECONDS + timeout_seconds))
+  while :; do
+    output="$(compose_selfhost logs --no-color ngrok 2>&1 || true)"
+    if printf '%s\n' "$output" | grep -q 'started tunnel'; then
+      log_selfhost "ngrok is serving https://${CODEMAGIC_PATCH_API_DOMAIN}"
+      return 0
+    fi
+    if printf '%s\n' "$output" | grep -q 'ERR_NGROK_'; then
+      selfhost_ngrok_fail "$output" "$CODEMAGIC_PATCH_API_DOMAIN"
+    fi
+    [ "$SECONDS" -lt "$deadline" ] || break
+    sleep 2
+  done
+  warn_selfhost "the ngrok agent has not reported its endpoint after ${timeout_seconds}s; waiting on the public address instead"
+}
+
+# Turns an agent's failure output into the instruction that fixes it; $2 is
+# the domain it was asked to serve, when one was named. The codes are ngrok's
+# own (https://ngrok.com/docs/errors/); anything else is relayed as the agent
+# reported it.
+selfhost_ngrok_fail() {
+  local output="$1" domain="${2:-}" code detail
+  code="$(printf '%s\n' "$output" | grep -o 'ERR_NGROK_[0-9]*' | head -n 1 || true)"
+  case "$code" in
+    ERR_NGROK_105 | ERR_NGROK_107 | ERR_NGROK_4018)
+      fail_selfhost "ngrok rejected the authtoken (${code}). Copy it again from https://dashboard.ngrok.com/get-started/your-authtoken and rerun."
+      ;;
+    ERR_NGROK_334)
+      detail="this ngrok account's address"
+      [ -z "$domain" ] || detail="https://${domain}"
+      fail_selfhost "${detail} is already online from another ngrok agent (${code}). An address serves one agent at a time: stop the other one — an \`ngrok http …\` in another terminal, for example — and rerun, or use another domain your ngrok plan has reserved (paid plans)."
+      ;;
+    # A domain the account may not use: a paid-plan feature on the free plan
+    # (313, 314, 412, 15002), one it has not reserved (319, 354), one another
+    # account holds (320), or one reserved in another region (322).
+    ERR_NGROK_313 | ERR_NGROK_314 | ERR_NGROK_319 | ERR_NGROK_320 | ERR_NGROK_322 | ERR_NGROK_354 | ERR_NGROK_412 | ERR_NGROK_15002)
+      detail="$(printf '%s\n' "$output" | grep -m 1 'ERR_NGROK_' || true)"
+      fail_selfhost "this ngrok account cannot serve ${domain:-that domain} (${code}): reserve it under Domains at https://dashboard.ngrok.com/domains (a paid-plan feature), or leave the domain out to use the account's own dev domain. ngrok said: ${detail}"
+      ;;
+  esac
+  detail="$(printf '%s\n' "$output" | grep -m 1 -E 'ERR_NGROK_|"lvl":"(eror|crit)"' || true)"
+  [ -n "$detail" ] || detail="$(printf '%s\n' "$output" | tail -n 3)"
+  fail_selfhost "the ngrok agent stopped before reporting an address${code:+ (${code})}: ${detail}"
 }
 
 random_selfhost_secret() {
@@ -629,7 +801,7 @@ ensure_selfhost_oauth_env() {
     noun_var="SELFHOST_OAUTH_${provider}_SECRET_NOUN"
     if [ -n "${!id_var:-}" ] && [ -z "${!secret_var:-}" ]; then
       case "$provider" in
-        GITHUB) fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL $(selfhost_scheme_from_env_file)://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun." ;;
+        GITHUB) fail_selfhost "GITHUB_OAUTH_CLIENT_ID is set in ${SELFHOST_ENV_FILE} but GITHUB_OAUTH_CLIENT_SECRET is missing. Every sign-in path performs the confidential web code exchange, which needs the client secret: add an Authorization callback URL $(selfhost_url_scheme "$(selfhost_scheme_from_env_file)")://${CODEMAGIC_PATCH_API_DOMAIN:-<your API domain>}/auth/callback to your GitHub OAuth App, generate a client secret, and add GITHUB_OAUTH_CLIENT_SECRET to the env file (or remove the client id to run without GitHub sign-in), then rerun." ;;
         *) fail_selfhost "${id_var} is set in ${SELFHOST_ENV_FILE} but ${secret_var} is missing. Add the ${!noun_var} secret (or remove the client id), then rerun." ;;
       esac
     fi

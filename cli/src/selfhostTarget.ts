@@ -9,18 +9,25 @@
 
 import { join } from "node:path";
 
-import type {
-  CliConfig,
-  SelfhostMapping,
-  SelfhostPendingInstall,
+import {
+  isFlyMapping,
+  isSshMapping,
+  resolveConfigHome,
+  type CliConfig,
+  type SelfhostEntry,
+  type SelfhostFlyMapping,
+  type SelfhostMapping,
+  type SelfhostPendingInstall,
 } from "./configStore";
 import { normalizeServerUrl } from "./credentialStore";
-import { resolveConfigHome } from "./configStore";
 
 export type SelfhostTarget = SelfhostMapping & {
   /** The URL this pairing is stored under, once one exists. */
   serverUrl?: string;
 };
+
+/** A Fly install, always found by the URL it is stored under. */
+export type SelfhostFlyTarget = SelfhostFlyMapping & { serverUrl: string };
 
 export type SelfhostTargetResolution =
   | {
@@ -31,6 +38,17 @@ export type SelfhostTargetResolution =
       kind: "resolved";
       source: "argument" | "server-url" | "sole-mapping";
       target: SelfhostTarget;
+    }
+  | {
+      kind: "resolved-fly";
+      source: "server-url" | "sole-mapping";
+      target: SelfhostFlyTarget;
+    }
+  | {
+      /** The entry's `kind` belongs to a newer CLI; nothing here can act on it. */
+      kind: "unsupported";
+      recordedKind: string;
+      serverUrl: string;
     }
   | { kind: "unpaired" };
 
@@ -79,34 +97,14 @@ export function resolveSelfhostTarget(input: {
   const mappings = input.config.selfhost ?? {};
 
   if (input.explicitTarget !== undefined) {
-    const sshTarget = input.explicitTarget.trim();
-    // An explicit target still picks up a recorded key and remote path when it
-    // names a host already paired — otherwise passing `user@vps` to a paired
-    // server would silently fall back to the user's own SSH setup.
-    const known = Object.entries(mappings).find(
-      ([, mapping]) =>
-        normalizeSshHost(mapping.sshTarget) === normalizeSshHost(sshTarget),
-    );
-
-    return {
-      kind: "resolved",
-      source: "argument",
-      target:
-        known === undefined
-          ? { sshTarget }
-          : { ...known[1], serverUrl: known[0], sshTarget },
-    };
+    return resolveExplicitSshTarget(input.config, input.explicitTarget);
   }
 
   if (input.serverUrl !== undefined) {
     const key = safeNormalizeServerUrl(input.serverUrl);
     const mapping = key === undefined ? undefined : mappings[key];
     if (mapping !== undefined && key !== undefined) {
-      return {
-        kind: "resolved",
-        source: "server-url",
-        target: { ...mapping, serverUrl: key },
-      };
+      return resolvedEntry(key, mapping, "server-url");
     }
 
     // A server URL is active but unpaired. Falling back to another mapping
@@ -124,12 +122,55 @@ export function resolveSelfhostTarget(input: {
     return { kind: "ambiguous", serverUrls: entries.map(([url]) => url).sort() };
   }
 
-  const [serverUrl, mapping] = entries[0] as [string, SelfhostMapping];
+  const [serverUrl, mapping] = entries[0] as [string, SelfhostEntry];
+  return resolvedEntry(serverUrl, mapping, "sole-mapping");
+}
+
+/** The resolution for a typed `user@vps`, which always resolves to ssh. */
+export type SshTargetResolution = Extract<
+  SelfhostTargetResolution,
+  { kind: "resolved" }
+>;
+
+export function resolveExplicitSshTarget(
+  config: CliConfig,
+  explicitTarget: string,
+): SshTargetResolution {
+  const sshTarget = explicitTarget.trim();
+  // An explicit target still picks up a recorded key and remote path when it
+  // names a host already paired — otherwise passing `user@vps` to a paired
+  // server would silently fall back to the user's own SSH setup. Only ssh
+  // entries can name a host; a Fly or newer entry is never compared.
+  const known = Object.entries(config.selfhost ?? {}).find(
+    (entry): entry is [string, SelfhostMapping] =>
+      isSshMapping(entry[1]) &&
+      normalizeSshHost(entry[1].sshTarget) === normalizeSshHost(sshTarget),
+  );
+
   return {
     kind: "resolved",
-    source: "sole-mapping",
-    target: { ...mapping, serverUrl },
+    source: "argument",
+    target:
+      known === undefined
+        ? { sshTarget }
+        : { ...known[1], serverUrl: known[0], sshTarget },
   };
+}
+
+function resolvedEntry(
+  serverUrl: string,
+  mapping: SelfhostEntry,
+  source: "server-url" | "sole-mapping",
+): SelfhostTargetResolution {
+  if (isSshMapping(mapping)) {
+    return { kind: "resolved", source, target: { ...mapping, serverUrl } };
+  }
+
+  if (isFlyMapping(mapping)) {
+    return { kind: "resolved-fly", source, target: { ...mapping, serverUrl } };
+  }
+
+  return { kind: "unsupported", recordedKind: mapping.kind, serverUrl };
 }
 
 /** The config key a pairing for this server URL is stored under. */
@@ -140,17 +181,26 @@ export function selfhostMappingKey(serverUrl: string): string {
 export function withSelfhostMapping(
   config: CliConfig,
   serverUrl: string,
-  mapping: SelfhostMapping,
+  mapping: SelfhostMapping | SelfhostFlyMapping,
+  options: { replace?: boolean } = {},
 ): CliConfig {
   const key = selfhostMappingKey(serverUrl);
-  // Merged over the existing entry rather than replacing it: an entry may
-  // carry fields this CLI version does not know (written by a newer one), and
-  // re-pairing must not strip them.
   const existing = config.selfhost?.[key];
+  // Merged over an existing entry of the same kind rather than replacing it:
+  // an entry may carry fields this CLI version does not know (written by a
+  // newer one), and re-pairing must not strip them. An entry of another kind
+  // describes a different server that happened to have this URL, so none of
+  // it carries over; nor does anything when the caller is rebuilding the
+  // entry from the provider (`--register`), where a stale field is wrong.
+  const merge =
+    options.replace !== true &&
+    existing !== undefined &&
+    existing.kind === mapping.kind;
+  const next = (merge ? { ...existing, ...mapping } : mapping) as SelfhostEntry;
 
   return {
     ...config,
-    selfhost: { ...(config.selfhost ?? {}), [key]: { ...existing, ...mapping } },
+    selfhost: { ...(config.selfhost ?? {}), [key]: next },
   };
 }
 

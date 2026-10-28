@@ -183,7 +183,7 @@ The SDK rolls back if a new bundle crashes before `notifyAppReady()` runs. Becau
   </TabItem>
   <TabItem value="capacitor" label="Capacitor">
 
-The SDK rolls back a new bundle that does not call `notifyAppReady()` within `maxLaunchAttempts` launches (default 3). `start()` and `sync()` call `notifyAppReady()` first, so calling `start()` after the first screen renders enables this protection.
+The SDK rolls back a new bundle that does not call `notifyAppReady()` within `maxLaunchAttempts` launches (default 2). `start()` and `sync()` call `notifyAppReady()` first, so calling `start()` after the first screen renders enables this protection.
 
   </TabItem>
 </SdkTabs>

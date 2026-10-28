@@ -82,7 +82,7 @@ npx cap sync
 | `autoUpdateMethod` | — | Call `start()` for automatic updates, or omit it for none. See [Migrate the JS integration](#migrate-the-js-integration) |
 | `maxVersions` | — | Old packages are removed automatically; the previous package is kept for rollback |
 | `key` (self-hosted Live Updates) | `publicKey` | The PEM text of the public key, not a file name. Sign releases with `release create --private-key-path`. Optional |
-| — | `maxLaunchAttempts` | Launches a new update can run without reporting ready before it is rolled back. Optional, default `3` |
+| — | `maxLaunchAttempts` | Launches a new update can run without reporting ready before it is rolled back. Optional, default `2` |
 
 For required keys and native resource overrides, see [Native setup](/docs/setup/native-setup-capacitor#configure-capacitorconfigts).
 

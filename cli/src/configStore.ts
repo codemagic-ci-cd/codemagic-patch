@@ -29,6 +29,50 @@ export interface SelfhostMapping {
    */
   remotePath?: string;
   sshTarget: string;
+  /** Absent on every ssh mapping: an entry without a `kind` is ssh. */
+  kind?: never;
+}
+
+/**
+ * A server `cmpatch selfhost install --fly` deployed (or `--register`
+ * recorded). Nothing here is a secret: the CLI reads Fly through flyctl, and
+ * the names are what every later Fly call needs to reach the same resources.
+ */
+export interface SelfhostFlyMapping {
+  /** The Fly app, which is also the stem every other name is derived from. */
+  app: string;
+  /**
+   * The Postgres app, only when cmpatch created it. Provenance rather than a
+   * name match: an app called `<stem>-db` that the operator made themselves is
+   * not something a backup or restore may reach into.
+   */
+  databaseApp?: string;
+  kind: "fly";
+  /** The Fly organization slug the install resolved or was given. */
+  org: string;
+  privateBucket: string;
+  publicBucket: string;
+  region: string;
+}
+
+/**
+ * An entry whose `kind` this CLI version does not know, written by a newer
+ * one. Kept as it is so a save does not erase it, and never acted on.
+ */
+export type SelfhostOpaqueEntry = { kind: string } & Record<string, unknown>;
+
+/** One server in the `selfhost` section. */
+export type SelfhostEntry =
+  | SelfhostMapping
+  | SelfhostFlyMapping
+  | SelfhostOpaqueEntry;
+
+export function isSshMapping(entry: SelfhostEntry): entry is SelfhostMapping {
+  return entry.kind === undefined;
+}
+
+export function isFlyMapping(entry: SelfhostEntry): entry is SelfhostFlyMapping {
+  return entry.kind === "fly";
 }
 
 /**
@@ -66,7 +110,7 @@ export interface CliConfig {
   /** Existing-server OAuth repairs must never enable unfinished-install recovery. */
   pendingOAuthRepair?: Record<string, SelfhostPendingInstall>;
   /** Keyed by normalized server URL. */
-  selfhost?: Record<string, SelfhostMapping>;
+  selfhost?: Record<string, SelfhostEntry>;
   serverUrl?: string;
   team?: string;
   teamId?: string;
@@ -183,38 +227,106 @@ export async function loadCliConfig(
  */
 function normalizeSelfhostMappings(
   value: unknown,
-): Record<string, SelfhostMapping> | undefined {
+): Record<string, SelfhostEntry> | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
 
-  const mappings: Record<string, SelfhostMapping> = {};
+  const mappings: Record<string, SelfhostEntry> = {};
   for (const [serverUrl, mapping] of Object.entries(value)) {
-    if (
-      !isRecord(mapping) ||
-      typeof mapping.sshTarget !== "string" ||
-      !optionalStringField(mapping, "identityFile") ||
-      !optionalStringField(mapping, "remotePath")
-    ) {
-      continue;
+    const entry = isRecord(mapping) ? normalizeSelfhostEntry(mapping) : undefined;
+    if (entry !== undefined) {
+      mappings[serverUrl] = entry;
     }
-
-    const sshTarget = resolveOptionalString(mapping.sshTarget);
-    if (sshTarget === undefined) {
-      continue;
-    }
-
-    const identityFile = readOptionalString(mapping, "identityFile");
-    const remotePath = readOptionalString(mapping, "remotePath");
-    mappings[serverUrl] = {
-      ...withoutKeys(mapping, ["identityFile", "remotePath", "sshTarget"]),
-      ...(identityFile !== undefined ? { identityFile } : {}),
-      ...(remotePath !== undefined ? { remotePath } : {}),
-      sshTarget,
-    };
   }
 
   return Object.keys(mappings).length > 0 ? mappings : undefined;
+}
+
+/**
+ * An entry without a `kind` is ssh, as every entry was before Fly. `kind:
+ * "fly"` must carry every required Fly field. Any other string `kind` belongs
+ * to a newer CLI and is kept untouched rather than dropped.
+ */
+function normalizeSelfhostEntry(
+  mapping: Record<string, unknown>,
+): SelfhostEntry | undefined {
+  if (mapping.kind === undefined) {
+    return normalizeSshMapping(mapping);
+  }
+
+  if (typeof mapping.kind !== "string" || mapping.kind.length === 0) {
+    return undefined;
+  }
+
+  if (mapping.kind === "fly") {
+    return normalizeFlyMapping(mapping);
+  }
+
+  return { ...mapping, kind: mapping.kind };
+}
+
+function normalizeSshMapping(
+  mapping: Record<string, unknown>,
+): SelfhostMapping | undefined {
+  if (
+    typeof mapping.sshTarget !== "string" ||
+    !optionalStringField(mapping, "identityFile") ||
+    !optionalStringField(mapping, "remotePath")
+  ) {
+    return undefined;
+  }
+
+  const sshTarget = resolveOptionalString(mapping.sshTarget);
+  if (sshTarget === undefined) {
+    return undefined;
+  }
+
+  const identityFile = readOptionalString(mapping, "identityFile");
+  const remotePath = readOptionalString(mapping, "remotePath");
+  return {
+    ...withoutKeys(mapping, ["identityFile", "kind", "remotePath", "sshTarget"]),
+    ...(identityFile !== undefined ? { identityFile } : {}),
+    ...(remotePath !== undefined ? { remotePath } : {}),
+    sshTarget,
+  };
+}
+
+const FLY_REQUIRED_FIELDS = [
+  "app",
+  "org",
+  "privateBucket",
+  "publicBucket",
+  "region",
+] as const;
+
+function normalizeFlyMapping(
+  mapping: Record<string, unknown>,
+): SelfhostFlyMapping | undefined {
+  const required: Partial<Record<(typeof FLY_REQUIRED_FIELDS)[number], string>> = {};
+  for (const field of FLY_REQUIRED_FIELDS) {
+    const value = readOptionalString(mapping, field);
+    if (value === undefined) {
+      return undefined;
+    }
+    required[field] = value;
+  }
+
+  if (!optionalStringField(mapping, "databaseApp")) {
+    return undefined;
+  }
+
+  const databaseApp = readOptionalString(mapping, "databaseApp");
+  return {
+    ...withoutKeys(mapping, [...FLY_REQUIRED_FIELDS, "databaseApp", "kind"]),
+    app: required.app as string,
+    ...(databaseApp !== undefined ? { databaseApp } : {}),
+    kind: "fly",
+    org: required.org as string,
+    privateBucket: required.privateBucket as string,
+    publicBucket: required.publicBucket as string,
+    region: required.region as string,
+  };
 }
 
 function normalizePendingInstalls(

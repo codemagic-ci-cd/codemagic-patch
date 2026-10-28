@@ -22,7 +22,7 @@ cmpatch selfhost backup --download
 
 Every backup copies the settings, deployment-mode manifest, and version
 metadata. When either data component is bundled, it pauses publishing briefly
-while it dumps Postgres and/or mirrors the MinIO bucket. With both components
+while it dumps Postgres and/or mirrors the Silo bucket. With both components
 external, it creates a configuration-only backup without stopping the server.
 An external database or S3/GCS bucket is **not** included: the command names the
 omitted components before continuing, and you must back them up with your
@@ -38,6 +38,28 @@ mode-specific exclusions, and restore does not recover external provider data.
 Both are thin wrappers over `scripts/selfhost/backup.sh` and `scripts/selfhost/restore.sh`, which you can still run on the host directly.
 
 Before you treat the stack as production, take one backup and confirm you can find it somewhere other than the server.
+
+### On Fly {#fly-backups}
+
+On a [Fly install](/docs/install#fly), run the backup from the machine that recorded the install, in the directory where you want the backups to live:
+
+```bash
+cmpatch selfhost backup
+```
+
+It dumps the database inside its Postgres machine while Patch keeps running, and saves it with the app's Fly configuration under `codemagic-patch-backups/<app>.fly.dev/` in the current directory. It does not include:
+
+- The release files in the Tigris buckets; protect them with Tigris's own tooling
+- The app's secrets
+- A database you run yourself; the backup then holds only the configuration, and the database needs your provider's backups
+
+Copy the backup folder somewhere other than this machine. If this machine's default server is another install, set `CODEMAGIC_PATCH_SERVER_URL=https://<app>.fly.dev` for the backup, restore, and upgrade commands, or make the Fly install the default with `cmpatch config set server-url`.
+
+```bash
+cmpatch selfhost restore
+```
+
+Restore lists the Fly backups in that folder and replaces the database of the same Fly app. The server version stays as it is, so a backup taken on a newer server is refused: upgrade to at least that version first. While it runs, the dashboard, the API, and publishing are down; your apps keep downloading updates from storage. Storage is not restored: release files uploaded after the backup stay in the buckets for you to reconcile. Restore snapshots the database volume first, keeps the Postgres machine from auto-stopping while it works, and writes each step to a restore record (`<app>-restore-<time>.md`) next to the backups. If it stops after taking Patch down, finish or undo it with the steps it printed; the record has them too, with your ids. Afterwards, sign in again with `cmpatch login`.
 
 ## Upgrades
 
@@ -57,6 +79,17 @@ The command first fast-forwards the server's copy of the source (and refuses to 
 4. Runs `scripts/selfhost/smoke.sh` (full publish smoke needs `CODEMAGIC_PATCH_TOKEN`)
 
 Pass `--i-have-a-backup` only if you already took an external backup for this upgrade. If the upgrade fails after the stack is recreated, run `cmpatch selfhost restore` and pick the pre-upgrade backup — the picker labels it as one. Re-pinning the old image alone is not a safe rollback once migrations may have run.
+
+### On Fly {#fly-upgrades}
+
+On a Fly install, `cmpatch selfhost upgrade` builds the newest server release on Fly and deploys it with the app's current Fly configuration. Before the deploy it:
+
+1. Snapshots the database volume, when cmpatch created the database
+2. Writes a baseline folder with a `ROLLBACK.md` under `codemagic-patch-backups/<app>.fly.dev/` in the current directory
+
+With a database you run yourself there is no snapshot: take your own backup, or note a point-in-time recovery point, before you upgrade.
+
+The CLI does not roll back by itself. To go back, follow that `ROLLBACK.md`; its commands already carry your snapshot, image, and tag.
 
 ## Health and monitoring
 
@@ -87,9 +120,11 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
 
 If you use [Cloudflare](/docs/setup/cloudflare) or [CloudFront](/docs/setup/cloudfront) and clients report stale updates, look in server logs for `delivery cache purge completed with failures`. On Cloudflare, also check that the old two-hour Edge TTL Cache Rule from the previous setup guide has been deleted — it overrides the origin `s-maxage` and stretches the stale window; see [Cloudflare setup](/docs/setup/cloudflare#add-cache-rules).
 
-## Disk growth
+## Disk size {#disk-growth}
 
-The default single-host stack keeps release artifacts in object storage and device metrics in Postgres (`metric_event` is not auto-pruned). Disk use grows with retained releases and traffic. See [Machine size](/docs/install#machine-size) for starting sizes. Plan retention or more disk before the volume fills.
+The default single-host stack keeps release artifacts in object storage and device metrics in Postgres. The server keeps raw metric events for 8 days, then folds them into small daily totals that are kept indefinitely; the window is fixed and needs no cron job. Disk usage for Postgres should be around 2 GB per 100,000 daily active users. See [Machine size](/docs/install#machine-size) for starting sizes. Plan more disk before the volume fills.
+
+Postgres keeps the space the fold frees inside the table files instead of returning it to the operating system. New rows reuse it, so the volume stops growing. To shrink the volume after the first fold on a large history, run `VACUUM FULL metric_event` in a quiet window: it locks the table until it finishes, and metric ingest waits meanwhile. [pg_repack](https://github.com/reorg/pg_repack) does the same with only brief locks, if its extension is installed on the database.
 
 ## When the default stack is not enough
 

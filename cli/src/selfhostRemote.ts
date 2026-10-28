@@ -7,6 +7,8 @@
  * generated script instead of being spread over many connections.
  */
 
+import { resolve } from "node:path";
+
 import {
   captureRemoteShell,
   pairedSshInvocation,
@@ -18,6 +20,20 @@ export const DEFAULT_REMOTE_CHECKOUT = "codemagic-patch";
 
 /** Where the CLI keeps every backup it is responsible for, under the remote home. */
 export const REMOTE_BACKUP_DIRECTORY = "codemagic-patch-backups";
+
+/**
+ * Where this machine keeps the backups and records it holds for one server:
+ * `codemagic-patch-backups/<host>` under the working directory. A downloaded
+ * ssh backup lands here, and so do a Fly upgrade's baseline and `ROLLBACK.md`.
+ */
+export function localBackupRoot(host: string): string {
+  return resolve(process.cwd(), REMOTE_BACKUP_DIRECTORY, host);
+}
+
+/** `2026-08-27T14-02-11`: names a backup or record, sorts chronologically and needs no shell quoting. */
+export function utcStamp(now: number): string {
+  return new Date(now).toISOString().replace(/:/gu, "-").replace(/\..*$/u, "");
+}
 
 /**
  * Which cloud a host is on, as far as the probe can tell.

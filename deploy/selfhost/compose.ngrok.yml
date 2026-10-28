@@ -1,0 +1,43 @@
+# ngrok overlay — merged after the storage overlay (and before the operator
+# override) when SELFHOST_SCHEME=ngrok in .env.selfhost. Selected by
+# scripts/selfhost/common.sh; written by `install.sh --ngrok`, which installs
+# the stack on this machine with no domain, DNS record, certificate, or open
+# port: the ngrok endpoint (the account's dev domain on the free plan) is the
+# stack's one public address, and ngrok terminates TLS for it.
+#
+# It changes three things:
+#   1. caddy serves Caddyfile.ngrok — one plain-HTTP site for the API, the
+#      dashboard, and read-only artifact downloads under /codemagic-patch —
+#      instead of the two-site Caddyfile. Same mount target as the base file,
+#      so compose replaces the mount in place, as the external-storage
+#      overlays do.
+#   2. caddy publishes no port at all (`ports: !reset []`): only the ngrok
+#      service reaches it, over the compose network. A published 80 would
+#      serve the stack in plain HTTP to every machine on the network.
+#   3. an ngrok agent forwards https://<CODEMAGIC_PATCH_API_DOMAIN> to caddy.
+#      NGROK_AUTHTOKEN comes from .env.selfhost.
+services:
+  caddy:
+    ports: !reset []
+    volumes:
+      - ./deploy/selfhost/Caddyfile.ngrok:/etc/caddy/Caddyfile:ro
+
+  ngrok:
+    # ngrok agent 3.39.11 (alpine). common.sh's SELFHOST_NGROK_IMAGE, used to
+    # discover the address before install, pins the same reference;
+    # scripts/selfhost/test/install-ngrok.test.sh keeps the two in step.
+    image: ngrok/ngrok:3.39.11-alpine@sha256:187e588f6c4efe3b29cd3eea9fcd768a1afa7342319e3cee9aeb5af6a9cf64fd
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    command:
+      - http
+      - caddy:80
+      - --url
+      - https://${CODEMAGIC_PATCH_API_DOMAIN}
+      - --log
+      - stdout
+      - --log-format
+      - json
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}

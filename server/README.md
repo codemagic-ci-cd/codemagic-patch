@@ -229,7 +229,7 @@ The server selects an object storage backend at boot via the `STORAGE_ADAPTER` e
 | Value              | Description                                                                                              |
 | ------------------ | -------------------------------------------------------------------------------------------------------- |
 | `memory` (default) | In-memory map. Loses all data on restart. Suitable for tests and quick local exploration.                |
-| `s3`               | S3-compatible backend (AWS S3, MinIO, Cloudflare R2, etc.). Requires `S3_*` environment variables below. |
+| `s3`               | S3-compatible backend (AWS S3, Silo, Cloudflare R2, etc.). Requires `S3_*` environment variables below. |
 | `gcs`              | Native Google Cloud Storage backend. Requires public/internal GCS buckets and Application Default Credentials. |
 
 When `STORAGE_ADAPTER=s3` is set:
@@ -238,14 +238,14 @@ When `STORAGE_ADAPTER=s3` is set:
 | ------------------------ | -------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PUBLIC_BASE_URL`        | yes      | —                           | Client-facing base URL for public artifact keys. Required for `s3` because the API server does not serve OTA artifacts.                                                            |
 | `S3_BUCKET`              | yes      | —                           | Bucket holding both staging and published artifacts.                                                                                                                               |
-| `S3_REGION`              | no       | `us-east-1`                 | AWS region or any region literal accepted by the backend. MinIO ignores it.                                                                                                        |
-| `S3_ENDPOINT`            | no       | —                           | Custom endpoint URL. Required for MinIO / R2 / non-AWS backends.                                                                                                                   |
-| `S3_FORCE_PATH_STYLE`    | no       | `false`                     | Set to `true` for MinIO and other backends without virtual-host-style addressing.                                                                                                  |
+| `S3_REGION`              | no       | `us-east-1`                 | AWS region or any region literal accepted by the backend. Silo ignores it.                                                                                                         |
+| `S3_ENDPOINT`            | no       | —                           | Custom endpoint URL. Required for Silo / R2 / non-AWS backends.                                                                                                                    |
+| `S3_FORCE_PATH_STYLE`    | no       | `false`                     | Set to `true` for Silo and other backends without virtual-host-style addressing.                                                                                                   |
 | `S3_ACCESS_KEY_ID`       | no       | —                           | Static access key. Set together with `S3_SECRET_ACCESS_KEY` or omit both to use the AWS SDK's default credential chain. The server refuses to start if only one of the two is set. |
 | `S3_SECRET_ACCESS_KEY`   | no       | —                           | Static secret key. Must be set together with `S3_ACCESS_KEY_ID`.                                                                                                                   |
 | `MANIFEST_CACHE_CONTROL` | no       | derived from `DELIVERY_ADAPTER` | Cache policy applied to mutable `manifest.json` and `meta.json` uploads.                                                                                                           |
 
-Example (MinIO running on `localhost:9000`):
+Example (Silo running on `localhost:9000`):
 
 ```bash
 STORAGE_ADAPTER=s3 \
@@ -291,7 +291,7 @@ required for S3/GCS-backed runtimes because the API server does not serve
 manifests or artifacts.
 
 For S3-compatible single-bucket deployments, two operational concerns still
-matter before pointing clients at a real S3 / MinIO deployment:
+matter before pointing clients at a real S3 or Silo deployment:
 
 1. **`_internal/` keys must not be reachable through `PUBLIC_BASE_URL`.** The bucket holds both public release artifacts (`{deployment_key}/{binary_version}/...`) and private staging / worker-internal objects under `_internal/`. Exposing the bucket root directly leaks those internal objects. Use one of:
    - a reverse proxy in front of the bucket that only forwards public-prefix paths and rejects `_internal/*`, or
@@ -306,7 +306,7 @@ delivery is desired.
 
 #### Recommended bucket policy (option 1.b)
 
-The dev stack at [`docker-compose.dev.yml`](../docker-compose.dev.yml) ships a working reference at [`examples/local-dev/minio-bucket-policy.json`](../examples/local-dev/minio-bucket-policy.json). That file hard-codes the literal bucket name `codemagic-patch` because that is what the dev compose creates; **for any other bucket you must replace `codemagic-patch` in both `Resource` ARNs before applying** (or use the parametrized template below). The same policy shape works on AWS S3, MinIO, Cloudflare R2, and any backend that evaluates IAM-style policies; the explicit `Deny` wins over the broader `Allow` for overlapping resources, so `_internal/*` stays private even when the bucket root is anonymously readable:
+The dev stack at [`docker-compose.dev.yml`](../docker-compose.dev.yml) ships a working reference at [`examples/local-dev/minio-bucket-policy.json`](../examples/local-dev/minio-bucket-policy.json). That file hard-codes the literal bucket name `codemagic-patch` because that is what the dev compose creates; **for any other bucket you must replace `codemagic-patch` in both `Resource` ARNs before applying** (or use the parametrized template below). The same policy shape works on AWS S3, Silo, Cloudflare R2, and any backend that evaluates IAM-style policies; the explicit `Deny` wins over the broader `Allow` for overlapping resources, so `_internal/*` stays private even when the bucket root is anonymously readable:
 
 ```json
 {
@@ -330,7 +330,7 @@ The dev stack at [`docker-compose.dev.yml`](../docker-compose.dev.yml) ships a w
 }
 ```
 
-Replace `<bucket>` with the value of `S3_BUCKET`. Apply with whichever tool the backend uses — `aws s3api put-bucket-policy`, MinIO's `mc anonymous set-json`, or your CDN's equivalent.
+Replace `<bucket>` with the value of `S3_BUCKET`. Apply with whichever tool the backend uses — `aws s3api put-bucket-policy`, Silo's `mc anonymous set-json`, or your CDN's equivalent.
 
 The cache-header default keeps direct clients revalidating in every topology,
 and only grants a shared CDN cache its five-minute window when a purging
@@ -356,8 +356,8 @@ TEST_S3_SECRET_ACCESS_KEY=minio12345 \
 yarn workspace @codemagic/patch-server test test/adapters/s3-storage.test.ts
 ```
 
-A throwaway S3-compatible container suitable for local runs (PGSTY Silo, the
-MinIO fork the dev stack bundles; it reads the same `MINIO_*` variables):
+A throwaway S3-compatible container suitable for local runs (the same PGSTY
+Silo image the dev stack bundles; it reads the same `MINIO_*` variables):
 
 ```bash
 docker run --rm -d --name s3-test -p 9000:9000 -p 9001:9001 \

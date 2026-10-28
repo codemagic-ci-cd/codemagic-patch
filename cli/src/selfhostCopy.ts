@@ -96,19 +96,23 @@ function joinPlainList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1] ?? ""}`;
 }
 
+/** One line per component the backup leaves out, with the provider tooling that covers it. */
+export function renderBackupExclusions(coverage: BackupCoverage): string[] {
+  // Phrased with the component as the object, not the subject: "your
+  // uploaded release files" is plural and "your database" is singular, and
+  // one sentence has to fit both.
+  return coverage.excluded.map(
+    (component) =>
+      `this snapshot does NOT include ${component.what} — protect that with ${component.advice}.`,
+  );
+}
+
 export function renderBackupIntro(coverage: BackupCoverage): string[] {
   const lines = [
     `this saves a snapshot of your server: ${joinPlainList(coverage.included)}.`,
   ];
 
-  for (const component of coverage.excluded) {
-    // Phrased with the component as the object, not the subject: "your
-    // uploaded release files" is plural and "your database" is singular, and
-    // one sentence has to fit both.
-    lines.push(
-      `this snapshot does NOT include ${component.what} — protect that with ${component.advice}.`,
-    );
-  }
+  lines.push(...renderBackupExclusions(coverage));
 
   if (coverage.pausesTheServer) {
     lines.push(
@@ -215,4 +219,30 @@ export function renderRestoreScope(restoreEnv: boolean): string {
   return restoreEnv
     ? "the settings file is restored too: the backup's domains and keys replace the ones this server uses now."
     : "the settings file is not restored: this server keeps its current domains and keys.";
+}
+
+/**
+ * What a Fly restore does, printed above the typed gate. The ssh restore's
+ * copy, adapted: only the database is replaced, the uploaded files in the
+ * buckets are not, the server (dashboard, API, publishing) is down while it
+ * runs, and the server image stays the one the app runs now. Update checks
+ * are static reads from storage, so apps are not affected.
+ */
+export function renderFlyRestoreConsequence(input: {
+  app: string;
+  createdAt: string;
+  liveTag: string;
+}): string[] {
+  const storage = describeBackupCoverage({ databaseMode: "bundled", storageMode: "s3" }).excluded;
+  return [
+    `this replaces ${input.app}'s database with that backup.`,
+    `everything published after ${input.createdAt} will be gone.`,
+    ...storage.map(
+      (component) =>
+        `this command does NOT restore ${component.what} — roll that back to ${input.createdAt} yourself with ${component.advice}, or the restored data will not match it.`,
+    ),
+    "the dashboard, the API and publishing are unavailable until the restore finishes; your apps keep downloading updates from storage as usual.",
+    `the server is not changed: ${input.app} comes back on ${input.liveTag}, the release it runs now.`,
+    "(a snapshot of the current database volume is taken first, so the restore can be undone.)",
+  ];
 }

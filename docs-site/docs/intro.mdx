@@ -21,7 +21,7 @@ import TabItem from '@theme/TabItem';
 These docs cover React Native and Capacitor. Use the selector at the top of the sidebar to switch between them.
 :::
 
-Evaluate the full Codemagic Patch service on your machine before provisioning domains or OAuth. The **local evaluation stack** runs the real server, worker, Postgres, MinIO, and dashboard, with sign-in replaced by a local one-click login. If you want to see an OTA update before integrating your own app, try the optional [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) to watch an OTA update apply on a simulator or emulator.
+Evaluate the full Codemagic Patch service on your machine before provisioning domains or OAuth. The **local evaluation stack** runs the real server, worker, Postgres, Silo, and dashboard, with sign-in replaced by a local one-click login. If you want to see an OTA update before integrating your own app, try the optional [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo) to watch an OTA update apply on a simulator or emulator.
 
 :::info Using these docs with AI
 Use this button to send your AI assistant to the full markdown index.
@@ -53,7 +53,7 @@ When it finishes you get:
 
 You can now [connect your own app](#5-try-it-with-your-own-app), [explore the dashboard](#4-confirm-in-the-dashboard-optional), or [try the demo](#3-watch-an-update-apply-on-device-demo) if you want to see an OTA update on a ready-made app first.
 
-`cmpatch selfhost local-eval status` prints everything else about the stack whenever you need it: the services and their state, the MinIO console, the seeded API token, and a sample publish command.
+`cmpatch selfhost local-eval status` prints everything else about the stack whenever you need it: the services and their state, the Silo console, the seeded API token, and a sample publish command.
 
 <details>
 <summary>From a clone instead</summary>

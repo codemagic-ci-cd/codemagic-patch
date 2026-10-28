@@ -661,6 +661,8 @@ export function createPostgresManagementRepository(
     async transferApp(appId, input) {
       try {
         return await withTransaction(pool, async (client) => {
+          // The team rewrite below updates raw metric rows a fold may be deleting.
+          await waitForMetricFold(client);
           const beforeResult = await client.query<AppRow>(
             "SELECT * FROM app WHERE id = $1 FOR UPDATE",
             [appId],
@@ -811,6 +813,7 @@ export function createPostgresManagementRepository(
 
     async deleteDeployment(deploymentId, options = {}) {
       return withTransaction(pool, async (client) => {
+        await waitForMetricFold(client);
         const deploymentResult = await client.query<DeploymentRow>(
           "SELECT * FROM deployment WHERE id = $1 FOR UPDATE",
           [deploymentId],
@@ -866,6 +869,7 @@ export function createPostgresManagementRepository(
 
     async deleteApp(appId, options = {}) {
       return withTransaction(pool, async (client) => {
+        await waitForMetricFold(client);
         const appResult = await client.query<AppRow>(
           "SELECT * FROM app WHERE id = $1 FOR UPDATE",
           [appId],
@@ -937,6 +941,7 @@ export function createPostgresManagementRepository(
 
     async clearDeployment(deploymentId, options = {}) {
       return withTransaction(pool, async (client) => {
+        await waitForMetricFold(client);
         const deploymentResult = await client.query<DeploymentRow>(
           "SELECT * FROM deployment WHERE id = $1 FOR UPDATE",
           [deploymentId],
@@ -968,6 +973,17 @@ export function createPostgresManagementRepository(
         await client.query("DELETE FROM metric_event WHERE deployment_id = $1", [
           deploymentId,
         ]);
+        // The deployment row stays, so its foreign-key cascade does not clear
+        // the days already folded out of `metric_event`.
+        for (const table of [
+          "metric_event_daily_count",
+          "metric_failure_daily_count",
+          "metric_active_device_daily_count",
+        ]) {
+          await client.query(`DELETE FROM ${table} WHERE deployment_id = $1`, [
+            deploymentId,
+          ]);
+        }
         await client.query(
           "DELETE FROM binary_version_fingerprint WHERE deployment_id = $1",
           [deploymentId],
@@ -1133,6 +1149,19 @@ async function loadDeploymentDeleteStaticState(
     artifactStorageKeys: artifactResult.rows.map((row) => row.storage_key),
     releaseIds: releaseResult.rows.map((row) => row.id),
   };
+}
+
+/**
+ * Waits out a metric fold in progress and holds the next one off until this
+ * transaction ends. Taken before the deployment or app row lock by anything
+ * that then deletes or rewrites metric rows. A fold deletes a day's raw rows
+ * while holding the watermark and then needs a key-share lock on each
+ * deployment it writes aggregates for, so locking the deployment first and
+ * deleting its rows second deadlocks with it. Rewriting raw rows a fold is
+ * deleting can also deadlock on the row locks alone, taken in another order.
+ */
+async function waitForMetricFold(client: Queryable): Promise<void> {
+  await client.query("SELECT 1 FROM metric_event_fold_state FOR SHARE");
 }
 
 async function existsById(

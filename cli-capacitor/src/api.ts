@@ -1,6 +1,6 @@
 // Where the server is and how to address it: the URL helpers of
-// cli/src/commands/shared.ts (@codemagic/patch-cli 0.4.0), unchanged, plus the
-// server URL resolution. `cmpatch` reads a server URL from its project config file as
+// cli/src/commands/shared.ts (@codemagic/patch-cli 0.4.0), unchanged, and its
+// `withUnavailableFeatureMessage` (0.7.0), plus the server URL resolution. `cmpatch` reads a server URL from its project config file as
 // well; this CLI has no project config, so it goes from the flag to the environment to
 // the user config file (userConfig.ts). The flag and environment variable names are
 // `cmpatch`'s, so a CI job configured for one works for the other.
@@ -8,6 +8,7 @@
 
 import { CLI_NAME } from "./branding";
 import { UsageError, ValidationError } from "./errors";
+import { HttpProblemError, ServerFeatureUnavailableError } from "./problem-details";
 import { readConfiguredServerUrl, UserConfigFileError } from "./userConfig";
 
 export const SERVER_URL_ENV = "CODEMAGIC_PATCH_SERVER_URL";
@@ -151,4 +152,21 @@ function resolveOptionalString(value: string | undefined): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * The request, with a 501 answered by `unavailableMessage`: the server has the route
+ * but nothing behind it (too old, or the feature is turned off), which reads as one
+ * sentence about that server rather than as a failed request.
+ */
+export async function withUnavailableFeatureMessage<T>(request: Promise<T>, unavailableMessage: string): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    if (error instanceof HttpProblemError && error.responseStatus === 501) {
+      throw new ServerFeatureUnavailableError(error, unavailableMessage);
+    }
+
+    throw error;
+  }
 }

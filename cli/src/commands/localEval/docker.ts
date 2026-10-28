@@ -70,7 +70,16 @@ export type EnsureDockerInput = {
   parsed: ParsedArgs;
   platform?: typeof process.platform;
   progress: Progress;
+  /**
+   * What runs in the containers, in the copy that says why Docker is needed:
+   * the evaluation stack unless the caller brings up something else.
+   */
+  stack?: string;
 };
+
+function stackOf(input: EnsureDockerInput): string {
+  return input.stack ?? "evaluation stack";
+}
 
 /**
  * Leaves with Docker answering, or throws with what the user must do.
@@ -90,7 +99,7 @@ export async function ensureDocker(
     // on `bash <path>` with nothing to tell the user what went wrong.
     throw new UsageError(
       [
-        "This command runs the evaluation stack through a bash script, which a Windows shell cannot do.",
+        `This command runs the ${stackOf(input)} through a bash script, which a Windows shell cannot do.`,
         "",
         `Install Docker Desktop with the WSL 2 backend and run this from a WSL shell: ${WINDOWS_INSTALL_URL}`,
       ].join("\n"),
@@ -175,7 +184,7 @@ async function installDocker(
 
     await confirmChange(deps, input, {
       flag: "--install-docker",
-      lead: `Docker is not installed. ${PRODUCT_NAME}'s evaluation stack runs in containers, so it is needed first.`,
+      lead: `Docker is not installed. ${PRODUCT_NAME}'s ${stackOf(input)} runs in containers, so it is needed first.`,
       question: "Install Docker Desktop with Homebrew now?",
       refusal: `Install Docker Desktop yourself and run this again: ${MAC_INSTALL_URL}`,
     });
@@ -200,7 +209,7 @@ async function installDocker(
   if (platform === "linux") {
     await confirmChange(deps, input, {
       flag: "--install-docker",
-      lead: `Docker is not installed. ${PRODUCT_NAME}'s evaluation stack runs in containers, so it is needed first.`,
+      lead: `Docker is not installed. ${PRODUCT_NAME}'s ${stackOf(input)} runs in containers, so it is needed first.`,
       question: "Install Docker Engine with Docker's install script now? (uses sudo)",
       refusal: `Install Docker Engine and the Compose plugin yourself and run this again: ${LINUX_INSTALL_URL}`,
     });
@@ -281,7 +290,7 @@ async function installDesktopFromDmg(
       : `Docker Desktop ${release.version} (${formatMegabytes(release.bytes)})`;
   await confirmChange(deps, input, {
     flag: "--install-docker",
-    lead: `Docker is not installed, and Homebrew is not available to install it. ${PRODUCT_NAME}'s evaluation stack runs in containers, so Docker is needed first.`,
+    lead: `Docker is not installed, and Homebrew is not available to install it. ${PRODUCT_NAME}'s ${stackOf(input)} runs in containers, so Docker is needed first.`,
     question: `Download and install ${what} from docker.com now? (uses sudo)`,
     refusal: `Install Docker Desktop yourself and run this again: ${MAC_INSTALL_URL}`,
   });
@@ -434,8 +443,8 @@ async function startDocker(
     flag: "--start-docker",
     lead:
       options.firstLaunch === true
-        ? `${runtime.name} is installed but has never been opened, so the \`docker\` command is not available yet. ${PRODUCT_NAME}'s evaluation stack runs in containers, so it must be running first.`
-        : `Docker is installed but not running. ${PRODUCT_NAME}'s evaluation stack runs in containers, so it must be running first.`,
+        ? `${runtime.name} is installed but has never been opened, so the \`docker\` command is not available yet. ${PRODUCT_NAME}'s ${stackOf(input)} runs in containers, so it must be running first.`
+        : `Docker is installed but not running. ${PRODUCT_NAME}'s ${stackOf(input)} runs in containers, so it must be running first.`,
     question: `Start ${runtime.name} now?`,
     refusal: `Start ${runtime.name} yourself and run this again.`,
   });

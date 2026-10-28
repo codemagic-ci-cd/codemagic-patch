@@ -13,6 +13,10 @@ slug: /install
 
 For a quick try on your laptop without domains or TLS, start with the [Local quickstart](/docs/) (`cmpatch selfhost local-eval`).
 
+To test with your own app on real phones before you have a domain, [install on this machine with ngrok](#ngrok).
+
+To deploy without a server or domain of your own, [install on Fly.io](#fly).
+
 To deploy with your own domains:
 
 - A server you can reach over SSH
@@ -25,7 +29,7 @@ To deploy with your own domains:
 `cmpatch selfhost install` handles the rest: it checks the server, offers to
 install Docker, git, and curl if they are missing, walks you through DNS and
 the OAuth app, and then runs the installer over SSH — OAuth wiring, Compose
-stack, TLS certificates, secrets, Postgres, MinIO, and the dashboard. The
+stack, TLS certificates, secrets, Postgres, Silo, and the dashboard. The
 Docker bootstrap covers the distributions Docker's own install script supports
 (Ubuntu, Debian, Fedora, RHEL, CentOS, Rocky, and their derivatives) plus
 Amazon Linux 2023; on anything else, install Docker Engine with the Compose
@@ -33,7 +37,7 @@ plugin yourself and run the command again.
 
 ## Choose storage
 
-The default install stores artifacts in MinIO on the same host. You can choose
+The default install stores artifacts in Silo on the same host. You can choose
 Cloudflare R2, Amazon S3, or Google Cloud Storage instead. The installer can
 create those buckets or walk you through the console.
 
@@ -45,11 +49,11 @@ Adapter env vars are in [Infrastructure adapters](/docs/setup/infrastructure).
 
 ## Machine size
 
-The default Compose install runs Caddy, the API and release worker, Postgres, and MinIO on one host. You need Docker + Docker Compose v2, with ports 80 and 443 open.
+The default Compose install runs Caddy, the API and release worker, Postgres, and Silo on one host. You need Docker + Docker Compose v2, with ports 80 and 443 open.
 
 - RAM: 2 GB is enough for typical use. Prefer 4 GB for large or overlapping releases, or a long on-box history of artifacts and metrics.
 - CPU: 1 vCPU is enough for typical use.
-- Disk: tens of GB is fine to start. Object storage grows with retained releases; Postgres grows with device metrics (`metric_event` is not auto-pruned).
+- Disk: tens of GB is fine to start. Object storage grows with retained releases. Postgres keeps raw metric events for 8 days, so that usage follows how many devices open the app and then levels off. That is about 2 GB in total per 100,000 daily active users. Older days stay only as small daily totals (see [Disk growth](/docs/setup/ongoing-maintenance#disk-growth)).
 
 ## OAuth sign-in {#github-oauth-app}
 
@@ -171,6 +175,51 @@ single fixed `default-team` on first boot.
 
 </details>
 
+## Install on this machine with ngrok {#ngrok}
+
+To connect your own app and test it on any device before you have a domain,
+install the server on your own machine and reach it at the free `https://`
+address your [ngrok](https://ngrok.com) account comes with. You need Docker, a
+free ngrok account, and a GitHub, Bitbucket, or GitLab account for sign-in — no
+domain, DNS records, certificates, or open ports.
+
+```bash
+npm install -g @codemagic/patch-cli
+cmpatch selfhost install --ngrok
+```
+
+The command finds your ngrok address, walks you through the OAuth app with that
+address filled in, and installs the server. It prints the dashboard and the two
+values your app is configured with, both on the ngrok address. Then run
+`cmpatch login` and, in your app's folder, `cmpatch init`.
+
+ngrok's free plan carries 1 GB and 20,000 requests a month: enough to test your
+own app, not to serve an app in the store. Apps keep the address they were built
+with, so install on your own domain before you ship. The address serves one
+ngrok agent at a time: stop any other `ngrok` using it first, or, on a paid
+ngrok plan, pass `--ngrok-domain <domain>` with a domain you reserved. Details:
+[ngrok (no domain)](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#ngrok-no-domain).
+
+## Install on Fly.io {#fly}
+
+`cmpatch selfhost install --fly` deploys Patch onto Fly.io from this machine, with no server or domain of your own. It offers to install flyctl and the Tigris CLI when they are missing (a scripted run passes `--install-flyctl` and `--install-tigris` instead). The Fly account needs a card.
+
+The command creates a Fly app for Patch, then a public bucket for downloads and a private bucket with `fly storage`. For the database, it either uses a Postgres URL you already have or creates a second Fly machine running Postgres. Patch's machine, and the Postgres machine when cmpatch creates it, suspend: they stop when idle and wake on the first request. After the buckets exist, one Tigris login mints a key for both; on that page, choose **Sign in with Fly.io**. Sign-in uses the same GitHub, Bitbucket, or GitLab OAuth app as the SSH installer.
+
+```bash
+cmpatch selfhost install --fly
+```
+
+The dashboard and API are at `https://<company>-patch.fly.dev`, where `<company>` is the company name you enter, lowercased with hyphens. Phones download updates straight from the public bucket at `https://<company>-patch.t3.tigrisfiles.io`. A Fly install has no custom domain and no CDN step. Both addresses are built into the app binary, so changing either one later means a new store build.
+
+The install records the server on this machine, so `cmpatch init` offers its address and `cmpatch selfhost upgrade`, `backup`, and `restore` work from here without a server address. If this machine already had a default server, an interactive install asks whether to switch; a scripted run keeps the old default and prints how to reach the new install. To run them from another machine, record the same install there first; this creates nothing on Fly:
+
+```bash
+cmpatch selfhost install --fly --register --company "Acme Corp"
+```
+
+Backups, restores, and upgrades on Fly: [Ongoing maintenance](/docs/setup/ongoing-maintenance#fly-backups).
+
 ## Verify
 
 ```bash
@@ -203,7 +252,7 @@ and — for CloudFront — the AWS Console walkthrough and the final DNS cutover
 including the checks that must pass before it. The reference walkthroughs are
 [Cloudflare setup](/docs/setup/cloudflare) and
 [CloudFront setup](/docs/setup/cloudfront). The guided installer configures the
-bundled Postgres/MinIO topology. CloudFront can also front external S3/GCS
+bundled Postgres/Silo topology. CloudFront can also front external S3/GCS
 storage, but that topology starts with the direct `install.sh` path in
 [Infrastructure adapters](/docs/setup/infrastructure), then follows the
 external-storage track in the CloudFront guide.

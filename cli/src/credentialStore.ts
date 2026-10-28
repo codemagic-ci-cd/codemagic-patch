@@ -1,7 +1,10 @@
 import {
   mkdir,
+  open,
   readFile,
   rename,
+  rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -146,6 +149,67 @@ async function writeCredentialStore(
     mode: 0o600,
   });
   await rename(tempPath, path);
+}
+
+// How long a run waits for another run's refresh, and when it breaks a lock that
+// a crashed run left behind.
+const LOCK_WAIT_MS = 15_000;
+const LOCK_STALE_MS = 30_000;
+const LOCK_RETRY_MS = 50;
+
+/**
+ * Runs `task` while holding `<store>.lock`, so that runs sharing a credential store
+ * refresh one at a time. Refresh tokens rotate, and the server revokes the whole
+ * session when a used one is presented again, so a second run must see the first
+ * one's rotated session instead of refreshing with the token it read earlier. A lock
+ * older than LOCK_STALE_MS belongs to a run that died and is broken; after
+ * LOCK_WAIT_MS the task runs without the lock rather than hang the command.
+ */
+export async function withCredentialStoreLock<T>(
+  options: CredentialStoreOptions,
+  task: () => Promise<T>,
+): Promise<T> {
+  const lockPath = `${resolveCredentialStorePath(options.env)}.lock`;
+  await mkdir(dirname(lockPath), {
+    mode: 0o700,
+    recursive: true,
+  });
+
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let held = false;
+  while (!held && Date.now() < deadline) {
+    try {
+      await (await open(lockPath, "wx", 0o600)).close();
+      held = true;
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "EEXIST") {
+        throw error;
+      }
+
+      if (await isStaleLock(lockPath)) {
+        await rm(lockPath, { force: true });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
+      }
+    }
+  }
+
+  try {
+    return await task();
+  } finally {
+    if (held) {
+      await rm(lockPath, { force: true });
+    }
+  }
+}
+
+async function isStaleLock(lockPath: string): Promise<boolean> {
+  try {
+    return Date.now() - (await stat(lockPath)).mtimeMs > LOCK_STALE_MS;
+  } catch {
+    // Released between our attempt and this check: not stale, just try again.
+    return false;
+  }
 }
 
 function isCredentialStoreFile(value: unknown): value is CredentialStoreFile {

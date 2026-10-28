@@ -20,11 +20,11 @@ Shorter summaries and install links are on [GitHub Releases](https://github.com/
 
 | Surface | Notes | Latest | Upgrade |
 | --- | --- | --- | --- |
-| React Native SDK | [React Native](/docs/releases/react-native) | 0.5.1 | `npm install @codemagic/react-native-patch@latest` |
-| CLI (`cmpatch`) | [CLI](/docs/releases/cli) | 0.7.0 | `npm install -g @codemagic/patch-cli@latest` |
-| Server and dashboard | [Server](/docs/releases/server) | 0.7.0 | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
-| Capacitor SDK | [Capacitor SDK](/docs/releases/capacitor-sdk) | 0.1.1 | `npm install @codemagic/capacitor-patch@latest` |
-| CLI for Capacitor (`cmpatch-capacitor`) | [CLI for Capacitor](/docs/releases/capacitor-cli) | 0.2.0 | `npm install -g @codemagic/capacitor-patch-cli@latest` |
+| React Native SDK | [React Native](/docs/releases/react-native) | 0.6.0 | `npm install @codemagic/react-native-patch@latest` |
+| CLI (`cmpatch`) | [CLI](/docs/releases/cli) | 0.8.0 | `npm install -g @codemagic/patch-cli@latest` |
+| Server and dashboard | [Server](/docs/releases/server) | 0.8.0 | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
+| Capacitor SDK | [Capacitor SDK](/docs/releases/capacitor-sdk) | 0.1.2 | `npm install @codemagic/capacitor-patch@latest` |
+| CLI for Capacitor (`cmpatch-capacitor`) | [CLI for Capacitor](/docs/releases/capacitor-cli) | 0.3.0 | `npm install -g @codemagic/capacitor-patch-cli@latest` |
 
 ## Upgrade order and compatibility
 
@@ -44,6 +44,33 @@ configuration changes, and service restarts.
 | CLI for Capacitor [0.1.0](/docs/releases/capacitor-cli#v0-1-0) | Server 0.6.0 or newer | Sets the app framework, which older servers do not store; the dashboard then treats the app as a React Native app. |
 
 ## What shipped
+
+### 28th October 2026
+
+- **Server [0.8.0](/docs/releases/server#v0-8-0):** Raw metric events are
+  kept 8 days and folded into daily totals that are kept indefinitely;
+  migration `0019` adds the aggregate tables and an index on `metric_event`,
+  and ingest waits for the index build. Self-host scripts gain the ngrok
+  scheme.
+- **CLI [0.8.0](/docs/releases/cli#v0-8-0):** `selfhost install --fly`
+  deploys Patch onto Fly.io with Tigris storage, with `upgrade`, `backup`, and
+  `restore` on that install; `selfhost install --ngrok` installs the stack on
+  this machine behind an ngrok address for device testing; overlapping runs no
+  longer sign each other out; flag errors point at the command's help.
+- **React Native SDK [0.6.0](/docs/releases/react-native#v0-6-0):** Jest and
+  Vitest test fake (`/jest`, `/vitest` entry points) so suites run without a
+  native binary; Android background boots no longer spend a launch attempt;
+  default launch attempts lowered from 3 to 2; resource shrinking keeps the `CodemagicPatch*`
+  strings.
+- **Capacitor SDK [0.1.2](/docs/releases/capacitor-sdk#v0-1-2):** Default
+  launch attempts lowered from 3 to 2; resource shrinking keeps the `CodemagicPatch*`
+  overrides.
+- **CLI for Capacitor [0.3.0](/docs/releases/capacitor-cli#v0-3-0):**
+  `token revoke` confirms unless `--yes` (breaking for scripts) and takes
+  `--name`; deployment timeseries and failure drill-down; `team list` / `show`;
+  binary version filters on `release list`; `app setting` without a flag shows
+  the settings; overlapping runs no longer sign each other out; flag errors
+  point at the command's help.
 
 ### 19th October 2026
 

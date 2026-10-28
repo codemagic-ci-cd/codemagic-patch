@@ -23,6 +23,8 @@ export async function captureLocal(
     args: readonly string[];
     command: string;
     cwd?: string;
+    /** Added to the child's environment — how a secret reaches it, never argv. */
+    env?: Record<string, string | undefined>;
     timeoutMs?: number;
   },
 ): Promise<CaptureResult> {
@@ -32,6 +34,7 @@ export async function captureLocal(
       args: input.args,
       command: input.command,
       ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+      ...(input.env === undefined ? {} : { env: input.env }),
       timeoutMs: input.timeoutMs,
       onOutput: (chunk) => {
         chunks.push(chunk);

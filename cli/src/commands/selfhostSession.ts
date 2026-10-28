@@ -48,13 +48,15 @@ import {
   type RemoteHostFacts,
 } from "../selfhostRemote";
 import {
+  resolveExplicitSshTarget,
   resolveSelfhostTarget,
   selfhostMappingKey,
   withSelfhostMapping,
   type SelfhostTarget,
+  type SelfhostTargetResolution,
 } from "../selfhostTarget";
 import { RemoteScriptFailure, runRenderedScript } from "./scriptRunner";
-import { canPromptOnStderr, UsageError, type CommandDeps } from "./shared";
+import { canPromptOnStderr, DeclinedError, UsageError, type CommandDeps } from "./shared";
 
 export { RemoteScriptFailure };
 
@@ -166,6 +168,42 @@ export type SelfhostSession = {
 
 export type SelfhostSessionMode = "install" | "maintenance";
 
+/**
+ * Which recorded server a maintenance command acts on, before anything
+ * connects: an explicit `user@vps` always wins; otherwise the effective
+ * server URL, resolved exactly as every other command resolves it (env →
+ * project config → user config). A project that pins a server must steer the
+ * destructive commands too, and the shared resolver also treats an empty env
+ * var as unset instead of as a URL.
+ */
+export type CommandTarget = {
+  config: CliConfig;
+  recorded: SelfhostTargetResolution;
+  serverUrl: string | undefined;
+};
+
+export async function resolveCommandTarget(
+  deps: CommandDeps,
+  sshTarget: string | undefined,
+): Promise<CommandTarget> {
+  const config = await loadCliConfig({ env: deps.env });
+  const projectRoot = resolveProjectRoot([]);
+  const projectConfig = await loadProjectConfig(projectRoot);
+  const serverUrl = resolveEffectiveContext(
+    deps.env,
+    config,
+    projectConfig,
+    projectRoot,
+  ).serverUrl?.value;
+
+  const recorded = resolveSelfhostTarget({
+    config,
+    ...(sshTarget !== undefined ? { explicitTarget: sshTarget } : {}),
+    ...(sshTarget === undefined && serverUrl !== undefined ? { serverUrl } : {}),
+  });
+  return { config, recorded, serverUrl };
+}
+
 export async function openSession(
   deps: CommandDeps,
   input: {
@@ -193,31 +231,35 @@ export async function openSession(
     recordedTarget?: RecordedTargetPolicy;
     /** Where the checkout should be, when the caller pins one. */
     remotePath?: string;
+    /** What `resolveCommandTarget` already returned for this run, so it is not resolved twice. */
+    resolved?: CommandTarget;
     sshTarget?: string;
   },
 ): Promise<SelfhostSession> {
   const mode = input.mode ?? "maintenance";
-  const config = await loadCliConfig({ env: deps.env });
-  // The effective server URL, resolved exactly as every other command resolves
-  // it (env → project config → user config): a project that pins a server must
-  // steer the destructive commands too, and the shared resolver also treats an
-  // empty env var as unset instead of as a URL.
-  const projectRoot = resolveProjectRoot([]);
-  const projectConfig = await loadProjectConfig(projectRoot);
-  const serverUrl = resolveEffectiveContext(
-    deps.env,
-    config,
-    projectConfig,
-    projectRoot,
-  ).serverUrl?.value;
+  const { config, recorded, serverUrl } = input.resolved ?? await resolveCommandTarget(deps, input.sshTarget);
 
-  let resolution = resolveSelfhostTarget({
-    config,
-    ...(input.sshTarget !== undefined ? { explicitTarget: input.sshTarget } : {}),
-    ...(input.sshTarget === undefined && serverUrl !== undefined
-      ? { serverUrl }
-      : {}),
-  });
+  // A server URL recorded as Fly (or as a kind a newer CLI wrote) has no ssh
+  // host to pair with. An install is about a new ssh host anyway, so that
+  // record is simply not a host to offer. upgrade, backup and restore send a
+  // Fly record to flyctl before they open a session, so for them this is a
+  // guard; an unknown kind is one nothing here can act on.
+  if (recorded.kind === "resolved-fly" || recorded.kind === "unsupported") {
+    if (mode !== "install") {
+      throw new UsageError(
+        recorded.kind === "resolved-fly"
+          ? `${recorded.target.serverUrl} was installed on Fly.io, which ${input.label} reaches through flyctl, not an ssh session.`
+          : `${recorded.serverUrl} is recorded on this machine as a "${recorded.recordedKind}" server, which this version of cmpatch does not support. Update cmpatch, or pass the server's address directly: ${input.label} user@vps`,
+      );
+    }
+  }
+  let resolution: Exclude<
+    SelfhostTargetResolution,
+    { kind: "resolved-fly" } | { kind: "unsupported" }
+  > =
+    recorded.kind === "resolved-fly" || recorded.kind === "unsupported"
+      ? { kind: "unpaired" }
+      : recorded;
 
   // The wizard's first question, asked rather than demanded. A first install
   // has nothing to resolve a target from — no mapping, no server URL — and
@@ -229,7 +271,7 @@ export async function openSession(
   if (resolution.kind === "unpaired" && mode === "install") {
     const asked = await askSshTarget(deps, input.parsed);
     if (asked !== null) {
-      resolution = resolveSelfhostTarget({ config, explicitTarget: asked });
+      resolution = resolveExplicitSshTarget(config, asked);
     }
   }
 
@@ -251,7 +293,7 @@ export async function openSession(
       input.recordedTarget,
     );
     if (asked !== null) {
-      resolution = resolveSelfhostTarget({ config, explicitTarget: asked });
+      resolution = resolveExplicitSshTarget(config, asked);
     }
   }
 
@@ -496,8 +538,7 @@ export function canAsk(deps: CommandDeps, parsed: ParsedArgs): boolean {
  * perfectly good answer rather than a case to handle.
  */
 function knownTargetFor(config: CliConfig, sshTarget: string): SelfhostTarget {
-  const resolved = resolveSelfhostTarget({ config, explicitTarget: sshTarget });
-  return resolved.kind === "resolved" ? resolved.target : { sshTarget };
+  return resolveExplicitSshTarget(config, sshTarget).target;
 }
 
 export type RecordedTargetPolicy = "ask-new" | "offer";
@@ -856,3 +897,22 @@ export function writeNotice(
   }
 }
 
+/** The typed gate in front of a restore, shared by the ssh and Fly paths. */
+export async function confirmTypedRestore(deps: CommandDeps): Promise<void> {
+  if (deps.prompt === undefined) {
+    throw new UsageError(
+      "cmpatch selfhost restore replaces the server's data. Pass --yes to confirm.",
+    );
+  }
+
+  const answer = await deps.prompt({
+    message: 'Type "restore" to continue',
+    type: "text",
+  });
+  const typed = (typeof answer === "string" ? answer : (answer[0] ?? "")).trim();
+
+  // One level stronger than [y/N], as the family's only destructive command.
+  if (typed.toLowerCase() !== "restore") {
+    throw new DeclinedError("Restore cancelled.");
+  }
+}

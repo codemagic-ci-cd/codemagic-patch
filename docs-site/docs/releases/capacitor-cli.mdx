@@ -24,6 +24,65 @@ Reference: [CLI reference](/docs/reference/cli-reference) ·
 [Binary versions for Capacitor](/docs/using-patch/binary-version-capacitor) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=capacitor-patch-cli)
 
+## 0.3.0 {#v0-3-0}
+
+*28th October 2026*
+
+### Breaking
+
+`cmpatch-capacitor token revoke` now shows what it is about to revoke and asks
+first, as `app remove` does, because anything still signing in with the token,
+such as a CI pipeline, stops working. Without a terminal (in CI, or with
+`--format json`) it exits `2` instead of running. Add `--yes` to scripts that
+call it.
+
+### Failures and daily numbers from the CLI
+
+- **`deployment timeseries`:** Prints a deployment's counters per day, the
+  numbers behind the dashboard's deployment chart. Pick the window with
+  `--range 7d|30d|90d|1y` or `--from` / `--to`, and narrow it with
+  `--binary-version` / `--binary-version-prefix`.
+- **`deployment failures` / `failure-events` and `release failures` /
+  `failure-events`:** Drill into a failure reason from `deployment metrics` or
+  `release metrics`, as the dashboard's failure dialog does. `failures --reason
+  <reason>` lists the codes under it; adding `--code <code>`, or `--no-code` for
+  the failures that reported none, shows that code's top exit reasons and
+  messages. `failure-events` lists the single events, a page at a time with
+  `--limit` and `--cursor`.
+
+A server that does not publish these numbers answers with one sentence saying
+so, and the command exits `1`.
+
+### Smaller changes
+
+- **`team list` and `team show`:** List the teams you can see and show one,
+  so you can find the name or ID to pass as `--team`.
+- **`release list --binary-version`:** Lists only the releases that target one
+  binary version (`--binary-version 1.4.0`) or every version under a prefix
+  (`--binary-version-prefix 1.4`).
+- **`app setting` without a flag shows the current settings:** Run it without
+  `--require-code-signing` to see whether the app requires code signing.
+- **`token revoke --name <name>`:** Revoke a token by the name you gave it,
+  instead of looking up its ID. A name shared by several tokens is refused
+  with their IDs, so you can pass `--token-id`.
+
+### Fixes
+
+- **Overlapping runs no longer sign each other out:** Runs that share the
+  stored session (a terminal and a CI step, two jobs on one machine) now
+  refresh an expired access token one at a time under a lock next to the
+  credential store. A run that gets the lock first re-reads the store and, if
+  another run has already refreshed the session, uses that session instead of
+  sending a refresh of its own. A refresh the server refuses still clears the
+  stored credentials and asks you to sign in again.
+- **Flag errors point at the command's help:** An unknown flag, a missing or
+  invalid value, or a stray argument inside a command now ends with
+  ``Run `cmpatch-capacitor <command> --help` for usage`` instead of pointing
+  at the root listing.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch-cli%400.3.0).
+
 ## 0.2.0 {#v0-2-0}
 
 *19th October 2026*

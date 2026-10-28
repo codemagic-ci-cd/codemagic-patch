@@ -38,6 +38,13 @@ export type ProcessRunOptions = {
   /** Kill a short-lived command if it exceeds this deadline. */
   timeoutMs?: number;
   /**
+   * Ends the child when aborted: SIGTERM, then SIGKILL if it outlives
+   * `ABORT_KILL_GRACE_MS`. Under an animating spinner the tty is in raw mode,
+   * so Ctrl-C never reaches the child; a cleanup that must not wait on it
+   * aborts it instead.
+   */
+  signal?: AbortSignal;
+  /**
    * Hand the child the parent's stdio instead of capturing it. The bootstrap
    * ssh connection needs this: host-key confirmation and DigitalOcean's forced
    * first-login password change are interactive prompts from ssh itself, and a
@@ -509,6 +516,9 @@ export async function captureRemoteShell(
   return { ...result, output: chunks.join("") };
 }
 
+/** How long an aborted child has between SIGTERM and SIGKILL. */
+export const ABORT_KILL_GRACE_MS = 5_000;
+
 /** The default `RunProcess`, wired in runCli. Kept out of every test path. */
 export function runProcessWithSpawn(
   options: ProcessRunOptions,
@@ -532,6 +542,15 @@ export function runProcessWithSpawn(
           timedOut = true;
           child.kill("SIGKILL");
         }, options.timeoutMs);
+    let aborted = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => {
+      aborted = true;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, ABORT_KILL_GRACE_MS);
+    };
     let settled = false;
     const settle = (outcome: () => void) => {
       if (settled) {
@@ -540,6 +559,8 @@ export function runProcessWithSpawn(
 
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
+      options.signal?.removeEventListener("abort", abort);
       outcome();
     };
 
@@ -563,11 +584,19 @@ export function runProcessWithSpawn(
       settle(() => {
         if (timedOut) {
           reject(new Error(`${options.command} timed out after ${options.timeoutMs}ms`));
+        } else if (aborted) {
+          reject(new Error(`${options.command} was cancelled`));
         } else {
           resolve({ exitCode, signal });
         }
       });
     });
+
+    if (options.signal?.aborted === true) {
+      abort();
+    } else {
+      options.signal?.addEventListener("abort", abort, { once: true });
+    }
 
     if (child.stdin !== null) {
       child.stdin.on("error", () => {

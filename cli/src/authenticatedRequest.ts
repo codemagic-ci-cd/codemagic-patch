@@ -2,6 +2,7 @@ import {
   loadStoredCredential,
   removeStoredCredential,
   saveStoredCredential,
+  withCredentialStoreLock,
   type OAuthStoredCredential,
   type StoredCredential,
 } from "./credentialStore";
@@ -82,23 +83,30 @@ export async function authenticatedRequest(
       );
     }
 
-    let refreshed: StoredCredential;
-    try {
-      refreshed = await refreshStoredCredential(
-        deps,
-        options,
-        authSource.credential,
-      );
-    } catch (refreshError) {
-      if (!isAuthenticationRequired(refreshError)) {
-        throw refreshError;
+    // Refresh tokens rotate, and presenting a used one makes the server revoke the
+    // whole session. Two cmpatch runs can overlap (a terminal and a CI step, two jobs
+    // on one machine), so refreshes take turns under the store's lock, and each first
+    // checks whether another run has already refreshed the session it read.
+    const credential = authSource.credential;
+    const refreshed = await withCredentialStoreLock({ env: deps.env }, async () => {
+      const current = await loadStoredCredential(options.serverUrl, { env: deps.env });
+      if (current && current.accessToken !== credential.accessToken) {
+        return current;
       }
 
-      await removeStoredCredential(options.serverUrl, { env: deps.env });
-      throw new StoredAuthenticationError(
-        `Stored ${PRODUCT_NAME} session expired or was revoked. Run \`cmpatch login --server-url ${options.serverUrl}\` to sign in again.`,
-      );
-    }
+      try {
+        return await refreshStoredCredential(deps, options, credential);
+      } catch (refreshError) {
+        if (!isAuthenticationRequired(refreshError)) {
+          throw refreshError;
+        }
+
+        await removeStoredCredential(options.serverUrl, { env: deps.env });
+        throw new StoredAuthenticationError(
+          `Stored ${PRODUCT_NAME} session expired or was revoked. Run \`cmpatch login --server-url ${options.serverUrl}\` to sign in again.`,
+        );
+      }
+    });
 
     return performAuthenticatedRequest(deps, options, refreshed.accessToken);
   }

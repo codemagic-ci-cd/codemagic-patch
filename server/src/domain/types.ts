@@ -356,8 +356,9 @@ export interface ReleaseMetrics {
    */
   failureReasons: Record<string, number>;
   /**
-   * How many of each reason's failures carried a decodable `payload`
-   * (PROTOCOL.md §Metric Event `Failed` Payload), keyed the same way. The
+   * How many of each reason's failures carried a decodable `payload` with a
+   * `code`, `message`, or `android_previous_process_exit` (PROTOCOL.md
+   * §Metric Event `Failed` Payload), keyed the same way. The
    * dashboard needs it to decide whether a reason row is worth opening: a
    * reason no device ever sent detail for has nothing behind it, and offering
    * a drill-down into an empty dialog is a dead end. Reasons with no detail

@@ -577,7 +577,7 @@ export function checkOAuthCredential(value: string): string | null {
   return null;
 }
 
-function buildOAuthEnv(oauth: OAuthCredentials | OAuthExtraRepair): Record<string, string> {
+export function buildOAuthEnv(oauth: OAuthCredentials | OAuthExtraRepair): Record<string, string> {
   const { envPrefix, extraFields } = OAUTH_PROVIDERS[oauth.provider];
   return {
     ...("clientId" in oauth
@@ -621,6 +621,26 @@ export function buildInstallEnv(
     ),
     ...buildOAuthEnv(answers.oauth),
     ...buildDeliveryEnv(answers.delivery),
+  };
+}
+
+/**
+ * A first `install.sh --ngrok`: one public address from the ngrok account in
+ * place of two domains, and the bundled storage, so there are no storage or
+ * delivery answers. Env rather than argv here too — the authtoken and the
+ * client secret would otherwise sit in this machine's process list.
+ */
+export function buildNgrokInstallEnv(input: {
+  adminEmail: string;
+  apiDomain: string;
+  ngrokAuthtoken: string;
+  oauth: OAuthCredentials;
+}): Record<string, string> {
+  return {
+    ACME_EMAIL: input.adminEmail,
+    CODEMAGIC_PATCH_API_DOMAIN: input.apiDomain,
+    NGROK_AUTHTOKEN: input.ngrokAuthtoken,
+    ...buildOAuthEnv(input.oauth),
   };
 }
 

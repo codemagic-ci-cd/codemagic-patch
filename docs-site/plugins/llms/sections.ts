@@ -36,6 +36,7 @@ export const LLMS_SECTIONS: LlmsSection[] = [
       'setup/checking-for-updates',
       'setup/applying-updates',
       'setup/manual-control',
+      'setup/testing',
       'setup/first-release',
     ],
   },

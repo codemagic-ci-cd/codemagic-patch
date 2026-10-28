@@ -13,7 +13,7 @@ export function renderOutput(output: CommandOutput, format: OutputFormat): strin
 
   switch (output.kind) {
     case "list":
-      return renderList(output.columns, output.rows, output.empty, output.footer);
+      return renderTable(output.columns, output.rows, output.empty, output.footer);
     case "record":
       return `${output.title === undefined ? "" : `${output.title}\n`}${renderRecord(output.record, output.fields)}`;
     case "action":
@@ -25,14 +25,16 @@ export function renderOutput(output: CommandOutput, format: OutputFormat): strin
   }
 }
 
-function renderList(
+/** A list's table, or `empty` when it has no rows; for a report built of several. */
+export function renderTable(
   columns: readonly Column[],
   rows: ReadonlyArray<Record<string, unknown>>,
   empty: string,
-  footer: string | undefined,
+  footer?: string,
 ): string {
+  // The footer still applies with no rows: it can say why (a filter, an offset past the end).
   if (rows.length === 0) {
-    return `${empty}\n`;
+    return [empty, ...(footer === undefined ? [] : ["", footer])].map((text) => `${text}\n`).join("");
   }
 
   const cells = rows.map((row) =>

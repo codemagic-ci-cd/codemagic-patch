@@ -63,9 +63,12 @@ REPAIR_ENV=0
 # time and recorded as SELFHOST_SCHEME, which the env file then owns on every
 # rerun. SCHEME is the resolved value every derived URL uses.
 ALLOW_HTTP=0
+USE_NGROK=0
 case "${SELFHOST_SCHEME:-}" in
   http) ALLOW_HTTP=1 ;;
+  ngrok) USE_NGROK=1 ;;
 esac
+NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN:-}"
 SCHEME=https
 
 usage() {
@@ -83,7 +86,10 @@ running, and pass its client ID and a generated client secret. The admin
 signs in via the web dashboard or `cmpatch login`; the first sign-in by
 --email creates the admin account. With --allow-http the stack serves this
 machine alone (localhost) over plain HTTP on port 80, so none of the DNS,
-port 443, or certificate prerequisites apply (see the option below).
+port 443, or certificate prerequisites apply (see the option below). With
+--ngrok the stack runs on this machine and is reached at an ngrok address,
+so none of them apply either: no domain, DNS record, certificate, or open
+port.
 
 Options:
   --api-domain <domain>        Public API domain, for example updates.example.com.
@@ -113,6 +119,25 @@ Options:
                                without this flag. Not combinable with
                                --cloudflare or --cloudfront. Fixed at install
                                time (SELFHOST_SCHEME=http in .env.selfhost).
+  --ngrok                      Install on this machine and reach it through
+                               ngrok, for testing your own app without a
+                               domain: the ngrok endpoint (the account's dev
+                               domain on the free plan) is the one public
+                               address, serving the API, the dashboard, and
+                               downloads under /codemagic-patch, and ngrok
+                               terminates its TLS. Nothing is published on
+                               this machine. Needs NGROK_AUTHTOKEN in the
+                               environment (https://dashboard.ngrok.com/get-started/your-authtoken);
+                               the address is discovered with it unless
+                               --api-domain names it — a domain a paid ngrok
+                               plan has reserved, for example (check it first
+                               with scripts/selfhost/ngrok-address.sh
+                               --domain <domain>). The OAuth
+                               callback is https://<address>/auth/callback.
+                               Bundled storage only; not combinable with
+                               --allow-http, --storage-domain, --cloudflare,
+                               or --cloudfront. Fixed at install time
+                               (SELFHOST_SCHEME=ngrok in .env.selfhost).
   --email <email>              Admin and ACME email. Must match the verified
                                 primary email of the admin's GitHub,
                                 Bitbucket, or GitLab account.
@@ -293,6 +318,7 @@ while [ "$#" -gt 0 ]; do
     --skip-storage-check) SKIP_STORAGE_CHECK=1; shift ;;
     --skip-public-check) SKIP_PUBLIC_CHECK=1; shift ;;
     --allow-http) ALLOW_HTTP=1; shift ;;
+    --ngrok) USE_NGROK=1; shift ;;
     --repair-env) REPAIR_ENV=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -300,9 +326,17 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ "$ALLOW_HTTP" -eq 1 ] && [ "$USE_NGROK" -eq 1 ]; then
+  fail_selfhost "--allow-http and --ngrok cannot be combined: --allow-http serves this machine alone over plain HTTP, --ngrok serves an https:// ngrok address. Pick one."
+fi
 if [ "$ALLOW_HTTP" -eq 1 ]; then
   SCHEME=http
+elif [ "$USE_NGROK" -eq 1 ]; then
+  SCHEME=ngrok
 fi
+# The scheme in URLs: https for both the certificate stack and ngrok (whose
+# address is https although caddy behind it serves plain HTTP).
+URL_SCHEME="$(selfhost_url_scheme "$SCHEME")"
 
 prompt_required() {
   local var_name="$1"
@@ -614,6 +648,11 @@ prompt_storage() {
         # --storage-domain may only name another localhost:<port> (main()
         # validates it).
         STORAGE_DOMAIN="${STORAGE_DOMAIN:-localhost:9110}"
+      elif [ "$SCHEME" = "ngrok" ]; then
+        # One public origin: downloads are served on the ngrok address under
+        # /codemagic-patch (Caddyfile.ngrok), so the storage domain is the API
+        # domain. main() refuses an explicit --storage-domain with --ngrok.
+        STORAGE_DOMAIN="$API_DOMAIN"
       else
         prompt_required STORAGE_DOMAIN "Public storage domain" "$STORAGE_DOMAIN"
       fi
@@ -771,10 +810,10 @@ prompt_cloudflare() {
   fi
 
   # DR27: -y/--yes takes the default ("no") for this non-destructive prompt
-  # without asking, matching the documented flag behavior. A plain-http
-  # install is never offered a CDN: main() refuses the combination, so
+  # without asking, matching the documented flag behavior. A plain-http or
+  # ngrok install is never offered a CDN: main() refuses the combination, so
   # asking would only invite an answer that fails a step later.
-  if [ "$USE_CLOUDFLARE" -eq 0 ] && [ "$ALLOW_HTTP" -eq 0 ] &&
+  if [ "$USE_CLOUDFLARE" -eq 0 ] && [ "$SCHEME" = "https" ] &&
     [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
     if prompt_yes_no \
       "Front ${cdn_desc} with Cloudflare CDN (enables automatic cache purge on release)?" \
@@ -988,6 +1027,27 @@ EOF
     return 0
   fi
 
+  # ngrok replaces the whole network side — address, TLS, reachability — so
+  # what is left to prepare is the ngrok account and the OAuth app.
+  if [ "$SCHEME" = "ngrok" ]; then
+    cat <<'EOF'
+[selfhost] ngrok install (--ngrok): this machine, reached at an ngrok address. Before continuing, make sure:
+  - NGROK_AUTHTOKEN holds the authtoken of an ngrok account (free works:
+    https://dashboard.ngrok.com/get-started/your-authtoken), and no other
+    ngrok agent is serving that account's address — the free plan's one
+    address serves one agent at a time. No domain, DNS record, certificate,
+    or open port is needed; nothing is published on this machine.
+  - An OAuth sign-in provider exists — a GitHub OAuth App, a Bitbucket
+    OAuth consumer, and/or a GitLab application — with an Authorization
+    callback URL https://<ngrok address>/auth/callback and a generated client
+    secret. scripts/selfhost/ngrok-address.sh prints the address.
+  - The free plan carries 1 GB and 20,000 requests a month: enough to test
+    your own app, not for an app in the store. Apps keep the address they
+    were built with, so a production deployment belongs on your own domain.
+EOF
+    return 0
+  fi
+
   # Runs before the prompts, so the storage mode is only known when it came in
   # via flags/environment: name just the API domain for a known-external mode,
   # and otherwise note the storage domain is a bundled-storage-only need.
@@ -1027,6 +1087,35 @@ EOF
   esac
 }
 
+# --ngrok on an initial install, before any question is asked: refuse what an
+# ngrok stack cannot be, then learn the address unless --api-domain named it
+# (`cmpatch selfhost install --ngrok` already has it from ngrok-address.sh).
+# Everything derived from the address — SERVER_URL, PUBLIC_BASE_URL, the
+# OAuth callback — follows in write_env_file.
+prepare_ngrok_install() {
+  local address
+  [ -n "$NGROK_AUTHTOKEN" ] ||
+    fail_selfhost "--ngrok needs NGROK_AUTHTOKEN in the environment: copy the authtoken from https://dashboard.ngrok.com/get-started/your-authtoken (a free account works) and export it — it never goes on the command line."
+  if [ -n "$STORAGE_DOMAIN" ]; then
+    fail_selfhost "--storage-domain (or CODEMAGIC_PATCH_STORAGE_DOMAIN) does not apply with --ngrok: storage is served on the ngrok address itself, under /codemagic-patch. Unset it and rerun."
+  fi
+  case "${STORAGE_MODE:-bundled}" in
+    bundled) STORAGE_MODE=bundled ;;
+    *) fail_selfhost "--ngrok supports the bundled storage only (got --storage-mode ${STORAGE_MODE}): its single site serves downloads from the bundled MinIO under /codemagic-patch. Drop --storage-mode, or install on your own domain for external storage." ;;
+  esac
+  if [ "$USE_CLOUDFLARE" -eq 1 ] || [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ] ||
+    [ "$USE_CLOUDFRONT" -eq 1 ] || cloudfront_values_given; then
+    fail_selfhost "--ngrok cannot be combined with --cloudflare or --cloudfront (or their values): the CDN integrations front a domain you own, and the ngrok address is ngrok's. Drop the CDN flags; a CDN belongs to an install on your own domain."
+  fi
+  if [ -z "$API_DOMAIN" ]; then
+    log_selfhost "asking ngrok for this account's address"
+    address="$(selfhost_ngrok_address)"
+    address="${address#https://}"
+    API_DOMAIN="${address%%/*}"
+  fi
+  log_selfhost "ngrok address: https://${API_DOMAIN}"
+}
+
 check_port_hint() {
   local port="$1"
 
@@ -1058,7 +1147,7 @@ write_env_file() {
   # Bundled storage derives the public download URL from the storage domain;
   # external modes record the operator's --public-base-url instead.
   if [ "$STORAGE_MODE" = "bundled" ]; then
-    PUBLIC_BASE_URL="${SCHEME}://${STORAGE_DOMAIN}/codemagic-patch"
+    PUBLIC_BASE_URL="${URL_SCHEME}://${STORAGE_DOMAIN}/codemagic-patch"
   fi
 
   # Every value written single-quoted below must be representable (see
@@ -1074,6 +1163,7 @@ write_env_file() {
   validate_env_file_literal "--cloudfront-access-key-id" "$CLOUDFRONT_ACCESS_KEY_ID"
   validate_env_file_literal "--cloudfront-secret-access-key" "$CLOUDFRONT_SECRET_ACCESS_KEY"
   validate_env_file_literal "--cloudfront-origin-verify-secret" "$CLOUDFRONT_ORIGIN_VERIFY_SECRET"
+  validate_env_file_literal "NGROK_AUTHTOKEN" "$NGROK_AUTHTOKEN"
   local provider secret_var
   for provider in $SELFHOST_OAUTH_PROVIDERS; do
     secret_var="${provider}_OAUTH_CLIENT_SECRET"
@@ -1103,10 +1193,18 @@ SELFHOST_DATABASE_MODE=${DATABASE_MODE}
 SELFHOST_STORAGE_MODE=${STORAGE_MODE}
 SELFHOST_STORAGE_ORIGIN_MODE=${storage_origin_mode}
 # https: Caddy obtains certificates. http: plain HTTP on port 80, no
-# certificates (--allow-http); every URL below follows it, and so does the
-# OAuth callback the provider must allow. Changing it is a reinstall.
+# certificates (--allow-http). ngrok: the ngrok address above is the one
+# public origin, ngrok terminates its TLS, and nothing is published here
+# (--ngrok). Every URL below follows it, and so does the OAuth callback the
+# provider must allow. Changing it is a reinstall.
 SELFHOST_SCHEME=${SCHEME}
 EOF
+  # The ngrok agent in the stack authenticates with this token on every
+  # start. Storage is served on the same address under /codemagic-patch,
+  # which is why the storage domain above repeats the API domain.
+  if [ "$SCHEME" = "ngrok" ]; then
+    printf "NGROK_AUTHTOKEN='%s'\n" "$NGROK_AUTHTOKEN" >>"$env_tmp"
+  fi
   # The plain-HTTP overlay publishes the storage site's port. It is derived
   # from the storage domain (host:port, else 80) and written next to the
   # scheme so a hand-edited domain is caught by the rerun check rather than
@@ -1116,7 +1214,7 @@ EOF
   fi
   cat >>"$env_tmp" <<EOF
 
-SERVER_URL=${SCHEME}://${API_DOMAIN}
+SERVER_URL=${URL_SCHEME}://${API_DOMAIN}
 PUBLIC_BASE_URL='${PUBLIC_BASE_URL}'
 
 CODEMAGIC_PATCH_SERVER_IMAGE=codemagic-patch-server:selfhost
@@ -1273,7 +1371,7 @@ EOF
         key="${provider}_OAUTH_SCOPES"
         printf '%s="%s"\n' "$key" "${!key:-${!scopes_default_var}}"
       fi
-      printf '%s_OAUTH_ALLOWED_REDIRECT_URIS=%s://%s/auth/callback\n' "$provider" "$SCHEME" "$API_DOMAIN"
+      printf '%s_OAUTH_ALLOWED_REDIRECT_URIS=%s://%s/auth/callback\n' "$provider" "$URL_SCHEME" "$API_DOMAIN"
     } >>"$env_tmp"
   done
 
@@ -1370,6 +1468,7 @@ repair_env_file() {
   # exists to never produce.
   validate_selfhost_stack_shape
   SCHEME="$(selfhost_scheme_from_env_file)"
+  URL_SCHEME="$(selfhost_url_scheme "$SCHEME")"
 
   # The stack shape is fixed at install time. --repair-env must not become a
   # way around that: the file's own refusal to rewrite these on rerun is what
@@ -1385,31 +1484,51 @@ repair_env_file() {
   if [ "$ALLOW_HTTP" -eq 1 ] && [ "$SCHEME" != "http" ]; then
     fail_selfhost "--repair-env does not switch the scheme (SELFHOST_SCHEME=${SCHEME} in ${SELFHOST_ENV_FILE}): moving between https and plain http changes every URL clients and the OAuth provider were given, so it is a reinstall — remove the env file and install again with --allow-http. Drop --allow-http and pass just the values to fix."
   fi
+  if [ "$USE_NGROK" -eq 1 ] && [ "$SCHEME" != "ngrok" ]; then
+    fail_selfhost "--repair-env does not switch the scheme (SELFHOST_SCHEME=${SCHEME} in ${SELFHOST_ENV_FILE}): moving a deployment onto an ngrok address changes every URL clients and the OAuth provider were given, so it is a reinstall — remove the env file and install again with --ngrok. Drop --ngrok and pass just the values to fix."
+  fi
 
   if [ -n "$API_DOMAIN" ]; then
     validate_domain "API domain" "$API_DOMAIN"
     plan_selfhost_env_value CODEMAGIC_PATCH_API_DOMAIN "$API_DOMAIN"
     # Derived, not independent: keeping these in step with the domain is the
     # whole reason repair belongs in this script.
-    plan_selfhost_env_value SERVER_URL "${SCHEME}://${API_DOMAIN}"
+    plan_selfhost_env_value SERVER_URL "${URL_SCHEME}://${API_DOMAIN}"
     for provider in $SELFHOST_OAUTH_PROVIDERS; do
       if [ -n "$(selfhost_env_value_from_file "${provider}_OAUTH_CLIENT_ID")" ]; then
-        plan_selfhost_env_value "${provider}_OAUTH_ALLOWED_REDIRECT_URIS" "${SCHEME}://${API_DOMAIN}/auth/callback"
+        plan_selfhost_env_value "${provider}_OAUTH_ALLOWED_REDIRECT_URIS" "${URL_SCHEME}://${API_DOMAIN}/auth/callback"
       fi
     done
+    # An ngrok deployment has one origin: the storage domain and the download
+    # URL are the address too, so they move with it.
+    if [ "$SCHEME" = "ngrok" ]; then
+      plan_selfhost_env_value CODEMAGIC_PATCH_STORAGE_DOMAIN "$API_DOMAIN"
+      plan_selfhost_env_literal PUBLIC_BASE_URL "${URL_SCHEME}://${API_DOMAIN}/codemagic-patch"
+    fi
     repaired=1
   fi
   api_domain="${API_DOMAIN:-$(selfhost_env_value_from_file CODEMAGIC_PATCH_API_DOMAIN)}"
 
+  # A rotated or mistyped ngrok token. Only an ngrok deployment has an agent
+  # to give it to; on any other scheme a NGROK_AUTHTOKEN left exported in the
+  # operator's shell is none of this deployment's business, so it is ignored.
+  if [ "$SCHEME" = "ngrok" ] && [ -n "$NGROK_AUTHTOKEN" ]; then
+    validate_env_file_literal "NGROK_AUTHTOKEN" "$NGROK_AUTHTOKEN"
+    plan_selfhost_env_literal NGROK_AUTHTOKEN "$NGROK_AUTHTOKEN"
+    repaired=1
+  fi
+
   if [ -n "$STORAGE_DOMAIN" ]; then
     [ "$storage_mode" = "bundled" ] ||
       fail_selfhost "--storage-domain does not apply to this deployment: SELFHOST_STORAGE_MODE=${storage_mode} has no storage domain on this host"
+    [ "$SCHEME" != "ngrok" ] ||
+      fail_selfhost "--storage-domain does not apply to an ngrok deployment: storage is served on the ngrok address itself, under /codemagic-patch. Repair the address with --api-domain instead."
     validate_storage_domain "storage domain" "$STORAGE_DOMAIN"
     plan_selfhost_env_value CODEMAGIC_PATCH_STORAGE_DOMAIN "$STORAGE_DOMAIN"
     # Bundled storage derives the download URL from the storage domain
     # (write_env_file), so the pair moves together or not at all — and on
     # plain http, so does the port the overlay publishes for it.
-    plan_selfhost_env_literal PUBLIC_BASE_URL "${SCHEME}://${STORAGE_DOMAIN}/codemagic-patch"
+    plan_selfhost_env_literal PUBLIC_BASE_URL "${URL_SCHEME}://${STORAGE_DOMAIN}/codemagic-patch"
     if [ "$SCHEME" = "http" ]; then
       plan_selfhost_env_value SELFHOST_HTTP_STORAGE_PORT "$(storage_port_from_domain "$STORAGE_DOMAIN")"
     fi
@@ -1448,7 +1567,7 @@ repair_env_file() {
       validate_env_file_literal "$(selfhost_oauth_flag "$secret_var")" "${!secret_var}"
       plan_selfhost_env_value "$id_var" "${!id_var}"
       plan_selfhost_env_literal "$secret_var" "${!secret_var}"
-      plan_selfhost_env_value "${provider}_OAUTH_ALLOWED_REDIRECT_URIS" "${SCHEME}://${api_domain}/auth/callback"
+      plan_selfhost_env_value "${provider}_OAUTH_ALLOWED_REDIRECT_URIS" "${URL_SCHEME}://${api_domain}/auth/callback"
       repaired=1
     fi
     # A provider's optional keys and scopes are repairable on their own, and
@@ -1530,7 +1649,7 @@ repair_env_file() {
 }
 
 main() {
-  local provider key given ignored optional_var
+  local provider key given ignored optional_var env_reused=1
   check_tooling
   if [ "$REPAIR_ENV" -eq 1 ] && [ ! -f "$SELFHOST_ENV_FILE" ]; then
     fail_selfhost "--repair-env applies only to an existing ${SELFHOST_ENV_FILE}; there is nothing to repair here. Run the install without it."
@@ -1538,14 +1657,27 @@ main() {
   if [ ! -f "$SELFHOST_ENV_FILE" ]; then
     print_prerequisites
   fi
-  check_port_hint 80
-  check_port_hint 443
+  # An ngrok stack publishes no port on this machine, so whatever holds 80 or
+  # 443 here is no concern of the install.
+  local port_scheme="$SCHEME"
+  if [ -f "$SELFHOST_ENV_FILE" ]; then
+    port_scheme="$(selfhost_scheme_from_env_file)"
+  fi
+  if [ "$port_scheme" != "ngrok" ]; then
+    check_port_hint 80
+    check_port_hint 443
+  fi
 
   if [ ! -f "$SELFHOST_ENV_FILE" ]; then
+    env_reused=0
     if [ "$ALLOW_HTTP" -eq 1 ]; then
       # Plain http serves this machine alone, so its name is not a question;
       # an explicit --api-domain may only repeat it (validate_domain).
       API_DOMAIN="${API_DOMAIN:-localhost}"
+    fi
+    if [ "$SCHEME" = "ngrok" ]; then
+      # The address is ngrok's to give, so it is learned, not asked.
+      prepare_ngrok_install
     fi
     prompt_required API_DOMAIN "CodemagicPatch API domain" "$API_DOMAIN"
     prompt_required ADMIN_EMAIL "Admin email" "$ADMIN_EMAIL"
@@ -1573,7 +1705,9 @@ main() {
     validate_domain "API domain" "$API_DOMAIN"
     if [ "$STORAGE_MODE" = "bundled" ]; then
       validate_storage_domain "storage domain" "$STORAGE_DOMAIN"
-      if [ "$API_DOMAIN" = "$STORAGE_DOMAIN" ]; then
+      # The ngrok stack's single site serves storage on the API domain by
+      # design (prompt_storage set the two equal).
+      if [ "$SCHEME" != "ngrok" ] && [ "$API_DOMAIN" = "$STORAGE_DOMAIN" ]; then
         fail_selfhost "the API domain and storage domain must differ (they map to separate Caddy sites); got ${API_DOMAIN} for both"
       fi
       if [ "$USE_CLOUDFRONT" -eq 1 ]; then
@@ -1633,6 +1767,19 @@ main() {
       warn_selfhost "ignoring --allow-http; the scheme is only written on initial install"
       warn_selfhost "SELFHOST_SCHEME in ${SELFHOST_ENV_FILE} stays authoritative — moving a deployment between https and plain http changes every URL clients and the OAuth provider were given, so it is a reinstall (remove the env file and install again), not a rerun"
     fi
+    if [ "$USE_NGROK" -eq 1 ] && [ "$(selfhost_scheme_from_env_file)" != "ngrok" ]; then
+      warn_selfhost "ignoring --ngrok; the scheme is only written on initial install"
+      warn_selfhost "SELFHOST_SCHEME in ${SELFHOST_ENV_FILE} stays authoritative — moving a deployment onto an ngrok address changes every URL clients and the OAuth provider were given, so it is a reinstall (remove the env file and install again), not a rerun"
+    fi
+    # The ngrok token is a credential, not part of the stack's shape or its
+    # URLs, so a rerun that is handed one takes it: a token reset in the ngrok
+    # dashboard is then fixed by running the install again with the new one.
+    if [ "$(selfhost_scheme_from_env_file)" = "ngrok" ] && [ -n "$NGROK_AUTHTOKEN" ] &&
+      [ "$NGROK_AUTHTOKEN" != "$(selfhost_env_value_from_file NGROK_AUTHTOKEN)" ]; then
+      validate_env_file_literal "NGROK_AUTHTOKEN" "$NGROK_AUTHTOKEN"
+      set_selfhost_env_literal NGROK_AUTHTOKEN "$NGROK_AUTHTOKEN"
+      log_selfhost "updated NGROK_AUTHTOKEN in ${SELFHOST_ENV_FILE}"
+    fi
   fi
 
   # Reset so detection below reflects the env file, not flags or the ambient
@@ -1678,8 +1825,16 @@ main() {
   # Validated to be https or http just above; from here on every URL and
   # domain rule follows the file's scheme, not the flag's.
   SCHEME="$(selfhost_scheme_from_env_file)"
+  URL_SCHEME="$(selfhost_url_scheme "$SCHEME")"
   if [ "$SCHEME" = "http" ]; then
     ALLOW_HTTP=1
+  elif [ "$SCHEME" = "ngrok" ]; then
+    USE_NGROK=1
+    # A first install named it before its questions (prepare_ngrok_install);
+    # a rerun names it here, so every run's log says where the server is.
+    if [ "$env_reused" -eq 1 ]; then
+      log_selfhost "ngrok address: https://${CODEMAGIC_PATCH_API_DOMAIN}"
+    fi
   fi
   # install.sh is the only caller that also judges delivery configuration:
   # compose_selfhost deliberately skips it so a CloudFront misconfiguration
@@ -1692,6 +1847,19 @@ main() {
     { [ "${DELIVERY_ADAPTER:-base-url}" != "base-url" ] ||
       [ "${STORAGE_ORIGIN_MODE:-direct}" = "cdn-origin" ]; }; then
     fail_selfhost "SELFHOST_SCHEME=http in ${SELFHOST_ENV_FILE} cannot be combined with DELIVERY_ADAPTER=${DELIVERY_ADAPTER:-base-url} or SELFHOST_STORAGE_ORIGIN_MODE=${STORAGE_ORIGIN_MODE:-direct}: a CDN in front of storage needs the https stack. Set DELIVERY_ADAPTER=base-url and SELFHOST_STORAGE_ORIGIN_MODE=direct (removing the CDN values), or reinstall for https, and rerun."
+  fi
+  # The same refusals prepare_ngrok_install makes, for a hand-edited file: the
+  # CDN integrations need a domain of your own, and Caddyfile.ngrok serves the
+  # bundled MinIO alone.
+  if [ "$SCHEME" = "ngrok" ]; then
+    if [ "${DELIVERY_ADAPTER:-base-url}" != "base-url" ] ||
+      [ "${STORAGE_ORIGIN_MODE:-direct}" = "cdn-origin" ]; then
+      fail_selfhost "SELFHOST_SCHEME=ngrok in ${SELFHOST_ENV_FILE} cannot be combined with DELIVERY_ADAPTER=${DELIVERY_ADAPTER:-base-url} or SELFHOST_STORAGE_ORIGIN_MODE=${STORAGE_ORIGIN_MODE:-direct}: the CDN integrations front a domain you own, and the ngrok address is ngrok's. Set DELIVERY_ADAPTER=base-url and SELFHOST_STORAGE_ORIGIN_MODE=direct (removing the CDN values), or reinstall on your own domain, and rerun."
+    fi
+    if [ "${STORAGE_MODE:-bundled}" != "bundled" ]; then
+      fail_selfhost "SELFHOST_SCHEME=ngrok in ${SELFHOST_ENV_FILE} supports the bundled storage only (got SELFHOST_STORAGE_MODE=${STORAGE_MODE}): its single site serves downloads from the bundled MinIO under /codemagic-patch. Reinstall with the bundled storage, or on your own domain for external storage."
+    fi
+    require_selfhost_env_var NGROK_AUTHTOKEN
   fi
 
   # DR29: a reused or hand-edited env file may be missing required values (e.g.
@@ -1754,7 +1922,13 @@ main() {
   validate_domain "CODEMAGIC_PATCH_API_DOMAIN" "$CODEMAGIC_PATCH_API_DOMAIN"
   if [ "${STORAGE_MODE:-bundled}" = "bundled" ]; then
     validate_storage_domain "CODEMAGIC_PATCH_STORAGE_DOMAIN" "$CODEMAGIC_PATCH_STORAGE_DOMAIN"
-    if [ "$CODEMAGIC_PATCH_API_DOMAIN" = "$CODEMAGIC_PATCH_STORAGE_DOMAIN" ]; then
+    if [ "$SCHEME" = "ngrok" ]; then
+      # One site, one address: a storage domain that drifted from the API
+      # domain would leave PUBLIC_BASE_URL pointing at a host nothing serves.
+      if [ "$CODEMAGIC_PATCH_API_DOMAIN" != "$CODEMAGIC_PATCH_STORAGE_DOMAIN" ]; then
+        fail_selfhost "CODEMAGIC_PATCH_STORAGE_DOMAIN must repeat CODEMAGIC_PATCH_API_DOMAIN on an ngrok deployment (storage is served on the ngrok address under /codemagic-patch); got ${CODEMAGIC_PATCH_STORAGE_DOMAIN} and ${CODEMAGIC_PATCH_API_DOMAIN}. Rerun with --repair-env --api-domain <address> to set both, and retry."
+      fi
+    elif [ "$CODEMAGIC_PATCH_API_DOMAIN" = "$CODEMAGIC_PATCH_STORAGE_DOMAIN" ]; then
       fail_selfhost "CODEMAGIC_PATCH_API_DOMAIN and CODEMAGIC_PATCH_STORAGE_DOMAIN must differ (they map to separate Caddy sites). Edit ${SELFHOST_ENV_FILE} (or rerun with distinct --api-domain/--storage-domain) and retry."
     fi
     # The plain-HTTP overlay publishes the storage site's port from this key;
@@ -1855,6 +2029,9 @@ main() {
   if [ "$SKIP_PUBLIC_CHECK" -eq 0 ]; then
     if [ "$SCHEME" = "http" ]; then
       log_selfhost "waiting for the API and storage sites over plain HTTP (no certificates to obtain)"
+    elif [ "$SCHEME" = "ngrok" ]; then
+      log_selfhost "waiting for ${SERVER_URL} through ngrok"
+      wait_for_selfhost_ngrok_online
     else
       log_selfhost "waiting for public HTTPS; Caddy must obtain Let's Encrypt certificates first,"
       log_selfhost "which usually takes 1-2 minutes (longer if rate limited) before the next step"
@@ -1866,7 +2043,7 @@ main() {
       if [ "$USE_CLOUDFLARE" -eq 1 ]; then
         log_selfhost "Cloudflare enabled: keep ${CODEMAGIC_PATCH_STORAGE_DOMAIN} DNS-only until Caddy obtains a certificate, then switch it to proxied"
       fi
-      wait_for_selfhost_http "${SCHEME}://${CODEMAGIC_PATCH_STORAGE_DOMAIN}/minio/health/ready" "storage ${scheme_label}"
+      wait_for_selfhost_http "${URL_SCHEME}://${CODEMAGIC_PATCH_STORAGE_DOMAIN}/minio/health/ready" "storage ${scheme_label}"
     fi
   else
     warn_selfhost "skipping public ${scheme_label} readiness checks"
@@ -1879,9 +2056,15 @@ main() {
     printf 'Plain HTTP (SELFHOST_SCHEME=http): this machine only, no TLS on any URL\n'
     printf 'below. The server is bound to 127.0.0.1 as localhost; allow cleartext HTTP in the app\n'
     printf '(Android usesCleartextTraffic, iOS ATS) for these URLs.\n\n'
+  elif [ "$SCHEME" = "ngrok" ]; then
+    printf 'ngrok (SELFHOST_SCHEME=ngrok): every URL below is this machine, reached at\n'
+    printf 'its ngrok address; ngrok terminates TLS and nothing is published on this machine.\n'
+    printf "ngrok's free plan carries 1 GB and 20,000 requests a month: enough to test your\n"
+    printf 'own app, not for an app in the store. Apps keep the address they were built\n'
+    printf 'with, so a production deployment belongs on your own domain.\n\n'
   fi
   printf 'Server URL (app config: CodemagicPatchApiUrl):\n  %s\n\n' "$SERVER_URL"
-  printf 'Dashboard URL:\n  %s://%s/\n\n' "$SCHEME" "$CODEMAGIC_PATCH_API_DOMAIN"
+  printf 'Dashboard URL:\n  %s://%s/\n\n' "$URL_SCHEME" "$CODEMAGIC_PATCH_API_DOMAIN"
   printf 'Public base URL (app config: CodemagicPatchDownloadBaseUrl):\n  %s\n\n' "$PUBLIC_BASE_URL"
   if [ "$USE_CLOUDFLARE" -eq 1 ]; then
     printf 'CDN:\n  Cloudflare cache purge enabled (DELIVERY_ADAPTER=cloudflare).\n'
@@ -1908,7 +2091,7 @@ main() {
   fi
   printf 'Next:\n'
   printf '  1. Store .env.selfhost securely.\n'
-  printf '  2. Sign in as the admin via the dashboard at %s://%s/\n' "$SCHEME" "$CODEMAGIC_PATCH_API_DOMAIN"
+  printf '  2. Sign in as the admin via the dashboard at %s://%s/\n' "$URL_SCHEME" "$CODEMAGIC_PATCH_API_DOMAIN"
   printf "     (no CLI needed), or install the CLI from this repo's root and sign in:\n"
   printf '       yarn install && yarn cli:install-global\n'
   printf '       cmpatch login --server-url %s\n' "$SERVER_URL"

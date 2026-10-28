@@ -13,6 +13,7 @@ import {
   loadStoredCredential,
   removeStoredCredential,
   saveStoredCredential,
+  withCredentialStoreLock,
   type OAuthStoredCredential,
   type StoredCredential,
 } from "./credentials";
@@ -94,41 +95,30 @@ export async function authenticatedRequest(
       );
     }
 
-    let refreshed: StoredCredential;
-    try {
-      refreshed = await refreshStoredCredential(
-        deps,
-        target,
-        authSource.credential,
-      );
-    } catch (refreshError) {
-      if (!isAuthenticationRequired(refreshError)) {
-        throw refreshError;
+    // Refresh tokens rotate, and presenting a used one makes the server revoke the
+    // whole session. Two runs of this CLI can overlap (a terminal and a CI step, two
+    // jobs on one machine), so refreshes take turns under the store's lock, and each
+    // first checks whether another run has already refreshed the session it read.
+    const credential = authSource.credential;
+    const refreshed = await withCredentialStoreLock({ env: deps.env }, async () => {
+      const current = await loadStoredCredential(target.serverUrl, { env: deps.env });
+      if (current && current.accessToken !== credential.accessToken) {
+        return current;
       }
 
-      // The server rotates refresh tokens, and two runs of this CLI can overlap (a
-      // terminal and a CI step, two jobs on one machine): if another process refreshed
-      // this session between our read and our refresh, ours was the consumed token.
-      // What that process stored is the live session — use it rather than deleting it.
-      const current = await loadStoredCredential(target.serverUrl, { env: deps.env });
-      if (
-        current?.kind === "oauth" &&
-        current.refreshToken !== authSource.credential.refreshToken
-      ) {
-        return performAuthenticatedRequest(
-          deps,
-          target,
-          pathname,
-          init,
-          current.accessToken,
+      try {
+        return await refreshStoredCredential(deps, target, credential);
+      } catch (refreshError) {
+        if (!isAuthenticationRequired(refreshError)) {
+          throw refreshError;
+        }
+
+        await removeStoredCredential(target.serverUrl, { env: deps.env });
+        throw new ValidationError(
+          `Stored ${PRODUCT_NAME} session expired or was revoked. Run \`${CLI_NAME} login --server-url ${target.serverUrl}\` to sign in again.`,
         );
       }
-
-      await removeStoredCredential(target.serverUrl, { env: deps.env });
-      throw new ValidationError(
-        `Stored ${PRODUCT_NAME} session expired or was revoked. Run \`${CLI_NAME} login --server-url ${target.serverUrl}\` to sign in again.`,
-      );
-    }
+    });
 
     return performAuthenticatedRequest(
       deps,

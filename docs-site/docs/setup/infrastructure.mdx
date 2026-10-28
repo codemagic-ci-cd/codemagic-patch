@@ -3,7 +3,7 @@ title: Infrastructure adapters
 description: >-
   Configure external storage and CDN delivery adapters when you outgrow the
   default Compose stack.
-llmsDescription: 'Storage and delivery adapters — S3, GCS, MinIO, base-url, Cloudflare, CloudFront.'
+llmsDescription: 'Storage and delivery adapters — S3, GCS, Silo, base-url, Cloudflare, CloudFront.'
 ---
 
 # Infrastructure adapters
@@ -31,7 +31,7 @@ The server never serves OTA artifacts from the API domain; clients fetch from yo
 
 `scripts/selfhost/install.sh` sets up:
 
-- `STORAGE_ADAPTER=s3` with bundled MinIO
+- `STORAGE_ADAPTER=s3` with bundled Silo
 - `DELIVERY_ADAPTER=base-url`: clients fetch directly from `PUBLIC_BASE_URL`
 - `PUBLIC_BASE_URL` on your storage domain, e.g. `https://storage-updates.example.com/codemagic-patch`
 - Compose hardcodes `MODE=all` (API and release worker in one process)
@@ -46,13 +46,13 @@ Controls where release artifacts live.
 
 | Value | Typical use |
 | --- | --- |
-| `s3` | Default. MinIO in the Compose stack, or any S3-compatible store (AWS S3, Cloudflare R2, etc.) in a custom deployment |
+| `s3` | Default. Silo in the Compose stack, or any S3-compatible store (AWS S3, Cloudflare R2, etc.) in a custom deployment |
 | `gcs` | Google Cloud Storage with separate public and internal buckets (custom deployment) |
 | `memory` | Local development and tests only, not for production |
 
 ### S3-compatible storage
 
-Used by the default self-host stack (MinIO) and for external object storage at scale.
+Used by the default self-host stack (Silo) and for external object storage at scale.
 
 Key variables (full list in [Configuration reference](/docs/reference/configuration)):
 
@@ -60,8 +60,8 @@ Key variables (full list in [Configuration reference](/docs/reference/configurat
 | --- | --- |
 | `S3_BUCKET` | Public bucket name (required when `STORAGE_ADAPTER=s3`) |
 | `S3_INTERNAL_BUCKET` | Optional distinct private bucket for `_internal/` keys, including copy source and destination; unset retains one-bucket routing |
-| `S3_ENDPOINT` | Custom endpoint for MinIO or S3-compatible services |
-| `S3_FORCE_PATH_STYLE` | `true` for MinIO; often `false` for AWS |
+| `S3_ENDPOINT` | Custom endpoint for Silo or other S3-compatible services |
+| `S3_FORCE_PATH_STYLE` | `true` for Silo; often `false` for AWS |
 | `S3_REGION` | AWS region (default `us-east-1`) |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Credentials, or omit both to use the host's default credential chain |
 
@@ -103,11 +103,11 @@ Controls how storage keys become client-facing download URLs and whether the ser
 | `cloudflare` | Storage domain is proxied through Cloudflare; server calls the Cache Purge API after releases |
 | `cloudfront` | CloudFront serves `PUBLIC_BASE_URL`; server submits scoped invalidations after releases and wildcard invalidation on deployment deletion |
 
-With `base-url`, clients hit your storage domain directly (Caddy → MinIO in the default stack).
+With `base-url`, clients hit your storage domain directly (Caddy → Silo in the default stack).
 
 With `cloudflare`, manifest URLs still use `PUBLIC_BASE_URL`, which should be the Cloudflare-fronted storage domain, and Patch purges cached manifest URLs after releases, promotions, rollbacks, and related deployment changes. Setup: [Cloudflare setup](/docs/setup/cloudflare).
 
-With `cloudfront`, bundled MinIO uses a separate header-protected origin
+With `cloudfront`, bundled Silo uses a separate header-protected origin
 hostname while the viewer storage hostname remains `PUBLIC_BASE_URL`. External
 S3/GCS uses the bucket endpoint directly. Setup: [CloudFront setup](/docs/setup/cloudfront).
 
@@ -120,7 +120,7 @@ You usually need to think about adapters when:
 - Download volume or geographic reach outgrows a single origin: add Cloudflare
   ([Cloudflare setup](/docs/setup/cloudflare)) or CloudFront
   ([CloudFront setup](/docs/setup/cloudfront))
-- You want managed object storage instead of bundled MinIO: choose external
+- You want managed object storage instead of bundled Silo: choose external
   S3-compatible storage or GCS during the first install
 
 You usually do not need to change adapters when:
@@ -138,7 +138,7 @@ Adapter changes are server-side. Apps still need two URLs:
 | `CodemagicPatchApiUrl` | API / control plane (metrics, auth) |
 | `CodemagicPatchDownloadBaseUrl` | `PUBLIC_BASE_URL`, storage domain or CDN-fronted equivalent |
 
-If you add a CDN, `CodemagicPatchDownloadBaseUrl` should match the CDN-facing base URL clients actually fetch from, not the raw MinIO origin.
+If you add a CDN, `CodemagicPatchDownloadBaseUrl` should match the CDN-facing base URL clients actually fetch from, not the raw Silo origin.
 
 ## Related
 

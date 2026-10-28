@@ -157,16 +157,22 @@ export async function ensureCheckout(
     return;
   }
 
-  await cloneCheckout(deps, progress, checkout.path);
+  await cloneSource(deps, progress, checkout.path, "the evaluation stack's source");
 }
 
-async function cloneCheckout(
+/**
+ * Clones the repository — from the source snapshot an internal test build
+ * carries, or from the public repo — into `path`. `what` names the copy in
+ * the step and the failure ("the evaluation stack's source").
+ */
+export async function cloneSource(
   deps: SourceDeps,
   progress: Progress,
   path: string,
+  what: string,
 ): Promise<void> {
   const source = sourceBundlePath(deps) ?? SOURCE_REPO_URL;
-  progress.write("downloading the evaluation stack's source");
+  progress.write(`downloading ${what}`);
 
   const chunks: string[] = [];
   let result;
@@ -181,14 +187,14 @@ async function cloneCheckout(
     });
   } catch {
     throw new UsageError(
-      "git is required to download the evaluation stack's source, and it is not on PATH. Install git and run this again.",
+      `git is required to download ${what}, and it is not on PATH. Install git and run this again.`,
     );
   }
 
   if (result.exitCode !== 0) {
     throw new RemoteScriptFailure(
       [
-        `Could not download the evaluation stack's source from ${source} to ${path}.`,
+        `Could not download ${what} from ${source} to ${path}.`,
         "",
         ...chunks.join("").trim().split("\n"),
       ].join("\n"),

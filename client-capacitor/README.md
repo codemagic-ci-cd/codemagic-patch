@@ -50,7 +50,7 @@ directory. There is no bundler to integrate, no bytecode, and no New Architectur
 - Signature verification when you configure a public key (RS256, skipped rather than
   silently passed when no key is configured)
 - Automatic crash-loop rollback if a new package fails before the app reports ready,
-  after a configurable number of launches (`maxLaunchAttempts`, default 3)
+  after a configurable number of launches (`maxLaunchAttempts`, default 2)
 - Configuration via `capacitor.config.ts`, with a native-resource override for CI
 - A one-call `start()` that checks on launch and, optionally, on every return to the
   foreground; CodePush-style `sync()`; or step-by-step APIs when you need control
@@ -162,7 +162,7 @@ the step-by-step APIs when you need more control.
 | `apiUrl` | yes | API server origin (the server's `SERVER_URL`), e.g. `https://updates.example.com`. The SDK appends `/v1/...` |
 | `downloadBaseUrl` | yes | Artifact origin (the server's `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch`. May include a bucket/path prefix; the SDK appends manifest/artifact paths |
 | `publicKey` | no | PEM public key (SPKI, `-----BEGIN PUBLIC KEY-----`); required only when enforcing client-side signature verification |
-| `maxLaunchAttempts` | no | How many consecutive launches a newly installed update may boot without `notifyAppReady()` before it is rolled back as a crash. Positive integer, default `3`. An invalid value logs a warning and uses the default rather than blocking boot |
+| `maxLaunchAttempts` | no | How many consecutive launches a newly installed update may boot without `notifyAppReady()` before it is rolled back as a crash. Positive integer, default `2`. An invalid value logs a warning and uses the default rather than blocking boot |
 
 Each platform block is independent — configure at least one, and every block you
 provide needs `deploymentKey`, `apiUrl`, and `downloadBaseUrl` (`publicKey` and
@@ -177,7 +177,11 @@ instead — `CodemagicPatchDeploymentKey`/`CodemagicPatchApiUrl`/
 `CodemagicPatchDownloadBaseUrl`/`CodemagicPatchPublicKey`/
 `CodemagicPatchMaxLaunchAttempts` in Android `strings.xml` or iOS `Info.plist` (the same
 names the React Native SDK reads). Precedence: **native resource >
-`capacitor.config.ts`**.
+`capacitor.config.ts`**. From 0.1.2 the SDK ships a keep rule
+(`res/raw/codemagic_patch_keep.xml`) so Android resource shrinking does not strip
+these overrides; on older versions a shrunk release build silently falls back to
+`capacitor.config.ts` unless the app adds the same file as
+`android/app/src/main/res/raw/codemagic_patch_keep.xml` (not `keep.xml`).
 
 **Catching config mistakes before they ship:** run
 `npx codemagic-patch-check-config path/to/capacitor.config.json` in CI. It fails if both

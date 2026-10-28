@@ -668,7 +668,7 @@ const ANSI_ESCAPE = new RegExp(
   "gu",
 );
 
-function stripAnsi(text: string): string {
+export function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE, "");
 }
 

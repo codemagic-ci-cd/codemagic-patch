@@ -59,3 +59,10 @@ export type {
   OAuthAccessTokenMetadata,
   RefreshTokenMetadata,
 } from "./types";
+export {
+  addUtcDays,
+  foldCutoff,
+  isExpiredMetricEvent,
+  isFutureMetricEvent,
+  utcDay,
+} from "./metricRetention";

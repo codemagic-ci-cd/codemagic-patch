@@ -58,7 +58,7 @@ export function assertPlatformConfig(
   ) {
     throw new Error(
       `[codemagic-patch] ${platform} config value maxLaunchAttempts must be a positive integer ` +
-        `up to ${MAX_LAUNCH_ATTEMPTS_LIMIT}, got ${JSON.stringify(attempts)}. Omit it to keep the SDK default of 3.`,
+        `up to ${MAX_LAUNCH_ATTEMPTS_LIMIT}, got ${JSON.stringify(attempts)}. Omit it to keep the SDK default of 2.`,
     );
   }
 }

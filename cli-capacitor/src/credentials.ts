@@ -11,6 +11,7 @@ import {
   removeStoredCredential as removeRaw,
   resolveCredentialStorePath,
   saveStoredCredential as saveRaw,
+  withCredentialStoreLock,
   type CredentialStoreOptions,
   type StoredCredential,
 } from "./credentialStore";
@@ -20,6 +21,9 @@ export type {
   OAuthStoredCredential,
   StoredCredential,
 } from "./credentialStore";
+
+// It reads no credentials, so there is no unreadable store to explain.
+export { withCredentialStoreLock };
 
 export async function loadStoredCredential(
   serverUrl: string,

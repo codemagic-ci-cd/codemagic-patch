@@ -19,8 +19,10 @@ It is the only command-line tool a Capacitor team needs for this.
 | `login`, `logout`, `whoami` | [Sign in](#sign-in) to a server, and check who you are signed in as |
 | `token create \| list \| revoke` | Personal access tokens, for [CI](#in-ci) |
 | `config list \| set \| unset` | This machine's [default server](#from-nothing-to-a-published-update) |
+| `team list \| show` | The teams your account can see, for `--team` |
 | `app create \| list \| show \| rename \| setting \| remove` | [Apps](#apps-and-deployments) — one per platform |
-| `deployment create \| list \| rename \| remove \| clear \| metrics \| history` | Deployments, their **deployment keys**, and their adoption numbers |
+| `deployment create \| list \| rename \| remove \| clear \| metrics \| history \| timeseries` | Deployments, their **deployment keys**, and their adoption numbers |
+| `deployment \| release failures \| failure-events` | [Why updates fail](#operate-releases): failures by reason and code, and single failure events |
 | `release create` | [Publish](#publish-a-release) built web assets. A bare `release` means the same |
 | `release list \| show \| inspect \| metrics` | [Look at releases](#operate-releases) and at how they are being adopted |
 | `release patch \| disable \| enable \| promote \| rollback` | [Change what devices receive](#operate-releases) |
@@ -159,7 +161,7 @@ Things are selected by name or by id, whichever you have:
 
 Names match case-insensitively. Ids need no lookups and survive renames, which makes them
 the better choice in CI. `--team <name or id>` is only needed when your account can see
-more than one team.
+more than one team; `team list` shows them.
 
 `app remove`, `deployment remove` and `deployment clear` delete releases for good and
 ask first, like every command that changes what devices receive — see
@@ -207,6 +209,7 @@ until it has, and fails if the job failed — put it after `release create` in a
 
 ```sh
 cmpatch-capacitor release list --app MyApp-iOS --deployment Production --include metrics
+cmpatch-capacitor release list --app MyApp-iOS --deployment Production --binary-version-prefix 1.4
 cmpatch-capacitor release show --app MyApp-iOS --deployment Production --label v12
 ```
 
@@ -227,7 +230,13 @@ cmpatch-capacitor release show --app MyApp-iOS --deployment Production --label v
   previous one (or of `--label <label>`).
 - **Adoption.** `release metrics` for one release, `deployment metrics` for all of a
   deployment's: active, downloaded, ready (installed, waiting to take effect), applied
-  (running and reported healthy), failed.
+  (running and reported healthy), failed. `deployment timeseries --range 30d` gives the
+  same counters per day.
+- **Failures.** `failure_reasons` in `release metrics --format json` counts failures by
+  reason. `release failures --reason <reason>` breaks one down by code (for `network`,
+  the HTTP status); adding `--code <code>` (or `--no-code`) shows that code's most common
+  messages, and `release failure-events` lists the single events. The `deployment`
+  forms do the same across a deployment.
 
 ## Diagnose a setup
 
@@ -317,7 +326,7 @@ Keep the private key out of the repository. The public half — the whole PEM te
 
 Commands that change what devices receive, or delete something — `release create`,
 `patch`, `disable`, `enable`, `promote`, `rollback`, `app remove`, `deployment remove`,
-`deployment clear` — show what they are about to do and ask first. The question is only
+`deployment clear`, `token revoke` — show what they are about to do and ask first. The question is only
 asked on a terminal; anywhere else — a CI job (`CI` set to a non-empty value other than
 `0` or `false`), stdin or stderr that is not a terminal, `--format json` — the command
 refuses to run without `-y` / `--yes`.

@@ -20,4 +20,4 @@ The SDK reads these objects under your download base URL:
 
 - The manifest carries the full bundle URL and, when available, a binary patch URL. The SDK prefers the smaller patch and automatically falls back to the full bundle if the patch download or apply fails.
 - Bundle file names: iOS `main.jsbundle`, Android `index.android.bundle`.
-- The MinIO bucket (`codemagic-patch`) allows public reads of published artifacts but denies public reads under the `_internal/*` prefix (staged uploads).
+- The Silo bucket (`codemagic-patch`) allows public reads of published artifacts but denies public reads under the `_internal/*` prefix (staged uploads).

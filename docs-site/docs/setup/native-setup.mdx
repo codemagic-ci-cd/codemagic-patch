@@ -80,7 +80,7 @@ The SDK is configured through native values injected at build time:
 | `CodemagicPatchDownloadBaseUrl` | the server's exact `PUBLIC_BASE_URL` (the bundled-storage default ends with `/codemagic-patch`) |
 | `CodemagicPatchApiUrl` | your API URL |
 | `CodemagicPatchPublicKey` | *(optional)* PEM public key for code-signing enforcement |
-| `CodemagicPatchMaxLaunchAttempts` | *(optional)* launches a pending update gets to call `notifyAppReady()` before rollback; default `3`, see [SDK reference](/docs/reference/sdk-reference#notifyappready) |
+| `CodemagicPatchMaxLaunchAttempts` | *(optional)* launches a pending update gets to call `notifyAppReady()` before rollback; default `2`, see [SDK reference](/docs/reference/sdk-reference#notifyappready) |
 
 The snippets below use placeholder values. Substitute your deployment keys from above and your API / download URLs from [Install](/docs/install) (or [local quickstart](/docs/#5-try-it-with-your-own-app) for localhost).
 
@@ -110,9 +110,9 @@ Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, and `Codemag
 <!-- optional, only when enforcing code signing -->
 <key>CodemagicPatchPublicKey</key>
 <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
-<!-- optional, defaults to 3 -->
+<!-- optional, defaults to 2 -->
 <key>CodemagicPatchMaxLaunchAttempts</key>
-<integer>3</integer>
+<integer>2</integer>
 ```
 
 In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working.
@@ -188,8 +188,8 @@ Add the same keys to `android/app/src/main/res/values/strings.xml`:
   <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
   <!-- optional, only when enforcing code signing -->
   <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
-  <!-- optional, defaults to 3 -->
-  <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">3</string>
+  <!-- optional, defaults to 2 -->
+  <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">2</string>
 </resources>
 ```
 
@@ -379,5 +379,7 @@ resValue "string", "CodemagicPatchDeploymentKey", patchDeploymentKey
 Set the variable in the EAS profile's `env` field, or in the environment running Gradle locally. Keep the API and download URL resources from the setup above; do not also define the generated deployment-key resource in `strings.xml`.
 
 Before distributing either binary, confirm that its packaged `Info.plist` or Android string resource contains the intended deployment key.
+
+If the app has Jest tests, any test that imports the SDK now needs the setup file from [Testing your app](/docs/setup/testing).
 
 Next: [Checking for updates](/docs/setup/checking-for-updates). API details: [SDK reference](/docs/reference/sdk-reference).

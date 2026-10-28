@@ -1,20 +1,25 @@
 import type { Pool } from "pg";
 
-import type {
-  BinaryVersionFilter,
-  DeploymentId,
-  FailureCodeBreakdownList,
-  FailureDistribution,
-  FailureDistributionEntry,
-  FailureEventPage,
-  MetricEvent,
-  MetricEventName,
-  ReleaseDeliveryBreakdown,
-  ReleaseId,
-  ReleaseMetrics,
+import {
+  addUtcDays,
+  isExpiredMetricEvent,
+  isFutureMetricEvent,
+  utcDay,
+  type BinaryVersionFilter,
+  type DeploymentId,
+  type FailureCodeBreakdownList,
+  type FailureDistribution,
+  type FailureDistributionEntry,
+  type FailureEventPage,
+  type MetricEvent,
+  type MetricEventName,
+  type ReleaseDeliveryBreakdown,
+  type ReleaseId,
+  type ReleaseMetrics,
 } from "../domain";
 import { withTransaction, type DatabasePool } from "../db";
 import {
+  activeDeviceFilterKey,
   binaryVersionFilterValues,
   binaryVersionMatchSql,
 } from "./binaryVersionFilterSql";
@@ -35,6 +40,8 @@ export interface PersistMetricEventInput {
   failurePayload: Record<string, unknown> | null;
   id: string;
   platform: string | null;
+  /** Server clock at receipt; the retention checks measure `emittedAt` against it. */
+  receivedAt: Date;
   runningPackageHash: string | null;
   targetPackageHash: string | null;
 }
@@ -58,6 +65,21 @@ export type PersistMetricEventResult =
        * `Applied` for. Nothing was stored.
        */
       outcome: "superseded";
+    }
+  | {
+      /**
+       * An event dated on or before the retention cutoff, eight UTC days
+       * before `receivedAt`: its day is folded or about to be. Nothing was
+       * stored.
+       */
+      outcome: "expired";
+    }
+  | {
+      /**
+       * An event emitted more than a day ahead of `receivedAt`. Nothing was
+       * stored.
+       */
+      outcome: "future";
     };
 
 export interface TimeseriesBucketRow {
@@ -216,6 +238,16 @@ export function createPostgresMetricsRepository(
     },
 
     async persistMetricEvent(input) {
+      if (isFutureMetricEvent(input.emittedAt, input.receivedAt)) {
+        return { outcome: "future" };
+      }
+      // Judged from the date alone, with no watermark read or lock: a day
+      // accepted here cannot be folded before this insert commits
+      // (`isExpiredMetricEvent`).
+      if (isExpiredMetricEvent(input.emittedAt, input.receivedAt)) {
+        return { outcome: "expired" };
+      }
+
       const deployment = await findDeploymentByKey(pool, input.deploymentKey);
       if (!deployment) {
         return {
@@ -232,60 +264,14 @@ export function createPostgresMetricsRepository(
         return insertMetricEvent(pool, deployment, input);
       }
 
-      // Failure supersession (server tech spec §Metrics Service → Failure
-      // Supersession). A device that reports `Applied` for a package got
-      // there in the end, so the `Failed` events it reported for that package
-      // on the way were transient — a retry that worked — and are removed
-      // rather than left to count against the release forever. A device does
-      // not fail an update it has already confirmed, so once its `Applied` is
-      // stored any `Failed` it sends for the same package is ignored: one that
-      // arrives late because the client flushes and retries in batches, or a
-      // retransmission of one the `Applied` already deleted.
-      //
-      // The advisory lock serializes the two paths per device and package.
-      // Without it, under READ COMMITTED, a `Failed` whose check ran before
-      // the `Applied` committed and whose insert ran after the `Applied`'s
-      // DELETE would slip through both and stick. The key is only ever hashed,
-      // so a collision costs nothing but an unrelated device waiting its turn.
-      return withTransaction(pool, async (client) => {
-        await client.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-          [[deployment.id, input.deviceId, targetPackageHash].join("\n")],
-        );
-
-        const scope = [deployment.id, input.deviceId, targetPackageHash];
-
-        if (input.eventName === "Failed") {
-          const succeeded = await client.query(
-            `
-              SELECT 1
-              FROM metric_event
-              WHERE deployment_id = $1
-                AND device_id = $2
-                AND target_package_hash = $3
-                AND event_name IN ('Applied', 'Success')
-              LIMIT 1
-            `,
-            scope,
-          );
-          if (succeeded.rows.length > 0) {
-            return { outcome: "superseded" };
-          }
-        } else {
-          await client.query(
-            `
-              DELETE FROM metric_event
-              WHERE deployment_id = $1
-                AND device_id = $2
-                AND target_package_hash = $3
-                AND event_name = 'Failed'
-            `,
-            scope,
-          );
-        }
-
-        return insertMetricEvent(client, deployment, input);
-      });
+      return withTransaction(pool, (client) =>
+        persistWithFailureSupersession(
+          client,
+          deployment,
+          input,
+          targetPackageHash,
+        ),
+      );
     },
 
     async listDeploymentTimeseries(deploymentId, range) {
@@ -294,6 +280,32 @@ export function createPostgresMetricsRepository(
       // only the requested number of series leaves PostgreSQL, while totals
       // still cover every hash in the range. The version list ignores
       // `binaryVersion` so a filtered chart can still name the other versions.
+      //
+      // Days past the raw window come from the daily aggregates instead,
+      // which cannot split a day. So `to` is rounded up to the next UTC
+      // midnight for both sources, as the route rounds `from` down to its
+      // UTC day: every bucket is a whole day, and a `to` inside a day reads
+      // the same rows before and after that day is folded. The response
+      // still echoes `to` as given. A day is in exactly one of the two
+      // sources at any snapshot, so each query reads both in a single
+      // statement; split in two, a fold committing in between would drop the
+      // day or count it twice. Raw rows are bucketed by UTC day explicitly so
+      // they line up with the folded days whatever the session TimeZone is.
+      // Distinct devices are compared in the C collation, which finds the
+      // same duplicates as the database locale for a fraction of the sort.
+      //
+      // Raw rows are read without the fold watermark. A replica from before
+      // the ingest cutoff can still write a raw row for a folded day during a
+      // rolling upgrade, and it is counted on top of that day's aggregates;
+      // only an event past the SDK's 7-day limit gets there, so the overlap
+      // is accepted. Without the watermark every read is one plain statement
+      // with nothing the planner has to guess, and a read whose columns an
+      // index covers never visits the table. The sources are still summed per
+      // bucket, and Active-device rows per join key before the join, so a
+      // repeated key cannot multiply the other counts.
+      const toDay = utcDay(range.to);
+      const end =
+        toDay.getTime() === range.to.getTime() ? toDay : addUtcDays(toDay, 1);
       const eventNames = [
         "Downloaded",
         "Ready",
@@ -316,12 +328,38 @@ export function createPostgresMetricsRepository(
         target_package_hash: string | null;
       }>(
         `
-          WITH bucketed AS MATERIALIZED (
+          WITH folded_counts AS (
             SELECT
-              date_trunc('day', emitted_at) AS bucket_start,
+              day,
               target_package_hash,
               (GROUPING(target_package_hash) = 1) AS is_total,
-              COUNT(DISTINCT device_id) FILTER (WHERE event_name = 'Active')::integer AS active_devices,
+              COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Downloaded'), 0)::integer AS downloaded,
+              COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Ready'), 0)::integer AS installed,
+              COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Applied'), 0)::integer AS success,
+              COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Failed'), 0)::integer AS failed
+            FROM metric_event_daily_count
+            WHERE deployment_id = $1
+              AND day >= ($2::timestamptz AT TIME ZONE 'UTC')::date
+              AND day < ($3::timestamptz AT TIME ZONE 'UTC')::date
+              AND ${binaryVersionMatchSql("binary_version", "$6", "$7")}
+            GROUP BY GROUPING SETS ((day, target_package_hash), (day))
+          ),
+          folded_active_devices AS (
+            SELECT day, scope, target_package_hash, SUM(device_count) AS device_count
+            FROM metric_active_device_daily_count
+            WHERE deployment_id = $1
+              AND version_filter = $8
+              AND version_value = $9
+              AND day >= ($2::timestamptz AT TIME ZONE 'UTC')::date
+              AND day < ($3::timestamptz AT TIME ZONE 'UTC')::date
+            GROUP BY day, scope, target_package_hash
+          ),
+          buckets_by_source AS (
+            SELECT
+              date_trunc('day', emitted_at, 'UTC') AS bucket_start,
+              target_package_hash,
+              (GROUPING(target_package_hash) = 1) AS is_total,
+              COUNT(DISTINCT device_id COLLATE "C") FILTER (WHERE event_name = 'Active')::integer AS active_devices,
               COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
               COUNT(*) FILTER (WHERE event_name IN ('Ready', 'Installed'))::integer AS installed,
               COUNT(*) FILTER (WHERE event_name IN ('Applied', 'Success'))::integer AS success,
@@ -333,9 +371,37 @@ export function createPostgresMetricsRepository(
               AND event_name = ANY($5::text[])
               AND ${binaryVersionMatchSql("binary_version", "$6", "$7")}
             GROUP BY GROUPING SETS (
-              (date_trunc('day', emitted_at), target_package_hash),
-              (date_trunc('day', emitted_at))
+              (date_trunc('day', emitted_at, 'UTC'), target_package_hash),
+              (date_trunc('day', emitted_at, 'UTC'))
             )
+            UNION ALL
+            SELECT
+              (folded_counts.day::timestamp AT TIME ZONE 'UTC') AS bucket_start,
+              folded_counts.target_package_hash,
+              folded_counts.is_total,
+              COALESCE(active.device_count, 0) AS active_devices,
+              folded_counts.downloaded,
+              folded_counts.installed,
+              folded_counts.success,
+              folded_counts.failed
+            FROM folded_counts
+            LEFT JOIN folded_active_devices active
+              ON active.day = folded_counts.day
+              AND active.scope = CASE WHEN folded_counts.is_total THEN 'deployment' ELSE 'package' END
+              AND active.target_package_hash IS NOT DISTINCT FROM folded_counts.target_package_hash
+          ),
+          bucketed AS MATERIALIZED (
+            SELECT
+              bucket_start,
+              target_package_hash,
+              is_total,
+              SUM(active_devices)::integer AS active_devices,
+              SUM(downloaded)::integer AS downloaded,
+              SUM(installed)::integer AS installed,
+              SUM(success)::integer AS success,
+              SUM(failed)::integer AS failed
+            FROM buckets_by_source
+            GROUP BY bucket_start, target_package_hash, is_total
           ),
           ranked_hashes AS (
             SELECT
@@ -369,23 +435,31 @@ export function createPostgresMetricsRepository(
           [
             deploymentId,
             range.from,
-            range.to,
+            end,
             range.seriesLimit,
             eventNames,
             ...binaryVersionFilterValues(range.binaryVersion),
+            ...activeDeviceFilterKey(range.binaryVersion),
           ],
         ),
         pool.query<{ binary_version: string }>(
           `
-            SELECT DISTINCT binary_version
+            SELECT binary_version
             FROM metric_event
             WHERE deployment_id = $1
               AND emitted_at >= $2
               AND emitted_at < $3
               AND binary_version IS NOT NULL
               AND event_name = ANY($4::text[])
+            UNION
+            SELECT binary_version
+            FROM metric_event_daily_count
+            WHERE deployment_id = $1
+              AND day >= ($2::timestamptz AT TIME ZONE 'UTC')::date
+              AND day < ($3::timestamptz AT TIME ZONE 'UTC')::date
+              AND binary_version IS NOT NULL
           `,
-          [deploymentId, range.from, range.to, eventNames],
+          [deploymentId, range.from, end, eventNames],
         ),
       ]);
 
@@ -448,6 +522,8 @@ export function createPostgresMetricsRepository(
         return metrics;
       }
 
+      // Each query below reads raw and folded days in a single statement, for
+      // the snapshot reason given in `listDeploymentTimeseries`.
       const result = await pool.query<{
         active: number;
         downloaded: number;
@@ -457,16 +533,26 @@ export function createPostgresMetricsRepository(
         target_package_hash: string;
       }>(
         `
+          WITH counted AS (
+            SELECT target_package_hash, event_name, COUNT(*) AS event_count
+            FROM metric_event
+            WHERE deployment_id = $1
+              AND target_package_hash = ANY($2::text[])
+            GROUP BY target_package_hash, event_name
+            UNION ALL
+            SELECT target_package_hash, event_name, event_count
+            FROM metric_event_daily_count
+            WHERE deployment_id = $1
+              AND target_package_hash = ANY($2::text[])
+          )
           SELECT
             target_package_hash,
-            COUNT(*) FILTER (WHERE event_name = 'Active')::integer AS active,
-            COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
-            COUNT(*) FILTER (WHERE event_name = 'Failed')::integer AS failed,
-            COUNT(*) FILTER (WHERE event_name IN ('Ready', 'Installed'))::integer AS installed,
-            COUNT(*) FILTER (WHERE event_name IN ('Applied', 'Success'))::integer AS success
-          FROM metric_event
-          WHERE deployment_id = $1
-            AND target_package_hash = ANY($2::text[])
+            COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Active'), 0)::integer AS active,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Downloaded'), 0)::integer AS downloaded,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Failed'), 0)::integer AS failed,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name IN ('Ready', 'Installed')), 0)::integer AS installed,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name IN ('Applied', 'Success')), 0)::integer AS success
+          FROM counted
           GROUP BY target_package_hash
         `,
         [deploymentId, uniqueHashes],
@@ -487,7 +573,10 @@ export function createPostgresMetricsRepository(
       // `detail_count` rides along with the reason counts because the
       // dashboard needs it to decide whether a reason row is worth opening:
       // a reason no device ever sent a payload for has nothing behind it, and
-      // offering a drill-down into an empty dialog is a dead end.
+      // offering a drill-down into an empty dialog is a dead end. A failure
+      // counts as detailed when its payload carried a code, message, or exit
+      // reason, the fields the drill-down shows. That is every payload the
+      // contract allows, and it is what the folded rows still record.
       const reasons = await pool.query<{
         count: number;
         detail_count: number;
@@ -495,15 +584,39 @@ export function createPostgresMetricsRepository(
         target_package_hash: string;
       }>(
         `
+          WITH counted AS (
+            SELECT
+              target_package_hash,
+              COALESCE(NULLIF(attributes ->> 'reason', ''), 'unknown') AS reason,
+              COUNT(*) AS event_count,
+              COUNT(*) FILTER (
+                WHERE COALESCE(
+                  NULLIF(failure_payload ->> 'code', ''),
+                  NULLIF(failure_payload ->> 'message', ''),
+                  NULLIF(failure_payload ->> 'android_previous_process_exit', '')
+                ) IS NOT NULL
+              ) AS detail_count
+            FROM metric_event
+            WHERE deployment_id = $1
+              AND target_package_hash = ANY($2::text[])
+              AND event_name = 'Failed'
+            GROUP BY target_package_hash, reason
+            UNION ALL
+            SELECT
+              target_package_hash,
+              reason,
+              event_count,
+              CASE WHEN COALESCE(code, message, exit_reason) IS NOT NULL THEN event_count ELSE 0 END
+            FROM metric_failure_daily_count
+            WHERE deployment_id = $1
+              AND target_package_hash = ANY($2::text[])
+          )
           SELECT
             target_package_hash,
-            COALESCE(NULLIF(attributes ->> 'reason', ''), 'unknown') AS reason,
-            COUNT(*)::integer AS count,
-            COUNT(*) FILTER (WHERE failure_payload IS NOT NULL)::integer AS detail_count
-          FROM metric_event
-          WHERE deployment_id = $1
-            AND target_package_hash = ANY($2::text[])
-            AND event_name = 'Failed'
+            reason,
+            SUM(event_count)::integer AS count,
+            SUM(detail_count)::integer AS detail_count
+          FROM counted
           GROUP BY target_package_hash, reason
         `,
         [deploymentId, uniqueHashes],
@@ -531,16 +644,27 @@ export function createPostgresMetricsRepository(
         success: number;
       }>(
         `
+          WITH counted AS (
+            SELECT binary_version, event_name, COUNT(*) AS event_count
+            FROM metric_event
+            WHERE deployment_id = $1
+              AND target_package_hash = $2
+              AND event_name IN ('Downloaded', 'Ready', 'Installed', 'Applied', 'Success', 'Failed')
+            GROUP BY binary_version, event_name
+            UNION ALL
+            SELECT binary_version, event_name, event_count
+            FROM metric_event_daily_count
+            WHERE deployment_id = $1
+              AND target_package_hash = $2
+              AND event_name IN ('Downloaded', 'Ready', 'Applied', 'Failed')
+          )
           SELECT
             binary_version,
-            COUNT(*) FILTER (WHERE event_name = 'Downloaded')::integer AS downloaded,
-            COUNT(*) FILTER (WHERE event_name = 'Failed')::integer AS failed,
-            COUNT(*) FILTER (WHERE event_name IN ('Ready', 'Installed'))::integer AS installed,
-            COUNT(*) FILTER (WHERE event_name IN ('Applied', 'Success'))::integer AS success
-          FROM metric_event
-          WHERE deployment_id = $1
-            AND target_package_hash = $2
-            AND event_name IN ('Downloaded', 'Ready', 'Installed', 'Applied', 'Success', 'Failed')
+            COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Downloaded'), 0)::integer AS downloaded,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name = 'Failed'), 0)::integer AS failed,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name IN ('Ready', 'Installed')), 0)::integer AS installed,
+            COALESCE(SUM(event_count) FILTER (WHERE event_name IN ('Applied', 'Success')), 0)::integer AS success
+          FROM counted
           GROUP BY binary_version
         `,
         [deploymentId, targetPackageHash],
@@ -573,17 +697,32 @@ export function createPostgresMetricsRepository(
         last_seen_at: Date;
       }>(
         `
+          WITH counted AS (
+            SELECT
+              NULLIF(failure_payload ->> 'code', '') AS code,
+              COUNT(*) AS event_count,
+              MIN(emitted_at) AS first_seen_at,
+              MAX(emitted_at) AS last_seen_at
+            FROM metric_event
+            WHERE deployment_id = ${deployment}
+              AND event_name = 'Failed'
+              AND COALESCE(NULLIF(attributes ->> 'reason', ''), 'unknown') = ${reason}
+              ${hashes ?? ""}
+            GROUP BY 1
+            UNION ALL
+            SELECT code, event_count, first_seen_at, last_seen_at
+            FROM metric_failure_daily_count
+            WHERE deployment_id = ${deployment}
+              AND reason = ${reason}
+              ${hashes ?? ""}
+          )
           SELECT
-            NULLIF(failure_payload ->> 'code', '') AS code,
-            COUNT(*)::integer AS code_count,
-            MIN(emitted_at) AS first_seen_at,
-            MAX(emitted_at) AS last_seen_at
-          FROM metric_event
-          WHERE deployment_id = ${deployment}
-            AND event_name = 'Failed'
-            AND COALESCE(NULLIF(attributes ->> 'reason', ''), 'unknown') = ${reason}
-            ${hashes ?? ""}
-          GROUP BY 1
+            code,
+            SUM(event_count)::integer AS code_count,
+            MIN(first_seen_at) AS first_seen_at,
+            MAX(last_seen_at) AS last_seen_at
+          FROM counted
+          GROUP BY code
           ORDER BY code_count DESC, code ASC NULLS LAST
         `,
         values,
@@ -603,6 +742,9 @@ export function createPostgresMetricsRepository(
       // One pass over the bucket yields both distributions and the bucket
       // total: GROUPING SETS lets a single scan feed three independent
       // groupings, where three queries would each re-read the same rows.
+      // The bucket is the retained raw rows plus the folded daily counts, in
+      // one statement as in `listFailureCodes`, so `total` equals that code's
+      // count and is the denominator of every entry's share.
       //
       // Ranking happens in SQL so only the surviving rows cross the wire. The
       // bucket can hold tens of thousands of events; what leaves PostgreSQL is
@@ -620,16 +762,22 @@ export function createPostgresMetricsRepository(
             SELECT
               NULLIF(failure_payload ->> 'message', '') AS message,
               NULLIF(failure_payload ->> 'android_previous_process_exit', '')
-                AS exit_reason
+                AS exit_reason,
+              COUNT(*) AS event_count
             FROM metric_event
             ${bucket.where}
+            GROUP BY 1, 2
+            UNION ALL
+            SELECT message, exit_reason, event_count
+            FROM metric_failure_daily_count
+            ${bucket.foldedWhere}
           ),
           grouped AS (
             SELECT
               message,
               exit_reason,
               GROUPING(message, exit_reason) = 3 AS is_total,
-              COUNT(*)::integer AS entry_count
+              COALESCE(SUM(event_count), 0)::integer AS entry_count
             FROM matched
             GROUP BY GROUPING SETS ((message), (exit_reason), ())
           ),
@@ -741,17 +889,24 @@ async function countDownloadsByDeliveryType(
 
   const result = await client.query<{ full_bundle: number; patch: number }>(
     `
+      WITH counted AS (
+        SELECT attributes ->> 'delivery_type' AS delivery_type, COUNT(*) AS event_count
+        FROM metric_event
+        WHERE deployment_id = $1
+          AND target_package_hash = $2
+          AND event_name = 'Downloaded'
+        GROUP BY delivery_type
+        UNION ALL
+        SELECT delivery_type, event_count
+        FROM metric_event_daily_count
+        WHERE deployment_id = $1
+          AND target_package_hash = $2
+          AND event_name = 'Downloaded'
+      )
       SELECT
-        COUNT(*) FILTER (
-          WHERE attributes ->> 'delivery_type' = 'full_bundle'
-        )::integer AS full_bundle,
-        COUNT(*) FILTER (
-          WHERE attributes ->> 'delivery_type' = 'patch'
-        )::integer AS patch
-      FROM metric_event
-      WHERE deployment_id = $1
-        AND target_package_hash = $2
-        AND event_name = 'Downloaded'
+        COALESCE(SUM(event_count) FILTER (WHERE delivery_type = 'full_bundle'), 0)::integer AS full_bundle,
+        COALESCE(SUM(event_count) FILTER (WHERE delivery_type = 'patch'), 0)::integer AS patch
+      FROM counted
     `,
     [deploymentId, targetPackageHash],
   );
@@ -875,7 +1030,8 @@ function readByteCount(value: string | number | null): number | null {
 
 /**
  * Builds the `WHERE` clause selecting one `payload.code` bucket, plus the
- * bound values it needs.
+ * bound values it needs. `foldedWhere` selects the same bucket in
+ * `metric_failure_daily_count`, over the same bound values.
  *
  * Parameter positions are assigned as placeholders are emitted rather than
  * written out, because the clause has a variable number of them: the no-code
@@ -893,20 +1049,33 @@ function failureBucketClauses(
   options: { code: string | null; reason: string } & {
     targetPackageHashes: readonly string[] | null;
   },
-): { bind: (value: unknown) => string; values: unknown[]; where: string } {
+): {
+  bind: (value: unknown) => string;
+  foldedWhere: string;
+  values: unknown[];
+  where: string;
+} {
   const values: unknown[] = [];
   const bind = (value: unknown): string => `$${String(values.push(value))}`;
 
   const deployment = bind(deploymentId);
   const reason = bind(options.reason);
+  const codeValue = options.code === null ? null : bind(options.code);
   const code =
-    options.code === null
+    codeValue === null
       ? "NULLIF(failure_payload ->> 'code', '') IS NULL"
-      : `NULLIF(failure_payload ->> 'code', '') = ${bind(options.code)}`;
+      : `NULLIF(failure_payload ->> 'code', '') = ${codeValue}`;
+  const foldedCode = codeValue === null ? "code IS NULL" : `code = ${codeValue}`;
   const hashes = hashPredicate(options.targetPackageHashes, bind);
 
   return {
     bind,
+    foldedWhere: `
+      WHERE deployment_id = ${deployment}
+        AND reason = ${reason}
+        AND ${foldedCode}
+        ${hashes ?? ""}
+    `,
     values,
     where: `
       WHERE deployment_id = ${deployment}
@@ -1000,6 +1169,77 @@ function decodeFailureEventCursor(
   return Number.isNaN(emittedAt.getTime()) || id.length === 0
     ? null
     : { emittedAt, id };
+}
+
+/**
+ * Failure supersession (server tech spec §Metrics Service → Failure
+ * Supersession). A device that reports `Applied` for a package got there in
+ * the end, so the `Failed` events it reported for that package on the way
+ * were transient — a retry that worked — and are removed rather than left to
+ * count against the release forever. A device does not fail an update it has
+ * already confirmed, so once its `Applied` is stored any `Failed` it sends for
+ * the same package is ignored: one that arrives late because the client
+ * flushes and retries in batches, or a retransmission of one the `Applied`
+ * already deleted.
+ *
+ * The advisory lock serializes the two paths per device and package. Without
+ * it, under READ COMMITTED, a `Failed` whose check ran before the `Applied`
+ * committed and whose insert ran after the `Applied`'s DELETE would slip
+ * through both and stick. The key is only ever hashed, so a collision costs
+ * nothing but an unrelated device waiting its turn.
+ *
+ * Must run inside a transaction: the advisory lock is transaction-scoped.
+ */
+async function persistWithFailureSupersession(
+  client: Queryable,
+  deployment: DeploymentRow,
+  input: PersistMetricEventInput,
+  targetPackageHash: string,
+): Promise<PersistMetricEventResult> {
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [[deployment.id, input.deviceId, targetPackageHash].join("\n")],
+  );
+
+  const scope = [deployment.id, input.deviceId, targetPackageHash];
+
+  if (input.eventName === "Failed") {
+    const succeeded = await client.query(
+      `
+        SELECT 1
+        FROM metric_event
+        WHERE deployment_id = $1
+          AND device_id = $2
+          AND target_package_hash = $3
+          AND event_name IN ('Applied', 'Success')
+        LIMIT 1
+      `,
+      scope,
+    );
+    if (succeeded.rows.length > 0) {
+      return { outcome: "superseded" };
+    }
+  } else {
+    // Every raw `Failed` is removed (server tech spec §Failure
+    // Supersession); a folded one is only a count by now and stays counted,
+    // so a failure past the cutoff goes while its day's fold has not run yet.
+    // A fold deleting that day at the same moment can deadlock with this
+    // DELETE only over two or more of the device's `Failed` rows on the day;
+    // PostgreSQL then aborts one side, and the client's retry or the next
+    // fold run repeats it.
+    await client.query(
+      `
+        DELETE FROM metric_event
+        WHERE deployment_id = $1
+          AND device_id = $2
+          AND target_package_hash = $3
+          AND event_name = 'Failed'
+      `,
+      scope,
+    );
+  }
+
+  return insertMetricEvent(client, deployment, input);
 }
 
 /**

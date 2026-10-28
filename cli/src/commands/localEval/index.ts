@@ -15,16 +15,10 @@
 import { join } from "node:path";
 
 import { PRODUCT_NAME } from "../../branding";
-import {
-  loadCliConfig,
-  loadProjectConfig,
-  saveCliConfig,
-} from "../../configStore";
 import { createProgress } from "../../progress";
 import { LOCAL_EVAL_UP_MILESTONES } from "../../remoteOutput";
 import { getCliVersion } from "../../version";
 import {
-  confirmFinishStep,
   notice,
   offerBrowserOpen,
   paletteFor,
@@ -38,6 +32,11 @@ import {
 } from "../selfhostSession";
 import { runRenderedScript } from "../scriptRunner";
 import { UsageError, type CommandDeps } from "../shared";
+import {
+  adoptDefaultServer,
+  effectiveServerUrl,
+  type LocalServer,
+} from "./defaultServer";
 import { ensureDocker, probeDocker } from "./docker";
 import { recoverMissingContainers } from "./recovery";
 import { captureLocal } from "./process";
@@ -73,6 +72,11 @@ const LOCAL_ADMIN_EMAIL = "local-admin@example.com";
 const SEEDED_TOKEN = "cm_pat_local-dev-token-change-me-00000001";
 
 const LABEL = "cmpatch selfhost local-eval";
+
+const EVAL_SERVER: LocalServer = {
+  name: "the evaluation stack",
+  serverUrl: SERVER_URL,
+};
 
 export async function runLocalEval(
   deps: CommandDeps,
@@ -198,7 +202,7 @@ async function runUp(deps: CommandDeps, parsed: ParsedArgs): Promise<string> {
     // line after the last answer rather than before the first question,
     // where it left the questions floating under a closed bracket.
     progress.settle();
-    defaulted = await adoptDefaultServer(deps, parsed);
+    defaulted = await adoptDefaultServer(deps, parsed, EVAL_SERVER);
     await offerDashboard(deps, parsed);
 
     progress.stop(
@@ -280,115 +284,6 @@ export function isSshSession(env: Record<string, string | undefined>): boolean {
   return ["SSH_CLIENT", "SSH_CONNECTION", "SSH_TTY"].some(
     (name) => (env[name] ?? "").trim().length > 0,
   );
-}
-
-/**
- * Points `cmpatch` at the stack, so the banner's commands work as printed —
- * and returns whether they actually will.
- *
- * Only an empty user-level default is taken silently. A machine that already
- * names a server — someone evaluating next to a real deployment — is asked,
- * because a `release create` that quietly went to localhost instead of
- * production is worse than one extra question; and a scripted run keeps what
- * it had. The user-level default is not the last word, though: the
- * environment and the project config of the directory this runs in outrank
- * it (the order localContext.ts applies), so a run from inside an app that
- * names its own server is told that server still wins, and the commands
- * shown carry `--server-url` — there is nothing to ask in that case.
- */
-async function adoptDefaultServer(
-  deps: CommandDeps,
-  parsed: ParsedArgs,
-): Promise<boolean> {
-  const override = await serverOverride(deps);
-  const config = await loadCliConfig({ env: deps.env });
-
-  if (config.serverUrl === undefined) {
-    await saveCliConfig({ ...config, serverUrl: SERVER_URL }, { env: deps.env });
-    if (override === null) {
-      notice(
-        deps,
-        `cmpatch commands now default to ${SERVER_URL} (change it with \`cmpatch config set server-url <url>\`).`,
-      );
-    }
-  } else if (config.serverUrl !== SERVER_URL && override === null) {
-    if (!canAsk(deps, parsed)) {
-      notice(
-        deps,
-        `cmpatch commands keep defaulting to ${config.serverUrl}; pass --server-url ${SERVER_URL} to use the evaluation stack.`,
-      );
-      return false;
-    }
-
-    // Said before it is asked: the question decides a machine-wide default,
-    // and the address alone does not say that the stack is a second server
-    // next to the one this machine already uses. Default no, deliberately:
-    // a `release create` that quietly went to localhost instead of
-    // production is worse than one declined question. Once the stack is up,
-    // Ctrl+C here means what "No" means.
-    notice(
-      deps,
-      [
-        `cmpatch commands on this machine default to ${config.serverUrl} when a project does not name its own server.`,
-        `The evaluation stack is a second server, at ${SERVER_URL}; commands meant for it need that default, or --server-url on each one.`,
-      ].join(" "),
-    );
-    const agreed = await confirmFinishStep(deps, {
-      initial: false,
-      message: `Make ${SERVER_URL} the default server for cmpatch on this machine?`,
-    });
-    if (!agreed) {
-      return false;
-    }
-
-    await saveCliConfig({ ...config, serverUrl: SERVER_URL }, { env: deps.env });
-  }
-
-  if (override !== null && override.value !== SERVER_URL) {
-    notice(
-      deps,
-      `${override.source} sets the server to ${override.value}, which outranks the default; pass --server-url ${SERVER_URL} to cmpatch commands run from here to reach the evaluation stack.`,
-    );
-    return false;
-  }
-
-  return true;
-}
-
-type ServerOverride = { source: string; value: string };
-
-/**
- * What outranks the user-level `serverUrl` for commands run from this
- * directory: `CODEMAGIC_PATCH_SERVER_URL`, then the project's own config —
- * the precedence localContext.ts gives every other command.
- */
-async function serverOverride(deps: CommandDeps): Promise<ServerOverride | null> {
-  const fromEnv = deps.env.CODEMAGIC_PATCH_SERVER_URL?.trim();
-  if (fromEnv !== undefined && fromEnv !== "") {
-    return { source: "CODEMAGIC_PATCH_SERVER_URL", value: fromEnv };
-  }
-
-  const projectRoot = process.cwd();
-  let fromProject: string | undefined;
-  try {
-    fromProject = (await loadProjectConfig(projectRoot)).serverUrl;
-  } catch {
-    // A project config that does not parse fails every command run here
-    // with its own message; this one only decides how to word the banner.
-    return null;
-  }
-  return fromProject === undefined
-    ? null
-    : { source: `The project config in ${projectRoot}`, value: fromProject };
-}
-
-/** The server `cmpatch` commands run from here would actually use. */
-async function effectiveServerUrl(deps: CommandDeps): Promise<string | undefined> {
-  const override = await serverOverride(deps);
-  if (override !== null) {
-    return override.value;
-  }
-  return (await loadCliConfig({ env: deps.env })).serverUrl;
 }
 
 /**

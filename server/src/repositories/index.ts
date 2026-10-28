@@ -85,6 +85,10 @@ export {
   type TeamInvitationTarget,
 } from "./iamInvitationRepository";
 export {
+  foldExpiredMetricDays,
+  type MetricFoldDayResult,
+} from "./metricFoldRepository";
+export {
   createPostgresMetricsRepository,
   ZERO_RELEASE_METRICS,
   type MetricsRepository,

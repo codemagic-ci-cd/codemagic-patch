@@ -51,9 +51,10 @@ export function parseCliArgs(
   if (parseRoute !== null) {
     const parsed = parseRoute.parse(parseRoute.args, defaults);
 
-    // A flag error inside a command we did resolve belongs to that command:
-    // point at its help page, which lists the flags it accepts, rather than
-    // reprinting the root command listing, which does not.
+    // A usage error (unknown flag, missing or invalid value, bad positional)
+    // inside a command we did resolve belongs to that command: point at its
+    // help page, which lists the flags it accepts, rather than reprinting the
+    // root command listing, which does not.
     if (!parsed.ok && parsed.showHelp && parsed.helpTopic === undefined) {
       return { ...parsed, helpTopic: parseRoute.path.join(" ") };
     }

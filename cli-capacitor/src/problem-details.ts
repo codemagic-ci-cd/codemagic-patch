@@ -1,4 +1,4 @@
-// Copied verbatim from cli/src/problem-details.ts (@codemagic/patch-cli 0.4.0), so
+// Copied verbatim from cli/src/problem-details.ts (@codemagic/patch-cli 0.7.0), so
 // both CLIs map a server problem to the same exit code.
 // Keep the two in step — see cli-capacitor-tech-spec › Provenance.
 
@@ -30,6 +30,22 @@ export class HttpProblemError extends Error {
     if (serverUrl !== undefined) {
       this.serverUrl = serverUrl;
     }
+  }
+}
+
+/**
+ * A 501 for a route this CLI knows: the server has nothing behind it, because
+ * it predates the feature or the deployment turned it off. That is one fact
+ * about the server, so a person reads it as the one sentence in `message`
+ * rather than as a problem record. It stays an HttpProblemError so
+ * `--format json` still forwards the server's problem as it came, and the exit
+ * code still follows the documented problem mapping.
+ */
+export class ServerFeatureUnavailableError extends HttpProblemError {
+  constructor(source: HttpProblemError, message: string) {
+    super(source.problem, source.responseStatus, source.serverUrl);
+    this.name = "ServerFeatureUnavailableError";
+    this.message = message;
   }
 }
 

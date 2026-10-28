@@ -28,6 +28,7 @@ import java.net.URL
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import kotlin.math.pow
 
@@ -35,6 +36,9 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
     NativeCodemagicPatchSpec(reactContext), LifecycleEventListener {
   private companion object {
     const val TAG = "CodemagicPatchModule"
+
+    // Process-wide so a re-created module instance does not warn again.
+    val blankDeploymentKeyWarned = AtomicBoolean(false)
   }
 
   private val storage = CodemagicPatchStorage(reactContext)
@@ -749,7 +753,7 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
 
   private fun manifestContext(binaryVersion: String? = binaryVersionOrNull()): WritableMap =
       Arguments.createMap().apply {
-        putString("deploymentKey", config("CodemagicPatchDeploymentKey"))
+        putString("deploymentKey", deploymentKey())
         if (binaryVersion == null) putNull("binaryVersion") else putString("binaryVersion", binaryVersion)
         putString(
           "runningPackageHash",
@@ -758,6 +762,20 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
         putString("deviceId", getDeviceId())
         putBoolean("publicKeyConfigured", config("CodemagicPatchPublicKey").isNotBlank())
       }
+
+  private fun deploymentKey(): String {
+    val key = config("CodemagicPatchDeploymentKey")
+    if (key.isBlank() && blankDeploymentKeyWarned.compareAndSet(false, true)) {
+      Log.w(
+        TAG,
+        "CodemagicPatchDeploymentKey string resource is missing or blank; OTA updates cannot " +
+          "work in this build. If this is a release build with shrinkResources, check that the " +
+          "SDK's keep rule (res/raw/codemagic_patch_keep.xml) took effect: CodemagicPatchDeploymentKey " +
+          "must still be in the APK's resource table (aapt2 dump resources)."
+      )
+    }
+    return key
+  }
 
   private fun config(key: String): String {
     val e2e = e2eLaunchArg(e2eKeyFor(key))

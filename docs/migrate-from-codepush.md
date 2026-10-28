@@ -13,7 +13,7 @@ Server setup is a prerequisite, not part of this guide. See
 [`docs/self-hosting-compose.md`](self-hosting-compose.md) for a production
 self-host (the [Install guide](https://patch.codemagic.io/docs/install)
 is the condensed version), or the
-[local quickstart](../README.md#quickstart--try-it-locally) to evaluate on a
+[local quickstart](local-evaluation.md) to evaluate on a
 laptop first.
 
 ## The mental model carries over

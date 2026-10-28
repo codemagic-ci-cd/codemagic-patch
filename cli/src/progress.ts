@@ -574,7 +574,7 @@ function createSpinnerProgress(
   };
 }
 
-const NO_OP_PROGRESS: Progress = {
+export const NO_OP_PROGRESS: Progress = {
   detail: () => {},
   fail: () => {},
   settle: () => {},

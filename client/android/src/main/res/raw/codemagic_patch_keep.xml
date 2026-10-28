@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The SDK reads its CodemagicPatch* string resources by name
+  (Resources.getIdentifier), which the resource shrinker cannot see.
+  AGP merges this rule into every host app so release builds with
+  shrinkResources keep them. Deliberately not named keep.xml: React
+  Native's bundle task generates raw/keep.xml, and a same-named app
+  file is silently replaced by it.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/CodemagicPatch*" />

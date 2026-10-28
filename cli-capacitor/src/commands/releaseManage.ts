@@ -16,6 +16,7 @@ import { assertExplicitBinaryVersion } from "../binaryVersion";
 import { CLI_NAME } from "../branding";
 import {
   APP_SELECTOR_FLAGS,
+  BINARY_VERSION_FILTER_FLAGS,
   CONNECTION_FLAGS,
   DEPLOYMENT_SELECTOR_FLAGS,
   DEPLOYMENT_USAGE,
@@ -23,6 +24,7 @@ import {
   PAGINATION_FLAGS,
   paginationFooter,
   readApiTarget,
+  readBinaryVersionFilter,
   readBoolean,
   readDeploymentSelector,
   readFormat,
@@ -81,12 +83,14 @@ export async function releaseListOutput(
 ): Promise<CommandOutput> {
   const selector = readDeploymentSelector(values);
   const { limit, offset } = readPagination(values);
+  const binaryVersionFilter = readBinaryVersionFilter(values);
   const target = readApiTarget(values, deps);
   const deploymentId = await resolveDeploymentId(deps, target, selector);
   const result = await authenticatedRequest(
     deps,
     target,
     pathWithQuery(`/v1/deployments/${encodeURIComponent(deploymentId)}/releases`, {
+      ...binaryVersionFilter,
       include: includeMetrics ? "metrics" : undefined,
       limit,
       offset,
@@ -130,6 +134,7 @@ const releaseList: CommandDefinition = {
       type: "string",
       value: "metrics",
     },
+    ...BINARY_VERSION_FILTER_FLAGS,
     ...PAGINATION_FLAGS,
     ...CONNECTION_FLAGS,
     FORMAT_FLAG,
@@ -144,7 +149,7 @@ const releaseList: CommandDefinition = {
     return releaseListOutput(values, deps, include === "metrics");
   },
   summary: "List a deployment's releases, newest first",
-  usage: `${DEPLOYMENT_USAGE} [--include metrics] [--limit <n>] [--offset <n>] [flags]`,
+  usage: `${DEPLOYMENT_USAGE} [--include metrics] [--binary-version <version> | --binary-version-prefix <prefix>] [--limit <n>] [--offset <n>] [flags]`,
 };
 
 const releaseShow: CommandDefinition = {

@@ -1,7 +1,7 @@
 # Self-Hosting With Docker Compose
 
 > **Just evaluating?** Don't start here. The [local evaluation
-> stack](../README.md#quickstart--try-it-locally) runs the full product —
+> stack](local-evaluation.md) runs the full product —
 > dashboard included — on a laptop with one command (`cmpatch selfhost
 > local-eval` after installing the npm CLI). It uses Node.js, git, curl, and
 > Docker with Compose v2; the CLI offers to install or start Docker when needed.
@@ -19,7 +19,7 @@
 This is the supported deployment path for Codemagic Patch — and in the initial
 open-source release, the only one. It runs the Codemagic Patch server as a single
 process in `MODE=all` on one Docker host with Caddy for HTTPS. By default the
-stack bundles PostgreSQL and MinIO; either can instead be a service you
+stack bundles PostgreSQL and Silo; either can instead be a service you
 operate — your own PostgreSQL, and object storage on S3 or GCS — see
 [External database and external storage](#external-database-and-external-storage).
 Split deployments with separate API and worker services are a work in
@@ -31,12 +31,12 @@ Related material:
   server requires if you bring your own platform. It is reference material,
   not a supported deployment path in the initial open-source release.
 - For evaluation on a workstation, use the
-  [local quickstart](../README.md#quickstart--try-it-locally) instead of
+  [local quickstart](local-evaluation.md) instead of
   deploying.
 
 ## External storage in the install wizard
 
-`cmpatch selfhost install` defaults to bundled MinIO. You can choose Cloudflare
+`cmpatch selfhost install` defaults to bundled Silo. You can choose Cloudflare
 R2, Amazon S3, or Google Cloud Storage instead. The installer can create those
 buckets or walk you through the console. Direct `install.sh` flags and bucket
 layout are in
@@ -59,7 +59,7 @@ differ.
   [Plain HTTP (no TLS)](#plain-http-no-tls). That mode has none of the DNS,
   certificate, or port 443 requirements below.)
 - Sizing: at runtime the stack (the server, Caddy, and — with the default
-  bundled modes — PostgreSQL and MinIO in one Compose project) fits in roughly
+  bundled modes — PostgreSQL and Silo in one Compose project) fits in roughly
   **2 GB RAM** plus a few GB of disk that grows
   with the OTA artifacts you store. The memory peak is the **first install**,
   which builds the server and dashboard images on the host. The build itself
@@ -83,9 +83,8 @@ differ.
     exchange when Bitbucket sign-in is configured.
   - **GitLab** (`gitlab.com`, or your self-hosted GitLab origin) — OAuth token
     exchange and identity lookup when GitLab sign-in is configured.
-  - **A container registry** (Docker Hub) — the PostgreSQL and MinIO images
-    (MinIO ships as PGSTY Silo, a maintained MinIO fork) and the image build
-    base layers.
+  - **A container registry** (Docker Hub) — the PostgreSQL and Silo images,
+    plus the image build base layers.
   - **The Cloudflare API** — only if you enable the CDN.
 
 ### DNS — must resolve before you install
@@ -104,7 +103,7 @@ storage-updates.example.com  A/AAAA  <server-ip>
 ```
 
 The storage domain is intentionally separate. The API domain serves the control
-plane, while the storage domain serves OTA artifacts from MinIO under
+plane, while the storage domain serves OTA artifacts from Silo under
 `/codemagic-patch`. (If you plan to front storage with Cloudflare, keep the storage
 record **DNS-only** during install and switch it to proxied afterward — see
 [Optional: front storage with Cloudflare CDN](#optional-front-storage-with-cloudflare-cdn).)
@@ -144,7 +143,7 @@ the `PUBLIC_BASE_URL` host) — see
 
 From your own machine, `cmpatch selfhost install user@vps` runs this same
 installer over SSH and guides you through DNS, the OAuth app, and an optional
-CDN, checking each step; it covers the default bundled Postgres/MinIO stack
+CDN, checking each step; it covers the default bundled Postgres/Silo stack
 (see [Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine)
 for the day-2 commands). It does not take `--allow-http`: the
 [plain-HTTP shape](#plain-http-no-tls) serves the machine the stack runs on
@@ -423,7 +422,7 @@ email" error.
 ## Plain HTTP (no TLS)
 
 `install.sh --allow-http` runs the same stack — the same server image, Caddy,
-the bundled PostgreSQL and MinIO, OAuth sign-in — over **plain HTTP on port
+the bundled PostgreSQL and Silo, OAuth sign-in — over **plain HTTP on port
 80** with no certificates, **for the machine it runs on alone**. It exists to
 evaluate the real self-host stack on a laptop: the API site is `localhost` and
 the bundled storage site is `localhost:9110`, so nothing in the
@@ -504,12 +503,73 @@ What changes, compared with the default HTTPS install:
 Backup, restore, upgrade, and smoke work unchanged: they read the scheme from
 `.env.selfhost` the way they read the mode flags.
 
+## ngrok (no domain)
+
+`install.sh --ngrok` runs the same stack on the machine it runs on and makes it
+reachable at an [ngrok](https://ngrok.com) address — on the free plan, the dev
+domain your account comes with, which does not change. It exists so you can
+connect your own app and test it on any device, phones included, before you
+have a domain: ngrok holds the certificate and forwards to the stack, which
+publishes no port on the machine, so nothing in the
+[Requirements](#requirements) about a public IP, DNS records, Let's Encrypt,
+open ports, or firewalls applies.
+
+```bash
+export NGROK_AUTHTOKEN=<from https://dashboard.ngrok.com/get-started/your-authtoken>
+./scripts/selfhost/ngrok-address.sh   # prints https://<address>
+# Register the OAuth app with the callback URL https://<address>/auth/callback, then:
+./scripts/selfhost/install.sh --ngrok \
+  --email admin@example.com \
+  --github-oauth-client-id <client-id> \
+  --github-oauth-client-secret <client-secret>
+```
+
+`cmpatch selfhost install --ngrok` runs the same two scripts on your machine
+and asks for everything in between, including the OAuth app.
+
+On a paid ngrok plan the stack can live on a domain you reserved instead —
+for instance while the dev domain serves another agent:
+`ngrok-address.sh --domain patch-test.ngrok.app` checks that the account can
+serve it, and `install.sh --ngrok --api-domain patch-test.ngrok.app` installs
+on it (`cmpatch selfhost install --ngrok --ngrok-domain patch-test.ngrok.app`
+does both).
+
+What changes, compared with the default HTTPS install:
+
+- **One address.** The ngrok address carries the API, the dashboard, and
+  downloads under `/codemagic-patch`: Caddy serves a single site,
+  `deploy/selfhost/Caddyfile.ngrok`. `SERVER_URL` is `https://<address>`,
+  `PUBLIC_BASE_URL` is `https://<address>/codemagic-patch`, the OAuth callback
+  is `https://<address>/auth/callback`, and the storage domain repeats the API
+  domain. Downloads are read-only: only `GET`/`HEAD` reach Silo, never a
+  listing, a signed request, or `_internal/`.
+- **Reach.** No port is published on the machine; the ngrok agent in the stack
+  (`deploy/selfhost/compose.ngrok.yml`) reaches Caddy over the compose network.
+- **The token.** `NGROK_AUTHTOKEN` is required and stored in `.env.selfhost`.
+  A rerun handed a different one stores it, which is how a token reset in the
+  ngrok dashboard is fixed. An address serves one agent at a time, so stop any
+  other `ngrok` serving it first — or use a reserved domain, above.
+- **Limits.** ngrok's free plan carries 1 GB and 20,000 requests a month, and
+  shows a browser a notice page on its first visit (apps and the CLI are not
+  affected). That is enough to test your own app, not to serve an app in the
+  store. Apps keep the address they were built with, so a production
+  deployment belongs on your own domain.
+- **Not combinable** with `--allow-http`, `--storage-domain`, external storage,
+  or a CDN: the CDN integrations front a domain you own.
+- **Fixed at install time**, like the other modes. `--repair-env --api-domain`
+  moves the address and every value derived from it together.
+
+Backup, restore, upgrade, and smoke read the scheme from `.env.selfhost` and
+assemble the same stack; their health checks go through the ngrok address.
+Run them from the checkout on this machine (`scripts/selfhost/backup.sh` and
+so on) — the `cmpatch selfhost` maintenance commands work over ssh.
+
 ## External database and external storage
 
 The Compose stack runs in one of four shapes, selected by two flags in
 `.env.selfhost`:
 
-| `SELFHOST_DATABASE_MODE` \ `SELFHOST_STORAGE_MODE` | `bundled` (MinIO in the stack) | `s3` / `gcs` (external bucket) |
+| `SELFHOST_DATABASE_MODE` \ `SELFHOST_STORAGE_MODE` | `bundled` (Silo in the stack) | `s3` / `gcs` (external bucket) |
 | --- | --- | --- |
 | `bundled` (Postgres in the stack) | **Default** | Supported |
 | `external` (your PostgreSQL) | Supported | Supported |
@@ -529,7 +589,7 @@ The maintenance scripts (`install.sh`, `backup.sh`, `restore.sh`,
 `upgrade.sh`) read the flags from `.env.selfhost` and assemble the
 `docker compose -f` file list from them. An unrecognized value fails hard
 rather than falling back to bundled, since a typo'd flag would otherwise start
-an empty bundled Postgres or MinIO alongside an external deployment.
+an empty bundled Postgres or Silo alongside an external deployment.
 
 `docker-compose.selfhost.yml` is the base file; the database and the object
 storage each ship as a mode overlay in `deploy/selfhost/`:
@@ -542,6 +602,7 @@ storage each ship as a mode overlay in `deploy/selfhost/`:
 | `SELFHOST_STORAGE_MODE=s3` | `deploy/selfhost/compose.external-storage-s3.yml` |
 | `SELFHOST_STORAGE_MODE=gcs` | `deploy/selfhost/compose.external-storage-gcs.yml` |
 | `SELFHOST_SCHEME=http` (`https` or absent selects nothing) | `deploy/selfhost/compose.http.yml`, after the storage overlay — see [Plain HTTP (no TLS)](#plain-http-no-tls) |
+| `SELFHOST_SCHEME=ngrok` | `deploy/selfhost/compose.ngrok.yml`, after the storage overlay — see [ngrok (no domain)](#ngrok-no-domain) |
 
 Compose commands run by hand need the overlays matching the env file's flags,
 with `docker-compose.selfhost.override.yml` last when the deployment uses one.
@@ -590,7 +651,7 @@ applies. `--database-mode external` combines with `--storage-mode s3`/`gcs`.
 ### External object storage
 
 `--storage-mode s3` or `--storage-mode gcs` connects the server to an
-object-storage bucket you operate instead of running MinIO inside the stack.
+object-storage bucket you operate instead of running Silo inside the stack.
 Two things change compared to bundled storage:
 
 - **There is no storage domain.** Caddy serves only the API domain
@@ -612,7 +673,7 @@ Two things change compared to bundled storage:
 
 `--s3-bucket` is required. The rest is optional: `--s3-region` (the server
 defaults to `us-east-1`), `--s3-endpoint` for S3-compatible providers such as
-MinIO or R2 (empty means AWS), `--s3-force-path-style true|false` (the server
+Silo or R2 (empty means AWS), `--s3-force-path-style true|false` (the server
 defaults to `false`), and `--s3-access-key-id` / `--s3-secret-access-key` —
 set both, or neither to use the SDK's default credential chain (for example
 EC2/ECS instance roles).
@@ -672,7 +733,7 @@ the internal bucket setting but does not back up external bucket contents.
 **Bucket policy.** The bucket serves public OTA artifacts anonymously and
 keeps the `_internal/*` staging prefix private.
 [`deploy/selfhost/aws-s3-bucket-policy.example.json`](../deploy/selfhost/aws-s3-bucket-policy.example.json)
-is an AWS bucket policy with the same semantics as the bundled MinIO policy
+is an AWS bucket policy with the same semantics as the bundled Silo policy
 ([`deploy/selfhost/minio-bucket-policy.json`](../deploy/selfhost/minio-bucket-policy.json)):
 anonymous `s3:GetObject` on the bucket's artifact keys, an explicit `Deny`
 for everything under `_internal/*`, and no `s3:ListBucket` grant — a listable
@@ -1215,7 +1276,7 @@ CODEMAGIC_PATCH_TOKEN=cm_pat_... ./scripts/selfhost/restore.sh backups/codemagic
 
 The restore command validates the backup shape, asks for explicit confirmation,
 replaces the local data volumes the backup's `backup-manifest` covers (both
-PostgreSQL and MinIO in the default bundled modes), starts the stack, checks health,
+PostgreSQL and Silo in the default bundled modes), starts the stack, checks health,
 and runs smoke — the full publish smoke when `CODEMAGIC_PATCH_TOKEN` is provided,
 unauthenticated checks only otherwise. A smoke failure at this point means
 post-restore validation failed; the volume restore itself has already
@@ -1382,7 +1443,7 @@ With the default bundled modes, the durable self-host state lives in two
 Compose volumes:
 
 - PostgreSQL data.
-- MinIO data.
+- Silo data.
 
 An external database or external storage keeps the corresponding state with
 your provider instead; reset it there. Do not reset only one of the two
@@ -1391,7 +1452,7 @@ state.
 
 ## Storage Policy
 
-With the bundled storage, MinIO is exposed on the storage domain so mobile
+With the bundled storage, Silo is exposed on the storage domain so mobile
 devices can fetch OTA artifacts directly. The Compose stack fixes the bucket
 name to `codemagic-patch`. The bucket policy allows anonymous `GetObject` for
 public OTA artifact keys and denies anonymous reads under `_internal/*`.
@@ -1406,7 +1467,7 @@ The self-host smoke test treats unsafe `_internal/*` exposure as a failure.
 ## Optional: front storage with Cloudflare CDN
 
 With the bundled storage, clients by default fetch artifacts straight from
-MinIO on the storage domain (`DELIVERY_ADAPTER=base-url`). That is fine for
+Silo on the storage domain (`DELIVERY_ADAPTER=base-url`). That is fine for
 evaluation, but for production we strongly recommend a CDN (this section or
 [CloudFront](#optional-front-storage-with-cloudfront-cdn)) so devices download
 from the edge rather than the single host. You can put
@@ -1522,7 +1583,7 @@ distribution ARN. Put that scoped key—not broad AWS credentials—in
 `.env.selfhost`. Configure the default behavior with managed
 `CachingOptimized`, HTTPS, and no viewer `Host` forwarding.
 
-### Bundled MinIO origin
+### Bundled Silo origin
 
 Bundled storage needs three distinct hostnames:
 

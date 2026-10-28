@@ -1480,6 +1480,23 @@ export type MetricEventIngestHandlerResult =
        * client stops retransmitting it.
        */
       outcome: "superseded";
+    }
+  | {
+      /**
+       * An event dated on or before the retention cutoff, eight UTC days
+       * before receipt: its day is folded or about to be (server tech spec
+       * §Data Retention). Nothing is stored; the event is acknowledged so the
+       * client stops retransmitting it.
+       */
+      outcome: "expired";
+    }
+  | {
+      /**
+       * An event emitted more than a day ahead of the server clock, which
+       * only a wrong device clock produces. Nothing is stored; the event is
+       * acknowledged so the client stops retransmitting it.
+       */
+      outcome: "future";
     };
 
 export interface MetricEventIngestRouteHandler {

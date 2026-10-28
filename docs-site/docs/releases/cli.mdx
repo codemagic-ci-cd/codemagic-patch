@@ -20,6 +20,55 @@ npm install -g @codemagic/patch-cli@latest
 Reference: [CLI reference](/docs/reference/cli-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=patch-cli)
 
+## 0.8.0 {#v0-8-0}
+
+*28th October 2026*
+
+### Install on Fly.io
+
+`cmpatch selfhost install --fly` deploys Patch onto [Fly.io](https://fly.io)
+with [Tigris](https://www.tigrisdata.com) object storage, from this machine
+and without a VPS, DNS records, or certificates. It can create Postgres or
+use a database you run. Existing Fly installs can also be registered.
+
+`selfhost upgrade`, `backup`, and `restore` work on a recorded Fly install:
+upgrade snapshots the database when cmpatch created it and deploys the newest
+release (or `--tag`), backup saves the database dump on this machine, and
+restore replaces the database from one of those backups while your apps keep
+downloading from storage. See [Install on Fly.io](/docs/install#fly),
+[Fly backup](/docs/reference/operations#fly-backup),
+and [Fly restore](/docs/reference/operations#fly-restore).
+
+### Install on this machine with ngrok
+
+`cmpatch selfhost install --ngrok` installs the full stack, with OAuth
+sign-in and bundled Postgres and storage, on the machine it runs on, reached
+at your [ngrok](https://ngrok.com) account's `https://` address. It is for
+trying Patch on real devices without a domain, open ports, or a server: the
+free plan is capped, and apps keep the address they were built with. See
+[Install on this machine with ngrok](/docs/install#ngrok).
+
+### Fixes
+
+- **Overlapping runs no longer sign each other out:** When two runs that
+  share the stored session (a terminal and a CI step, two jobs on one
+  machine) both needed to refresh an expired access token, the second refresh
+  was refused and that run deleted the stored credentials, including the
+  session the first run had just saved. Runs now refresh one at a time under
+  a lock next to the credential store, and a run that gets the lock first
+  re-reads the store: if another run has already refreshed the session, it
+  uses that session instead of sending a refresh of its own. A refresh the
+  server refuses still clears the stored credentials and asks you to sign in
+  again.
+- **Flag errors point at the command's help:** An unknown flag, a missing or
+  invalid value, or a stray argument inside a command now ends with
+  ``Run `cmpatch help <command>` for usage`` instead of pointing at the root
+  listing, which does not name the command's flags. Contributed in
+  [codemagic-patch#37](https://github.com/codemagic-ci-cd/codemagic-patch/pull/37).
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.8.0).
+
 ## 0.7.0 {#v0-7-0}
 
 *19th October 2026*

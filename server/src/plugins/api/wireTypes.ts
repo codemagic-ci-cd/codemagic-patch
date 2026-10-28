@@ -228,7 +228,7 @@ export interface ReleaseMetricsWire {
   failed: number;
   /** Failed counts keyed by client-reported reason; unreported → "unknown". */
   failure_reasons: Record<string, number>;
-  /** Of those, how many carried a decodable payload; reasons with none are absent. */
+  /** Of those, how many carried a payload with a code, message, or exit reason; reasons with none are absent. */
   failure_reason_detail_counts: Record<string, number>;
   installed: number;
   success: number;

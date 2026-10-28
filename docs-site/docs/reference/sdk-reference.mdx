@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 
 JavaScript API for [`@codemagic/react-native-patch`](https://www.npmjs.com/package/@codemagic/react-native-patch): the React Native client SDK.
 
-For integration steps (native wiring, Expo plugin, root wrapper), see [Native setup](/docs/setup/native-setup) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control).
+For integration steps (native wiring, Expo plugin, root wrapper), see [Native setup](/docs/setup/native-setup) and [Checking for updates](/docs/setup/checking-for-updates). For step-by-step control without `sync()`, see [Manual control](/docs/setup/manual-control). To run Jest tests against the SDK, see [Testing your app](/docs/setup/testing).
 
   </TabItem>
   <TabItem value="capacitor" label="Capacitor">
@@ -72,7 +72,7 @@ If native code cannot determine the app binary version (`CFBundleShortVersionStr
 | `CodemagicPatchApiUrl` | yes | Patch API origin (server `SERVER_URL`), e.g. `https://updates.example.com`. The SDK calls `/v1/...` under this host |
 | `CodemagicPatchDownloadBaseUrl` | yes | Artifact origin (server `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch` |
 | `CodemagicPatchPublicKey` | no | PEM public key when the app enforces release signature verification. Omit it to skip checks; that is not the same as treating releases as signed |
-| `CodemagicPatchMaxLaunchAttempts` | no | Positive integer. Consecutive launches a pending update may boot without `notifyAppReady()` before the SDK rolls it back. Default `3`; see [`notifyAppReady()`](#notifyappready) |
+| `CodemagicPatchMaxLaunchAttempts` | no | Positive integer. Consecutive launches a pending update may boot without `notifyAppReady()` before the SDK rolls it back. Default `2`; see [`notifyAppReady()`](#notifyappready) |
 
   </TabItem>
   <TabItem value="capacitor" label="Capacitor">
@@ -89,7 +89,7 @@ If native code cannot determine the app binary version (`CFBundleShortVersionStr
 | `apiUrl` | yes | Patch API origin (server `SERVER_URL`), e.g. `https://updates.example.com`. The SDK calls `/v1/...` under this host |
 | `downloadBaseUrl` | yes | Artifact origin (server `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch` |
 | `publicKey` | no | PEM public key for release signature verification. If omitted, signatures are not checked |
-| `maxLaunchAttempts` | no | Positive integer. Number of consecutive launches a pending update can run without `notifyAppReady()` before it is rolled back. Default `3`. Invalid values log a warning and fall back to the default. See [`notifyAppReady()`](#notifyappready) |
+| `maxLaunchAttempts` | no | Positive integer. Number of consecutive launches a pending update can run without `notifyAppReady()` before it is rolled back. Default `2`. Invalid values log a warning and fall back to the default. See [`notifyAppReady()`](#notifyappready) |
 
 Native resource keys (`CodemagicPatchDeploymentKey`, `CodemagicPatchApiUrl`, `CodemagicPatchDownloadBaseUrl`, `CodemagicPatchPublicKey`, `CodemagicPatchMaxLaunchAttempts`) override these values.
 
@@ -330,7 +330,7 @@ await notifyAppReady();
 
 If a pending update is running for the first time, this promotes it to the confirmed good bundle. `sync()` calls this automatically at the start of each run.
 
-A pending update that boots without reaching `notifyAppReady()` counts one unconfirmed launch. After `CodemagicPatchMaxLaunchAttempts` consecutive unconfirmed launches (default 3) the SDK rolls back to the previous bundle and reports `Failed`. The count is unconfirmed launches, not crashes: the OS ending a healthy process before JS runs also spends one, and a confirmed launch resets it. A lower value catches a broken bundle sooner but rolls back more healthy updates after such kills. Change it in native config (`Info.plist` / `strings.xml`, or `maxLaunchAttempts` in the Expo plugin or `capacitor.config.ts`) and ship a new binary; an OTA update cannot change it.
+A pending update that boots without reaching `notifyAppReady()` counts one unconfirmed launch. After `CodemagicPatchMaxLaunchAttempts` consecutive unconfirmed launches (default 2) the SDK rolls back to the previous bundle and reports `Failed`. The count is unconfirmed launches, not crashes: the OS ending a healthy process before JS runs also spends one, and a confirmed launch resets it. On React Native for Android, a process the OS starts in the background, for example to run a headless JS task, spends nothing unless the user then opens the app in that process. A lower value catches a broken bundle sooner but rolls back more healthy updates after such kills. Change it in native config (`Info.plist` / `strings.xml`, or `maxLaunchAttempts` in the Expo plugin or `capacitor.config.ts`) and ship a new binary; an OTA update cannot change it.
 
 ---
 

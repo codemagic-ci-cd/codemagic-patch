@@ -22,6 +22,26 @@ Reference: [Native setup for Capacitor](/docs/setup/native-setup-capacitor) ·
 [SDK reference](/docs/reference/sdk-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=capacitor-patch%40)
 
+## 0.1.2 {#v0-1-2}
+
+*28th October 2026*
+
+### Fixes
+
+- **Resource shrinking keeps the native overrides:** Android release builds
+  with resource shrinking no longer remove the `CodemagicPatch*` overrides in
+  `strings.xml`, so the app no longer falls back to `capacitor.config.ts`. On
+  older SDKs, see
+  [Release published but app finds no update](/docs/troubleshooting#release-published-but-app-finds-no-update).
+
+### Other changes
+
+- **Default launch attempts lowered to 2:** `maxLaunchAttempts` defaults to 2 on
+  Android and iOS, so a broken package rolls back on its third launch instead
+  of its fourth. Set the value explicitly to keep 3.
+
+See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch%400.1.2).
+
 ## 0.1.1 {#v0-1-1}
 
 *19th October 2026*

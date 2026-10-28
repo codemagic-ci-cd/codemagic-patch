@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/capacitor-patch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Capacitor client SDK for Codemagic Patch — over-the-air web-asset updates for Capacitor, Ionic and Cordova-on-Capacitor apps.",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",

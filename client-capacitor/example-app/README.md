@@ -13,7 +13,7 @@ workspaces, so it installs with `npm` from its own `package-lock.json`.
 
 - Node.js ≥ 22.22.3 (or ≥ 24.15 / ≥ 26 — the range the Angular CLI this app pins accepts)
   and Yarn via Corepack for the plugin build.
-- A Patch server you can reach. The [local evaluation stack](../../README.md#quickstart--try-it-locally)
+- A Patch server you can reach. The [local evaluation stack](../../docs/local-evaluation.md)
   is the quickest: `./scripts/local-eval/up.sh` from the root of this clone.
 - The [`cmpatch-capacitor` CLI](../../cli-capacitor/README.md) —
   `npm install -g @codemagic/capacitor-patch-cli`, or

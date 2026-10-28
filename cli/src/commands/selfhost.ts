@@ -3,10 +3,12 @@
  *
  * Every one of these is a thin wrapper: resolve the ssh target, pair if
  * needed, run the existing `scripts/selfhost/*.sh` over ssh, and render its
- * output. No script logic is reimplemented here. The interactive layers are
- * **selection and confirmation only**; every prompt has a flag equivalent, and
- * a non-interactive run behaves exactly like the flags-only command it was
- * before this namespace existed.
+ * output. No script logic is reimplemented here. (A server recorded as a Fly
+ * install has no ssh host; its upgrade runs through flyctl in
+ * `flyMaintenance.ts`, its backup and restore in `flyBackup.ts`.) The
+ * interactive layers are **selection and confirmation only**; every prompt
+ * has a flag equivalent, and a non-interactive run behaves exactly like the
+ * flags-only command it was before this namespace existed.
  */
 
 import { mkdir, readdir, stat } from "node:fs/promises";
@@ -33,18 +35,28 @@ import {
   renderRestoreNoOp,
   renderRestoreScope,
 } from "../selfhostCopy";
-import { listRemoteBackups, type RemoteBackup } from "../selfhostRemote";
+import {
+  listRemoteBackups,
+  localBackupRoot,
+  utcStamp,
+  type RemoteBackup,
+} from "../selfhostRemote";
+import { runFlyBackup, runFlyRestore } from "./flyBackup";
+import { runFlyInstall } from "./flyInstall";
+import { runFlyUpgrade } from "./flyMaintenance";
 import { runLocalEval } from "./localEval";
 import { runInstall } from "./selfhostInstall";
 import {
   canAsk,
   COMMON_FLAGS,
+  confirmTypedRestore,
   looksLikeSshTarget,
   openSession,
   parseArgs,
   readBooleanFlag,
   readStringFlag,
   RemoteScriptFailure,
+  resolveCommandTarget,
   runSelfhostScript,
   takeSingleTarget,
   writeNotice,
@@ -80,6 +92,9 @@ export async function executeSelfhostCommand(
     case "backup":
       return runBackup(deps, rest);
     case "install":
+      if (rest.includes("--fly")) {
+        return runFlyInstall(deps, rest);
+      }
       // Only the summary: the server URL the outcome also carries is for
       // `cmpatch init`, which continues after the install.
       return (await runInstall(deps, rest)).summary;
@@ -102,7 +117,10 @@ const UPGRADE_FLAGS = {
   "--i-have-a-backup": "boolean",
   "--image": "value",
   "--local-image": "boolean",
+  // Fly only: deploy the live tag again, and pick the release to deploy.
+  "--redeploy": "boolean",
   "--skip-smoke": "boolean",
+  "--tag": "value",
 } as const satisfies FlagShape;
 
 type SourceSync = {
@@ -116,9 +134,25 @@ async function runUpgrade(
 ): Promise<string> {
   const parsed = parseArgs(argv, UPGRADE_FLAGS);
   const sshTarget = takeSingleTarget(parsed, "upgrade");
+
+  // An explicit user@vps is always the ssh path (plan D2). Without one, a
+  // server recorded as a Fly install is upgraded through flyctl instead.
+  const resolved = sshTarget === undefined ? await resolveCommandTarget(deps, undefined) : undefined;
+  if (resolved?.recorded.kind === "resolved-fly") {
+    return runFlyUpgrade(deps, parsed, resolved.recorded.target);
+  }
+  for (const flag of ["--redeploy", "--tag"] as const) {
+    if (parsed.flags[flag] !== undefined) {
+      throw new UsageError(
+        `${flag} applies to a Fly install only. An ssh server upgrades to the newest source on its default branch.`,
+      );
+    }
+  }
+
   const session = await openSession(deps, {
     label: "cmpatch selfhost upgrade",
     parsed,
+    ...(resolved !== undefined ? { resolved } : {}),
     ...(sshTarget !== undefined ? { sshTarget } : {}),
   });
 
@@ -287,9 +321,18 @@ async function runBackup(
 ): Promise<string> {
   const parsed = parseArgs(argv, BACKUP_FLAGS);
   const sshTarget = takeSingleTarget(parsed, "backup");
+
+  // As for upgrade: an explicit user@vps is the ssh path, and without one a
+  // server recorded as a Fly install is backed up through flyctl.
+  const resolved = sshTarget === undefined ? await resolveCommandTarget(deps, undefined) : undefined;
+  if (resolved?.recorded.kind === "resolved-fly") {
+    return runFlyBackup(deps, parsed, resolved.recorded.target);
+  }
+
   const session = await openSession(deps, {
     label: "cmpatch selfhost backup",
     parsed,
+    ...(resolved !== undefined ? { resolved } : {}),
     ...(sshTarget !== undefined ? { sshTarget } : {}),
   });
 
@@ -316,7 +359,7 @@ async function runBackup(
       }
     }
 
-    const directory = `${session.facts.backupRoot}/${backupDirectoryName(deps.now())}`;
+    const directory = `${session.facts.backupRoot}/${utcStamp(deps.now())}`;
 
     await runSelfhostScript(deps, session, {
       args: ["--directory", directory],
@@ -400,18 +443,13 @@ function requireDirectoryCapableBackupScript(session: SelfhostSession): void {
   );
 }
 
-/** `2026-08-27T14-02-11` — sorts chronologically and needs no shell quoting. */
-function backupDirectoryName(now: number): string {
-  return new Date(now).toISOString().replace(/:/gu, "-").replace(/\..*$/u, "");
-}
-
 async function downloadBackup(
   deps: CommandDeps,
   session: SelfhostSession,
   remoteDirectory: string,
 ): Promise<string> {
   const host = session.sshTarget.slice(session.sshTarget.lastIndexOf("@") + 1);
-  const localRoot = resolve(process.cwd(), "codemagic-patch-backups", host);
+  const localRoot = localBackupRoot(host);
   const localPath = join(localRoot, remoteDirectory.slice(remoteDirectory.lastIndexOf("/") + 1));
 
   session.progress.write("downloading");
@@ -479,6 +517,17 @@ async function runRestore(
 ): Promise<string> {
   const parsed = parseArgs(argv, RESTORE_FLAGS);
   const { backup, sshTarget } = splitRestorePositionals(parsed);
+
+  // As for upgrade and backup: an explicit user@vps is the ssh path, and
+  // without one a server recorded as a Fly install is restored through
+  // flyctl, from a Fly backup on this machine.
+  if (sshTarget === undefined) {
+    const { recorded } = await resolveCommandTarget(deps, undefined);
+    if (recorded.kind === "resolved-fly") {
+      return runFlyRestore(deps, parsed, recorded.target, backup);
+    }
+  }
+
   const interactive = canAsk(deps, parsed);
 
   // Checked before anything connects: a run that cannot possibly proceed must
@@ -904,25 +953,6 @@ async function cleanUpStagedBackup(
   } catch {
     // Best effort: a leftover temp directory is not worth failing a completed
     // restore over, and the message would land after the outcome anyway.
-  }
-}
-
-async function confirmTypedRestore(deps: CommandDeps): Promise<void> {
-  if (deps.prompt === undefined) {
-    throw new UsageError(
-      "cmpatch selfhost restore replaces the server's data. Pass --yes to confirm.",
-    );
-  }
-
-  const answer = await deps.prompt({
-    message: 'Type "restore" to continue',
-    type: "text",
-  });
-  const typed = (typeof answer === "string" ? answer : (answer[0] ?? "")).trim();
-
-  // One level stronger than [y/N], as the family's only destructive command.
-  if (typed.toLowerCase() !== "restore") {
-    throw new DeclinedError("Restore cancelled.");
   }
 }
 

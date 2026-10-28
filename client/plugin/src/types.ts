@@ -18,7 +18,7 @@ export interface CodemagicPatchPlatformConfig {
   /**
    * `CodemagicPatchMaxLaunchAttempts` — optional positive integer. Consecutive
    * launches a pending update may boot without `notifyAppReady()` before the
-   * SDK rolls it back. Defaults to 3 in the native SDK when omitted.
+   * SDK rolls it back. Defaults to 2 in the native SDK when omitted.
    */
   maxLaunchAttempts?: number;
 }

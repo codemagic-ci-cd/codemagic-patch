@@ -12,9 +12,14 @@ The backup, restore, and upgrade sections have `cmpatch selfhost` equivalents
 that run the scripts over SSH from your own machine — connecting, selecting,
 and confirming for you. They are wrappers, never reimplementations. Status,
 logs, and smoke checks are direct host commands. The scripts remain the
-reference, and still work when run on the host.
+reference, and still work when run on the host. On a [Fly install](/docs/install#fly)
+there is no host to connect to: backup, restore and upgrade run through flyctl
+from the machine that recorded the install, without an address. If this
+machine's default server is another install, set
+`CODEMAGIC_PATCH_SERVER_URL=https://<app>.fly.dev` for the run, or run
+`cmpatch config set server-url <that URL>` once.
 
-All maintenance commands run against the `codemagic-patch-selfhost` Compose project.
+On an SSH install, all maintenance commands run against the `codemagic-patch-selfhost` Compose project.
 
 ## Status and logs
 
@@ -47,7 +52,7 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
 
 Copies the settings, deployment-mode manifest, and version metadata. When
 either data component is bundled it also quiesces the server while dumping
-Postgres and/or mirroring the MinIO bucket. With both components external it
+Postgres and/or mirroring the Silo bucket. With both components external it
 leaves the server running and creates a configuration-only backup:
 
 ```bash
@@ -81,6 +86,19 @@ Use `created_at` in `versions.txt` as the point-in-time anchor when restoring
 provider-managed components.
 :::
 
+### Fly backup
+
+```bash
+cmpatch selfhost backup
+# → codemagic-patch-backups/<app>.fly.dev/<app>-<timestamp>/ in the current
+#   directory: fly-backup-manifest, fly.toml, postgres.dump
+```
+
+The dump is a `pg_dump -Fc` archive, taken inside the Postgres machine while
+Patch keeps running. With a database cmpatch did not create there is no
+`postgres.dump`: the backup holds the configuration only. Tigris objects and
+secrets are never included.
+
 ## Restore
 
 ```bash
@@ -100,6 +118,25 @@ Restore takes a pre-restore safety backup first unless the current bundled data
 volumes do not exist (or the direct script is passed `--skip-safety-backup`). It
 restores only the components present in the selected backup; recover any
 external database or object storage separately with the provider's tooling.
+
+### Fly restore
+
+```bash
+cmpatch selfhost restore
+# lists the Fly backups under codemagic-patch-backups/<app>.fly.dev/
+cmpatch selfhost restore <app>-<timestamp> --yes
+# non-interactive: name the backup (or its path) and confirm
+```
+
+It checks the backup, turns the Postgres machine's auto-stop off so Fly cannot
+suspend it mid-restore, uploads the dump while Patch still runs, then
+takes Patch down (no machines), snapshots the database volume, replaces the
+database, checks it, deploys the same server image again, and turns auto-stop
+back on. It refuses a backup of
+another app, a configuration-only backup, and a backup taken on a newer server
+(upgrade with `--tag` first). Each step, and the commands to finish or undo a
+restore that stopped, go to `<app>-restore-<timestamp>.md` next to the backups.
+`--restore-env`, `--smoke`, `--skip-smoke` and `--ssh-key` do not apply on Fly.
 
 ## Upgrade
 
@@ -121,3 +158,19 @@ tree with local edits or commits of its own.
 scripts/selfhost/upgrade.sh
 scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
 ```
+
+### Fly upgrade
+
+```bash
+cmpatch selfhost upgrade
+# a specific release instead of the newest:
+cmpatch selfhost upgrade --tag codemagic-patch-server-v<x.y.z>
+```
+
+Before the deploy it snapshots the database volume when cmpatch created the
+database, then writes
+`codemagic-patch-backups/<app>.fly.dev/<app>-upgrade-<timestamp>/` with
+`ROLLBACK.md`, the steps to go back. With a database you run yourself, take
+your own backup or note a point-in-time recovery point first. When the running
+release's tag is recorded, it refuses an older release. It does not roll back
+by itself.

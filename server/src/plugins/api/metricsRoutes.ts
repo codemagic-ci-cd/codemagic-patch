@@ -120,6 +120,18 @@ export function registerMetricsRoutes(
             },
             "dropping Failed metric event superseded by the device's Applied",
           );
+        } else if (result.outcome === "expired" || result.outcome === "future") {
+          // Debug, not warn: a device whose clock is off by more than a day
+          // has every event land here, and would flood the warnings.
+          request.log.debug(
+            {
+              deviceId: input.value.deviceId,
+              emittedAt: input.value.emittedAt,
+              eventId: input.value.eventId,
+              outcome: result.outcome,
+            },
+            "dropping metric event outside the retained window",
+          );
         }
         acknowledgedEventIds.add(input.value.eventId);
       }

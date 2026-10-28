@@ -14,6 +14,7 @@
   "include": [
     "src/**/*.ts",
     "testing.ts",
+    "vitest-setup.ts",
     "test/**/*.ts",
     "e2e/**/*.ts",
     "plugin/**/*.ts"

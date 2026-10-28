@@ -357,7 +357,7 @@ function repairAccessKeyId(
   return value === undefined ? {} : { cloudfrontAccessKeyId: value };
 }
 
-function required(parsed: ParsedArgs, flag: string, what: string): string {
+export function required(parsed: ParsedArgs, flag: string, what: string): string {
   const value = readStringFlag(parsed, flag);
   if (value === undefined || value.length === 0) {
     throw missingAnswer(flag, what);

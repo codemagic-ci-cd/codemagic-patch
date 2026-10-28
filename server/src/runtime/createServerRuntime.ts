@@ -172,6 +172,7 @@ import { sortBinaryVersionsDescending } from "../worker/binaryVersionPrecedence"
 import { getServerVersion } from "../version";
 import type { RuntimeConfig } from "./config";
 import { createNoopLogger, type RuntimeLogger } from "./logger";
+import { createMetricFoldTimer } from "./metricFoldTimer";
 import { createTrackedReconcileExecutor } from "./trackedReconcileExecutor";
 
 // Self-host runs a single fixed team. The name is intentionally hard-coded
@@ -288,6 +289,13 @@ export interface ServerRuntimeOptions {
   logger?: RuntimeLogger;
   managementIdGenerator?: ManagementIdGenerator;
   managementRetryLimit?: number;
+  /**
+   * Interval for folding raw metric events older than the eight-day raw
+   * window into daily aggregates, in the modes that serve metrics (`all`,
+   * `api`). The first fold runs right after start; the default is one day,
+   * since a day only expires at UTC midnight. 0 disables folding.
+   */
+  metricFoldIntervalMs?: number;
   oauthSessionIdGenerator?: OAuthSessionHandlerIdGenerator;
   /**
    * Replaces the post-sign-in grant hook (runs on web OAuth sign-ins).
@@ -743,6 +751,15 @@ export async function createServerRuntime(
       jobSweepTimer.unref();
     };
 
+    const metricFoldTimer =
+      config.mode === "all" || config.mode === "api"
+        ? createMetricFoldTimer({
+            intervalMs: options.metricFoldIntervalMs ?? 86_400_000,
+            logger,
+            pool,
+          })
+        : null;
+
     if (config.mode === "all" && executor) {
       queue = new InProcessJobQueue({
         async execute(jobId) {
@@ -899,6 +916,7 @@ export async function createServerRuntime(
           clearInterval(jobSweepTimer);
           jobSweepTimer = undefined;
         }
+        await metricFoldTimer?.stop();
         await queue?.stop();
         await executor?.waitForIdle();
         if (storage instanceof S3StorageAdapter) {
@@ -908,6 +926,10 @@ export async function createServerRuntime(
       },
 
       async start() {
+        // The first fold runs in the background: on a large backlog it can
+        // take a while, and serving traffic does not depend on it.
+        metricFoldTimer?.start();
+
         if (queue) {
           await queue.start();
           startPeriodicSweep();
@@ -2603,7 +2625,7 @@ function createMetricEventIngestHandler(
   repository: ReturnType<typeof createPostgresMetricsRepository>,
 ): MetricEventIngestRouteHandler {
   return async (input) => {
-    return repository.persistMetricEvent(input);
+    return repository.persistMetricEvent({ ...input, receivedAt: new Date() });
   };
 }
 

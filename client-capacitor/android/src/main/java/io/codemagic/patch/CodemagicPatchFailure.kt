@@ -33,7 +33,7 @@ internal object CodemagicPatchFailure {
      * launch is not evidence of a crash — the OS can reclaim a healthy process before JS
      * runs — so rollback waits for the whole budget to be spent.
      */
-    const val DEFAULT_MAX_LAUNCH_ATTEMPTS = 3
+    const val DEFAULT_MAX_LAUNCH_ATTEMPTS = 2
 
     /** Native string resource that overrides the launch-attempt budget — upstream's own name. */
     const val MAX_LAUNCH_ATTEMPTS_KEY = "CodemagicPatchMaxLaunchAttempts"

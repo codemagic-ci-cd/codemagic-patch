@@ -8,7 +8,7 @@ This package is only the on-device side. You also need a Patch server (self-host
 
 From the [monorepo](https://github.com/codemagic-ci-cd/codemagic-patch):
 
-- Full stack via Docker Compose (API, worker, Postgres, MinIO, dashboard)
+- Full stack via Docker Compose (API, worker, Postgres, Silo, dashboard)
 - Web dashboard with RBAC and release management
 - On-device demo app for trying OTA updates quickly
 
@@ -125,7 +125,7 @@ Codemagic Patch is configured through **native resources**, not a JS API — the
 | `CodemagicPatchApiUrl` | yes | API server origin (the server's `SERVER_URL`), e.g. `https://updates.example.com`. The SDK appends `/v1/...` |
 | `CodemagicPatchDownloadBaseUrl` | yes | Artifact origin (the server's `PUBLIC_BASE_URL`), e.g. `https://storage.example.com/codemagic-patch`. May include a bucket/path prefix; the SDK appends manifest/artifact paths |
 | `CodemagicPatchPublicKey` | no | PEM public key; required only when enforcing client-side signature verification |
-| `CodemagicPatchMaxLaunchAttempts` | no | Positive integer; consecutive launches a pending update may boot without `notifyAppReady()` before crash rollback. Default `3`; see [`notifyAppReady()`](https://patch.codemagic.io/docs/reference/sdk-reference#notifyappready) |
+| `CodemagicPatchMaxLaunchAttempts` | no | Positive integer; consecutive launches a pending update may boot without `notifyAppReady()` before crash rollback. Default `2`; see [`notifyAppReady()`](https://patch.codemagic.io/docs/reference/sdk-reference#notifyappready) |
 
 The two URLs point at different systems (API server vs. object storage / CDN), which is why one usually carries a path and the other does not.
 
@@ -147,9 +147,9 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    <!-- optional, only when enforcing code signing -->
    <key>CodemagicPatchPublicKey</key>
    <string>-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
-   <!-- optional, defaults to 3 -->
+   <!-- optional, defaults to 2 -->
    <key>CodemagicPatchMaxLaunchAttempts</key>
-   <integer>3</integer>
+   <integer>2</integer>
    ```
 
    Android — `android/app/src/main/res/values/strings.xml`:
@@ -161,10 +161,12 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
      <string name="CodemagicPatchApiUrl" translatable="false">https://updates.example.com</string>
      <!-- optional, only when enforcing code signing -->
      <string name="CodemagicPatchPublicKey" translatable="false">-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----</string>
-     <!-- optional, defaults to 3 -->
-     <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">3</string>
+     <!-- optional, defaults to 2 -->
+     <string name="CodemagicPatchMaxLaunchAttempts" translatable="false">2</string>
    </resources>
    ```
+
+   Release builds with resource shrinking keep these strings: from 0.5.2 the SDK ships a keep rule (`res/raw/codemagic_patch_keep.xml`) that merges into the app. On older versions, add the same file to the app as `android/app/src/main/res/raw/codemagic_patch_keep.xml` (not `keep.xml`, which React Native's bundle task overwrites); [Troubleshooting](https://patch.codemagic.io/docs/troubleshooting#release-published-but-app-finds-no-update) has the contents.
 
 2. **Wire native bundle selection** before the RN bridge starts, so boot order is **pending package → current package → embedded bundle**.
 
@@ -275,6 +277,72 @@ import {
 ```
 
 `restartApp`, `allowRestart` / `disallowRestart`, and `hydrate` are also exported for controlling reload timing, `getRunningBundleUpdateMetadata()` reports the running OTA release (`{ label, packageHash, releaseNotes }`, or `null` on the embedded bundle), and `isNextVersionReady()` reports whether a newer package is installed and waiting for the next reload. See the [type definitions](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client/src/types.ts) for the full API surface.
+
+## Testing
+
+The SDK resolves its TurboModule when it is imported, so under Jest, where there is no native binary, a suite that imports it fails before any test runs. The package ships a fake of that native module for Jest. The real SDK runs on top of it, so `sync()`, `checkForUpdate()` and the rest behave as they would in an app.
+
+Keep the preset you already use, add the setup file, and add `@codemagic` to the allowlist your `transformIgnorePatterns` already has:
+
+```js
+// jest.config.js
+module.exports = {
+  preset: '@react-native/jest-preset', // or 'react-native' on older RN, or 'jest-expo'
+  setupFiles: ['@codemagic/react-native-patch/jest-setup'],
+  transformIgnorePatterns: [
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@codemagic)/)',
+  ],
+};
+```
+
+The allowlist entry is needed because under the `react-native` export condition this package resolves to its TypeScript source, as React Native itself does, and Jest does not transform `node_modules` by default.
+
+The setup file installs the default scenario: the app runs the store binary and the server has no update. That is enough for tests that only need the SDK to load. For another scenario, install a fake with a seed and load the SDK after it:
+
+```ts
+import { installPatchFake, loadSdk } from '@codemagic/react-native-patch/jest';
+
+test('reports the running release', async () => {
+  installPatchFake({ running: { label: 'v4' } });
+  const Patch = await loadSdk();
+  expect(await Patch.getRunningBundleUpdateMetadata()).toMatchObject({ label: 'v4' });
+});
+
+test('an update is ready for the next launch', async () => {
+  installPatchFake({ server: { release: { label: 'v5' } } });
+  const Patch = await loadSdk();
+  const status = await Patch.sync({
+    installMode: Patch.InstallMode.ON_NEXT_RESTART,
+    mandatoryInstallMode: Patch.InstallMode.ON_NEXT_RESTART,
+  });
+  expect(status).toBe('update-installed');
+  expect(await Patch.isNextVersionReady()).toBe(true);
+});
+```
+
+The seed also takes `binaryVersion`, `runningUnconfirmed` with `previous`, `failedInstall`, and `server.latestBinaryVersion` / `server.error`; `fake.fail(method, error)` makes one native call reject and `fake.setServer()` changes the server answer. See [`src/fake/types.ts`](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client/src/fake/types.ts).
+
+Isolation rules:
+
+- The SDK reads the native module and boot state once per module instance. `installPatchFake()` only affects SDK instances imported after it, so install before importing the code under test, or call `loadSdk()` after installing.
+- `loadSdk()` calls `jest.resetModules()` and imports a fresh SDK, cancelling the previous `loadSdk()` instance's pending `ON_NEXT_SUSPEND` reload. Require anything else that uses the SDK (your components, for example) after it, so they share that instance.
+- `loadSdk()` does not reset the fake: failures, server answers and downloaded packages stay. Start each scenario with a new `installPatchFake()`.
+- `sync()` confirms an unconfirmed running package first; use `checkForUpdate()` / `downloadUpdate()` / `installUpdate()` to keep it unconfirmed. `restartApp()` resolves without reloading JS.
+
+On Vitest, add the plugin and the setup file, then use `installPatchFake` / `loadSdk` from `@codemagic/react-native-patch/vitest` the same way. The plugin points the package at its TypeScript source so Vitest's module mocks reach the SDK. The adapter replaces `react-native` with a mock that only has what the SDK uses (`TurboModuleRegistry`, `AppState`, `DeviceEventEmitter`), so render components with `react-dom` in a `jsdom` environment. As under Jest, import your own modules that use the SDK after `loadSdk()`; React itself is not reset, so the test's React and the SDK's stay the same.
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { codemagicPatch } from '@codemagic/react-native-patch/vitest-plugin';
+
+export default defineConfig({
+  plugins: [codemagicPatch()],
+  test: { setupFiles: ['@codemagic/react-native-patch/vitest-setup'] },
+});
+```
+
+Not covered yet: code signing (the fake reports no signing key), download progress, rollout percentages, and inspecting the metric events the SDK sends.
 
 ## Documentation
 

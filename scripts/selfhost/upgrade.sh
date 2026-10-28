@@ -88,8 +88,8 @@ for upgrade_provider in $SELFHOST_OAUTH_PROVIDERS; do
   upgrade_redirect_var="${upgrade_provider}_OAUTH_ALLOWED_REDIRECT_URIS"
   if [ -n "${!upgrade_id_var:-}" ] && [ -z "${!upgrade_redirect_var:-}" ]; then
     # The callback follows the stack's scheme (SELFHOST_SCHEME), exactly as
-    # install.sh derives it.
-    upgrade_scheme="$(selfhost_scheme_from_env_file)"
+    # install.sh derives it: https for the certificate and ngrok stacks.
+    upgrade_scheme="$(selfhost_url_scheme "$(selfhost_scheme_from_env_file)")"
     set_selfhost_env_value "$upgrade_redirect_var" "${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback"
     warn_selfhost "${upgrade_redirect_var} was missing; defaulted to ${upgrade_scheme}://${CODEMAGIC_PATCH_API_DOMAIN}/auth/callback in ${SELFHOST_ENV_FILE}"
   fi

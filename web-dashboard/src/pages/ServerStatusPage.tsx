@@ -184,7 +184,7 @@ function StatusBody({ status }: { status: ServerStatus }) {
             <code className="font-mono text-[12.5px]">
               cmpatch selfhost upgrade
             </code>{" "}
-            from a machine with SSH access to the host.
+            from the machine you installed it from.
           </p>
         </section>
       ) : null}

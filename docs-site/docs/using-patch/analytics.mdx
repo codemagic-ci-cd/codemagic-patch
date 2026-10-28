@@ -73,7 +73,7 @@ cmpatch-capacitor release metrics --app MyApp-iOS --deployment Production --labe
 cmpatch deployment timeseries --app MyApp --deployment Production --range 30d
 ```
 
-`--range` takes `7d`, `30d`, `90d`, or `1y`; `--from` / `--to` set an explicit range instead. `ACTIVE` here is the devices active on that day, not the lifetime count of `deployment metrics`. `--format json` also carries one series per release. For a Capacitor app, pass the deployment ID from `cmpatch-capacitor deployment list` as `--deployment-id`.
+`--range` takes `7d`, `30d`, `90d`, or `1y`; `--from` / `--to` set an explicit range instead. `ACTIVE` here is the devices active on that day, not the lifetime count of `deployment metrics`. `--format json` also carries one series per release. For a Capacitor app, run `cmpatch-capacitor deployment timeseries` with the same flags.
 
 ### Failure drill-down
 
@@ -85,7 +85,7 @@ cmpatch deployment failures --app MyApp --deployment Production --reason network
 cmpatch deployment failure-events --app MyApp --deployment Production --reason network --code 403
 ```
 
-`--no-code` in place of `--code` opens the failures that reported no code (the `(no code)` row), not every code. `failure-events` prints a page of events, newest first; when more remain, the last line gives the `--cursor` to pass for the next page. `cmpatch release failures` and `cmpatch release failure-events` do the same for one release (`--label` or `--release-id`). For a Capacitor app, pass the IDs from `cmpatch-capacitor` as `--deployment-id` / `--release-id`.
+`--no-code` in place of `--code` opens the failures that reported no code (the `(no code)` row), not every code. `failure-events` prints a page of events, newest first; when more remain, the last line gives the `--cursor` to pass for the next page. `cmpatch release failures` and `cmpatch release failure-events` do the same for one release (`--label` or `--release-id`). `cmpatch-capacitor` has the same four commands, with the same flags, for Capacitor apps.
 
 Typical event types include Downloaded, Ready, Applied, Failed, and Active.
 
@@ -108,6 +108,8 @@ Applied. API counter keys remain `installed` and
 Failures and rollbacks
 
 Spikes after a release often mean a bad bundle or incompatible native project. Check [Debugging](/docs/troubleshooting) and consider [rollback](/docs/using-patch/production-control#roll-back-to-the-previous-release).
+
+Failure counts, including their breakdown by message and exit reason, are kept indefinitely. The list of individual failure events covers the last 8 days.
 
 Active count
 

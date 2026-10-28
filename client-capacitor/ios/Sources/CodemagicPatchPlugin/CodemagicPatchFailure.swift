@@ -21,7 +21,7 @@ enum CodemagicPatchFailure {
     /// `CodemagicPatchConfigResolver.resolveMaxLaunchAttempts`). A single unconfirmed
     /// launch is not evidence of a crash — the OS can reclaim a healthy process before JS
     /// runs — so rollback waits for the whole budget to be spent.
-    static let defaultMaxLaunchAttempts = 3
+    static let defaultMaxLaunchAttempts = 2
 
     /// `Info.plist` key that overrides the launch-attempt budget — upstream's own name.
     static let maxLaunchAttemptsKey = "CodemagicPatchMaxLaunchAttempts"

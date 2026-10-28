@@ -22,7 +22,7 @@ Configure credentials for at least one OAuth provider; you do not need all three
 | `SERVER_URL` | Public API URL, e.g. `https://updates.example.com` |
 | `PUBLIC_BASE_URL` | Public artifact base, default `https://<storage-domain>/codemagic-patch` |
 | `POSTGRES_DB` / `_USER` / `_PASSWORD` | Bundled PostgreSQL credentials; external database mode uses `DATABASE_URL` |
-| `MINIO_ROOT_USER` / `_PASSWORD` | Bundled MinIO credentials; omit for external S3/GCS |
+| `MINIO_ROOT_USER` / `_PASSWORD` | Bundled Silo credentials; omit for external S3/GCS |
 | `WORKER_SHARED_SECRET` | Protects worker routes (>= 32 chars) |
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth App credentials; configure at least one OAuth provider |
 | `BITBUCKET_OAUTH_CLIENT_ID` / `BITBUCKET_OAUTH_CLIENT_SECRET` | Bitbucket Cloud OAuth consumer credentials |

@@ -90,6 +90,7 @@ import {
   runHostPreflight,
   startOver,
 } from "./hostBootstrap";
+import { NGROK_FLAGS, runLocalNgrokInstall } from "./localNgrok";
 import {
   askRecoveryEdge,
   collectAnswers,
@@ -181,6 +182,14 @@ export async function runInstall(
   argv: readonly string[],
   options: InstallOptions = {},
 ): Promise<InstallOutcome> {
+  // A different install altogether — this machine, no ssh, no domain — so it
+  // is routed before the ssh flags are read, and an ssh-only flag given with
+  // it is named rather than reported as unknown.
+  if (argv.some((argument) => argument === "--ngrok" || argument.startsWith("--ngrok="))) {
+    refuseFlagsNgrokDoesNotTake(argv);
+    return runLocalNgrokInstall(deps, argv);
+  }
+
   const parsed = parseArgs(argv, INSTALL_FLAGS);
   const sshTarget = takeSingleTarget(parsed, "install");
   const requestedEdge = readRequestedEdge(parsed);
@@ -212,7 +221,7 @@ export async function runInstall(
       [
         "--allow-http is not available here: plain HTTP serves only the machine the stack runs on (as localhost), and cmpatch selfhost install sets up a server other machines reach — which needs HTTPS.",
         "",
-        "To run the real self-host stack on this machine over plain HTTP, run scripts/selfhost/install.sh --allow-http from a clone here. For a quick evaluation with no OAuth app, use cmpatch selfhost local-eval.",
+        "To run the real self-host stack on this machine and reach it from phones over HTTPS, use cmpatch selfhost install --ngrok. To run it over plain HTTP for this machine alone, run scripts/selfhost/install.sh --allow-http from a clone here. For a quick evaluation with no OAuth app, use cmpatch selfhost local-eval.",
       ].join("\n"),
     );
   }
@@ -502,6 +511,24 @@ export async function runInstall(
 }
 
 /**
+ * The ssh install's flags that mean nothing on this machine — a domain, a
+ * CDN, an ssh key, a recovery edge — refused by name next to `--ngrok`.
+ */
+function refuseFlagsNgrokDoesNotTake(argv: readonly string[]): void {
+  const misplaced = argv
+    .filter((argument) => argument.startsWith("--"))
+    .map((argument) => argument.split("=")[0] ?? argument)
+    .find(
+      (flag) => Object.hasOwn(INSTALL_FLAGS, flag) && !Object.hasOwn(NGROK_FLAGS, flag),
+    );
+  if (misplaced !== undefined) {
+    throw new UsageError(
+      `${misplaced} does not apply with --ngrok, which installs on this machine at your ngrok account's address.`,
+    );
+  }
+}
+
+/**
  * `--public-ip`, held to the same check the typed answer gets, before anything
  * connects: a scripted run that passes a private or malformed address would
  * otherwise print it into the records and wait for it.
@@ -706,7 +733,7 @@ async function commitServerIdentity(
  * have it replaced silently by an install run for someone else. With no
  * current server there is nothing to lose, so it is adopted without a question.
  */
-async function shouldAdoptServerUrl(
+export async function shouldAdoptServerUrl(
   deps: CommandDeps,
   parsed: ParsedArgs,
   current: string | undefined,
@@ -789,7 +816,7 @@ async function recordFailure(
   );
 }
 
-async function saveConfig(
+export async function saveConfig(
   deps: CommandDeps,
   config: Awaited<ReturnType<typeof loadCliConfig>>,
 ): Promise<void> {
@@ -801,7 +828,7 @@ async function saveConfig(
  * install.sh configures, read back from it so an install and a repair name
  * it the same way. A resume sends none and names nothing.
  */
-function describeConfiguredProvider(env: Record<string, string>): string | undefined {
+export function describeConfiguredProvider(env: Record<string, string>): string | undefined {
   const provider = (Object.keys(OAUTH_PROVIDERS) as OAuthProvider[]).find((candidate) =>
     Object.keys(env).some((key) => key.startsWith(`${OAUTH_PROVIDERS[candidate].envPrefix}_OAUTH_`)),
   );
@@ -812,6 +839,25 @@ function describeConfiguredProvider(env: Record<string, string>): string | undef
     .map((field) => env[`${envPrefix}_OAUTH_${field.env}`] ?? field.default)
     .find((value, index) => value !== extraFields[index].default);
   return instance === undefined ? displayName : `${displayName} at ${instance}`;
+}
+
+/**
+ * The first sign-in an install leaves to the user: the line that says which
+ * account it has to be, then the command. Shared with the Fly installer so the
+ * two summaries say it the same way.
+ */
+export function renderSignInSteps(
+  serverUrl: string | null,
+  signInProvider: string | undefined,
+): string[] {
+  return [
+    signInProvider === undefined
+      ? "Sign in to create the admin account, then connect this machine:"
+      : `Sign in with ${signInProvider} to create the admin account, then connect this machine:`,
+    serverUrl === null
+      ? "  cmpatch login"
+      : `  cmpatch login --server-url ${serverUrl}`,
+  ];
 }
 
 function renderCompletion(
@@ -830,15 +876,7 @@ function renderCompletion(
     // user still has to do.
     ...(options.handoff === true
       ? []
-      : [
-          "",
-          signInProvider === undefined
-            ? "Sign in to create the admin account, then connect this machine:"
-            : `Sign in with ${signInProvider} to create the admin account, then connect this machine:`,
-          serverUrl === null
-            ? "  cmpatch login"
-            : `  cmpatch login --server-url ${serverUrl}`,
-        ]),
+      : ["", ...renderSignInSteps(serverUrl, signInProvider)]),
     // Anything the CDN step could not finish is carried here as a next step
     // rather than reported as a failure: the server itself is installed and
     // working, and downloads are served from it in the meantime.

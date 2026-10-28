@@ -1,7 +1,8 @@
 // app create | list | show | rename | setting | remove — cli/src/commands/app*.ts
 // (@codemagic/patch-cli 0.4.0): the same endpoints and bodies, and the same rule for
-// what needs confirmation (only `remove`). The one difference is the `framework` that
-// `create` states (R34). See cli-capacitor-tech-spec › Provenance.
+// what needs confirmation (only `remove`), and `setting` without a flag showing the
+// settings, as in 0.7.0. The one difference is the `framework` that `create` states
+// (R34). See cli-capacitor-tech-spec › Provenance.
 
 import { APP_FRAMEWORK, teamAppsPath } from "../appFramework";
 import { authenticatedRequest } from "../authenticatedRequest";
@@ -174,7 +175,7 @@ const appRename: CommandDefinition = {
 const appSetting: CommandDefinition = {
   flags: [
     {
-      help: "Whether the app only accepts signed releases",
+      help: "Whether the app only accepts signed releases (omit it to see the current settings)",
       name: "require-code-signing",
       type: "string",
       value: "true|false",
@@ -189,7 +190,9 @@ const appSetting: CommandDefinition = {
   ],
   path: ["app", "setting"],
   run: async (values, deps) => {
-    const requireCodeSigning = requireString(values, "require-code-signing");
+    const requireCodeSigning = readString(values, "require-code-signing");
+    // Without a setting to change this reads the app: both routes answer `{ app }`.
+    if (requireCodeSigning === undefined) return appShow.run(values, deps);
     if (requireCodeSigning !== "true" && requireCodeSigning !== "false") {
       throw new UsageError(
         `--require-code-signing must be "true" or "false" (got "${requireCodeSigning}").`,
@@ -200,8 +203,8 @@ const appSetting: CommandDefinition = {
       require_code_signing: requireCodeSigning === "true",
     });
   },
-  summary: "Change an app's settings",
-  usage: `${APP_USAGE} --require-code-signing=<true|false> [flags]`,
+  summary: "Show or change an app's settings",
+  usage: `${APP_USAGE} [--require-code-signing=<true|false>] [flags]`,
 };
 
 const appRemove: CommandDefinition = {

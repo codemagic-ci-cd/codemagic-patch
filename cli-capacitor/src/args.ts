@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 
 import type { CommandDefinition, FlagValues } from "./command";
-import { UsageError } from "./errors";
+import { attributeUsageError, UsageError } from "./errors";
 import { COMMANDS, commandGroups, commandName, commandsInGroup } from "./registry";
 
 export type ParsedCommand =
@@ -89,6 +89,16 @@ function findCommand(argv: string[]): { args: string[]; definition: CommandDefin
  * exits 0 having uploaded nothing.
  */
 function parseFlags(definition: CommandDefinition, args: string[]): FlagValues | null {
+  try {
+    return parseFlagsOf(definition, args);
+  } catch (error) {
+    // The command resolved; a bad flag is its problem, so its help is the answer.
+    attributeUsageError(error, commandName(definition));
+    throw error;
+  }
+}
+
+function parseFlagsOf(definition: CommandDefinition, args: string[]): FlagValues | null {
   const options: Record<string, { short?: string; type: "boolean" | "string" }> = {
     help: { short: "h", type: "boolean" },
   };

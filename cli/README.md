@@ -41,7 +41,7 @@ cmpatch selfhost local-eval
 ```
 
 `cmpatch selfhost local-eval` checks Docker (and offers to install or start it),
-keeps its own checkout of Codemagic Patch, and starts the server, worker, Postgres, MinIO, and dashboard
+keeps its own checkout of Codemagic Patch, and starts the server, worker, Postgres, Silo, and dashboard
 on localhost. It requires `git`, `curl`, and Docker with Compose v2, and runs on
 macOS, Linux, or WSL 2. Use `cmpatch selfhost local-eval status` to see the
 services, checkout, and sample publish command; stop it with
@@ -139,7 +139,7 @@ Use `--fix --yes` to apply this limited fix without prompting in CI or JSON mode
 
 ## Install with external storage
 
-`cmpatch selfhost install` offers bundled MinIO (default), Cloudflare R2 when
+`cmpatch selfhost install` offers bundled Silo (default), Cloudflare R2 when
 API DNS uses Cloudflare, Amazon S3, and Google Cloud Storage. External storage
 uses separate public and private buckets. Choose automatic new-resource setup
 or guided console setup; existing complete runtime settings skip provisioning.

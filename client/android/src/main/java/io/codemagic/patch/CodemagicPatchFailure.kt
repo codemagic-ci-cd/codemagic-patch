@@ -36,7 +36,7 @@ internal object CodemagicPatchFailure {
    * a crash — the OS can reclaim a healthy process before JS runs — so
    * rollback waits for the whole budget to be spent.
    */
-  const val DEFAULT_MAX_LAUNCH_ATTEMPTS = 3
+  const val DEFAULT_MAX_LAUNCH_ATTEMPTS = 2
 
   /**
    * String resource a host app sets to change the launch-attempt budget. Read

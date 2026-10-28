@@ -322,7 +322,15 @@ async function chooseDelivery(
   });
 }
 
-async function askAdminEmail(deps: CommandDeps, provider: OAuthProvider): Promise<string> {
+export function checkAdminEmail(value: string): string | null {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value) ? null : "That does not look like an email address.";
+}
+
+export async function askAdminEmail(
+  deps: CommandDeps,
+  provider: OAuthProvider,
+  check: (value: string) => string | null = checkAdminEmail,
+): Promise<string> {
   // The match matters: the server creates the admin account for whoever signs
   // in with this address, and GitHub only reports an address it has verified.
   notice(deps, [
@@ -330,14 +338,7 @@ async function askAdminEmail(deps: CommandDeps, provider: OAuthProvider): Promis
     ...(provider === "github" ? ["Not sure which one is primary? It is listed at https://github.com/settings/emails"] : []),
   ]);
 
-  return askChecked(deps, {
-    check: (value) =>
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value)
-        ? null
-        : "That does not look like an email address.",
-    message: "Administrator email",
-    type: "text",
-  });
+  return askChecked(deps, { check, message: "Administrator email", type: "text" });
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +346,7 @@ async function askAdminEmail(deps: CommandDeps, provider: OAuthProvider): Promis
 // ---------------------------------------------------------------------------
 
 /** The pair, or on a repair handed only the extra fields (the GitLab origin), just those. */
-async function collectOAuth(
+export async function collectOAuth(
   deps: CommandDeps,
   parsed: ParsedArgs,
   apiDomain: string,

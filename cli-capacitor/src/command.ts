@@ -163,6 +163,16 @@ export const PAGINATION_FLAGS: readonly FlagSpec[] = [
   { help: "Rows to skip (default: 0)", name: "offset", type: "string", value: "n" },
 ];
 
+export const BINARY_VERSION_FILTER_FLAGS: readonly FlagSpec[] = [
+  { help: "Only this binary version, e.g. 1.2.3", name: "binary-version", type: "string", value: "version" },
+  {
+    help: "Only versions under this prefix, e.g. 1.2 (matches 1.2.0 and 1.2.5, not 1.20.0)",
+    name: "binary-version-prefix",
+    type: "string",
+    value: "prefix",
+  },
+];
+
 // ---------------------------------------------------------------------------
 // Reading flag values
 // ---------------------------------------------------------------------------
@@ -199,6 +209,17 @@ export function requireString(values: FlagValues, name: string): string {
   }
 
   return value;
+}
+
+/** The server's `binary_version` / `binary_version_prefix` query pair, as cmpatch sends it. */
+export function readBinaryVersionFilter(values: FlagValues): Record<"binary_version" | "binary_version_prefix", string | undefined> {
+  const binaryVersion = readString(values, "binary-version");
+  const binaryVersionPrefix = readString(values, "binary-version-prefix");
+  if (binaryVersion !== undefined && binaryVersionPrefix !== undefined) {
+    throw new UsageError("--binary-version cannot be combined with --binary-version-prefix.");
+  }
+
+  return { binary_version: binaryVersion, binary_version_prefix: binaryVersionPrefix };
 }
 
 export function readBoolean(values: FlagValues, name: string): boolean {

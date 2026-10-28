@@ -1,6 +1,6 @@
 // Standalone build-time check, alongside ./checkDeploymentKeys.ts (see
 // bin/check-deployment-keys.mjs). At runtime the native resolvers tolerate an invalid
-// `maxLaunchAttempts` by warning and falling back to the default of 3, so a typo can
+// `maxLaunchAttempts` by warning and falling back to the default of 2, so a typo can
 // never block boot — but silently ignoring what the developer wrote would hide the
 // mistake until a rollback happens at the wrong launch. Build time is the place to fail
 // loudly, as upstream's Expo config plugin does at prebuild.
@@ -23,7 +23,7 @@ export function checkMaxLaunchAttempts(capacitorConfig: unknown): DeploymentKeyC
     if (value !== undefined && !isValidMaxLaunchAttempts(value)) {
       problems.push(
         `CodemagicPatch: plugins.CodemagicPatch.${platform}.maxLaunchAttempts must be a positive integer ` +
-          `up to ${MAX_LAUNCH_ATTEMPTS_LIMIT}, got ${JSON.stringify(value)}. Omit it to keep the SDK default of 3.`,
+          `up to ${MAX_LAUNCH_ATTEMPTS_LIMIT}, got ${JSON.stringify(value)}. Omit it to keep the SDK default of 2.`,
       );
     }
   }

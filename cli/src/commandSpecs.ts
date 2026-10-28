@@ -586,8 +586,10 @@ const helpGroups: readonly CommandHelpGroup[] = [
   {
     examples: [
       "cmpatch selfhost install ubuntu@203.0.113.7",
+      "cmpatch selfhost install --ngrok",
       "cmpatch selfhost backup",
       "cmpatch selfhost upgrade ubuntu@203.0.113.7",
+      "cmpatch selfhost install --fly",
       "cmpatch selfhost local-eval",
       "cmpatch demo",
     ],
@@ -800,7 +802,13 @@ const commandSpecs: RunnableCommandSpec[] = [
     help: [
       {
         description:
-          "Install the server on a machine you own, over ssh. Checks the machine, sets up Docker, git, and curl if they are missing, and runs the installer.",
+          "Install the server on a machine you own, over ssh. Checks the machine, sets up Docker, git, and curl if they are missing, and runs the installer. With --ngrok it installs on this machine instead, reachable at the free https:// address of your ngrok account — no domain, DNS records, or open ports — for testing with your own app. With --fly it deploys onto Fly.io from this machine instead; see the Fly flags.",
+        examples: [
+          "cmpatch selfhost install ubuntu@203.0.113.7",
+          "cmpatch selfhost install --ngrok",
+          "cmpatch selfhost install --fly",
+          "cmpatch selfhost install --fly --register --company \"Acme Corp\" --external-database",
+        ],
         flags: [
           {
             flags: [
@@ -830,7 +838,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               {
                 flag: "--install-docker",
-                summary: "Install Docker on the server without asking",
+                summary: "Install Docker on the server (with --ngrok, on this machine) without asking",
               },
               {
                 flag: "--install-git",
@@ -864,6 +872,46 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               flagHelp.sshKey,
               flagHelp.nonInteractive,
+            ],
+          },
+          {
+            title: "Fly",
+            flags: [
+              { flag: "--fly", summary: "Deploy onto Fly.io from this machine. Does not take user@vps." },
+              { flag: "--company <name>", summary: "Company name the app and buckets are derived from" },
+              { flag: "--fly-region <code>", summary: "Fly region code, such as iad or lhr" },
+              { flag: "--fly-org <slug>", summary: "Fly organization slug, when this login can see more than one" },
+              { flag: "--database-url <url>", summary: "Use this Postgres URL instead of creating one (or set DATABASE_URL)" },
+              { flag: "--create-database", summary: "Create a suspendable Postgres machine on Fly" },
+              { flag: "--register", summary: "Record an existing Fly install on this machine without creating anything; a run that cannot ask needs --company and --database-app or --external-database" },
+              { flag: "--database-app <name>", summary: "With --register: the Postgres app cmpatch created for this install" },
+              { flag: "--external-database", summary: "With --register: Patch uses a database cmpatch did not create" },
+              { flag: "--install-flyctl", summary: "Install flyctl on this machine without asking (needed by a scripted run when it is missing)" },
+              { flag: "--install-tigris", summary: "Install the Tigris CLI on this machine without asking (needed by a scripted run when it is missing)" },
+            ],
+          },
+          {
+            title: "On this machine, through ngrok",
+            flags: [
+              {
+                flag: "--ngrok",
+                summary:
+                  "Install on this machine, reachable at your ngrok account's https:// address (NGROK_AUTHTOKEN, or asked for); takes --email, the sign-in flags, and the ones below",
+              },
+              {
+                flag: "--ngrok-domain <domain>",
+                summary:
+                  "With --ngrok: a domain your paid ngrok plan has reserved, instead of the account's own address (for example while that one is busy with another agent)",
+              },
+              {
+                flag: "--checkout <path>",
+                summary:
+                  "With --ngrok: run from this checkout of the repository instead of the copy the CLI keeps",
+              },
+              {
+                flag: "--start-docker",
+                summary: "With --ngrok: start Docker on this machine without asking",
+              },
             ],
           },
           {
@@ -950,10 +998,22 @@ const commandSpecs: RunnableCommandSpec[] = [
       },
       {
         description:
-          "Upgrade the server to the latest release. Updates the server's copy of the source first (fast-forward only), then rebuilds and restarts.",
+          "Upgrade the server to the latest release. Updates the server's copy of the source first (fast-forward only), then rebuilds and restarts. On a Fly install recorded on this machine it snapshots the database when cmpatch created it, writes a ROLLBACK.md under codemagic-patch-backups/ and deploys the release; --tag and --redeploy are Fly-only, and --image, --local-image, --skip-smoke, --i-have-a-backup and --ssh-key do not apply there.",
+        examples: [
+          "cmpatch selfhost upgrade ubuntu@203.0.113.7",
+          "cmpatch selfhost upgrade --tag codemagic-patch-server-v0.8.0",
+        ],
         flags: [
           {
             flags: [
+              {
+                flag: "--tag <tag>",
+                summary: "Fly: deploy this codemagic-patch-server-v* release instead of the newest",
+              },
+              {
+                flag: "--redeploy",
+                summary: "Fly: deploy even when the app already runs that release",
+              },
               {
                 flag: "--image <ref>",
                 summary: "Run a prebuilt server image instead of rebuilding",
@@ -977,7 +1037,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       },
       {
         description:
-          "Save a snapshot of the server. Publishing pauses briefly while it is taken.",
+          "Save a snapshot of the server. On an ssh server, publishing pauses briefly while it is taken. On a Fly install recorded on this machine it dumps the database while Patch keeps running and saves it under codemagic-patch-backups/; --download and --ssh-key do not apply there.",
         flags: [
           {
             flags: [
@@ -996,7 +1056,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       },
       {
         description:
-          "Replace the server's data with a backup. Asks which backup, and takes a safety backup of the current data first.",
+          "Replace the server's data with a backup. Asks which backup, and takes a safety backup of the current data first. On a Fly install recorded on this machine (no user@vps), it restores a Fly backup from codemagic-patch-backups/ in the current directory, or a folder you name: it uploads the dump while Patch runs, holds Patch (fly scale count 0), snapshots the database volume, replaces the database, checks it and deploys the live image again, writing each step and the finish and undo recipes to a restore record. The server version does not change. --restore-env, --smoke, --skip-smoke and --ssh-key do not apply there.",
         flags: [
           {
             flags: [
@@ -2986,6 +3046,27 @@ export function findCommandSpecRoute(
   }
 
   return null;
+}
+
+/**
+ * The help page of the command registered under exactly `path`, for a topic
+ * that names a route alias rather than the command's canonical name
+ * (`cmpatch help auth login` reads as `login`). Undefined when no route is
+ * that path, or when the command has no help page.
+ */
+export function findCommandHelpByRoute(
+  path: readonly string[],
+): CommandHelpEntry | undefined {
+  const spec = commandSpecs.find((candidate) =>
+    candidate.routes.some(
+      (route) =>
+        route.path.length === path.length &&
+        matchesCommandPath([...path], route.path),
+    ),
+  );
+
+  return spec?.help.find((entry) => entry.commandName === spec.commandName) ??
+    spec?.help[0];
 }
 
 /**

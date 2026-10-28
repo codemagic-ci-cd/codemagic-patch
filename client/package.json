@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/react-native-patch",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "React Native client SDK for Codemagic Patch — over-the-air JavaScript & asset updates for React Native and Expo apps.",
   "keywords": [
     "react-native",
@@ -54,6 +54,21 @@
       "types": "./testing.ts",
       "default": "./dist/testing.js"
     },
+    "./jest": {
+      "react-native": "./src/fake/jest.ts",
+      "types": "./dist/fake/jest.d.ts",
+      "default": "./dist/fake/jest.js"
+    },
+    "./jest-setup": "./jest-setup.js",
+    "./vitest": {
+      "types": "./dist/fake/vitest.d.ts",
+      "default": "./src/fake/vitest.ts"
+    },
+    "./vitest-setup": "./vitest-setup.ts",
+    "./vitest-plugin": {
+      "types": "./vitest-plugin.d.ts",
+      "default": "./vitest-plugin.js"
+    },
     "./app.plugin.js": "./app.plugin.js",
     "./package.json": "./package.json"
   },
@@ -61,6 +76,15 @@
     "*": {
       "testing": [
         "./testing.ts"
+      ],
+      "jest": [
+        "./dist/fake/jest.d.ts"
+      ],
+      "vitest": [
+        "./dist/fake/vitest.d.ts"
+      ],
+      "vitest-plugin": [
+        "./vitest-plugin.d.ts"
       ]
     }
   },
@@ -73,6 +97,10 @@
     "libs",
     "plugin",
     "react-native.config.js",
+    "jest-setup.js",
+    "vitest-setup.ts",
+    "vitest-plugin.js",
+    "vitest-plugin.d.ts",
     "testing.ts",
     "src",
     "!**/.cxx",
@@ -132,6 +160,7 @@
     "e2e:android:smoke": "bash ./e2e/scripts/android-smoke.sh",
     "e2e:lane:ios": "node ./e2e/scripts/run-maestro-lane.mjs --platform ios",
     "e2e:lane:android": "node ./e2e/scripts/run-maestro-lane.mjs --platform android",
-    "e2e:server:start": "node --import ../node_modules/tsx/dist/loader.mjs ./e2e/scripts/start-scenario-server.ts"
+    "e2e:server:start": "node --import ../node_modules/tsx/dist/loader.mjs ./e2e/scripts/start-scenario-server.ts",
+    "consumer-check": "node ./scripts/consumer-check.mjs"
   }
 }

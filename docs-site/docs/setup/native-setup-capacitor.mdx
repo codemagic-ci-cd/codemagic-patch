@@ -110,7 +110,7 @@ export default config;
 | `apiUrl` | Yes | Patch API origin (server `SERVER_URL`). The SDK calls `/v1/...` on this host |
 | `downloadBaseUrl` | Yes | Artifact origin (server `PUBLIC_BASE_URL`). The bundled-storage default ends with `/codemagic-patch` |
 | `publicKey` | No | PEM public key for release signature verification. If omitted, signatures are not checked |
-| `maxLaunchAttempts` | No | Number of launches a new update can run without calling `notifyAppReady()` before it is rolled back. Positive integer, default `3`. Invalid values log a warning and fall back to the default |
+| `maxLaunchAttempts` | No | Number of launches a new update can run without calling `notifyAppReady()` before it is rolled back. Positive integer, default `2`. Invalid values log a warning and fall back to the default |
 
 Configure at least one platform. Each platform block you add must include `deploymentKey`, `apiUrl`, and `downloadBaseUrl`.
 

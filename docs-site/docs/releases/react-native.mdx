@@ -18,6 +18,46 @@ npm install @codemagic/react-native-patch@latest
 Reference: [SDK reference](/docs/reference/sdk-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=react-native-patch)
 
+## 0.6.0 {#v0-6-0}
+
+*28th October 2026*
+
+### Testing with the SDK fake
+
+The package now ships a native-module fake for Jest and Vitest, so tests can
+run the real SDK and simulate OTA states without a native binary.
+Based on a contribution in
+[codemagic-patch#38](https://github.com/codemagic-ci-cd/codemagic-patch/pull/38).
+See [Testing your app](/docs/setup/testing).
+
+### Crash rollback
+
+- **Background boots on Android no longer count:** A process the OS starts
+  in the background (a headless JS task, an FCM data message) boots the
+  pending package as before but no longer spends a launch attempt unless the
+  user opens the app in that process. Idle processes reclaimed by the OS were
+  the leading cause of rollbacks of packages the user never opened. A package
+  that crashes only in background code is no longer rolled back by the
+  budget.
+- **Default launch attempts lowered to 2:** `CodemagicPatchMaxLaunchAttempts`
+  defaults to 2 on Android and iOS, so a broken package rolls back on its
+  third launch instead of its fourth. Set the value explicitly to keep 3.
+
+### Fixes
+
+- **Resource shrinking keeps the Patch strings:** Android release builds with
+  resource shrinking no longer remove the `CodemagicPatch*` strings, so they
+  keep finding updates. On older SDKs, see
+  [Release published but app finds no update](/docs/troubleshooting#release-published-but-app-finds-no-update).
+
+### Other changes
+
+- **Missing deployment key warning:** On Android, the SDK logs a warning once,
+  under the `CodemagicPatchModule` tag, when `CodemagicPatchDeploymentKey` is
+  missing or blank.
+
+See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.6.0).
+
 ## 0.5.1 {#v0-5-1}
 
 *19th October 2026*

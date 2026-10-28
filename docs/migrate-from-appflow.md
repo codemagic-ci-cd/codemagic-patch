@@ -12,7 +12,7 @@ covers the two things that change on your side:
 Server setup is a prerequisite, not part of this guide. See
 [`docs/self-hosting-compose.md`](self-hosting-compose.md) for a production self-host
 (the [Install guide](https://patch.codemagic.io/docs/install) is the
-condensed version), or the [local quickstart](../README.md#quickstart--try-it-locally) to
+condensed version), or the [local quickstart](local-evaluation.md) to
 evaluate on a laptop first.
 
 > **0.x.** `@codemagic/capacitor-patch` and `cmpatch-capacitor` are 0.x releases; their API
@@ -92,7 +92,7 @@ npx cap sync
 | `autoUpdateMethod: 'background' \| 'none'` | — | Not a config key: call `start()` for automatic checks, or don't for none — see [§1.3](#13-migrate-the-js-integration) |
 | `maxVersions` | — | No equivalent — this SDK garbage-collects superseded packages on-device automatically, not a developer-tunable count |
 | `key` (Self-hosted Live Updates) | `publicKey` | Optional. The same idea — the public half of your signing key pair, which the SDK uses to verify a release before installing it — but the value is the PEM text itself, not the name of a key file. Sign releases with `cmpatch-capacitor release --private-key-path` |
-| — | `maxLaunchAttempts` | New, optional: how many launches a new update may fail to report ready before it is rolled back (default 3) |
+| — | `maxLaunchAttempts` | New, optional: how many launches a new update may fail to report ready before it is rolled back (default 2) |
 
 See the [SDK README §Configuration](../client-capacitor/README.md#configuration) for the full contract
 (required vs. optional keys, the native-resource override, and the same-key warning) —
@@ -111,7 +111,7 @@ returns to the foreground, so no resume listener of your own is needed.
 | `LiveUpdates.sync({ channel? })` | `sync(options?, onProgress?)` | Same name, same "check, download, install in one call" shape. No per-call `channel` override — the deployment key is fixed per platform build |
 | `LiveUpdates.getConfig()` / `setConfig()` | — | No equivalent (config is resolved once, not runtime-readable/writable — see [above](#the-mental-model-carries-over)) |
 | `LiveUpdates.reload()` | `restartApp()` | Applies a downloaded update immediately |
-| — (Live Updates has no readiness call) | `notifyAppReady()` | New: confirms that a freshly installed package booted. Until it is called the package stays pending, and a package still unconfirmed after `maxLaunchAttempts` launches (default 3) is rolled back. `start()` and `sync()` call it internally, so only step-by-step integrations call it themselves |
+| — (Live Updates has no readiness call) | `notifyAppReady()` | New: confirms that a freshly installed package booted. Until it is called the package stays pending, and a package still unconfirmed after `maxLaunchAttempts` launches (default 2) is rolled back. `start()` and `sync()` call it internally, so only step-by-step integrations call it themselves |
 | — | `checkForUpdate()`, `downloadUpdate()`, `installUpdate()` | Step-by-step equivalents of `sync()`'s single call, for apps that want to show their own progress/prompt UI — no Appflow Live Updates equivalent (its API is `sync()`-only) |
 | — | `getRunningBundleUpdateMetadata()` | Reports the running OTA release (`{ label, packageHash, releaseNotes }`, or `null` on the embedded bundle) — Appflow's `getConfig()` exposes the active `channel`/version instead |
 | — | `isNextVersionReady()` | Whether a different update is already installed and waiting for the next reload, for an "Update ready — restart?" prompt |

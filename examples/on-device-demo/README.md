@@ -1,6 +1,6 @@
 # On-device demo: watch an OTA update apply
 
-A React Native demo storefront, preconfigured against the [local evaluation stack](../../README.md#quickstart--try-it-locally). The product cards fail to load on purpose. The guided command fixes one line, publishes a release after your confirmation, and lets you watch the running app install the fix over the air, using the same client SDK, CLI, and server code paths as production.
+A React Native demo storefront, preconfigured against the [local evaluation stack](../../docs/local-evaluation.md). The product cards fail to load on purpose. The guided command fixes one line, publishes a release after your confirmation, and lets you watch the running app install the fix over the air, using the same client SDK, CLI, and server code paths as production.
 
 The guided path is `cmpatch demo` once the evaluation stack is up. It checks the demo prerequisites before sign-in or installation and reports missing tools together. It builds this app, waits until you have seen the catalog error, shows the one-line fix it will make automatically, publishes the fix without rebuilding or reinstalling the native app, then automatically backgrounds and returns to the same app to check for the update. On iOS, Settings briefly appears; on Android, the Home screen appears. The app downloads and applies the update automatically, then reloads with working product cards. If automatic switching fails, the CLI guides you through switching manually. The manual walkthrough below is optional.
 

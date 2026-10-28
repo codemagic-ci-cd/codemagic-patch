@@ -330,6 +330,24 @@ export const INSTALL_MILESTONES: readonly RemoteMilestone[] = [
   { label: "finishing up", match: "OAuth sign-in enforced" },
 ] as const;
 
+/**
+ * `install.sh --ngrok`, run on this machine: no certificate to wait for —
+ * ngrok's edge holds it — and the readiness check goes through the public
+ * address, so a step that passes reached the server the way a phone will.
+ */
+export const NGROK_INSTALL_MILESTONES: readonly RemoteMilestone[] = [
+  { label: "writing the server's settings", match: "created /" },
+  { label: "reusing the settings from the last run", match: "reusing existing" },
+  { label: "building the server (this takes a while)", match: "building images" },
+  { label: "starting the server", match: "starting self-host stack" },
+  {
+    label: "waiting for the server to answer through ngrok",
+    match: "through ngrok",
+  },
+  { label: "your server is answering", match: "API HTTPS is reachable" },
+  { label: "finishing up", match: "OAuth sign-in enforced" },
+] as const;
+
 export const RESTORE_MILESTONES: readonly RemoteMilestone[] = [
   {
     label: "saving a safety backup of the current data",

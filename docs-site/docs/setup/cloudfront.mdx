@@ -1,7 +1,7 @@
 ---
 title: CloudFront setup
 description: >-
-  Front bundled MinIO or external object storage with Amazon CloudFront and
+  Front bundled Silo or external object storage with Amazon CloudFront and
   purge stale Patch manifests automatically.
 llmsDescription: >-
   CloudFront CDN for Patch — separate bundled and external-storage setup,
@@ -21,7 +21,7 @@ an OAC exception. The wizard verifies content, cache hit and purge freshness
 before installing.
 
 :::tip Set this up while installing
-For bundled MinIO, on an uninterrupted `cmpatch selfhost install`, the CloudFront step prints the
+For bundled Silo, on an uninterrupted `cmpatch selfhost install`, the CloudFront step prints the
 exact values for each AWS Console screen, generates the origin secret, watches
 the certificate validation record, and runs equivalent pre-cutover probes before
 it tells you to move the DNS record. It creates nothing in AWS and never asks
@@ -37,7 +37,7 @@ DNS. This page is also the reference for adding CloudFront to a running server.
 :::
 
 
-CloudFront can sit in front of either the bundled MinIO storage or an external
+CloudFront can sit in front of either the bundled Silo storage or an external
 S3/GCS-compatible bucket. Patch keeps manifest invalidation scoped and
 best-effort: publishing still succeeds if a purge fails, while the
 `s-maxage=300` that this adapter selects for mutable JSON bounds stale edge
@@ -47,7 +47,7 @@ Choose one complete track below. The bundled track uses a separate protected
 origin hostname on your Patch host. The external-storage track points
 CloudFront at the bucket and does not use the Caddy origin settings.
 
-## Bundled MinIO
+## Bundled Silo
 
 Start with three distinct hostnames. `storage.` and `origin-storage.` are easy
 to transpose in the CloudFront console, so write down the mapping first:
@@ -242,7 +242,7 @@ site because that DNS name now reaches CloudFront. Renewal warnings for that
 viewer certificate are expected and harmless; the origin certificate still
 renews through the unchanged origin DNS record. The custom header protects the
 origin hostname, not the host IP itself: a caller that reaches the IP and forges
-the old viewer `Host` header can still reach MinIO, so retain normal host-level
+the old viewer `Host` header can still reach Silo, so retain normal host-level
 network controls.
 
 ### Rotate the bundled origin secret

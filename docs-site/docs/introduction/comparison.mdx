@@ -67,7 +67,7 @@ After App Center CodePush, a family of compatible forks and hosted successors re
 
 | | CodePush forks | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Hosted SaaS or a self-hosted CodePush-compatible server | All-in-one Compose stack (Postgres, MinIO, API, dashboard) |
+| Hosting | Hosted SaaS or a self-hosted CodePush-compatible server | All-in-one Compose stack (Postgres, Silo, API, dashboard) |
 | Architecture | CodePush-compatible control plane (often access-key based) | Integrated server product you deploy anywhere Docker runs |
 | Local dev | Varies by fork; many assume a remote server | Full stack can run locally |
 | Update check | Typically server API checks | Static manifest on storage or CDN |
@@ -91,7 +91,7 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 
 | | Hot Updater | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Provider plugins (Supabase, Cloudflare, and others) | All-in-one Compose stack (Postgres, MinIO, API, dashboard) |
+| Hosting | Provider plugins (Supabase, Cloudflare, and others) | All-in-one Compose stack (Postgres, Silo, API, dashboard) |
 | Architecture | Bring-your-own backend | Integrated server product you deploy anywhere Docker runs |
 | Local dev | Unsupported | Full stack can run locally |
 | Update check | Server polling database | Static manifest on storage or CDN |
