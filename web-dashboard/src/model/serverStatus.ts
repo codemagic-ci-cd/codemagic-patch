@@ -152,7 +152,7 @@ export function downloadUrlLabel(
 
 /**
  * The Disk card measures the API container's root disk, which only says
- * something when a bundled Postgres or MinIO volume shares that disk.
+ * something when a bundled Postgres or Silo volume shares that disk.
  */
 export function showDiskCard(topology: ServerStatusTopology): boolean {
   return topology.database === "bundled" || topology.storage === "bundled";
@@ -169,7 +169,7 @@ export function statusPageDescription(topology: ServerStatusTopology): string {
   }
   const bundled = [
     ...(topology.database === "bundled" ? ["Postgres"] : []),
-    ...(topology.storage === "bundled" ? ["MinIO"] : []),
+    ...(topology.storage === "bundled" ? ["Silo"] : []),
   ];
   if (bundled.length === 0) {
     return "Host health for this Patch install. Database and object storage are external services, so only their connectivity is checked here.";

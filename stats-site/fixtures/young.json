@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "generated_at": "2026-10-22T03:30:05Z",
+  "next_update_after": "2026-10-22T15:30:00Z",
+  "coverage": {
+    "first_day": "2026-10-13",
+    "last_reported_day": "2026-10-21",
+    "lag_days": 1,
+    "min_report_days": 2,
+    "instances_reporting_30d": 4,
+    "notes": []
+  },
+  "totals": {
+    "active_devices": {
+      "day": "2026-10-21",
+      "value": 241,
+      "last_7_days": [
+        150,
+        181,
+        185,
+        208,
+        228,
+        226,
+        241
+      ]
+    },
+    "success_rate_30d": {
+      "applied": 379,
+      "failed": 8,
+      "attempts": 387,
+      "rate": 0.979328,
+      "min_attempts": 100
+    },
+    "teams": {
+      "value": 5,
+      "managed_teams_with_app": 2,
+      "self_hosted_servers_30d": 3
+    },
+    "self_hosted_servers_30d": {
+      "value": 3
+    },
+    "managed_instances_30d": 1,
+    "releases_7d": {
+      "releases": 15,
+      "rollbacks": 1
+    },
+    "applied_since_first_day": 379,
+    "releases_since_first_day": 20
+  },
+  "timeseries": {
+    "days": [
+      "2026-10-13",
+      "2026-10-14",
+      "2026-10-15",
+      "2026-10-16",
+      "2026-10-17",
+      "2026-10-18",
+      "2026-10-19",
+      "2026-10-20",
+      "2026-10-21"
+    ],
+    "active_devices": [
+      134,
+      154,
+      150,
+      181,
+      185,
+      208,
+      228,
+      226,
+      241
+    ],
+    "applied": [
+      28,
+      32,
+      41,
+      35,
+      40,
+      42,
+      48,
+      53,
+      60
+    ],
+    "failed": [
+      1,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1,
+      0,
+      0
+    ],
+    "attempts": [
+      29,
+      33,
+      42,
+      37,
+      41,
+      43,
+      49,
+      53,
+      60
+    ],
+    "success_rate": [
+      0.965517,
+      0.969697,
+      0.97619,
+      0.945946,
+      0.97561,
+      0.976744,
+      0.979592,
+      1,
+      1
+    ],
+    "releases": [
+      4,
+      1,
+      1,
+      1,
+      1,
+      1,
+      4,
+      4,
+      3
+    ],
+    "rollbacks": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+    ],
+    "reporting_coverage": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}

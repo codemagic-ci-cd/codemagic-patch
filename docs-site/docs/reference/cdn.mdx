@@ -1,14 +1,201 @@
 ---
-title: CloudFront setup
+title: CDN settings
 description: >-
-  Front bundled Silo or external object storage with Amazon CloudFront and
-  purge stale Patch manifests automatically.
+  Cloudflare and CloudFront settings for a self-hosted Patch server, when you
+  are not in the install wizard.
 llmsDescription: >-
-  CloudFront CDN for Patch — separate bundled and external-storage setup,
-  DNS cutover, origin protection, IAM, verification, and secret rotation.
+  Reference for Cloudflare and CloudFront on a self-hosted Patch server.
+  Tokens, cache rules, CloudFront console values, and turning a CDN on later.
 ---
 
-# CloudFront setup
+# CDN settings
+
+`cmpatch selfhost install` walks through a CDN when you want one. Cloudflare asks for an API token. CloudFront prints each console value and checks the result. This page is the settings for a step the wizard could not finish, a CDN you turn on after the first install, or a later run that no longer has those console answers.
+
+[Install](/docs/install#run-the-installer) is the path that does this for you.
+
+## Cloudflare {#cloudflare}
+
+For **external storage**, choose R2 for automated Cloudflare storage/domain/cache
+setup, or S3/GCS plus **Cloud Connector (Beta)** for the guided console path. The
+external download record is proxied before storage verification, and never points
+to the API server. The grey-cloud-first instructions below apply to bundled Silo.
+
+For S3/GCS, use Rules → Cloud Connector: choose the matching provider, a dot-free
+bucket endpoint (`BUCKET.s3.REGION.amazonaws.com` or
+`BUCKET.storage.googleapis.com`), and only `http.host eq "downloads.example.com"`.
+Accept the offered proxied DNS record; otherwise add a proxied CNAME to that
+endpoint. Add a separate Cache Rule for the same hostname, eligible for cache,
+respecting origin Cache-Control and Browser TTL with no Edge TTL override. Keep
+other hostnames outside both rules. No bucket prefix or rewrite is added by this
+flow. Public-read restrictions must already permit the origin. The wizard checks
+file content, cache hit, purge freshness and privacy before deploying.
+
+:::tip Set this up while installing
+For bundled Silo, on an uninterrupted `cmpatch selfhost install`, the Cloudflare step opens a
+pre-scoped token form, finds the zone id for you, and walks you through the proxy switch and Cache Rule after the server is up, checking each one. It is
+offered when your download domain is already on a Cloudflare account. Keep the
+download record **DNS only** (grey cloud) while the install runs: the wizard
+waits until the record resolves to the server directly, and switches the proxy
+on with you afterwards.
+
+If you also let the wizard add your DNS records through Cloudflare, it uses the
+same temporary DNS setup token to finish these steps itself: it adds the Cache
+Rule, checks that SSL/TLS is **Full** or **Full (strict)**, and turns the proxy
+on. A scripted run does this only with `--dns-setup cloudflare`. Anything it
+cannot do, such as a conflicting Cache Rule or **Flexible** SSL/TLS, is left
+for you with the steps below.
+
+If you resume or repair after the server becomes healthy, the closing summary
+links back here because the CLI no longer has the original setup answers.
+Complete the proxy and Cache Rule checks below by hand. This page is also the
+reference for adding Cloudflare to a running server.
+:::
+
+
+:::info
+The default [install](/docs/install) works without Cloudflare (`DELIVERY_ADAPTER=base-url`), which is fine for trying Patch. For production we strongly recommend a CDN, since otherwise every device downloads from the single storage host: front the **storage domain only** (the API domain stays direct) so artifacts and manifests are served from the edge, and Patch can purge stale `meta.json` / `manifest.json` URLs after releases.
+:::
+
+Front the storage domain with Cloudflare when you want edge caching and automatic cache purge. After every release, promotion, rollback, and deployment clear, the server purges the affected manifest URLs so clients do not keep stale manifests. Deleting a deployment also purges its public artifact URLs.
+
+You can also use Cloudflare **R2** as S3-compatible object storage (`STORAGE_ADAPTER=s3`). That is separate from putting Cloudflare's CDN in front of downloads. See [Infrastructure](/docs/setup/infrastructure#object-storage). Automatic R2 setup uses a disposable setup token, then saves a different runtime token. Do not reuse the setup token as `CLOUDFLARE_API_TOKEN`. The runtime token includes account-level Workers R2 Storage Read, which can also read objects in other buckets in that account.
+
+Follow this page in order: prepare credentials → install with flags → finish DNS and Cache Rules after the stack is up.
+
+### 1. Prepare Cloudflare (before install) {#1-prepare-cloudflare-before-install}
+
+Collect the Zone ID and a Cache Purge API token (below). Pass both to the installer in the next step, then finish DNS proxying and Cache Rules after the stack is healthy.
+
+#### Zone ID
+
+The storage domain must live in a Cloudflare zone. On the zone [Overview](https://dash.cloudflare.com/) page, copy **Zone ID** from the API section on the right. This becomes `CLOUDFLARE_ZONE_ID`. [See Cloudflare's docs on finding your Zone ID.](https://developers.cloudflare.com/fundamentals/settings/account-and-zone-ids/)
+
+#### Cache-purge API token
+
+Create a token at [My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens) (not the account Global API Key). Account-owned tokens (`cfat_…`) live under **\<account\> → Manage Account → API Tokens**.
+
+Use **Create Token** → **Create Custom Token** with a single permission:
+
+| Field | Value |
+| --- | --- |
+| Permissions | Zone → **Cache Purge** → Purge |
+| Zone Resources | Include → the zone that contains your storage domain |
+
+Copy the token once. This becomes `CLOUDFLARE_API_TOKEN`.
+
+The installer verifies the token by calling Cloudflare's `purge_cache` API for the zone (requires Zone → Cache Purge). Pass `--skip-cloudflare-check` only if you need to bypass verification temporarily.
+
+#### Free Cloudflare plans {#free-cloudflare-plans}
+
+This guide uses a sibling storage name (`storage-updates.example.com`) because on Cloudflare Free, Universal SSL covers `example.com` and `*.example.com` only. A nested name such as `storage.updates.example.com` sits two levels below the apex and needs [Advanced Certificate Manager](https://developers.cloudflare.com/ssl/edge-certificates/advanced-certificate-manager/). The installer suggests the sibling form for the same reason. Nested names still work if your plan covers them.
+
+### 2. Install with Cloudflare flags
+
+Run the [installer](/docs/install#run-the-installer) and add these flags on **first install** (delivery config is written into `.env.selfhost` only when that file is created):
+
+```bash
+export CLOUDFLARE_API_TOKEN=<cf_cache_purge_token>
+
+cmpatch selfhost install ubuntu@203.0.113.7 \
+  --cloudflare \
+  --cloudflare-zone-id <cf_zone_id>
+```
+
+The guided install still asks for anything else it needs (the domains, the
+OAuth app, the admin email). Passing the same flags to `scripts/selfhost/install.sh`
+on the host, together with `--cloudflare-api-token`, does the same for an
+on-server install.
+
+The installer sets `DELIVERY_ADAPTER=cloudflare` plus your token and zone ID. Leave `MANIFEST_CACHE_CONTROL` unset, and on an existing install, delete the `no-cache, must-revalidate` line a pre-CDN installer wrote, because an explicit value wins and would keep manifests out of the edge cache entirely. The server derives it from the delivery adapter, so selecting Cloudflare is what turns the mutable-JSON policy into `public, max-age=0, s-maxage=300, must-revalidate`: browsers and the Patch SDK revalidate immediately (`max-age=0`), while shared caches may retain a manifest for five minutes (`s-maxage=300`) that a release purge cuts short.
+
+:::warning Certificate order matters
+Caddy obtains Let's Encrypt certificates over HTTP on port 80 during install. Keep the **storage** DNS record **DNS only** (grey cloud) until the installer reports storage HTTPS as ready. Proxying too early can break the HTTP-01 challenge.
+:::
+
+### 3. Finish the Cloudflare setup
+
+After install with the Cloudflare flags, the server side is already active: releases request edge purges. Complete the Cloudflare-side steps next.
+
+#### Switch the DNS record to proxied
+
+1. Keep the storage domain **DNS only** until storage HTTPS is ready ([DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records)).
+2. Switch the storage record to **Proxied** (orange cloud). Leave the API domain direct unless you have a separate reason to proxy it.
+3. Set **SSL/TLS → Overview** to **Full (strict)** ([SSL/TLS](https://dash.cloudflare.com/?to=/:account/:zone/ssl-tls)). The origin serves a valid Let's Encrypt certificate, so strict validation works. **Flexible** would connect to the origin over HTTP, which Caddy redirects to HTTPS and can cause a redirect loop.
+
+If a later certificate renewal fails while proxied, temporarily switch the record back to DNS only, let Caddy renew, then re-enable the proxy.
+
+#### Add Cache Rules {#add-cache-rules}
+
+Create **one** rule on [Cache Rules](https://dash.cloudflare.com/?to=/:account/:zone/caching/cache-rules) (**\<zone\> → Caching → Cache Rules** → **Create rule**):
+
+| Rule expression | Cache eligibility | Edge TTL | Browser TTL |
+| --- | --- | --- | --- |
+| `http.host eq "storage-updates.example.com"` | Eligible for cache | Use cache-control header if present, bypass cache if not | Respect origin TTL |
+
+The rule is still required because Cloudflare does not cache JSON by default. Once the hostname is eligible, Cloudflare Origin Cache Control (enabled by default on Free, Pro, and Business) respects the origin headers: bundles and patches are content-addressed and immutable for one year, while `meta.json` / `manifest.json` use `s-maxage=300`. The server requests a purge for mutable URLs after releases, and the five-minute shared-cache TTL bounds staleness if a purge fails. Do not add an Edge TTL override; the Free-plan two-hour minimum applies to that override, not to the respected `s-maxage` origin directive.
+
+**Browser TTL** must be set to *Respect origin TTL* as well. The zone-wide default (four hours on the Free plan) otherwise rewrites the origin's `max-age=0` to `max-age=14400`, and iOS devices would then keep a stale manifest for up to four hours after a release; a purge cannot reach a device cache. Setting **Caching → Configuration → Browser Cache TTL** to *Respect Existing Headers* for the whole zone has the same effect.
+
+:::warning Upgrading an existing zone
+Earlier versions of this page had you add a **second** rule matching `.json`
+paths with *Ignore cache-control header and use this TTL*: **2 hours**.
+**Delete that rule.** An Edge TTL override takes precedence over the origin
+`s-maxage`, so leaving it in place keeps `meta.json` / `manifest.json` stale at
+the edge for up to two hours after a failed purge instead of five minutes.
+:::
+
+#### Verify {#verify}
+
+```bash
+# Second request should return cf-cache-status: HIT
+DEPLOYMENT_KEY=your-deployment-key
+URL="https://storage-updates.example.com/codemagic-patch/${DEPLOYMENT_KEY}/meta.json"
+
+curl -sI "$URL" | grep -i cf-cache-status
+curl -sI "$URL" | grep -i cf-cache-status
+
+# Must print max-age=0 exactly as the origin sent it; max-age=14400 means
+# the Browser TTL setting is missing
+curl -sI "$URL" | grep -i cache-control
+```
+
+After publishing a release, a successful purge makes the same URL briefly report `MISS` again. Purging is best-effort: a failed purge never fails the release. It is logged as a `delivery cache purge completed with failures` warning in the server logs. Watch for that warning if clients report stale updates.
+
+Also confirm basic health:
+
+```bash
+curl -fsS https://updates.example.com/health
+curl -fsS https://storage-updates.example.com/minio/health/ready
+```
+
+### Enable Cloudflare on an existing install {#enable-cloudflare-on-an-existing-install}
+
+Rerunning the installer with `--cloudflare` flags does **not** change an existing install. Delivery configuration is only written on initial install, and the rerun prints a warning instead. To enable it later, edit `.env.selfhost`:
+
+```bash
+DELIVERY_ADAPTER=cloudflare
+CLOUDFLARE_API_TOKEN=<cf_cache_purge_token>
+CLOUDFLARE_ZONE_ID=<cf_zone_id>
+```
+
+Then rerun `scripts/selfhost/install.sh`. It re-reads the file, verifies the credentials, and restarts the stack. Finish with [Switch the DNS record to proxied](#switch-the-dns-record-to-proxied) and [Add Cache Rules](#add-cache-rules).
+
+### Cloudflare R2 (optional storage)
+
+R2 is S3-compatible. To use it instead of bundled Silo, set `STORAGE_ADAPTER=s3` and point the S3 variables at your R2 bucket and endpoint. Full variable list: [Configuration reference](/docs/reference/configuration). R2 does not replace the delivery adapter: you can still front public downloads with Cloudflare CDN (`DELIVERY_ADAPTER=cloudflare`) while objects live in R2.
+
+The installer can create those buckets. See [Infrastructure](/docs/setup/infrastructure#object-storage).
+
+### Related
+
+- [Install](/docs/install): default Compose install
+- [Infrastructure](/docs/setup/infrastructure): when to keep Postgres, storage, and downloads on one host
+- [Configuration reference](/docs/reference/configuration): all env vars
+- [Troubleshooting: Caddy certificate issuance](/docs/troubleshooting#caddy-certificate-issuance-is-slow): DNS and Cloudflare timing
+- Cloudflare dashboard: [API Tokens](https://dash.cloudflare.com/profile/api-tokens), [DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records), [Cache Rules](https://dash.cloudflare.com/?to=/:account/:zone/caching/cache-rules), [SSL/TLS](https://dash.cloudflare.com/?to=/:account/:zone/ssl-tls)
+
+## CloudFront {#cloudfront}
 
 For external S3/GCS, the install wizard offers a separate **bucket-origin**
 walkthrough. It guides ACM DNS validation in `us-east-1`, a distribution using
@@ -47,7 +234,7 @@ Choose one complete track below. The bundled track uses a separate protected
 origin hostname on your Patch host. The external-storage track points
 CloudFront at the bucket and does not use the Caddy origin settings.
 
-## Bundled Silo
+### Bundled Silo {#bundled-silo}
 
 Start with three distinct hostnames. `storage.` and `origin-storage.` are easy
 to transpose in the CloudFront console, so write down the mapping first:
@@ -66,7 +253,7 @@ Caddy from completing HTTP-01 certificate issuance and leaves neither path
 ready to serve downloads.
 :::
 
-### 1. Prepare DNS, certificate, and origin secret
+#### 1. Prepare DNS, certificate, and origin secret
 
 1. Create the three DNS records shown above, all initially pointing at the
    Patch host. Lower the viewer record TTL to 60 seconds and let its old TTL
@@ -82,7 +269,7 @@ ready to serve downloads.
 openssl rand -hex 32
 ```
 
-### 2. Create the distribution
+#### 2. Create the distribution
 
 Create a standard CloudFront distribution with these settings:
 
@@ -108,7 +295,7 @@ the policy's TTL bounds: mutable JSON uses
 `public, max-age=0, s-maxage=300, must-revalidate`, while content-addressed
 artifacts use a one-year immutable policy.
 
-### 3. Create a purge-only IAM identity
+#### 3. Create a purge-only IAM identity
 
 Create an IAM policy scoped to this one distribution and attach it to the IAM
 user or role the Patch server will use:
@@ -134,7 +321,7 @@ carry, and the installer rejects them. Put only this scoped key in
 `.env.selfhost`; do not copy administrator or general AWS credentials onto the
 Patch host.
 
-### 4. Run the first install
+#### 4. Run the first install
 
 Use the same origin secret that is already configured on the distribution:
 
@@ -160,7 +347,7 @@ additive viewer and protected-origin Caddy sites, and submits one synthetic
 invalidation to verify the distribution ID and IAM permission. That check uses
 one CloudFront invalidation path; `--skip-cloudfront-check` bypasses it. A
 rejected permission fails the install, while a throttled or busy distribution
-is only a warning — that answer does not disprove the credentials, so the
+is only a warning, that answer does not disprove the credentials, so the
 install continues and you confirm a real purge afterwards.
 
 To adopt CloudFront on a running bundled install, create the AWS resources
@@ -178,7 +365,7 @@ CLOUDFRONT_ORIGIN_VERIFY_SECRET='<generated-secret>'
 
 Also **delete any existing `MANIFEST_CACHE_CONTROL` line**. Installs created
 before CDN delivery pinned `no-cache, must-revalidate` there, and an explicit
-value wins over the adapter default — leaving it in place makes CloudFront
+value wins over the adapter default, leaving it in place makes CloudFront
 revalidate every manifest request, so releases purge a cache that never fills.
 The installer warns when it sees this. Keep the line only if an origin-only
 policy is deliberate.
@@ -186,7 +373,7 @@ policy is deliberate.
 Rerun `scripts/selfhost/install.sh` with no delivery flags. Existing installs
 deliberately ignore those flags and keep `.env.selfhost` authoritative.
 
-### 5. Verify before changing DNS
+#### 5. Verify before changing DNS {#5-verify-before-changing-dns}
 
 Publish at least one release, then run all three checks against the same
 manifest path. The first proves CloudFront can reach the origin. The second
@@ -221,7 +408,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 Do not add `-k` or `--insecure`: a certificate error is a failed pre-cutover
 check. Do not cut over if any expectation fails.
 
-### 6. Cut over and confirm a cache hit
+#### 6. Cut over and confirm a cache hit
 
 Change only the viewer/download DNS record to a CNAME targeting the
 distribution domain. Then request the manifest twice:
@@ -245,7 +432,7 @@ origin hostname, not the host IP itself: a caller that reaches the IP and forges
 the old viewer `Host` header can still reach Silo, so retain normal host-level
 network controls.
 
-### Rotate the bundled origin secret
+#### Rotate the bundled origin secret {#rotate-the-bundled-origin-secret}
 
 The Caddy origin accepts a second, temporary secret so rotation has no 403
 window while a CloudFront distribution update deploys. Outside a rotation
@@ -262,7 +449,7 @@ window while a CloudFront distribution update deploys. Outside a rotation
 
 Skipping step 3 leaves the old secret valid indefinitely.
 
-## External S3 or GCS storage
+### External S3 or GCS storage
 
 First determine what `PUBLIC_BASE_URL` already is:
 
@@ -277,7 +464,7 @@ First determine what `PUBLIC_BASE_URL` already is:
 Changing `PUBLIC_BASE_URL` does not rewrite existing manifests immediately.
 Keep the bucket public-read during this transition.
 
-### 1. Create the certificate, distribution, and purge identity
+#### 1. Create the certificate, distribution, and purge identity
 
 Request the viewer certificate in ACM **`us-east-1`** and create the same
 distribution behavior and purge-only IAM policy described in the bundled
@@ -294,7 +481,7 @@ For GCS, the public bucket must allow anonymous object reads; Public Access
 Prevention cannot be enforced on that bucket. The internal GCS bucket is never
 an origin.
 
-### 2. Install with external storage
+#### 2. Install with external storage
 
 Point `--public-base-url` at the CloudFront viewer domain. Example for S3:
 
@@ -348,7 +535,7 @@ Verify `x-cache: Miss from cloudfront` then `Hit from cloudfront` with the
 viewer URL and a real manifest path, as in the bundled track. There is no Caddy
 origin-bypass check for an external public bucket.
 
-### Optional S3 Origin Access Control
+#### Optional S3 Origin Access Control
 
 Origin Access Control (OAC) can make an AWS S3 bucket private so only one
 CloudFront distribution reads it. Treat this as a later hardening step, not the
@@ -371,7 +558,7 @@ bucket public until that population and all such manifests have aged out. AWS
 requires an S3 bucket origin (not a website endpoint) and a distribution-scoped
 bucket policy for OAC; see [Restrict access to an Amazon S3 origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html).
 
-## Purge behavior and cost
+### Purge behavior and cost
 
 Patch invalidates mutable manifest paths. Deployment/app deletion collapses
 all artifact paths below a deployment key into one trailing-wildcard path, so a
@@ -379,9 +566,9 @@ large delete does not submit thousands of invalidation paths. CloudFront counts
 a wildcard as one path and provides the first 1,000 invalidation paths per AWS
 account each month at no charge; see [AWS invalidation pricing](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PayingForInvalidation.html).
 
-## Related
+### Related
 
 - [Install](/docs/install)
-- [Infrastructure adapters](/docs/setup/infrastructure)
+- [Infrastructure](/docs/setup/infrastructure)
 - [Configuration reference](/docs/reference/configuration)
 - [Troubleshooting](/docs/troubleshooting)

@@ -75,7 +75,11 @@ import {
 } from "../selfhostSession";
 import { createProgress } from "../../progress";
 import { UsageError, type CommandDeps } from "../shared";
-import { OAUTH_FLAGS, suppliedOAuthProvider } from "./answers";
+import {
+  OAUTH_FLAGS,
+  readNonOAuthRepairValues,
+  suppliedOAuthProvider,
+} from "./answers";
 import {
   confirmFinishStep,
   noteBlock,
@@ -112,6 +116,7 @@ const INSTALL_FLAGS = {
    */
   "--allow-http": "boolean",
   "--api-domain": "value",
+  "--database-url": "value",
   "--cloudflare": "boolean",
   "--cloudflare-api-token": "value",
   "--cloudflare-zone-id": "value",
@@ -127,6 +132,12 @@ const INSTALL_FLAGS = {
   "--install-curl": "boolean",
   "--install-docker": "boolean",
   "--install-git": "boolean",
+  /**
+   * Forwarded to install.sh, which writes SERVER_TELEMETRY=false. The daily
+   * anonymous usage report is the server's to send or not, so the choice
+   * lives in its env file rather than in anything this command keeps.
+   */
+  "--no-telemetry": "boolean",
   /** The address the DNS records point at, when the server cannot report it. */
   "--public-ip": "value",
   "--remote-path": "value",
@@ -357,6 +368,12 @@ export async function runInstall(
     // Kept, not just serialized: the CloudFront cutover needs the distribution
     // domain, which install.sh has no setting for and so never appears in the
     // environment below.
+    if (edge !== null && readStringFlag(parsed, "--database-url") !== undefined) {
+      throw new UsageError(
+        "--database-url is only for a first install. The database choice cannot be changed later.",
+      );
+    }
+
     const answers =
       edge === null
         ? await collectAnswers(deps, session, parsed, interactive)
@@ -369,8 +386,16 @@ export async function runInstall(
       session.progress.settle();
     }
 
+    const noTelemetry = readBooleanFlag(parsed, "--no-telemetry");
+    // `--repair --no-telemetry` with nothing else to correct is a complete
+    // repair on its own: install.sh rewrites SERVER_TELEMETRY from the flag.
+    // The wizard is skipped rather than asked for values nobody wants changed
+    // (or, unattended, refusing a repair that names none).
+    const telemetryOnlyRepair =
+      edge === "repair" && noTelemetry && !namesRepairValues(deps, parsed);
+
     const scriptEnv =
-      edge === "resume"
+      edge === "resume" || telemetryOnlyRepair
         ? // The whole point of the resume edge: replay the env the previous
           // run wrote, collecting nothing. Passing values here would be
           // ignored by install.sh anyway, which is what makes state (c)
@@ -395,6 +420,7 @@ export async function runInstall(
       args.push("--repair-env");
     }
     for (const flag of [
+      "--no-telemetry",
       "--skip-cloudflare-check",
       "--skip-cloudfront-check",
       "--skip-public-check",
@@ -494,11 +520,28 @@ export async function runInstall(
     dnsSetup.dispose();
     session.progress.stop("Install complete.");
     const signInProvider = describeConfiguredProvider(scriptEnv);
+    // What this run settled about the usage report, for the summary: a fresh
+    // install writes the setting, a repair rewrites it only when asked, and a
+    // resume touches nothing, so it says nothing about it.
+    const usageReport: UsageReport | undefined =
+      edge === null
+        ? noTelemetry
+          ? "off"
+          : "on"
+        : edge === "repair" && noTelemetry
+          ? "off"
+          : undefined;
     return {
       ...(answers === null ? {} : { adminEmail: answers.adminEmail }),
       serverUrl,
       ...(signInProvider === undefined ? {} : { signInProvider }),
-      summary: renderCompletion(serverUrl, remaining, options, signInProvider),
+      summary: renderCompletion(
+        serverUrl,
+        remaining,
+        options,
+        signInProvider,
+        usageReport,
+      ),
     };
   } catch (error) {
     // Idempotent over openSession's own fail: the tree closes once, with
@@ -860,17 +903,31 @@ export function renderSignInSteps(
   ];
 }
 
+/** What the install run left the server's daily usage report set to. */
+type UsageReport = "off" | "on";
+
 function renderCompletion(
   serverUrl: string | null,
   remaining: readonly string[],
   options: InstallOptions,
   signInProvider: string | undefined,
+  usageReport: UsageReport | undefined,
 ): string {
   return [
     serverUrl === null
       ? `${PRODUCT_NAME} is installed.`
       : `${PRODUCT_NAME} is installed at ${serverUrl}`,
     ...(serverUrl === null ? [] : ["", "Dashboard:", `  ${serverUrl}/`]),
+    // Said here because the server starts sending the moment it is healthy,
+    // and this summary is the one thing every install path prints.
+    ...(usageReport === undefined
+      ? []
+      : [
+          "",
+          usageReport === "on"
+            ? `Usage report: on. A daily anonymous report of aggregate counts only, no identifiers; off with --no-telemetry, or SERVER_TELEMETRY=false in .env.selfhost on the server.`
+            : "Usage report: off.",
+        ]),
     // Left out when init is driving: it opens that sign-in itself, moments
     // from now, so printing the command for it would read as something the
     // user still has to do.
@@ -921,6 +978,18 @@ function renderUnknownUnhealthy(
     "  cmpatch selfhost upgrade      rebuild and restart the server",
     `  ${SELFHOST_DOCS_URL}`,
   ].join("\n");
+}
+
+/**
+ * Whether a repair names anything to correct besides `--no-telemetry`. Read
+ * through the readers the wizard uses, so a value a repair would carry — a
+ * flag, or a secret from the environment — is never mistaken for nothing.
+ */
+function namesRepairValues(deps: CommandDeps, parsed: ParsedArgs): boolean {
+  return (
+    Object.keys(readNonOAuthRepairValues(deps, parsed)).length > 0 ||
+    suppliedOAuthProvider(deps, parsed) !== undefined
+  );
 }
 
 export type { InstallState };

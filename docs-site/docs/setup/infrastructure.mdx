@@ -1,151 +1,65 @@
 ---
-title: Infrastructure adapters
+title: Infrastructure
 description: >-
-  Configure external storage and CDN delivery adapters when you outgrow the
-  default Compose stack.
-llmsDescription: 'Storage and delivery adapters — S3, GCS, Silo, base-url, Cloudflare, CloudFront.'
+  What a self-hosted Patch server runs, and when to move Postgres, release
+  files, or downloads off the one host.
+llmsDescription: >-
+  One-host install by default. Rules of thumb for a CDN, a separate Postgres,
+  and external object storage, and what the installer leaves to you.
 ---
 
-# Infrastructure adapters
+# Infrastructure
 
-:::info
-Most teams use the default [Install](/docs/install) Compose stack and never touch adapter settings. This page is for higher-scale or custom deployments, external object storage, a CDN in front of downloads, or splitting the API and worker.
+A self-hosted Patch server needs a machine, Postgres, and an object store. A CDN in front of downloads is optional, but recommended for running in production.
+
+[Install](/docs/install) is the setup you run. This page is how to choose the shape. Starting machine size is [there](/docs/install#machine-size).
+
+## One host
+
+`cmpatch selfhost install` puts Caddy, the API, the release worker, Postgres, and Silo on one Docker host, with TLS and two hostnames. A machine with 2GB RAM, 1vCPU and 30GB of storage is enough for most deployments.
+
+You can also run Patch on Fly.io, using their Tigris integration for object storage. This is less work to set up, and is still suitable for most deployments.
+
+## When to move something off the machine
+
+Each piece is changed for a different reason.
+
+### CDN
+
+Add Cloudflare or CloudFront for a production install. Every device that takes an update fetches the bundle, so this is about latency and keeping that traffic off the host, at any audience size.
+
+The installer offers this as a step. Skipping it leaves the install complete. A later run of the installer does not ask again. Turning a CDN on afterwards is an edit to `.env.selfhost`, then a rerun of `install.sh`, as [CDN settings](/docs/reference/cdn) describes.
+
+### Postgres
+
+Move Postgres off the host when you want the provider's snapshots and point-in-time recovery, or when you need the extra storage capacity. The server keeps raw metric events for 8 days. That usage is about 2 GB per 100,000 daily active users.
+
+The guided installer keeps Postgres on the server. A separate database is `scripts/selfhost/install.sh` on the server, with `--database-mode external` and `--database-url` set to a `postgresql://` URL. Those two flags are part of that install, alongside the domains and sign-in values the script already asks for.
+
+### Object storage {#object-storage}
+
+Move release files off the host when retained bundles are using lots of disc space. Frequent releases to staging can be a main contributor.
+
+The installer can keep Silo on the server, or use Cloudflare R2, Amazon S3, or Google Cloud Storage. It can create those buckets or walk you through the console. External storage uses two buckets: one public for downloads, one private for `_internal/` objects.
+
+Azure Blob Storage is not supported. 
+
+:::note
+Amazon S3 needs a permanent access key for a dedicated user, scoped to those two buckets. A temporary SSO or STS key is rejected. Google Cloud Storage needs anonymous reads on the public bucket, so Public Access Prevention cannot be enforced on it, and the project has to allow a service-account key.
 :::
 
-Patch is an integrated product, not a plugin marketplace. Under the hood it has two fixed integration points, storage adapters and delivery adapters, that let you swap backends without changing the CLI, dashboard, or SDK.
 
-See [How it works](/docs/introduction/how-it-works) for the end-to-end flow. This page explains what you can configure on the server side.
+## Large user bases
 
-## Two layers
+Patch serves the manifests and bundles through a CDN so requests rarely hit your server. Not handling large request volumes means you won't need extra complexity such as queues, Redis caching, or API gateways, even for millions of users.
 
-| Layer | Question it answers | Env var |
-| --- | --- | --- |
-| Storage adapter | Where are bundles and manifests stored? | `STORAGE_ADAPTER` |
-| Delivery adapter | What public URLs do clients download from, and how is the cache invalidated? | `DELIVERY_ADAPTER` |
+Data transfer bills aren't an issue if you use Cloudflare. They don't bill for downloads from the CDN, so even petabytes of bundle downloads will be free. R2 does not charge egress either, so it is recommended for serving millions of users. Amazon S3 and Google Cloud Storage still charge egress when the CDN fetches an object from them.
 
-The API and worker read and write artifacts through the storage adapter. When a release is published, the delivery adapter resolves stable public URLs (embedded in manifests) and optionally purges a CDN cache.
-
-The server never serves OTA artifacts from the API domain; clients fetch from your download base URL. See [How delivery works](/docs/using-patch/delivery).
-
-## Defaults (self-host installer)
-
-`scripts/selfhost/install.sh` sets up:
-
-- `STORAGE_ADAPTER=s3` with bundled Silo
-- `DELIVERY_ADAPTER=base-url`: clients fetch directly from `PUBLIC_BASE_URL`
-- `PUBLIC_BASE_URL` on your storage domain, e.g. `https://storage-updates.example.com/codemagic-patch`
-- Compose hardcodes `MODE=all` (API and release worker in one process)
-
-The `cmpatch selfhost install` wizard can prepare R2, S3 or GCS storage
-automatically or guide you through console setup, including the selected CDN. Splitting `MODE=api` / `MODE=worker` still requires a custom
-deployment; the supported Compose topology runs `MODE=all`.
-
-## Storage adapter
-
-Controls where release artifacts live.
-
-| Value | Typical use |
-| --- | --- |
-| `s3` | Default. Silo in the Compose stack, or any S3-compatible store (AWS S3, Cloudflare R2, etc.) in a custom deployment |
-| `gcs` | Google Cloud Storage with separate public and internal buckets (custom deployment) |
-| `memory` | Local development and tests only, not for production |
-
-### S3-compatible storage
-
-Used by the default self-host stack (Silo) and for external object storage at scale.
-
-Key variables (full list in [Configuration reference](/docs/reference/configuration)):
-
-| Variable | Role |
-| --- | --- |
-| `S3_BUCKET` | Public bucket name (required when `STORAGE_ADAPTER=s3`) |
-| `S3_INTERNAL_BUCKET` | Optional distinct private bucket for `_internal/` keys, including copy source and destination; unset retains one-bucket routing |
-| `S3_ENDPOINT` | Custom endpoint for Silo or other S3-compatible services |
-| `S3_FORCE_PATH_STYLE` | `true` for Silo; often `false` for AWS |
-| `S3_REGION` | AWS region (default `us-east-1`) |
-| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Credentials, or omit both to use the host's default credential chain |
-
-`PUBLIC_BASE_URL` must point at the publicly readable viewer URL for artifacts:
-the storage domain in a default install, or the CDN domain when fronted.
-
-Choose S3/R2 in `cmpatch selfhost install`, or pass a complete runtime
-configuration with `--storage-mode s3|r2`. New wizard installs require distinct
-public and internal buckets; unset `S3_INTERNAL_BUCKET` preserves legacy
-one-bucket server routing. Changing
-only `STORAGE_ADAPTER` in an existing `.env.selfhost` is not a migration and
-does not move stored objects.
-
-On AWS, the wizard's runtime credentials are a dedicated bucket-scoped IAM user
-key, not an SSO or STS session. It changes only the buckets it creates. It does
-not turn off account-wide Block Public Access.
-
-### Google Cloud Storage
-
-Set `STORAGE_ADAPTER=gcs` with:
-
-- `GCS_PUBLIC_BUCKET`: artifacts clients download
-- `GCS_INTERNAL_BUCKET`: staged uploads (`_internal/*`); must be a different bucket
-
-Select GCS in `cmpatch selfhost install` with automatic or guided setup,
-or pass `--storage-mode gcs` with a complete two-bucket runtime configuration. The Compose
-path mounts the service-account JSON supplied with `--gcs-credentials-file`.
-Runtime access is granted on those two buckets, not the project. Public Access
-Prevention must allow anonymous reads on the public bucket, and the project must
-allow service-account key creation.
-
-## Delivery adapter
-
-Controls how storage keys become client-facing download URLs and whether the server purges an edge cache after each release.
-
-| Value | Typical use |
-| --- | --- |
-| `base-url` | Default. URLs are `PUBLIC_BASE_URL` + storage key. No CDN integration. |
-| `cloudflare` | Storage domain is proxied through Cloudflare; server calls the Cache Purge API after releases |
-| `cloudfront` | CloudFront serves `PUBLIC_BASE_URL`; server submits scoped invalidations after releases and wildcard invalidation on deployment deletion |
-
-With `base-url`, clients hit your storage domain directly (Caddy → Silo in the default stack).
-
-With `cloudflare`, manifest URLs still use `PUBLIC_BASE_URL`, which should be the Cloudflare-fronted storage domain, and Patch purges cached manifest URLs after releases, promotions, rollbacks, and related deployment changes. Setup: [Cloudflare setup](/docs/setup/cloudflare).
-
-With `cloudfront`, bundled Silo uses a separate header-protected origin
-hostname while the viewer storage hostname remains `PUBLIC_BASE_URL`. External
-S3/GCS uses the bucket endpoint directly. Setup: [CloudFront setup](/docs/setup/cloudfront).
-
-Purge is best-effort: a failed purge does not roll back a release, but you may see stale bundles at the edge until the cache expires.
-
-## When adapters matter
-
-You usually need to think about adapters when:
-
-- Download volume or geographic reach outgrows a single origin: add Cloudflare
-  ([Cloudflare setup](/docs/setup/cloudflare)) or CloudFront
-  ([CloudFront setup](/docs/setup/cloudfront))
-- You want managed object storage instead of bundled Silo: choose external
-  S3-compatible storage or GCS during the first install
-
-You usually do not need to change adapters when:
-
-- You are evaluating Patch or running a single Docker host
-- You publish through `cmpatch` and the dashboard on the default installer layout
-
-The server accepts `MODE=api` and `MODE=worker`, but the self-host Compose topology is `MODE=all` only. Caddy does not expose `/worker/*` publicly. Split API/worker is not a turnkey self-host option.
-## Client config stays the same
-
-Adapter changes are server-side. Apps still need two URLs:
-
-| App config | Points at |
-| --- | --- |
-| `CodemagicPatchApiUrl` | API / control plane (metrics, auth) |
-| `CodemagicPatchDownloadBaseUrl` | `PUBLIC_BASE_URL`, storage domain or CDN-fronted equivalent |
-
-If you add a CDN, `CodemagicPatchDownloadBaseUrl` should match the CDN-facing base URL clients actually fetch from, not the raw Silo origin.
 
 ## Related
 
-- [Configuration reference](/docs/reference/configuration): all env vars
-- [How delivery works](/docs/using-patch/delivery): manifest paths and public vs internal objects
-- [Cloudflare setup](/docs/setup/cloudflare): DNS, CDN delivery adapter, install flags
-- [CloudFront setup](/docs/setup/cloudfront): bundled/external origins, IAM, DNS cutover
-- [Install](/docs/install): default install
-- [Ongoing maintenance](/docs/setup/ongoing-maintenance): backups, upgrades, health
-- [Operations](/docs/reference/operations): backup, restore, upgrade commands
+- [Install](/docs/install): the setup you run, including machine size
+- [CDN settings](/docs/reference/cdn): Cloudflare and CloudFront, when you are not in the installer
+- [Configuration reference](/docs/reference/configuration): environment variables
+- [Ongoing maintenance](/docs/setup/ongoing-maintenance): backups and disk growth
+- [How delivery works](/docs/using-patch/delivery): manifest paths

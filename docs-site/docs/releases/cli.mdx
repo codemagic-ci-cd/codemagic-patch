@@ -20,6 +20,60 @@ npm install -g @codemagic/patch-cli@latest
 Reference: [CLI reference](/docs/reference/cli-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=patch-cli)
 
+## 0.9.0 {#v0-9-0}
+
+*3rd November 2026*
+
+### Install with a separate Postgres database
+
+On a first `cmpatch selfhost install`, the wizard asks where the database
+runs. The default is still the bundled Postgres on the server. A separate
+database is for backups and point-in-time recovery, and is needed for disk
+space above a few million daily active users. Choose it and paste your
+provider's connection string (`--database-url` on an unattended run). The
+wizard shows the server's IP to allow, then checks from the server itself
+that the database user can connect and create tables. The choice is fixed
+once `.env.selfhost` is written, so `--repair` refuses `--database-url`.
+
+The string has to end in `sslmode=require`. A string that names `sslrootcert`
+or `sslmode=verify-full` is refused. The stored string gains
+`uselibpqcompat=true`, so the server's PostgreSQL client (pg 8) treats
+`require` as encrypt-only. Without it, pg 8 treats `require` as
+`verify-full`, which rejects the certificates managed Postgres providers use.
+See [Run the installer](/docs/install#run-the-installer).
+
+### Promote picks deployments, and both release commands ask for the rollout
+
+`cmpatch release promote` now lists the app's deployments for you to pick
+the source and destination, instead of asking you to type their names.
+`release-react` already did this for its deployment. Both commands now ask
+for a rollout percentage (Enter keeps 100) instead of silently using 100, so
+the confirmation shows a value you chose. Runs that cannot prompt (`--yes`,
+CI, `--format json`, piped output) keep the default, and an explicit
+`--rollout-percentage` is left alone.
+
+### Usage report opt-out
+
+`cmpatch selfhost install --no-telemetry` writes `SERVER_TELEMETRY=false`, so
+the server never sends the daily anonymous usage report that
+[server 0.9.0](/docs/releases/server#v0-9-0) turns on. The flag works on a
+first install, with `--ngrok` and `--fly`, and with `--repair` on an installed
+server. The install summary says whether the report is on.
+
+### Fixes
+
+- **`init` accepts every Patch server:** `cmpatch init` turned down valid
+  servers with "not like a Codemagic Patch server" because its
+  `/health/ready` probe expected `checks` to be a list, while the server
+  sends an object. The probe now matches what the server sends.
+- **Silo, not MinIO:** The storage choice in the install wizard and the
+  local evaluation stack call the bundled object store Silo, which is what
+  runs. The `MINIO_*` variables, the `/minio/health/ready` path, and backup
+  archive names are unchanged.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.9.0).
+
 ## 0.8.0 {#v0-8-0}
 
 *28th October 2026*
@@ -46,7 +100,7 @@ sign-in and bundled Postgres and storage, on the machine it runs on, reached
 at your [ngrok](https://ngrok.com) account's `https://` address. It is for
 trying Patch on real devices without a domain, open ports, or a server: the
 free plan is capped, and apps keep the address they were built with. See
-[Install on this machine with ngrok](/docs/install#ngrok).
+[Reach a real phone with ngrok](/docs/local-quickstart#ngrok).
 
 ### Fixes
 
@@ -276,7 +330,7 @@ or not running, it asks before installing or starting it.
 cmpatch selfhost local-eval
 ```
 
-See [Local quickstart](/docs/) and the
+See [Local quickstart](/docs/local-quickstart) and the
 [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.3.0).
 
 ## 0.2.0 {#v0-2-0}

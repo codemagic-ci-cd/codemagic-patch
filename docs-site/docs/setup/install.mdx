@@ -11,67 +11,44 @@ slug: /install
 
 # Install
 
-For a quick try on your laptop without domains or TLS, start with the [Local quickstart](/docs/) (`cmpatch selfhost local-eval`).
+For a quick try on your laptop without domains or TLS, start with the [Local quickstart](/docs/local-quickstart) (`cmpatch selfhost local-eval`). That page also covers reaching a real phone through ngrok before you have a domain.
 
-To test with your own app on real phones before you have a domain, [install on this machine with ngrok](#ngrok).
+To deploy Patch for production, you can either use a server and domain you own, or [install on Fly.io](#fly). There is an install wizard for both paths, and each requires minimal input.
 
-To deploy without a server or domain of your own, [install on Fly.io](#fly).
+For either route, you will need a GitHub, Bitbucket Cloud, or GitLab account for sign-in (the installer walks you through creating its OAuth app).
 
-To deploy with your own domains:
+## Installing on a server
+
+To deploy with your own domains you will need:
 
 - A server you can reach over SSH
-- Two hostnames you can add DNS records for — usually two subdomains of one
-  domain you already own, such as `updates.example.com` and
-  `storage-updates.example.com`
-- A GitHub, Bitbucket Cloud, or GitLab account for sign-in (the installer walks you through creating its OAuth app)
-- For production, a CDN in front of storage — Cloudflare or CloudFront; strongly recommended, the installer offers it as a step
+- Access to a DNS host, with a domain you can add subdomains to for Patch
+- A CDN in front of storage (Cloudflare or CloudFront). Optional, but recommended for production
 
-`cmpatch selfhost install` handles the rest: it checks the server, offers to
-install Docker, git, and curl if they are missing, walks you through DNS and
-the OAuth app, and then runs the installer over SSH — OAuth wiring, Compose
-stack, TLS certificates, secrets, Postgres, Silo, and the dashboard. The
-Docker bootstrap covers the distributions Docker's own install script supports
-(Ubuntu, Debian, Fedora, RHEL, CentOS, Rocky, and their derivatives) plus
-Amazon Linux 2023; on anything else, install Docker Engine with the Compose
-plugin yourself and run the command again.
+### Machine size {#machine-size}
 
-## Choose storage
+The default Compose install runs Caddy, the API and release worker, Postgres, and Silo on one host.
 
-The default install stores artifacts in Silo on the same host. You can choose
-Cloudflare R2, Amazon S3, or Google Cloud Storage instead. The installer can
-create those buckets or walk you through the console.
-
-External storage uses two buckets: one public for downloads, one private for
-`_internal/` objects. Unattended flags, and how to reuse buckets after a failed
-setup, are in the
-[CLI command reference](/docs/reference/cli-reference#external-storage-install-flags).
-Adapter env vars are in [Infrastructure adapters](/docs/setup/infrastructure).
-
-## Machine size
-
-The default Compose install runs Caddy, the API and release worker, Postgres, and Silo on one host. You need Docker + Docker Compose v2, with ports 80 and 443 open.
-
-- RAM: 2 GB is enough for typical use. Prefer 4 GB for large or overlapping releases, or a long on-box history of artifacts and metrics.
+- RAM: 2 GB is enough for typical use.
 - CPU: 1 vCPU is enough for typical use.
-- Disk: tens of GB is fine to start. Object storage grows with retained releases. Postgres keeps raw metric events for 8 days, so that usage follows how many devices open the app and then levels off. That is about 2 GB in total per 100,000 daily active users. Older days stay only as small daily totals (see [Disk growth](/docs/setup/ongoing-maintenance#disk-growth)).
+- Disk: tens of GB is fine to start. Postgres uses approximately 2GB per 100k users.
+- Ports: Ports 80 and 443 need to be open.
 
-## OAuth sign-in {#github-oauth-app}
+The installer can also set up storage on Cloudflare R2, Amazon S3, or Google Cloud Storage instead if you want them to be separate. The installer can
+create the two necessary buckets or walk you through the console.
 
-The wizard lets you choose GitHub, Bitbucket Cloud, or GitLab (gitlab.com or
-self-managed) and guides you through creating its OAuth app. You do not need to create it in advance.
-Prompted GitHub credentials are checked during setup; Bitbucket and GitLab credentials
-are checked when you first sign in. If the credentials are wrong, run
-`cmpatch selfhost install --repair` to correct them, then sign in again.
-`--repair` on a running server is also how you add another sign-in provider
-later; the providers already configured keep their settings.
+The installer can also use a Postgres database you already run instead of the
+one on the server. A separate database is for backups and point-in-time
+recovery, and is needed once metrics reach tens of GB, around a few million
+daily active users. Paste the provider's connection string that ends in
+`sslmode=require` and allow the server's IP when asked; a string that names a
+certificate file (`sslrootcert` or `sslmode=verify-full`) is refused. The
+choice is fixed at install.
 
-:::info
-The administrator's email must exactly match the verified primary email on their chosen sign-in account. The default registration mode is `invite_only`, so the very first sign-in is rejected if it doesn't match.
-:::
 
-## Run the installer
+### Run the installer
 
-Install the CLI on your own machine (Node.js `>=20`) and run:
+Install the CLI on your own machine (Node.js `>=20`) and start the installer by running:
 
 ```bash
 npm install -g @codemagic/patch-cli
@@ -79,11 +56,19 @@ npm install -g @codemagic/patch-cli
 cmpatch selfhost install
 ```
 
-The command asks for everything it needs — the server, the two hostnames, the
-administrator email, the OAuth app — and guides you through setup. Building the images
-takes around twenty minutes on a cold cache. If the server is not reachable
-over SSH, see
-[Troubleshooting](/docs/troubleshooting#cmpatch-selfhost-cannot-connect-over-ssh).
+The command connects over SSH. A few steps ask for a value. The rest run on their own. An unattended run is possible too. The flags are in [Scripted install](/docs/reference/cli-reference#scripted-install).
+
+When running the wizard, it will:
+
+1. Check the server, and install Docker, git, or curl if they are missing.
+2. Ask for the server address, where the database runs, and where release files should live.
+3. Ask for DNS. On Cloudflare it can add the records for you.
+4. Walk you through creating the OAuth app, then ask for the administrator email.
+5. Ask whether downloads should go through a CDN. You can skip this.
+6. Build the images, start the stack, and get the HTTPS certificates. The first build takes about 5-10 minutes.
+7. Finish the CDN once the server is up.
+
+On a free Cloudflare plan, a name two levels under the domain (`storage.updates.example.com`) needs an extra certificate. [CDN settings](/docs/reference/cdn#free-cloudflare-plans) has the detail.
 
 You can also start from the app: `cmpatch init` in a React Native project
 offers to install a server, signs you in, and links the project in one run.
@@ -104,159 +89,37 @@ use the dashboard). See [Web dashboard](/docs/using-patch/dashboard).
 `.env.selfhost` on the server holds production secrets. Back it up and never commit or expose it.
 :::
 
-<details>
-<summary>On-server installs</summary>
+## Installing on Fly.io {#fly}
 
-Every answer has a flag, so the same install runs unattended. An unattended
-run skips the interactive DNS step, so add the two records and let them
-resolve first — otherwise the install fails when the server cannot obtain its
-certificates:
-
-```bash
-# the secret travels in the environment, never in a command line
-export GITHUB_OAUTH_CLIENT_SECRET=<github_client_secret>
-
-cmpatch selfhost install ubuntu@203.0.113.7 \
-  --non-interactive \
-  --api-domain updates.example.com \
-  --storage-domain storage-updates.example.com \
-  --email admin@example.com \
-  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
-  --install-docker
-```
-
-The CLI is a wrapper around a script in the repository; you can run that
-script on the host directly instead. You then add the DNS records yourself,
-[register the OAuth App](https://github.com/settings/applications/new) by hand,
-and run the checks the guided installer would run for you — machine size, open
-ports, DNS, the OAuth pair:
-
-| OAuth App setting | Value |
-| --- | --- |
-| Homepage URL | `https://updates.example.com` |
-| Authorization callback URL | `https://updates.example.com/auth/callback` |
-
-```bash
-git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
-cd codemagic-patch
-
-scripts/selfhost/install.sh \
-  --api-domain updates.example.com \
-  --storage-domain storage-updates.example.com \
-  --email admin@example.com \
-  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
-  --github-oauth-client-secret <github_client_secret>
-```
-
-To sign in with Bitbucket Cloud instead of (or as well as) GitHub, pass
-`--bitbucket-oauth-client-id` / `--bitbucket-oauth-client-secret`. For GitLab,
-pass `--gitlab-oauth-client-id` / `--gitlab-oauth-client-secret`; at least one
-provider is required. See [GitLab sign-in](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#gitlab-sign-in)
-for app settings and self-hosted GitLab.
-
-To run this same stack on your own machine over plain HTTP — a laptop
-evaluation with real OAuth sign-in but no certificate, DNS, or open ports —
-add `--allow-http` to the script. It serves the machine it runs on alone: the
-server is `http://localhost`, downloads are `http://localhost:9110`, the OAuth
-callback is `http://localhost/auth/callback`, and the app must allow cleartext
-traffic to those URLs. Any other hostname or IP is refused with the flag,
-because a server other machines reach needs the HTTPS install; for the same
-reason `cmpatch selfhost install`, which installs over ssh, does not take it.
-See the
-[full guide](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#plain-http-no-tls)
-for what changes.
-
-Either way, the installer writes `.env.selfhost` with strong random secrets
-(it refuses to overwrite an existing file), builds the server and Caddy images,
-starts the Compose stack under project name `codemagic-patch-selfhost`, waits
-for Caddy to obtain Let's Encrypt certificates (a `--allow-http` install
-instead waits for the sites to answer over plain HTTP), and prepares the
-single fixed `default-team` on first boot.
-
-</details>
-
-## Install on this machine with ngrok {#ngrok}
-
-To connect your own app and test it on any device before you have a domain,
-install the server on your own machine and reach it at the free `https://`
-address your [ngrok](https://ngrok.com) account comes with. You need Docker, a
-free ngrok account, and a GitHub, Bitbucket, or GitLab account for sign-in — no
-domain, DNS records, certificates, or open ports.
-
-```bash
-npm install -g @codemagic/patch-cli
-cmpatch selfhost install --ngrok
-```
-
-The command finds your ngrok address, walks you through the OAuth app with that
-address filled in, and installs the server. It prints the dashboard and the two
-values your app is configured with, both on the ngrok address. Then run
-`cmpatch login` and, in your app's folder, `cmpatch init`.
-
-ngrok's free plan carries 1 GB and 20,000 requests a month: enough to test your
-own app, not to serve an app in the store. Apps keep the address they were built
-with, so install on your own domain before you ship. The address serves one
-ngrok agent at a time: stop any other `ngrok` using it first, or, on a paid
-ngrok plan, pass `--ngrok-domain <domain>` with a domain you reserved. Details:
-[ngrok (no domain)](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#ngrok-no-domain).
-
-## Install on Fly.io {#fly}
-
-`cmpatch selfhost install --fly` deploys Patch onto Fly.io from this machine, with no server or domain of your own. It offers to install flyctl and the Tigris CLI when they are missing (a scripted run passes `--install-flyctl` and `--install-tigris` instead). The Fly account needs a card.
-
-The command creates a Fly app for Patch, then a public bucket for downloads and a private bucket with `fly storage`. For the database, it either uses a Postgres URL you already have or creates a second Fly machine running Postgres. Patch's machine, and the Postgres machine when cmpatch creates it, suspend: they stop when idle and wake on the first request. After the buckets exist, one Tigris login mints a key for both; on that page, choose **Sign in with Fly.io**. Sign-in uses the same GitHub, Bitbucket, or GitLab OAuth app as the SSH installer.
+`cmpatch selfhost install --fly` deploys Patch onto Fly.io from this machine. You do not need your own domain or server.
 
 ```bash
 cmpatch selfhost install --fly
 ```
 
-The dashboard and API are at `https://<company>-patch.fly.dev`, where `<company>` is the company name you enter, lowercased with hyphens. Phones download updates straight from the public bucket at `https://<company>-patch.t3.tigrisfiles.io`. A Fly install has no custom domain and no CDN step. Both addresses are built into the app binary, so changing either one later means a new store build.
+The command runs on this machine. A few steps ask for a value. The rest run on their own.
 
-The install records the server on this machine, so `cmpatch init` offers its address and `cmpatch selfhost upgrade`, `backup`, and `restore` work from here without a server address. If this machine already had a default server, an interactive install asks whether to switch; a scripted run keeps the old default and prints how to reach the new install. To run them from another machine, record the same install there first; this creates nothing on Fly:
+When running the wizard, it will:
 
-```bash
-cmpatch selfhost install --fly --register --company "Acme Corp"
+1. Install flyctl and the Tigris CLI if they are missing, sign you in to Fly, and send you to add billing details.
+2. Ask for the company name, the region, and where you want Postgres.
+3. Create a public bucket and a private bucket, then sign you in to Tigris. Choose **Sign in with Fly.io**.
+4. Walk you through creating the OAuth app, then ask for the administrator email.
+5. Create a Postgres machine on Fly if you chose a new database. The first build takes several minutes.
+6. Build the Patch app on Fly and wait until the server answers. The machines suspend when idle.
+
+When it finishes you'll have:
+
+```text
+Dashboard:      https://<company>-patch.fly.dev/
+API URL:        https://<company>-patch.fly.dev           (app config: CodemagicPatchApiUrl)
+Download base:  https://<company>-patch.t3.tigrisfiles.io   (app config: CodemagicPatchDownloadBaseUrl)
 ```
+
+`<company>` is the company name you enter, lowercased with hyphens. A Fly install has no custom domain and no CDN. Tigris keeps copies of the bundles close to the devices that fetch them, so you can go without a separate CDN for much longer than when running Patch on a server. Both addresses are built into the app binary, so changing either one later means a new store build.
+
+Sign in to the dashboard with your chosen provider to create the administrator account, then
+connect your machine with `cmpatch login` and create apps and deployments (or
+use the dashboard). See [Web dashboard](/docs/using-patch/dashboard).
 
 Backups, restores, and upgrades on Fly: [Ongoing maintenance](/docs/setup/ongoing-maintenance#fly-backups).
-
-## Verify
-
-```bash
-curl -fsS https://updates.example.com/health
-curl -fsS https://storage-updates.example.com/minio/health/ready
-
-# Unauthenticated smoke test
-scripts/selfhost/smoke.sh
-
-# After you create an API token, run the full publish smoke test
-CODEMAGIC_PATCH_TOKEN=cm_pat_xxx scripts/selfhost/smoke.sh
-```
-
-:::tip
-Before you rely on this stack in production, run `cmpatch selfhost backup --download` and keep the copy somewhere other than the server. For backups, upgrades, and what to watch next, see [Ongoing maintenance](/docs/setup/ongoing-maintenance). Command reference: [Operations](/docs/reference/operations).
-:::
-
-## CDN delivery
-
-A CDN is optional for trying Patch, but for production we strongly recommend
-one: without it every device downloads straight from the single storage host,
-which absorbs all traffic and has no edge cache. Front the storage domain with
-a CDN so artifacts and manifests are served from the edge and Patch can purge
-stale manifests after releases.
-`cmpatch selfhost install` offers this as a step: it lists Cloudflare when your
-download domain is already on a Cloudflare account, and CloudFront always.
-
-The guided steps cover token creation, the DNS proxy switch, the cache rule,
-and — for CloudFront — the AWS Console walkthrough and the final DNS cutover,
-including the checks that must pass before it. The reference walkthroughs are
-[Cloudflare setup](/docs/setup/cloudflare) and
-[CloudFront setup](/docs/setup/cloudfront). The guided installer configures the
-bundled Postgres/Silo topology. CloudFront can also front external S3/GCS
-storage, but that topology starts with the direct `install.sh` path in
-[Infrastructure adapters](/docs/setup/infrastructure), then follows the
-external-storage track in the CloudFront guide.
-
-:::info Free Cloudflare plans
-Prefer a sibling storage hostname (`storage-updates.example.com` rather than `storage.updates.example.com`): nested hostnames work, but on Cloudflare Free they need Advanced Certificate Manager (Universal SSL only covers `*.example.com`). Details: [Cloudflare setup](/docs/setup/cloudflare#1-prepare-cloudflare-before-install).
-:::

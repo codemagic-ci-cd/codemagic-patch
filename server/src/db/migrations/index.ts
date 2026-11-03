@@ -17,6 +17,7 @@ import { metricEventLifecycleNamesMigration } from "./0016_metricEventLifecycleN
 import { appFrameworkMigration } from "./0017_appFramework";
 import { dropMetricEventSdkVersionMigration } from "./0018_dropMetricEventSdkVersion";
 import { metricEventDailyAggregatesMigration } from "./0019_metricEventDailyAggregates";
+import { serverInstanceMigration } from "./0020_serverInstance";
 
 export interface SqlMigration {
   name: string;
@@ -43,4 +44,5 @@ export const dbMigrations: readonly SqlMigration[] = [
   appFrameworkMigration,
   dropMetricEventSdkVersionMigration,
   metricEventDailyAggregatesMigration,
+  serverInstanceMigration,
 ];

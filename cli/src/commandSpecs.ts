@@ -817,6 +817,10 @@ const commandSpecs: RunnableCommandSpec[] = [
                 summary: "The domain your apps and dashboard will use",
               },
               {
+                flag: "--database-url <url>",
+                summary: "Postgres connection string for a database you already run. The database on the server is the default",
+              },
+              {
                 flag: "--storage-domain <domain>",
                 summary:
                   "Where downloads are served (default: storage.<api-domain> on a zone apex, storage-<api-domain> on a subdomain)",
@@ -870,6 +874,11 @@ const commandSpecs: RunnableCommandSpec[] = [
                 summary:
                   "Skip the confirmations that do not delete anything, such as the Cloudflare rule check",
               },
+              {
+                flag: "--no-telemetry",
+                summary:
+                  "Do not send the daily anonymous usage report (aggregate counts only); writes SERVER_TELEMETRY=false on a first install, with --ngrok or --fly too, and with --repair",
+              },
               flagHelp.sshKey,
               flagHelp.nonInteractive,
             ],
@@ -896,7 +905,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               {
                 flag: "--ngrok",
                 summary:
-                  "Install on this machine, reachable at your ngrok account's https:// address (NGROK_AUTHTOKEN, or asked for); takes --email, the sign-in flags, and the ones below",
+                  "Install on this machine, reachable at your ngrok account's https:// address (NGROK_AUTHTOKEN, or asked for); takes --email, the sign-in flags, --no-telemetry, and the ones below",
               },
               {
                 flag: "--ngrok-domain <domain>",

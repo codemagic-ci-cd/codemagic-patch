@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codemagic.io/patch/schemas/stats/v1.json",
+  "title": "Codemagic Patch public stats document (v1)",
+  "description": "The document the collector serves at https://telemetry.codemagicpatch.dev/v1/stats.json and the public stats page (patch.codemagic.io/stats/) renders. Every number is an aggregate over the daily usage reports of eligible instances (reported on two or more distinct days, not disabled, not the deploy smoke instance). Per-day series carry `null`, never 0, for days with no data; `success_rate` is `null` on days with fewer than 20 attempts. Every date is a UTC calendar date and every timestamp is RFC 3339.",
+  "$comment": "Additive-only within v1. The page treats a document that fails its structural check as unavailable and falls back to its deploy-time snapshot, so fields are only ever added.",
+  "type": "object",
+  "required": ["schema_version", "status", "generated_at", "next_update_after", "coverage", "totals", "timeseries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": {
+      "description": "`ok` once at least one rollup has run over eligible reports; `warming` before that (totals and series are then empty, `coverage.first_day` is null).",
+      "type": "string",
+      "enum": ["ok", "warming"]
+    },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "next_update_after": {
+      "description": "When the next scheduled rollup is due; the page shows it as 'next update'.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["first_day", "last_reported_day", "lag_days", "min_report_days", "instances_reporting_30d", "notes"],
+      "properties": {
+        "first_day": {
+          "description": "Earliest day any eligible instance reported; the page's 'since' date. Null while warming.",
+          "oneOf": [{ "$ref": "#/$defs/day" }, { "type": "null" }]
+        },
+        "last_reported_day": {
+          "description": "Latest day with data from any eligible instance. Null while warming.",
+          "oneOf": [{ "$ref": "#/$defs/day" }, { "type": "null" }]
+        },
+        "lag_days": {
+          "description": "Typical distance between today and the newest day in the series (servers report the previous UTC day, so this is usually 1).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_report_days": {
+          "description": "Distinct report days an instance needs before it counts.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "instances_reporting_30d": {
+          "description": "Eligible instances that reported in the last 30 days, self-hosted and managed together.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "notes": {
+          "description": "Short caveats the page lists under 'How this page works'.",
+          "type": "array",
+          "items": { "type": "string", "maxLength": 400 },
+          "maxItems": 20
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "required": [
+        "active_devices",
+        "success_rate_30d",
+        "teams",
+        "self_hosted_servers_30d",
+        "managed_instances_30d",
+        "releases_7d",
+        "applied_since_first_day",
+        "releases_since_first_day"
+      ],
+      "properties": {
+        "active_devices": {
+          "description": "Active devices on the newest reported day, with the seven days ending on it for the sparkline. Null while warming.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["day", "value", "last_7_days"],
+              "properties": {
+                "day": { "$ref": "#/$defs/day" },
+                "value": { "$ref": "#/$defs/count" },
+                "last_7_days": {
+                  "type": "array",
+                  "minItems": 7,
+                  "maxItems": 7,
+                  "items": { "$ref": "#/$defs/countOrNull" }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "success_rate_30d": {
+          "description": "Applied / (applied + failed) over the 30 newest reported days. `rate` is null when attempts are below `min_attempts`.",
+          "type": "object",
+          "required": ["applied", "failed", "attempts", "rate", "min_attempts"],
+          "properties": {
+            "applied": { "$ref": "#/$defs/count" },
+            "failed": { "$ref": "#/$defs/count" },
+            "attempts": { "$ref": "#/$defs/count" },
+            "rate": { "$ref": "#/$defs/ratioOrNull" },
+            "min_attempts": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "teams": {
+          "description": "Managed teams with at least one app plus one team per eligible self-hosted server reporting in the last 30 days.",
+          "type": "object",
+          "required": ["value", "managed_teams_with_app", "self_hosted_servers_30d"],
+          "properties": {
+            "value": { "$ref": "#/$defs/count" },
+            "managed_teams_with_app": { "$ref": "#/$defs/count" },
+            "self_hosted_servers_30d": { "$ref": "#/$defs/count" }
+          }
+        },
+        "self_hosted_servers_30d": {
+          "type": "object",
+          "required": ["value"],
+          "properties": {
+            "value": { "$ref": "#/$defs/count" }
+          }
+        },
+        "managed_instances_30d": { "$ref": "#/$defs/count" },
+        "releases_7d": {
+          "description": "Releases and operator rollbacks over the seven newest reported days.",
+          "type": "object",
+          "required": ["releases", "rollbacks"],
+          "properties": {
+            "releases": { "$ref": "#/$defs/count" },
+            "rollbacks": { "$ref": "#/$defs/count" }
+          }
+        },
+        "applied_since_first_day": {
+          "description": "Updates applied since `coverage.first_day`. Never labelled 'all time' on the page.",
+          "$ref": "#/$defs/count"
+        },
+        "releases_since_first_day": { "$ref": "#/$defs/count" }
+      }
+    },
+    "timeseries": {
+      "description": "Parallel arrays, one entry per day in `days` (ascending, at most 90 days plus the weekly tail the page needs). Null marks a day without data.",
+      "type": "object",
+      "required": [
+        "days",
+        "active_devices",
+        "applied",
+        "failed",
+        "attempts",
+        "success_rate",
+        "releases",
+        "rollbacks",
+        "reporting_coverage"
+      ],
+      "properties": {
+        "days": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/day" } },
+        "active_devices": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/countOrNull" } },
+        "applied": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/countOrNull" } },
+        "failed": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/countOrNull" } },
+        "attempts": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/countOrNull" } },
+        "success_rate": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/ratioOrNull" } },
+        "releases": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/countOrNull" } },
+        "rollbacks": { "type": "array", "maxItems": 400, "items": { "$ref": "#/$defs/countOrNull" } },
+        "reporting_coverage": {
+          "description": "Instances that reported the day divided by instances active in the seven days before it; explains dips honestly.",
+          "type": "array",
+          "maxItems": 400,
+          "items": { "$ref": "#/$defs/ratioOrNull" }
+        }
+      }
+    },
+    "ecosystem": {
+      "description": "Open-source figures the rollup fetches from GitHub and npm once a day (follow-up 1.1). Absent or null until then; the page never calls third parties itself.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["fetched_at", "github", "npm"],
+          "properties": {
+            "fetched_at": { "type": "string", "format": "date-time" },
+            "github": {
+              "type": "object",
+              "required": ["stars", "latest_release"],
+              "properties": {
+                "stars": { "$ref": "#/$defs/count" },
+                "latest_release": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["tag", "url"],
+                      "properties": {
+                        "tag": { "type": "string", "maxLength": 100 },
+                        "url": { "type": "string", "format": "uri", "maxLength": 300 }
+                      }
+                    },
+                    { "type": "null" }
+                  ]
+                }
+              }
+            },
+            "npm": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "type": "object",
+                "required": ["package", "weekly_downloads", "latest"],
+                "properties": {
+                  "package": { "type": "string", "maxLength": 214 },
+                  "weekly_downloads": { "$ref": "#/$defs/count" },
+                  "latest": { "type": "string", "maxLength": 64 }
+                }
+              }
+            }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "day": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "countOrNull": {
+      "oneOf": [{ "$ref": "#/$defs/count" }, { "type": "null" }]
+    },
+    "ratioOrNull": {
+      "oneOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "null" }]
+    }
+  }
+}

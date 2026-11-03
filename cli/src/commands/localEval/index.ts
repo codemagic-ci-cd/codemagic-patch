@@ -290,7 +290,7 @@ export function isSshSession(env: Record<string, string | undefined>): boolean {
  * What the user needs right after the stack is up, and nothing else: where
  * it is, how to run the guided demo, how to sign in separately, and how to
  * stop it. The demo handles sign-in and uses the evaluation checkout.
- * Everything else up.sh's banner prints — MinIO, the seeded token, the
+ * Everything else up.sh's banner prints — Silo, the seeded token, the
  * sample release command — is reference material, and `status` is where it
  * lives. The spinner has already said the stack is ready, so there is no
  * title.
@@ -430,7 +430,7 @@ async function runStatus(deps: CommandDeps, parsed: ParsedArgs): Promise<string>
     `Dashboard   ${DASHBOARD_URL}  ${ready ? "ready" : "not answering"}`,
     `            sign in as ${LOCAL_ADMIN_EMAIL} (prefilled, one click)`,
     `API         ${SERVER_URL}`,
-    `MinIO       ${MINIO_CONSOLE_URL}  (minio / minio12345)`,
+    `Silo        ${MINIO_CONSOLE_URL}  (minio / minio12345)`,
     `Source      ${checkout.path}${revision === null ? "" : `  (${revision})`}`,
     "",
     "Services",

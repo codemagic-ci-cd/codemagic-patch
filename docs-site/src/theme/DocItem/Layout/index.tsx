@@ -62,7 +62,7 @@ export default function DocItemLayout({children}: Props): ReactNode {
   return (
     <div className="row">
       <AgentLinks />
-      <div className={clsx('col', !docTOC.hidden && styles.docItemCol)}>
+      <div className={clsx('col', styles.docItemCol)}>
         <ContentVisibility metadata={metadata} />
         <DocVersionBanner />
         <div className={styles.docItemContainer}>

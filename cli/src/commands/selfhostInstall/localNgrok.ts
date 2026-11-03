@@ -35,6 +35,7 @@ import { RemoteScriptFailure, runRenderedScript } from "../scriptRunner";
 import {
   canAsk,
   parseArgs,
+  readBooleanFlag,
   readStringFlag,
   type FlagShape,
   type ParsedArgs,
@@ -74,6 +75,7 @@ export const NGROK_FLAGS: FlagShape = {
   "--install-docker": "boolean",
   "--ngrok": "boolean",
   "--ngrok-domain": "value",
+  "--no-telemetry": "boolean",
   "--non-interactive": "boolean",
   "--start-docker": "boolean",
   ...OAUTH_FLAGS,
@@ -110,6 +112,7 @@ export async function runLocalNgrokInstall(
   // the Docker checks.
   suppliedOAuthProvider(deps, parsed);
   const requestedDomain = readRequestedDomain(parsed);
+  const noTelemetry = readBooleanFlag(parsed, "--no-telemetry");
 
   const interactive = canAsk(deps, parsed);
   const startedAt = deps.now();
@@ -175,7 +178,18 @@ export async function runLocalNgrokInstall(
       );
     }
 
-    const reported = await runInstaller(deps, progress, checkout.path, first?.env ?? {});
+    // Like every other setting, the usage report is written by the first
+    // install and a rerun follows the file, so the flag only says what to do.
+    if (previous !== null && noTelemetry && previous.usageReport === "on") {
+      notice(
+        deps,
+        `The usage report is set by the first install, so --no-telemetry does not change this one. To turn it off, set SERVER_TELEMETRY=false in ${join(checkout.path, ENV_FILE)} and run the same command again.`,
+      );
+    }
+
+    const reported = await runInstaller(deps, progress, checkout.path, first?.env ?? {}, {
+      noTelemetry: first !== null && noTelemetry,
+    });
     const host = first?.host ?? reported ?? previous?.host ?? undefined;
     if (host === undefined) {
       throw new RemoteScriptFailure(
@@ -203,7 +217,20 @@ export async function runLocalNgrokInstall(
         ? {}
         : { adminEmail: first.adminEmail, signInProvider: first.signInProvider }),
       serverUrl,
-      summary: renderBanner({ defaulted, first, serverUrl }),
+      summary: renderBanner({
+        defaulted,
+        envFile: join(checkout.path, ENV_FILE),
+        first,
+        serverUrl,
+        // install.sh decides it the same way: the flag or an opt-out in its
+        // environment (which is this one) on a first install, the file after.
+        usageReport:
+          previous === null
+            ? noTelemetry || usageReportFrom((key) => deps.env[key]) === "off"
+              ? "off"
+              : "on"
+            : previous.usageReport,
+      }),
     };
   } catch (error) {
     progress.fail(
@@ -219,6 +246,7 @@ function renderWelcome(): string[] {
   return [
     `Welcome! This command installs the ${PRODUCT_NAME} server on this machine with Docker — the real server, with sign-in — and makes it reachable at the free https:// address your ngrok account comes with, so you can connect your own app and test it on any device. No domain, DNS records, certificates, or open ports are needed.`,
     "It needs Docker, a free ngrok account, and a GitHub, Bitbucket, or GitLab account to sign in with. The first run builds the server, which takes 10–20 minutes, and it asks before installing or starting anything.",
+    `Once a day the server sends ${PRODUCT_NAME} an anonymous usage report of aggregate counts, with no identifiers; add --no-telemetry to turn it off.`,
   ];
 }
 
@@ -333,7 +361,27 @@ async function refuseOtherInstall(
   }
 }
 
-type PreviousInstall = { host: string | null; scheme: string };
+type PreviousInstall = {
+  host: string | null;
+  scheme: string;
+  usageReport: UsageReport;
+};
+
+/** Whether the server sends its daily usage report. */
+type UsageReport = "off" | "on";
+
+/**
+ * install.sh's rule (selfhost_telemetry_from_env_file and its flag
+ * fallback): SERVER_TELEMETRY=false or 0, or DO_NOT_TRACK=1 or true, turns
+ * the report off; anything else, an absent key included, leaves it on.
+ */
+function usageReportFrom(read: (key: string) => string | undefined): UsageReport {
+  const telemetry = (read("SERVER_TELEMETRY") ?? "").trim().toLowerCase();
+  const doNotTrack = (read("DO_NOT_TRACK") ?? "").trim().toLowerCase();
+  return telemetry === "false" || telemetry === "0" || doNotTrack === "1" || doNotTrack === "true"
+    ? "off"
+    : "on";
+}
 
 /**
  * What an earlier install left in the checkout's settings file, if one did.
@@ -357,6 +405,7 @@ async function readPreviousInstall(
   return {
     host: values.get("CODEMAGIC_PATCH_API_DOMAIN") || null,
     scheme: values.get("SELFHOST_SCHEME") || "https",
+    usageReport: usageReportFrom((key) => values.get(key)),
   };
 }
 
@@ -601,6 +650,7 @@ async function runInstaller(
   progress: Progress,
   checkoutPath: string,
   answers: Record<string, string>,
+  options: { noTelemetry: boolean },
 ): Promise<string | undefined> {
   let reported: string | undefined;
   let partial = "";
@@ -623,7 +673,12 @@ async function runInstaller(
     ],
     launch: (onOutput) =>
       deps.runProcess({
-        args: [join(checkoutPath, INSTALL_SCRIPT), "--ngrok", "--yes"],
+        args: [
+          join(checkoutPath, INSTALL_SCRIPT),
+          "--ngrok",
+          "--yes",
+          ...(options.noTelemetry ? ["--no-telemetry"] : []),
+        ],
         command: "bash",
         env: { ...deps.env, ...answers },
         onOutput: (chunk) => {
@@ -691,10 +746,12 @@ async function offerDashboard(
  */
 function renderBanner(input: {
   defaulted: boolean;
+  envFile: string;
   first: Pick<FirstInstall, "adminEmail" | "signInProvider"> | null;
   serverUrl: string;
+  usageReport: UsageReport;
 }): string {
-  const { defaulted, first, serverUrl } = input;
+  const { defaulted, envFile, first, serverUrl, usageReport } = input;
   const serverFlag = defaulted ? "" : ` --server-url ${serverUrl}`;
   const host = new URL(serverUrl).host;
   // The account's dev domain carries the free plan's caps; a reserved
@@ -709,6 +766,10 @@ function renderBanner(input: {
     `Downloads  ${serverUrl}/codemagic-patch  (app config: CodemagicPatchDownloadBaseUrl)`,
     "",
     `Next: cmpatch login${serverFlag}, then in your app's folder: cmpatch init${serverFlag}`,
+    "",
+    usageReport === "on"
+      ? `Usage report: on. A daily anonymous report of aggregate counts only, no identifiers; to turn it off, set SERVER_TELEMETRY=false in ${envFile} and run this command again.`
+      : "Usage report: off.",
     "",
     `${planNote} For production, install on your own domain: cmpatch selfhost install user@vps`,
   ].join("\n");

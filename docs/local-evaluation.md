@@ -1,6 +1,6 @@
 # Quickstart: try it locally
 
-Run the whole service on your machine before you set up domains or OAuth. The **local evaluation stack** runs the real server, release worker, PostgreSQL, Silo, and dashboard, with sign-in replaced by a one-click local login. It serves React Native and Capacitor apps alike. The same walkthrough, with a framework switcher and a dashboard tour, is on the docs site: [Local quickstart](https://patch.codemagic.io/docs/).
+Run the whole service on your machine before you set up domains or OAuth. The **local evaluation stack** runs the real server, release worker, PostgreSQL, Silo, and dashboard, with sign-in replaced by a one-click local login. It serves React Native and Capacitor apps alike. The same walkthrough, with a framework switcher and a dashboard tour, is on the docs site: [Local quickstart](https://patch.codemagic.io/docs/local-quickstart).
 
 You need **Docker** (with Compose v2), **Node.js `20.19+` or `22.12+`**, `git`, and `curl`, on macOS, Linux, or WSL 2.
 
@@ -36,8 +36,8 @@ The script needs Node.js `22.20+` and Yarn (via Corepack), and installs `cmpatch
 
 Configure the SDK with the API URL and download base URL above. The iOS Simulator reaches `localhost` directly. For an Android emulator or a USB-connected device, forward both ports first with `adb reverse tcp:3000 tcp:3000` and `adb reverse tcp:9100 tcp:9100`. Android also blocks plain HTTP by default, so for local evaluation the app needs `android:usesCleartextTraffic="true"` on its `<application>` element; remove it before a store build.
 
-- **React Native:** run `cmpatch init --server-url http://localhost:3000` from your project root. It creates one app per platform and wires the SDK into your app. OTA updates apply to release builds only, because debug builds load JavaScript from Metro. See [Local quickstart › React Native](https://patch.codemagic.io/docs/?sdk=react-native#5-try-it-with-your-own-app).
-- **Capacitor:** install the SDK (`@codemagic/capacitor-patch`) in your app and the CLI (`@codemagic/capacitor-patch-cli`) globally, sign in with `cmpatch-capacitor login --server-url http://localhost:3000`, and create one app per platform with `cmpatch-capacitor app create`. Then put the URLs and deployment keys in `capacitor.config.ts` and run `npx cap sync`. See [Local quickstart › Capacitor](https://patch.codemagic.io/docs/?sdk=capacitor#5-try-it-with-your-own-app).
+- **React Native:** run `cmpatch init --server-url http://localhost:3000` from your project root. It creates one app per platform and wires the SDK into your app. OTA updates apply to release builds only, because debug builds load JavaScript from Metro. See [Local quickstart › React Native](https://patch.codemagic.io/docs/local-quickstart?sdk=react-native#5-try-it-with-your-own-app).
+- **Capacitor:** install the SDK (`@codemagic/capacitor-patch`) in your app and the CLI (`@codemagic/capacitor-patch-cli`) globally, sign in with `cmpatch-capacitor login --server-url http://localhost:3000`, and create one app per platform with `cmpatch-capacitor app create`. Then put the URLs and deployment keys in `capacitor.config.ts` and run `npx cap sync`. See [Local quickstart › Capacitor](https://patch.codemagic.io/docs/local-quickstart?sdk=capacitor#5-try-it-with-your-own-app).
 
 ## Watch an update apply (optional)
 

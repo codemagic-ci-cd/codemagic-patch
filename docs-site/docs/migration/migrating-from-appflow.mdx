@@ -17,7 +17,7 @@ This guide covers moving from Ionic Appflow Live Updates (`@capacitor/live-updat
 1. Replace `@capacitor/live-updates` with `@codemagic/capacitor-patch` in your app.
 2. Replace the Appflow dashboard and build service with your Patch server and `cmpatch-capacitor`.
 
-This guide assumes you already have a Patch server. To set one up, see the [Local quickstart](/docs/) or [Install](/docs/install). For a feature comparison, see [How Patch compares](/docs/introduction/comparison-capacitor).
+This guide assumes you already have a Patch server. To set one up, see the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install). For a feature comparison, see [How Patch compares](/docs/introduction/comparison-capacitor).
 
 :::note
 `@codemagic/capacitor-patch` and `cmpatch-capacitor` are 0.x releases; their API and flags may still change. Install both as described in [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk).
@@ -43,7 +43,7 @@ Devices running the old plugin cannot receive Patch releases, so the switch ship
 
 ## Prerequisites
 
-- A Patch server you can reach ([Local quickstart](/docs/) or [Install](/docs/install))
+- A Patch server you can reach ([Local quickstart](/docs/local-quickstart) or [Install](/docs/install))
 - `cmpatch-capacitor`, installed and signed in ([Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk))
 
 Create one app per platform and list the deployment keys:

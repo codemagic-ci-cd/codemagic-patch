@@ -1,0 +1,162 @@
+---
+slug: /local-quickstart
+title: Local quickstart
+description: >-
+  Run Patch on your laptop, connect your own app, or try the optional
+  on-device OTA demo.
+llmsDescription: >-
+  Local Patch evaluation via cmpatch selfhost local-eval (or
+  scripts/local-eval/up.sh from a clone), with optional cmpatch demo on a
+  simulator or emulator, dashboard exploration, and integration with your own app.
+---
+
+import SdkTabs from '@site/src/components/SdkTabs';
+import TabItem from '@theme/TabItem';
+
+# Local quickstart
+
+Evaluate Codemagic Patch on your machine before you have a domain. Step 1 is a choice: the local stack, or the same machine reached through ngrok so a phone can open it. If you want to see an OTA update before integrating your own app, try the optional [on-device demo](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/examples/on-device-demo).
+
+## What you need
+
+- macOS, Linux, or WSL 2 on Windows — the command runs a bash script, so a native Windows shell is not supported
+- Node.js `20.19+` or `22.12+` for the `cmpatch` CLI, plus `git` and `curl` (the CLI downloads its copy of the repository and runs its bootstrap script)
+- [Docker](https://docs.docker.com/get-docker/) with Compose v2 — if it is missing or not running, the CLI offers to install or start it
+
+## 1. Start the stack
+
+You have two evaluation choices. Fully local reaches a simulator, an emulator, or a USB-connected Android device. Local and ngrok reaches a phone before you have a domain.
+
+### Fully local
+
+```bash
+npm install -g @codemagic/patch-cli
+cmpatch selfhost local-eval
+```
+
+The command checks Docker first (offering to install or start it), prepares the source it needs, builds and starts the stack, seeds demo apps, and points `cmpatch` at it. Sign-in is a local one-click login.
+When it finishes you get:
+
+- Dashboard at [http://localhost:8080](http://localhost:8080). Sign in as `local-admin@example.com` (prefilled, one click).
+- API at [http://localhost:3000](http://localhost:3000). 
+- Seeded `demo-app-ios` and `demo-app-android` for the on-device demo, plus example releases and metrics
+
+You can now [connect your own app](#5-try-it-with-your-own-app), [explore the dashboard](#4-confirm-in-the-dashboard-optional), or [try the demo](#3-watch-an-update-apply-on-device-demo).
+
+<details>
+<summary>From a clone instead</summary>
+
+If you would rather work from your own clone of the repository, the script the CLI wraps does the same thing (it also needs Node.js `≥ 22.20` and Yarn, and installs `cmpatch` globally itself):
+
+```bash
+git clone https://github.com/codemagic-ci-cd/codemagic-patch.git
+cd codemagic-patch
+./scripts/local-eval/up.sh
+```
+
+</details>
+
+### Local and ngrok {#ngrok}
+
+```bash
+npm install -g @codemagic/patch-cli
+cmpatch selfhost install --ngrok
+```
+
+You need a free [ngrok](https://ngrok.com) account, and a GitHub, Bitbucket, or GitLab account for sign-in. No domain, DNS records, certificates, or open ports. The command finds your ngrok address, walks you through the OAuth app with that address filled in, and installs the real server on this machine.
+
+When it finishes you get:
+
+- Dashboard at `https://<unique>.ngrok-free.app`. Sign in with the provider you chose, as the administrator email. The first sign-in creates that account.
+- API at `https://<unique>.ngrok-free.app`.
+- Downloads at `https://<unique>.ngrok-free.app/codemagic-patch`.
+
+The install prints your `<unique>` hostname.
+
+Then run `cmpatch login` and, in your app's folder, `cmpatch init`.
+
+## 2. Try it with your own app {#5-try-it-with-your-own-app}
+
+Use these addresses. The ngrok install prints your `<unique>` hostname. The deployment key comes from `cmpatch deployment list` after `cmpatch init`, or from `cmpatch-capacitor deployment list`.
+
+| | `CodemagicPatchApiUrl` | `CodemagicPatchDownloadBaseUrl` |
+| --- | --- | --- |
+| Local | `http://localhost:3000` | `http://localhost:9100/codemagic-patch` |
+| ngrok | `https://<unique>.ngrok-free.app` | `https://<unique>.ngrok-free.app/codemagic-patch` |
+
+Where each value goes is in [Native setup](/docs/setup/native-setup) for React Native and [Native setup](/docs/setup/native-setup-capacitor) for Capacitor.
+
+The local stack only answers on this machine. An iOS Simulator can use the localhost URLs directly. For an Android emulator or a USB-connected device, forward the two ports (add `-s <serial>` when more than one device is connected):
+
+```bash
+adb reverse tcp:3000 tcp:3000
+adb reverse tcp:9100 tcp:9100
+```
+
+Repeat that after the device or adb restarts. Android release builds block plain HTTP. For this local stack only, set `android:usesCleartextTraffic="true"` on the `<application>` element in `android/app/src/main/AndroidManifest.xml`, and remove it before a store build. An ngrok install is HTTPS, so it does not need the port forwards or the cleartext setting.
+
+## Optional: watch an update apply (fully local) {#3-watch-an-update-apply-on-device-demo}
+
+```bash
+cmpatch demo
+```
+
+This uses the local evaluation stack. It builds a React Native app on a simulator or emulator, publishes one fix, and shows the running app install it. The command says what to look for. It does not run against an ngrok install. For Capacitor, the repository has an [example app](https://github.com/codemagic-ci-cd/codemagic-patch/tree/main/client-capacitor/example-app).
+
+## Optional: explore the dashboard (fully local) {#4-confirm-in-the-dashboard-optional}
+
+Open [http://localhost:8080](http://localhost:8080) and sign in as `local-admin@example.com`. Have a look around. The sample releases are there to browse. They are not downloadable.
+
+To publish, open a deployment and choose **New release**. It writes the `release create` command for that app. Run the command it gives you.
+
+The ngrok dashboard is the `https://<unique>.ngrok-free.app` address that install printed.
+
+## Tear down
+
+### Fully local
+
+```bash
+cmpatch selfhost local-eval down
+```
+
+The stack's data (database and stored bundles) is kept for the next start; add `--delete-data` to remove it too. From a clone, the equivalent is `docker compose -f docker-compose.dev.yml down -v`.
+
+### Local and ngrok
+
+`cmpatch selfhost local-eval down` does not stop this install. From the checkout the installer keeps (`~/.codemagic-patch/selfhost-local/codemagic-patch`, or the path you passed as `--checkout`):
+
+```bash
+docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost \
+  -f docker-compose.selfhost.yml \
+  -f deploy/selfhost/compose.bundled-db.yml \
+  -f deploy/selfhost/compose.bundled-storage.yml \
+  -f deploy/selfhost/compose.ngrok.yml down
+```
+
+
+
+## Where to go next
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+| Goal | Page |
+| --- | --- |
+| Install and configure the app SDK | [Native setup](/docs/setup/native-setup) |
+| Confirm update behavior on your app | [Verify a test release](/docs/using-patch/verify-test-release) |
+| Coming from Expo Updates | [Migrating from Expo Updates](/docs/migration/migrating-from-expo-updates) |
+| Coming from a CodePush fork | [Migrating from CodePush](/docs/migration/migrating-from-codepush) |
+| Deploy with your own domains | [Install](/docs/install) |
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+| Goal | Page |
+| --- | --- |
+| Install and configure the app SDK | [Native setup](/docs/setup/native-setup-capacitor) |
+| Confirm update behavior on your app | [Verify a test release](/docs/using-patch/verify-test-release) |
+| Coming from Appflow Live Updates | [Migrating from Appflow](/docs/migration/migrating-from-appflow) |
+| Deploy with your own domains | [Install](/docs/install) |
+
+  </TabItem>
+</SdkTabs>

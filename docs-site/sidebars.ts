@@ -3,6 +3,7 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     'intro',
+    'local-quickstart',
     {
       type: 'category',
       label: 'Introduction',
@@ -29,8 +30,6 @@ const sidebars: SidebarsConfig = {
           collapsible: false,
           items: [
             'setup/install',
-            'setup/cloudflare',
-            'setup/cloudfront',
             'setup/infrastructure',
             'setup/ongoing-maintenance',
           ],
@@ -104,6 +103,7 @@ const sidebars: SidebarsConfig = {
         'reference/sdk-reference',
         'reference/cli-reference',
         'reference/configuration',
+        'reference/cdn',
         'reference/operations',
       ],
     },

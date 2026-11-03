@@ -24,6 +24,7 @@
   --cm-color-red-700: #920e34; /* red-700 */
   --cm-color-status-success: #22dd4d; /* green-500 = --color-success-default */
   --cm-color-green-100: #d3f8db; /* green-100: success tint */
+  --cm-color-green-700: #188b3a; /* green-700: chart series on white */
   --cm-color-green-800: #146230; /* green-800: text on the success tint (AA) */
 
   --cm-color-text-heading: #11285b;
@@ -84,6 +85,16 @@
      clears WCAG AA on canvas and surface backgrounds. */
   --color-fg-3: #5f6786;
   --color-fg-faint: #737b99;
+
+  /* Adoption-chart strokes. Blue and orange are the brand swatches. Green and
+     magenta step off the neon marketing values so a 2px line holds contrast
+     on white. Total is heading ink (#11285b in light, white in dark). Dark
+     keeps these hues and lowers the chroma so the lines do not glow. */
+  --color-chart-total: var(--color-ink);
+  --color-chart-1: var(--cm-color-cta-blue);
+  --color-chart-2: var(--cm-color-nativeorange);
+  --color-chart-3: var(--cm-color-green-700);
+  --color-chart-4: #a417b8;
 
   /* sidebar */
   --color-sb-bg: #ffffff;
@@ -169,6 +180,12 @@
 
   --color-green: var(--cm-color-status-success);
   --color-green-deep: var(--cm-color-status-success);
+  /* Same hues as the light strokes, at a lower chroma. The light hexes
+     either sink on #12161d or glow. */
+  --color-chart-1: #618adb;
+  --color-chart-2: #ce6c52;
+  --color-chart-3: #4ea15d;
+  --color-chart-4: #b170bb;
 
   --color-canvas: #12161d;
   --color-surface: #12161d;

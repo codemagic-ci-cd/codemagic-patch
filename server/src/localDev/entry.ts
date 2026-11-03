@@ -44,6 +44,8 @@ async function main(): Promise<void> {
 
   console.warn(BANNER);
 
+  // No `telemetry` option: a local evaluation stack never sends a usage
+  // report and never mints an instance id.
   const app = await startServer(config, {
     authNAdapter: createLocalAuthNAdapter(),
     oauthWebConfig: {

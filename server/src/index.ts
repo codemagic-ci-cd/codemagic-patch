@@ -63,6 +63,21 @@ export type {
   ControlPlaneAuthResult,
   ControlPlanePrincipal,
 } from "./app/controlPlaneAuth";
+export {
+  buildTelemetryReport,
+  createTelemetryReporter,
+  DEFAULT_TELEMETRY_ENDPOINT,
+  telemetryReportDay,
+} from "./app/telemetryReport";
+export type {
+  TelemetryReport,
+  TelemetryReportDay,
+  TelemetryReporter,
+  TelemetryReporterOptions,
+  TelemetryReportInput,
+  TelemetryReportInstance,
+  TelemetryReportResult,
+} from "./app/telemetryReport";
 export type {
   ApiTokenCreateHandlerInput,
   ApiTokenCreateHandlerResult,
@@ -268,6 +283,8 @@ export type {
   ReleaseRepository,
   ReleaseTargetRepository,
   PersistPendingReleaseTargetsOptions,
+  TelemetryReportDayCounts,
+  TelemetryReportSnapshot,
   TransitionReleaseJobOptions,
   TransitionReleaseJobResult,
 } from "./repositories";
@@ -286,10 +303,11 @@ export {
   startupSweep,
 } from "./worker/index";
 export type { ReconcileReleaseDependencies } from "./worker/reconcileRelease";
-export { resolveRuntimeConfig } from "./runtime/config";
+export { resolveRuntimeConfig, resolveTelemetryConfig } from "./runtime/config";
 export type {
   CloudFrontDeliveryConfig,
   RuntimeConfig,
+  TelemetryRuntimeConfig,
   WebOAuthProviderConfig,
   WebOAuthProviderId,
 } from "./runtime/config";

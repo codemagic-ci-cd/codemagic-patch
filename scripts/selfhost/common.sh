@@ -458,7 +458,7 @@ compose_selfhost() {
       ;;
     s3) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_S3_FILE") ;;
     gcs) compose_files+=(-f "$SELFHOST_COMPOSE_STORAGE_GCS_FILE") ;;
-    *) fail_selfhost "SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag — falling back to bundled storage here could point the stack at an empty MinIO instead of your external bucket." ;;
+    *) fail_selfhost "SELFHOST_STORAGE_MODE=${storage_mode} in ${SELFHOST_ENV_FILE} is not a recognized value; allowed values: bundled, s3, gcs. Fix the flag — falling back to bundled storage here could point the stack at an empty Silo instead of your external bucket." ;;
   esac
   # The plain-HTTP overlay only adds to caddy, so it goes after every overlay
   # that selects a Caddyfile; the ngrok overlay selects one itself and must

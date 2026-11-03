@@ -9,6 +9,7 @@
 
 import { connect } from "node:net";
 
+import { type DatabaseTarget } from "./databaseUrl";
 import { buildStorageEnv, type StorageConfig } from "./storageConfig";
 
 import type { SelfhostPendingInstall } from "./configStore";
@@ -593,6 +594,7 @@ export function buildOAuthEnv(oauth: OAuthCredentials | OAuthExtraRepair): Recor
 export type InstallAnswers = {
   adminEmail: string;
   apiDomain: string;
+  database?: DatabaseTarget;
   delivery: DeliverySelection;
   oauth: OAuthCredentials;
   storageDomain: string;
@@ -621,6 +623,12 @@ export function buildInstallEnv(
     ),
     ...buildOAuthEnv(answers.oauth),
     ...buildDeliveryEnv(answers.delivery),
+    ...(answers.database === undefined
+      ? {}
+      : {
+          DATABASE_URL: answers.database.url,
+          SELFHOST_DATABASE_MODE: "external",
+        }),
   };
 }
 

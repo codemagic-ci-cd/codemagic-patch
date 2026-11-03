@@ -29,6 +29,28 @@ export function addUtcDays(day: Date, days: number): Date {
   return new Date(day.getTime() + days * UTC_DAY_MS);
 }
 
+/** `YYYY-MM-DD` of the UTC day `instant` falls on. */
+export function formatUtcDay(instant: Date): string {
+  return utcDay(instant).toISOString().slice(0, 10);
+}
+
+/**
+ * 00:00Z of a `YYYY-MM-DD` calendar date. Parsed as UTC explicitly: a bare
+ * date string is UTC per the ECMAScript spec, but a `DATE` column read
+ * through pg becomes a local-time `Date`, so callers read such columns as
+ * text and come through here instead.
+ */
+export function parseUtcDay(value: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`Expected a YYYY-MM-DD date, received ${JSON.stringify(value)}`);
+  }
+  const day = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(day.getTime()) || formatUtcDay(day) !== value) {
+    throw new Error(`Expected a valid calendar date, received ${JSON.stringify(value)}`);
+  }
+  return day;
+}
+
 /**
  * The first UTC day still kept raw at `now`; every earlier day is due to be
  * folded. A day D therefore folds once `now` reaches D + 9 days 00:00Z, when

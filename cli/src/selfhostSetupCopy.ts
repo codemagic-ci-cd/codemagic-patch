@@ -56,6 +56,14 @@ export function renderBeforeYouStart(): string[] {
     "  4. Optional: a Cloudflare or AWS account for the CDN",
     "     Update files can be served through a CDN. Skipping this keeps the install complete; you can add it later.",
     "",
+    "  5. Optional: a Postgres database you already run",
+    "     For backups and point-in-time recovery, and for disk space above a few million daily active users. The install can keep the database on the server.",
+    "",
+    // Said before anything is asked, because the server starts sending the
+    // day it is healthy: the choice is made with the install flags, or
+    // afterwards on the server, and this is the first place it can be read.
+    `The server sends Codemagic a daily anonymous usage report: aggregate counts only, nothing that identifies you, your apps, or your users. Turn it off with --no-telemetry, or later with SERVER_TELEMETRY=false in .env.selfhost on the server.`,
+    "",
     "Nothing is installed until the DNS records are in place, so stopping at any question before then leaves nothing behind.",
   ];
 }
@@ -484,6 +492,35 @@ function formatDay(isoTimestamp: string): string {
 // ---------------------------------------------------------------------------
 // The CDN step
 // ---------------------------------------------------------------------------
+
+export function renderDatabaseChoice(): string[] {
+  return [
+    "Device metrics and accounts are stored in Postgres.",
+    "You can install the database on this server. A separate one is for backups and point-in-time recovery, and it becomes necessary for storage above a few million users.",
+    "This install cannot switch later.",
+  ];
+}
+
+export function renderDatabaseConnection(): string[] {
+  return [
+    "Create a Postgres database in your provider's console, then paste the connection string.",
+    "It looks like postgresql://user:password@host:25060/database?sslmode=require.",
+    "If the string contains sslrootcert or verify-full, turn certificate verification off and copy it again.",
+  ];
+}
+
+export function renderDatabaseAllow(ip: string): string[] {
+  return [
+    "Allow this server to connect, then I'll check from the server itself.",
+    "",
+    `  Allow ${ip}.`,
+    "  DigitalOcean: Network Access, trusted sources.",
+    "  AWS: the database security group. The database also has to be publicly reachable when this server is not on the same private network.",
+    "  Google Cloud: authorized networks, for a database that has a public IP. The Cloud SQL proxy is a different setup, and this install cannot use it.",
+    "",
+    "  The database user needs to be allowed to create tables. The admin user your provider created is fine.",
+  ];
+}
 
 export function renderCdnPurpose(): string[] {
   return [

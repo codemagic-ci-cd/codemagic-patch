@@ -183,7 +183,7 @@ if [ "$BACKUP_DB_MODE" = "bundled" ]; then
   REPLACED_COMPONENTS="PostgreSQL"
 fi
 if [ "$BACKUP_STORAGE_MODE" = "bundled" ]; then
-  REPLACED_COMPONENTS="${REPLACED_COMPONENTS:+${REPLACED_COMPONENTS} and }MinIO"
+  REPLACED_COMPONENTS="${REPLACED_COMPONENTS:+${REPLACED_COMPONENTS} and }Silo"
 fi
 
 if [ "$ASSUME_YES" -eq 0 ]; then
@@ -422,7 +422,7 @@ if [ "$BACKUP_STORAGE_MODE" = "bundled" ]; then
   mkdir -p "${restore_tmp}/minio"
   tar -xzf "$MINIO_ARCHIVE" -C "${restore_tmp}/minio"
   [ -d "${restore_tmp}/minio/minio-codemagic-patch" ] ||
-    fail_selfhost "MinIO archive did not contain minio-codemagic-patch/"
+    fail_selfhost "Silo archive did not contain minio-codemagic-patch/"
 
   compose_selfhost run --rm --no-deps \
     -v "${restore_tmp}/minio/minio-codemagic-patch:/restore/minio-codemagic-patch:ro" \

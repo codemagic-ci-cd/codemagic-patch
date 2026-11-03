@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { DEFAULT_GITHUB_API_BASE_URL } from "../app/githubApi";
+import { DEFAULT_TELEMETRY_ENDPOINT } from "../app/telemetryReport";
 import type { ServerMode } from "../app/types";
 import { DEFAULT_MAX_UPLOAD_SIZE_BYTES } from "../app/upload-size";
 import {
@@ -688,6 +689,71 @@ function resolveUpdateCheckConfig(
         DEFAULT_GITHUB_API_BASE_URL,
     ),
   };
+}
+
+/**
+ * The daily usage report (`app/telemetryReport.ts`), resolved apart from
+ * `RuntimeConfig`: embedders assembling a `RuntimeConfig` never report, the
+ * entrypoints pass this to `startServer` themselves, and the managed one
+ * adds its token first. `undefined` when the operator opted out.
+ */
+export interface TelemetryRuntimeConfig {
+  endpoint: string;
+  /**
+   * `SERVER_TELEMETRY_ENDPOINT` replaced the public collector. A dev/test
+   * knob: the entrypoints log a warning so a production log never hides
+   * where reports went.
+   */
+  endpointOverridden: boolean;
+}
+
+export function resolveTelemetryConfig(
+  env: RuntimeEnvironment = process.env,
+): TelemetryRuntimeConfig | undefined {
+  if (
+    !resolveBoolean(env.SERVER_TELEMETRY, true) ||
+    resolveDoNotTrack(env.DO_NOT_TRACK)
+  ) {
+    return undefined;
+  }
+
+  const endpoint = resolveTelemetryEndpoint(env.SERVER_TELEMETRY_ENDPOINT);
+  return endpoint === undefined
+    ? { endpoint: DEFAULT_TELEMETRY_ENDPOINT, endpointOverridden: false }
+    : { endpoint, endpointOverridden: true };
+}
+
+/**
+ * The cross-tool opt-out convention (consoledonottrack.com): `1` or `true`
+ * turns the report off. Anything else leaves the default in place, in
+ * particular the empty string Compose substitutes for an unset variable.
+ */
+function resolveDoNotTrack(value: string | undefined): boolean {
+  const normalized = resolveOptionalString(value)?.toLowerCase();
+  return normalized === "1" || normalized === "true";
+}
+
+function resolveTelemetryEndpoint(
+  value: string | undefined,
+): string | undefined {
+  const endpoint = resolveOptionalString(value);
+  if (endpoint === undefined) {
+    return undefined;
+  }
+
+  let url: URL | undefined;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    url = undefined;
+  }
+  if (url === undefined || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    throw new Error(
+      `SERVER_TELEMETRY_ENDPOINT must be an absolute http(s) URL. Received: ${value}`,
+    );
+  }
+
+  return endpoint;
 }
 
 function resolveBoolean(value: string | undefined, fallback: boolean): boolean {

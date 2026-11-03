@@ -41,9 +41,13 @@ function linksForSdk(
 // a React Native page and its Capacitor counterpart would link to each other.
 // Recompute them from the selected SDK's view of the sidebar.
 export default function DocItemPaginator(): ReactNode {
-  const {metadata} = useDoc();
+  const {metadata, frontMatter} = useDoc();
   const sidebar = useDocsSidebar();
   const sdk = useSelectedSdk();
+
+  if ((frontMatter as {hide_paginator?: boolean}).hide_paginator === true) {
+    return null;
+  }
 
   let previous: NavLink | undefined = metadata.previous;
   let next: NavLink | undefined = metadata.next;

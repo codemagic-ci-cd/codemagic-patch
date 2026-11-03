@@ -118,7 +118,7 @@ docker compose --project-name codemagic-patch-selfhost --env-file .env.selfhost 
   -f deploy/selfhost/compose.bundled-storage.yml logs -f server
 ```
 
-If you use [Cloudflare](/docs/setup/cloudflare) or [CloudFront](/docs/setup/cloudfront) and clients report stale updates, look in server logs for `delivery cache purge completed with failures`. On Cloudflare, also check that the old two-hour Edge TTL Cache Rule from the previous setup guide has been deleted — it overrides the origin `s-maxage` and stretches the stale window; see [Cloudflare setup](/docs/setup/cloudflare#add-cache-rules).
+If you use [Cloudflare or CloudFront](/docs/reference/cdn) and clients report stale updates, look in server logs for `delivery cache purge completed with failures`. On Cloudflare, also check that the old two-hour Edge TTL Cache Rule from the previous setup guide has been deleted. It overrides the origin `s-maxage` and stretches the stale window. See [CDN settings](/docs/reference/cdn#add-cache-rules).
 
 ## Disk size {#disk-growth}
 
@@ -128,7 +128,7 @@ Postgres keeps the space the fold frees inside the table files instead of return
 
 ## When the default stack is not enough
 
-Most installs stay on one Docker host. For production, put [Cloudflare](/docs/setup/cloudflare) or [CloudFront](/docs/setup/cloudfront) in front of storage; it is strongly recommended so devices download from the edge rather than the single host, and it gives you automatic manifest purge. Move to external object storage or a split API/worker layout only when you outgrow the defaults; see [Infrastructure adapters](/docs/setup/infrastructure).
+Most installs stay on one Docker host. For production, put [Cloudflare or CloudFront](/docs/reference/cdn) in front of storage; it is strongly recommended so devices download from the edge rather than the single host, and it gives you automatic manifest purge. When to move Postgres or release files off that host, see [Infrastructure](/docs/setup/infrastructure).
 
 ## Related
 

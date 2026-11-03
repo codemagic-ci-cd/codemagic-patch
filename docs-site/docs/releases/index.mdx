@@ -21,8 +21,8 @@ Shorter summaries and install links are on [GitHub Releases](https://github.com/
 | Surface | Notes | Latest | Upgrade |
 | --- | --- | --- | --- |
 | React Native SDK | [React Native](/docs/releases/react-native) | 0.6.0 | `npm install @codemagic/react-native-patch@latest` |
-| CLI (`cmpatch`) | [CLI](/docs/releases/cli) | 0.8.0 | `npm install -g @codemagic/patch-cli@latest` |
-| Server and dashboard | [Server](/docs/releases/server) | 0.8.0 | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
+| CLI (`cmpatch`) | [CLI](/docs/releases/cli) | 0.9.0 | `npm install -g @codemagic/patch-cli@latest` |
+| Server and dashboard | [Server](/docs/releases/server) | 0.9.0 | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
 | Capacitor SDK | [Capacitor SDK](/docs/releases/capacitor-sdk) | 0.1.2 | `npm install @codemagic/capacitor-patch@latest` |
 | CLI for Capacitor (`cmpatch-capacitor`) | [CLI for Capacitor](/docs/releases/capacitor-cli) | 0.3.0 | `npm install -g @codemagic/capacitor-patch-cli@latest` |
 
@@ -44,6 +44,21 @@ configuration changes, and service restarts.
 | CLI for Capacitor [0.1.0](/docs/releases/capacitor-cli#v0-1-0) | Server 0.6.0 or newer | Sets the app framework, which older servers do not store; the dashboard then treats the app as a React Native app. |
 
 ## What shipped
+
+### 3rd November 2026
+
+- **Server [0.9.0](/docs/releases/server#v0-9-0):** Daily anonymous usage
+  report of aggregate counts, on by default, used only for public statistics
+  and never for the licence's MAU limit (`SERVER_TELEMETRY=false` turns it
+  off); migration `0020` adds the empty `server_instance` table; Compose now
+  honours `SERVER_UPDATE_CHECK`. Dashboard charts use muted colours, and the
+  Status page names the bundled object store Silo.
+- **CLI [0.9.0](/docs/releases/cli#v0-9-0):** `selfhost install` can use a
+  Postgres database you already run (`--database-url`), checked from the
+  server before anything is written; `release promote` picks deployments
+  from a list, and both it and `release-react` ask for the rollout
+  percentage; `selfhost install --no-telemetry` turns the usage report off;
+  `init` no longer rejects valid servers over the shape of `/health/ready`.
 
 ### 28th October 2026
 

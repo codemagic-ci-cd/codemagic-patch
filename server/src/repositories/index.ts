@@ -142,3 +142,10 @@ export {
   type PersistPendingReleaseTargetsOptions,
   type ReleaseTargetRepository,
 } from "./releaseTargetRepository";
+export {
+  ensureInstanceId,
+  readReportDay,
+  readSnapshot,
+  type TelemetryReportDayCounts,
+  type TelemetryReportSnapshot,
+} from "./telemetryReportRepository";

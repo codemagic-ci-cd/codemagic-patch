@@ -120,6 +120,7 @@ const FLAGS = {
   "--fly-region": "value",
   "--install-flyctl": "boolean",
   "--install-tigris": "boolean",
+  "--no-telemetry": "boolean",
   "--non-interactive": "boolean",
   "--register": "boolean",
   ...OAUTH_FLAGS,
@@ -153,6 +154,9 @@ export async function runFlyInstall(
     );
   }
 
+  // Only the flag decides, as on the ssh path: the server runs on Fly, where
+  // this machine's SERVER_TELEMETRY and DO_NOT_TRACK never reach it.
+  const usageReport = readBooleanFlag(parsed, "--no-telemetry") ? "off" : "on";
   const interactive = canAsk(deps, parsed);
   const fly = createFlyContext(deps, RERUN);
   await ensureTool(fly, { installAllowed: readBooleanFlag(parsed, "--install-flyctl"), interactive }, "fly");
@@ -214,6 +218,7 @@ export async function runFlyInstall(
       s3Region: storage.s3Region,
       secretAccessKey: storage.secretAccessKey,
       stem,
+      usageReport,
     }, left);
     await waitUntilReady(fly, stem);
     for (const { path } of left.directories) {
@@ -241,12 +246,14 @@ export async function runFlyInstall(
 
     fly.progress.stop();
     return summary({
+      app: names.app,
       billing: (await readFlyOrg(fly, org))?.status ?? null,
       createdDatabase: database.kind === "create",
       keptDefault,
       publicBaseUrl: storage.publicBaseUrl,
       serverUrl,
       signInProvider: describeConfiguredProvider(buildOAuthEnv(oauth)),
+      usageReport,
     });
   } catch (error) {
     fly.progress.fail();
@@ -271,6 +278,11 @@ async function registerFlyInstall(
         `--register records an existing install and creates nothing, so it does not take ${flag}. Pass --database-app <name> or --external-database to say which database it uses.`,
       );
     }
+  }
+  if (readBooleanFlag(parsed, "--no-telemetry")) {
+    throw new UsageError(
+      `--register records an existing install and changes nothing on it, so it does not take --no-telemetry. To turn that server's usage report off: ${usageReportOffCommand("<app>")}`,
+    );
   }
   const databaseFlag = readStringFlag(parsed, "--database-app")?.trim();
   // An empty name would be written, then dropped on the next load, which is
@@ -1118,6 +1130,7 @@ async function deployPatch(
     s3Region: string;
     secretAccessKey: string;
     stem: string;
+    usageReport: "off" | "on";
   },
   left: Leftovers,
 ): Promise<void> {
@@ -1139,6 +1152,7 @@ async function deployPatch(
     s3Region: input.s3Region,
     serverTag: tag,
     stem: input.stem,
+    usageReport: input.usageReport,
   }), { mode: 0o644 });
   await run(fly, "fly", ["apps", "create", names.app, "--org", input.org]);
   left.resources.push(names.app);
@@ -1211,7 +1225,16 @@ function keptDefaultText(kept: string, serverUrl: string): string[] {
   ];
 }
 
+/**
+ * Turns the usage report off on a running install. A secret takes precedence
+ * over the `[env]` value the install wrote, and setting one restarts the app.
+ */
+function usageReportOffCommand(app: string): string {
+  return `fly secrets set SERVER_TELEMETRY=false --app ${app}`;
+}
+
 function summary(input: {
+  app: string;
   billing: Billing;
   createdDatabase: boolean;
   /** The default server this machine keeps instead of the install; null when the install is the default. */
@@ -1219,6 +1242,7 @@ function summary(input: {
   publicBaseUrl: string;
   serverUrl: string;
   signInProvider: string | undefined;
+  usageReport: "off" | "on";
 }): string {
   const lines = [
     "Patch is running.",
@@ -1227,6 +1251,12 @@ function summary(input: {
     `Download URL: ${input.publicBaseUrl}`,
     "",
     "Both addresses are built into the app binary. Changing either one later means a new store build.",
+    "",
+    // Said here, as in the ssh summary, because the server starts sending the
+    // moment it is healthy.
+    input.usageReport === "on"
+      ? `Usage report: on. A daily anonymous report of aggregate counts only, no identifiers; off with ${usageReportOffCommand(input.app)}`
+      : "Usage report: off.",
     "",
     ...renderSignInSteps(input.serverUrl, input.signInProvider),
     `  cmpatch init --server-url ${input.serverUrl}`,

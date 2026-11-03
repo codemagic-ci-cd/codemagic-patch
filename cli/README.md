@@ -47,7 +47,7 @@ macOS, Linux, or WSL 2. Use `cmpatch selfhost local-eval status` to see the
 services, checkout, and sample publish command; stop it with
 `cmpatch selfhost local-eval down`.
 
-Once the stack is ready, you can [connect your own app](https://patch.codemagic.io/docs/#5-try-it-with-your-own-app). If you want to try an OTA with a ready-made app first, run the optional demo:
+Once the stack is ready, you can [connect your own app](https://patch.codemagic.io/docs/local-quickstart#5-try-it-with-your-own-app). If you want to try an OTA with a ready-made app first, run the optional demo:
 
 ```sh
 cmpatch demo
@@ -58,7 +58,7 @@ cards, approve publishing the fix; the CLI makes the change and the app applies
 it over the air automatically. No separate clone or source editing is needed.
 The demo requires Node.js ≥ 22.20, Yarn via Corepack, and an iOS Simulator with
 Xcode and CocoaPods or Bundler on macOS, or an Android emulator with the Android
-SDK, Java, and `adb` on PATH. Follow the [Local quickstart](https://patch.codemagic.io/docs/)
+SDK, Java, and `adb` on PATH. Follow the [Local quickstart](https://patch.codemagic.io/docs/local-quickstart)
 for dashboard exploration or connecting your own app.
 
 If Docker retains unusable evaluation container records, the command

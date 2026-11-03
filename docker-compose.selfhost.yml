@@ -62,6 +62,16 @@ services:
       PORT: 3000
       LOGGER: ${LOGGER:-true}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      # The daily anonymous usage report (aggregate counts only). Off with
+      # SERVER_TELEMETRY=false or DO_NOT_TRACK=1 in .env.selfhost. The `:-`
+      # defaults matter: an empty host variable would reach the server as ""
+      # and fail its boolean parser.
+      SERVER_TELEMETRY: ${SERVER_TELEMETRY:-true}
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-}
+      # The GitHub release lookup behind the dashboard's version card. Named
+      # here because compose passes only the variables this block lists: a
+      # SERVER_UPDATE_CHECK=false line in .env.selfhost used to be dropped.
+      SERVER_UPDATE_CHECK: ${SERVER_UPDATE_CHECK:-true}
       # DATABASE_URL comes from the database mode overlay
       # (deploy/selfhost/compose.bundled-db.yml or compose.external-db.yml).
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET}

@@ -84,6 +84,7 @@ import {
   formatResolvedFlags,
   parseWithInteractiveFlags,
 } from "./interactiveFlags";
+import { promptRolloutPercentage } from "./flagPrompts";
 import { runProcessWithSpawn } from "./remoteExec";
 import { createDnsClient } from "./selfhostDns";
 import { createTlsNameProbe } from "./selfhostTls";
@@ -342,7 +343,34 @@ export async function runCli(
     return 2;
   }
 
-  const command = parsed.command;
+  let command = parsed.command;
+
+  // The parser defaults rollout to 100 when the flag is absent. Interactive
+  // promote and release-react always ask instead, so the confirm note shows a
+  // value the user chose. --yes / --non-interactive / CI / machine output
+  // (explicit JSON, or stdout that is not a terminal when no format was given)
+  // keep the default. An explicit --rollout-percentage is left alone.
+  if (
+    (command.kind === "release-promote" ||
+      command.kind === "release-react") &&
+    !hasOption(replayArgv, "--rollout-percentage") &&
+    !isMachineOutputRun(replayArgv, deps) &&
+    canResolveMissingFlags(replayArgv, deps)
+  ) {
+    try {
+      const rolloutPercentage = await promptRolloutPercentage(
+        deps,
+        deps.prompt!,
+      );
+      command = { ...command, rolloutPercentage };
+      resolvedFlags = {
+        ...resolvedFlags,
+        rolloutPercentage: String(rolloutPercentage),
+      };
+    } catch (error) {
+      return reportCommandFailure(error, deps, err, null);
+    }
+  }
 
   if (Object.keys(resolvedFlags).length > 0) {
     reportResolvedFlags(replayArgv, deps, err, resolvedFlags);

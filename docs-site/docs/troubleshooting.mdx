@@ -406,7 +406,7 @@ If sign-in rejects the OAuth app credentials, run `cmpatch selfhost install --re
 ### First admin sign-in rejected
 
 - `INITIAL_ADMIN_EMAILS` matches the chosen sign-in account's verified primary email
-- OAuth callback URL is `https://<api-domain>/auth/callback` ([OAuth setup](/docs/install#github-oauth-app))
+- OAuth callback URL is `https://<api-domain>/auth/callback` ([OAuth app settings](/docs/reference/cli-reference#scripted-install))
 
 ### cmpatch selfhost cannot connect over SSH
 
@@ -439,11 +439,11 @@ of them connects:
 ### Caddy certificate issuance is slow
 
 - API and storage DNS point at the host; ports 80/443 are open
-- With Cloudflare, keep the storage domain DNS only (grey cloud in [DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records)) until the first certificate is issued: see [Cloudflare setup](/docs/setup/cloudflare)
+- With Cloudflare, keep the storage domain DNS only (grey cloud in [DNS](https://dash.cloudflare.com/?to=/:account/:zone/dns/records)) until the first certificate is issued: see [CDN settings](/docs/reference/cdn#cloudflare)
 - With bundled CloudFront, keep both the viewer and origin hostnames pointed at
   the Patch host until install and the pre-cutover checks finish. Moving the
   viewer CNAME early prevents Caddy's HTTP-01 challenge; see
-  [CloudFront DNS ordering](/docs/setup/cloudfront#bundled-silo)
+  [CloudFront DNS ordering](/docs/reference/cdn#bundled-silo)
 
 ### CloudFront returns 403 or 502
 
@@ -452,12 +452,12 @@ of them connects:
   protection is active
 - `403` through CloudFront usually means its custom origin header differs from
   both `CLOUDFRONT_ORIGIN_VERIFY_SECRET` values; follow the
-  [rotation procedure](/docs/setup/cloudfront#rotate-the-bundled-origin-secret)
+  [rotation procedure](/docs/reference/cdn#rotate-the-bundled-origin-secret)
 - `502` commonly means the origin domain is wrong, its certificate is not
   valid for that hostname, or the distribution forwards the viewer `Host`
   header instead of letting CloudFront send the origin hostname
 - Confirm the distribution status is **Deployed**, then run the two
-  [pre-cutover commands](/docs/setup/cloudfront#5-verify-before-changing-dns)
+  [pre-cutover commands](/docs/reference/cdn#5-verify-before-changing-dns)
 
 ### CloudFront serves stale manifests
 

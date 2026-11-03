@@ -22,14 +22,14 @@ export const PATCH_DOCS_SITE_URL = "https://patch.codemagic.io/docs";
 // The CloudFront walkthrough on the published docs site. Opened by the
 // wizard's CloudFront branch, which cannot create AWS resources itself and so
 // leans on the guide for the parts that happen in the Console.
-export const CLOUDFRONT_DOCS_URL = `${PATCH_DOCS_SITE_URL}/setup/cloudfront`;
+export const CLOUDFRONT_DOCS_URL = `${PATCH_DOCS_SITE_URL}/reference/cdn#cloudfront`;
 
 // The Cloudflare guide's "enable it on an existing install" section. The
 // delivery adapter is written on the first install alone, so this by-hand
 // route — edit `.env.selfhost`, rerun `install.sh` — is the only way to a CDN
 // afterwards, and the one thing the wizard can honestly point at when it says
 // "later".
-export const CLOUDFLARE_ENABLE_LATER_URL = `${PATCH_DOCS_SITE_URL}/setup/cloudflare#enable-cloudflare-on-an-existing-install`;
+export const CLOUDFLARE_ENABLE_LATER_URL = `${PATCH_DOCS_SITE_URL}/reference/cdn#enable-cloudflare-on-an-existing-install`;
 
 // The pages `cmpatch init` hands over to when the project is linked: wiring
 // the SDK into the app, and publishing the first release. Both are steps the
@@ -44,4 +44,8 @@ export const CODE_SIGNING_DOCS_URL = `${PATCH_DOCS_SITE_URL}/using-patch/securit
 
 // How to see the Cloudflare cache at work. Needs a published release, which
 // the install summary that used to print the check inline never had.
-export const CLOUDFLARE_VERIFY_DOCS_URL = `${PATCH_DOCS_SITE_URL}/setup/cloudflare#verify`;
+export const CLOUDFLARE_VERIFY_DOCS_URL = `${PATCH_DOCS_SITE_URL}/reference/cdn#verify`;
+
+// The public stats page the daily usage reports feed. A page of the product
+// site, not of the docs, so it does not derive from the docs base path.
+export const PATCH_STATS_URL = "https://patch.codemagic.io/stats/";

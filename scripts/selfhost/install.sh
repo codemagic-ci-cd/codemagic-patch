@@ -53,6 +53,45 @@ ASSUME_YES=0
 SKIP_PUBLIC_CHECK=0
 SKIP_STORAGE_CHECK=0
 REPAIR_ENV=0
+# --no-telemetry (or SERVER_TELEMETRY=false / DO_NOT_TRACK=1 in the
+# environment): write SERVER_TELEMETRY=false so the server never sends the
+# daily anonymous usage report. Recorded in the env file like every other
+# setting, so a rerun follows the file; --repair-env --no-telemetry turns it
+# off on an existing deployment, and SERVER_TELEMETRY=true in the file turns
+# it back on. The flag is tracked apart from the environment because only the
+# flag is an instruction on a rerun: a DO_NOT_TRACK in the operator's shell
+# must not make a flagless rerun warn about a flag nobody passed.
+NO_TELEMETRY=0
+NO_TELEMETRY_FLAG=0
+
+# Leading and trailing whitespace dropped, then lower-cased: String.trim() and
+# toLowerCase(), the normalisation the server applies before matching.
+selfhost_trimmed_lowercase() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value" | tr '[:upper:]' '[:lower:]'
+}
+
+# Succeeds when a SERVER_TELEMETRY / DO_NOT_TRACK pair turns the report off:
+# SERVER_TELEMETRY=false/0 or DO_NOT_TRACK=1/true, normalised as the server
+# reads them, so ' FALSE ' is off here as it is there.
+selfhost_usage_report_opted_out() {
+  local telemetry do_not_track
+  telemetry="$(selfhost_trimmed_lowercase "$1")"
+  do_not_track="$(selfhost_trimmed_lowercase "$2")"
+  case "$telemetry" in
+    false | 0) return 0 ;;
+  esac
+  case "$do_not_track" in
+    1 | true) return 0 ;;
+  esac
+  return 1
+}
+
+if selfhost_usage_report_opted_out "${SERVER_TELEMETRY:-}" "${DO_NOT_TRACK:-}"; then
+  NO_TELEMETRY=1
+fi
 # --allow-http (or SELFHOST_SCHEME=http in the environment): serve the API and
 # storage sites over plain HTTP on port 80 with no certificates — for THIS
 # machine only. The API domain is localhost and the storage site is
@@ -93,7 +132,7 @@ port.
 
 Options:
   --api-domain <domain>        Public API domain, for example updates.example.com.
-  --storage-domain <domain>    Public storage domain for the bundled MinIO,
+  --storage-domain <domain>    Public storage domain for the bundled Silo,
                                for example storage-updates.example.com.
                                Bundled storage only; rejected with
                                --storage-mode s3/gcs (external storage has
@@ -186,10 +225,10 @@ Options:
                                postgresql://user:password@host:5432/db.
                                Required with --database-mode external;
                                rejected with the bundled database.
-  --storage-mode <mode>        bundled (default) runs MinIO inside the stack
+  --storage-mode <mode>        bundled (default) runs Silo inside the stack
                                behind the storage domain; s3 or gcs connect
                                the server to an existing object-storage
-                               bucket instead (no MinIO, no storage domain).
+                               bucket instead (no Silo, no storage domain).
                                Fixed at install time — switching later is a
                                manual migration the scripts do not perform.
   --public-base-url <url>      Public https URL clients download release
@@ -204,7 +243,7 @@ Options:
   --s3-region <region>         S3 region (optional; the server defaults to
                                us-east-1).
   --s3-endpoint <url>          S3 endpoint URL for S3-compatible providers
-                               such as MinIO or R2 (optional; empty = AWS).
+                               such as Silo or R2 (optional; empty = AWS).
   --s3-force-path-style <bool> Use path-style S3 addressing, true or false
                                (optional; the server defaults to false).
   --s3-access-key-id <id>      S3 access key id. Set together with
@@ -255,6 +294,15 @@ Options:
   --skip-cloudfront-check      Do not submit the preflight invalidation.
   --skip-storage-check         Skip external runtime read/write, download and privacy checks.
   --skip-public-check          Do not wait for public HTTPS DNS/TLS readiness.
+  --no-telemetry               Do not send the daily anonymous usage report:
+                               writes SERVER_TELEMETRY=false to .env.selfhost
+                               (the default is true). The report carries daily
+                               aggregate counts only, no identifiers, and is
+                               used only for public statistics — never to
+                               enforce the licence's MAU limit. Also read from
+                               the environment as SERVER_TELEMETRY=false or
+                               DO_NOT_TRACK=1. Written on the initial install;
+                               on a rerun pass it with --repair-env.
   --repair-env                 Rewrite ONLY the values supplied in this
                                invocation into an existing .env.selfhost,
                                leaving every other line untouched, then
@@ -317,6 +365,7 @@ while [ "$#" -gt 0 ]; do
     --skip-cloudfront-check) SKIP_CLOUDFRONT_CHECK=1; shift ;;
     --skip-storage-check) SKIP_STORAGE_CHECK=1; shift ;;
     --skip-public-check) SKIP_PUBLIC_CHECK=1; shift ;;
+    --no-telemetry) NO_TELEMETRY=1; NO_TELEMETRY_FLAG=1; shift ;;
     --allow-http) ALLOW_HTTP=1; shift ;;
     --ngrok) USE_NGROK=1; shift ;;
     --repair-env) REPAIR_ENV=1; shift ;;
@@ -616,7 +665,7 @@ prompt_storage() {
   # this non-destructive prompt without asking.
   if [ -z "$STORAGE_MODE" ] && [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
     if prompt_yes_no \
-      "Use external object storage (S3 or GCS) instead of the bundled MinIO?" \
+      "Use external object storage (S3 or GCS) instead of the bundled Silo?" \
       no; then
       prompt_required STORAGE_MODE "Storage adapter (s3 or gcs)" "$STORAGE_MODE"
     fi
@@ -1101,7 +1150,7 @@ prepare_ngrok_install() {
   fi
   case "${STORAGE_MODE:-bundled}" in
     bundled) STORAGE_MODE=bundled ;;
-    *) fail_selfhost "--ngrok supports the bundled storage only (got --storage-mode ${STORAGE_MODE}): its single site serves downloads from the bundled MinIO under /codemagic-patch. Drop --storage-mode, or install on your own domain for external storage." ;;
+    *) fail_selfhost "--ngrok supports the bundled storage only (got --storage-mode ${STORAGE_MODE}): its single site serves downloads from the bundled Silo under /codemagic-patch. Drop --storage-mode, or install on your own domain for external storage." ;;
   esac
   if [ "$USE_CLOUDFLARE" -eq 1 ] || [ -n "$CLOUDFLARE_API_TOKEN" ] || [ -n "$CLOUDFLARE_ZONE_ID" ] ||
     [ "$USE_CLOUDFRONT" -eq 1 ] || cloudfront_values_given; then
@@ -1134,6 +1183,20 @@ check_port_hint() {
   fi
 
   warn_selfhost "could not check whether TCP port ${port} is already in use"
+}
+
+# What the env FILE says about the daily usage report: "on" unless it records
+# an opt-out the server honours (selfhost_usage_report_opted_out). An absent
+# key is on: that is the server's default, and what an env file written before
+# the key existed means.
+selfhost_telemetry_from_env_file() {
+  if selfhost_usage_report_opted_out \
+    "$(selfhost_env_value_from_file SERVER_TELEMETRY)" \
+    "$(selfhost_env_value_from_file DO_NOT_TRACK)"; then
+    printf 'off'
+  else
+    printf 'on'
+  fi
 }
 
 write_env_file() {
@@ -1310,6 +1373,21 @@ GCS_INTERNAL_BUCKET=${GCS_INTERNAL_BUCKET}
 EOF
     fi
   fi
+
+  # The usage report is written whichever way it is set, so the operator's
+  # choice is visible in the file and --repair-env, which rewrites only the
+  # keys it is given, cannot lose it.
+  local telemetry=true
+  if [ "$NO_TELEMETRY" -eq 1 ]; then
+    telemetry=false
+  fi
+  cat >>"$env_tmp" <<EOF
+
+# Daily anonymous usage report: aggregate counts only, no identifiers. Used
+# only for public statistics, never to enforce the licence's MAU limit.
+# false (or DO_NOT_TRACK=1) turns it off.
+SERVER_TELEMETRY=${telemetry}
+EOF
 
   # Delivery / CDN. Default base-url serves the PUBLIC_BASE_URL host directly;
   # CDN adapters purge their edge cache after releases.
@@ -1639,8 +1717,16 @@ repair_env_file() {
     repaired=1
   fi
 
+  # Turning the usage report off is repairable at any time: a plain setting
+  # with nothing derived from it. An env file from before the key existed
+  # gets the line appended (the one case set_selfhost_env_value adds a line).
+  if [ "$NO_TELEMETRY_FLAG" -eq 1 ]; then
+    plan_selfhost_env_value SERVER_TELEMETRY false
+    repaired=1
+  fi
+
   [ "$repaired" -eq 1 ] ||
-    fail_selfhost "--repair-env was given but no repairable value was supplied. Pass the values to correct (for example --api-domain, --email, --github-oauth-client-id/--github-oauth-client-secret, --gitlab-oauth-client-id/--gitlab-oauth-client-secret, or this deployment's CDN values)."
+    fail_selfhost "--repair-env was given but no repairable value was supplied. Pass the values to correct (for example --api-domain, --email, --github-oauth-client-id/--github-oauth-client-secret, --gitlab-oauth-client-id/--gitlab-oauth-client-secret, this deployment's CDN values, or --no-telemetry)."
 
   # Every guard above has passed: only now does the file change.
   flush_selfhost_env_plan
@@ -1759,13 +1845,19 @@ main() {
     if [ -n "$STORAGE_MODE" ] || [ -n "$PUBLIC_BASE_URL" ] ||
       s3_values_given || gcs_values_given; then
       warn_selfhost "ignoring --storage-mode/--public-base-url/--s3-*/--gcs-*; the storage mode is only written on initial install"
-      warn_selfhost "SELFHOST_STORAGE_MODE in ${SELFHOST_ENV_FILE} stays authoritative — switching between the bundled MinIO and external object storage is a manual data migration the selfhost scripts do not perform"
+      warn_selfhost "SELFHOST_STORAGE_MODE in ${SELFHOST_ENV_FILE} stays authoritative — switching between the bundled Silo and external object storage is a manual data migration the selfhost scripts do not perform"
     fi
     # Passing --allow-http again on a plain-http deployment is harmless and
     # silent; only a flag that disagrees with the file is worth a warning.
     if [ "$ALLOW_HTTP" -eq 1 ] && [ "$(selfhost_scheme_from_env_file)" != "http" ]; then
       warn_selfhost "ignoring --allow-http; the scheme is only written on initial install"
       warn_selfhost "SELFHOST_SCHEME in ${SELFHOST_ENV_FILE} stays authoritative — moving a deployment between https and plain http changes every URL clients and the OAuth provider were given, so it is a reinstall (remove the env file and install again), not a rerun"
+    fi
+    # Same rule for the usage report: the file is authoritative on a rerun,
+    # and only a flag that disagrees with it is worth a warning.
+    if [ "$NO_TELEMETRY_FLAG" -eq 1 ] && [ "$(selfhost_telemetry_from_env_file)" = "on" ]; then
+      warn_selfhost "ignoring --no-telemetry; the usage report setting is only written on initial install"
+      warn_selfhost "rerun with --repair-env --no-telemetry, or set SERVER_TELEMETRY=false in ${SELFHOST_ENV_FILE}, to turn the daily usage report off"
     fi
     if [ "$USE_NGROK" -eq 1 ] && [ "$(selfhost_scheme_from_env_file)" != "ngrok" ]; then
       warn_selfhost "ignoring --ngrok; the scheme is only written on initial install"
@@ -1850,14 +1942,14 @@ main() {
   fi
   # The same refusals prepare_ngrok_install makes, for a hand-edited file: the
   # CDN integrations need a domain of your own, and Caddyfile.ngrok serves the
-  # bundled MinIO alone.
+  # bundled Silo alone.
   if [ "$SCHEME" = "ngrok" ]; then
     if [ "${DELIVERY_ADAPTER:-base-url}" != "base-url" ] ||
       [ "${STORAGE_ORIGIN_MODE:-direct}" = "cdn-origin" ]; then
       fail_selfhost "SELFHOST_SCHEME=ngrok in ${SELFHOST_ENV_FILE} cannot be combined with DELIVERY_ADAPTER=${DELIVERY_ADAPTER:-base-url} or SELFHOST_STORAGE_ORIGIN_MODE=${STORAGE_ORIGIN_MODE:-direct}: the CDN integrations front a domain you own, and the ngrok address is ngrok's. Set DELIVERY_ADAPTER=base-url and SELFHOST_STORAGE_ORIGIN_MODE=direct (removing the CDN values), or reinstall on your own domain, and rerun."
     fi
     if [ "${STORAGE_MODE:-bundled}" != "bundled" ]; then
-      fail_selfhost "SELFHOST_SCHEME=ngrok in ${SELFHOST_ENV_FILE} supports the bundled storage only (got SELFHOST_STORAGE_MODE=${STORAGE_MODE}): its single site serves downloads from the bundled MinIO under /codemagic-patch. Reinstall with the bundled storage, or on your own domain for external storage."
+      fail_selfhost "SELFHOST_SCHEME=ngrok in ${SELFHOST_ENV_FILE} supports the bundled storage only (got SELFHOST_STORAGE_MODE=${STORAGE_MODE}): its single site serves downloads from the bundled Silo under /codemagic-patch. Reinstall with the bundled storage, or on your own domain for external storage."
     fi
     require_selfhost_env_var NGROK_AUTHTOKEN
   fi
@@ -2088,6 +2180,18 @@ main() {
     printf 'CDN:\n  none - clients fetch storage directly (DELIVERY_ADAPTER=base-url).\n\n'
   else
     printf 'CDN:\n  none - clients fetch the bucket/CDN at %s directly (DELIVERY_ADAPTER=base-url).\n\n' "$PUBLIC_BASE_URL"
+  fi
+  # Read back from the file, like every value above: on a rerun the flag was
+  # ignored, and an env file from before the key existed means on.
+  if [ "$(selfhost_telemetry_from_env_file)" = "on" ]; then
+    printf 'Usage report: on\n'
+    printf '  A daily anonymous report of aggregate counts only, no identifiers; used only\n'
+    printf "  for public statistics, never to enforce the licence's MAU limit. Off with\n"
+    printf '  --no-telemetry (--repair-env --no-telemetry on a rerun) or SERVER_TELEMETRY=false\n'
+    printf '  in .env.selfhost.\n\n'
+  else
+    printf 'Usage report: off\n'
+    printf '  (SERVER_TELEMETRY=false or DO_NOT_TRACK=1 in .env.selfhost.)\n\n'
   fi
   printf 'Next:\n'
   printf '  1. Store .env.selfhost securely.\n'

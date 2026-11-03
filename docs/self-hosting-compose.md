@@ -77,8 +77,14 @@ differ.
   hostnames):
   - **Let's Encrypt** (ACME) — TLS certificates.
   - **GitHub** (`github.com` / `api.github.com`) — OAuth token exchange when
-    GitHub sign-in is configured, and the unauthenticated lookup used by
-    handle invites.
+    GitHub sign-in is configured, the unauthenticated lookup used by handle
+    invites, and the release lookup behind the dashboard's version card
+    (`SERVER_UPDATE_CHECK=false` in `.env.selfhost` turns that one off).
+  - **The usage report collector** (`telemetry.codemagicpatch.dev`) — the
+    daily anonymous usage report: aggregate counts only, no identifiers, used
+    only for public statistics and never to enforce the licence's MAU limit.
+    Off with `SERVER_TELEMETRY=false` or `DO_NOT_TRACK=1` in `.env.selfhost`,
+    or `install.sh --no-telemetry`.
   - **Bitbucket** (`bitbucket.org` / `api.bitbucket.org`) — OAuth token
     exchange when Bitbucket sign-in is configured.
   - **GitLab** (`gitlab.com`, or your self-hosted GitLab origin) — OAuth token
@@ -632,7 +638,11 @@ storage overlay.
 `--database-url` is required with it and is recorded as `DATABASE_URL` in
 `.env.selfhost`; the `POSTGRES_*` variables are then unused and not written.
 Migrations run at server boot against that database, so the connecting role
-must be allowed to create and alter tables.
+must be allowed to create and alter tables. If the provider's string ends in
+`sslmode=require`, add `&uselibpqcompat=true`: the server's PostgreSQL client
+otherwise treats `require` as full certificate verification and fails on the
+certificates managed providers issue. The `cmpatch selfhost install` wizard
+adds it for you.
 
 ```bash
 ./scripts/selfhost/install.sh \
@@ -1664,7 +1674,7 @@ which explicitly denies that prefix.
 
 The complete console settings, pre-cutover commands, adoption flow, IAM policy,
 and rotation checklist live in
-[`docs-site/docs/setup/cloudfront.mdx`](../docs-site/docs/setup/cloudfront.mdx).
+[`docs-site/docs/reference/cdn.mdx`](../docs-site/docs/reference/cdn.mdx).
 
 ### DNS setup in the CLI wizard
 

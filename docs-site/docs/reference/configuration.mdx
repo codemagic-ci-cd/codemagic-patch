@@ -41,14 +41,20 @@ The server refuses to boot while `WORKER_SHARED_SECRET` or the CLI OAuth signing
 | `MODE` | `all` | `all` · `api` · `worker`. Self-host Compose hardcodes `MODE=all`; changing `.env.selfhost` alone does not split API/worker |
 | `GITLAB_OAUTH_BASE_URL` | `https://gitlab.com` | GitLab origin; set for self-hosted GitLab |
 | `REGISTRATION_MODE` | `invite_only` | `invite_only` or `open` |
-| `STORAGE_ADAPTER` | `s3` (self-host) | `s3` · `gcs` · `memory`, see [Infrastructure adapters](/docs/setup/infrastructure) |
-| `DELIVERY_ADAPTER` | `base-url` | `base-url`, `cloudflare`, or `cloudfront`; see [Infrastructure adapters](/docs/setup/infrastructure) |
+| `STORAGE_ADAPTER` | `s3` (self-host) | `s3` · `gcs` · `memory`. When to leave the bundled store is in [Infrastructure](/docs/setup/infrastructure) |
+| `DELIVERY_ADAPTER` | `base-url` | `base-url`, `cloudflare`, or `cloudfront`. See [Infrastructure](/docs/setup/infrastructure) |
 | `MANIFEST_CACHE_CONTROL` | derived from `DELIVERY_ADAPTER` | Cache-Control for `meta.json` and manifest JSON. `base-url` gets `no-cache, must-revalidate` because its purge is a no-op; `cloudflare` and `cloudfront` get `public, max-age=0, s-maxage=300, must-revalidate`, so clients still revalidate while a failed purge is bounded to five minutes. Set it explicitly only to override. Applied when each object is next written, so a deployment that has not published since the change still serves its old header |
 | `MAX_UPLOAD_SIZE` | `200mb` | Max artifact upload size. Self-host Compose does not pass this through; customize `docker-compose.selfhost.yml` to override |
 | `RUN_MIGRATIONS` | `true` | Run DB migrations on boot |
 | `LOGGER` | `true` | Set `false` to silence server logs |
+| `SERVER_TELEMETRY` | `true` | The daily anonymous usage report: aggregate counts only, no identifiers; used only for public statistics, never to enforce the licence's MAU limit. `false` turns it off, as does `DO_NOT_TRACK=1`; `install.sh --no-telemetry` writes `false` |
+| `SERVER_UPDATE_CHECK` | `true` | Ask GitHub for the latest server release, for the version card on the dashboard's Status page. `false` keeps a server without outbound access from calling out |
 | `SELFHOST_SCHEME` | `https` | Self-host only. `http` serves the API and storage sites over plain HTTP on port 80 with no certificates (written by `install.sh --allow-http`); `SERVER_URL`, `PUBLIC_BASE_URL`, and the OAuth callback then use `http://`. Fixed at install time; not combinable with a CDN adapter |
 | `SELFHOST_HTTP_STORAGE_PORT` | `80` | Self-host, `SELFHOST_SCHEME=http` with bundled storage only. The port of a `host:port` storage domain, published by the plain-HTTP compose overlay; the installer derives it from the domain |
+
+### Plain HTTP {#plain-http}
+
+`scripts/selfhost/install.sh --allow-http` writes `SELFHOST_SCHEME=http` and serves the machine it runs on alone: the server is `http://localhost`, downloads are `http://localhost:9110`, and the OAuth callback is `http://localhost/auth/callback`. The app must allow cleartext traffic to those URLs. Any other hostname or IP is refused. `cmpatch selfhost install` does not take this flag. See [Plain HTTP](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#plain-http-no-tls).
 
 ## External object storage
 
@@ -82,5 +88,4 @@ and rerun storage/release checks.
 | `CLOUDFRONT_ORIGIN_VERIFY_SECRET_PREVIOUS` | bundled `cdn-origin` | Optional second accepted value, set only while rotating the origin header; omit it otherwise and it falls back to the current secret |
 
 Full setup, IAM policy, DNS ordering, and rotation procedure:
-[CloudFront setup](/docs/setup/cloudfront). Cloudflare variables remain documented
-in [Cloudflare setup](/docs/setup/cloudflare).
+[CDN settings](/docs/reference/cdn).

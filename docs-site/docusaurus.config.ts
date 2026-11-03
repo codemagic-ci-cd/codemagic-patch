@@ -71,6 +71,17 @@ const config: Config = {
   ],
 
   plugins: [
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          {
+            from: ["/setup/cloudflare", "/setup/cloudfront"],
+            to: "/reference/cdn",
+          },
+        ],
+      },
+    ],
     // llms.txt and per-page markdown twins; see plugins/llms/index.ts.
     (context) => llmsPlugin(context, llmsIndex),
     // llms-full.txt only: its llms.txt and markdown files use doc-id paths
@@ -86,6 +97,10 @@ const config: Config = {
         removeDuplicateHeadings: true,
       },
     ],
+  ],
+
+  clientModules: [
+    require.resolve("./src/clientModules/legacyHomeAnchors.ts"),
   ],
 
   themes: [

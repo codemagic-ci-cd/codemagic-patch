@@ -40,8 +40,7 @@ export const PROMPTABLE_FLAGS: Record<PromptableFlag, PromptableFlagIdentity> = 
   // Listing releases needs the deployment resolved first, so this stays last
   // of the server-side selectors.
   // Promote scopes its two ends with their own flags, so neither can be filled
-  // by --deployment. No list is reachable for them, which is a reason to ask
-  // plainly — not a reason to refuse and print usage.
+  // by --deployment; both are still picked from the app's deployment list.
   sourceDeployment: {
     label: "source-deployment",
     options: ["--source-deployment", "--source-deployment-id"],
@@ -51,6 +50,11 @@ export const PROMPTABLE_FLAGS: Record<PromptableFlag, PromptableFlagIdentity> = 
     options: ["--dest-deployment", "--dest-deployment-id"],
   },
   label: { label: "label", options: ["--label"] },
+  // Promote asks for this interactively; it is never inherited from the source.
+  rolloutPercentage: {
+    label: "rollout-percentage",
+    options: ["--rollout-percentage"],
+  },
   platform: { label: "platform", options: ["--platform"] },
   bundler: { label: "bundler", options: ["--bundler"] },
 };

@@ -295,6 +295,12 @@ type PatchTomlInput = {
    */
   serverTag: string;
   stem: string;
+  /**
+   * The daily usage report, written as `SERVER_TELEMETRY` whichever way it is
+   * set, so the choice sits in the release config that upgrade and restore
+   * deploy again.
+   */
+  usageReport: "off" | "on";
 };
 
 export function patchFlyToml(input: PatchTomlInput): string {
@@ -316,6 +322,7 @@ primary_region = ${toml(input.region)}
   PUBLIC_BASE_URL = ${toml(input.publicBaseUrl)}
   INITIAL_ADMIN_EMAILS = ${toml(input.email)}
   PATCH_SERVER_TAG = ${toml(input.serverTag)}
+  SERVER_TELEMETRY = ${toml(input.usageReport === "on" ? "true" : "false")}
 
 [http_service]
   internal_port = 3000

@@ -3,7 +3,7 @@
 // rows are omitted rather than shown as failures, except Download URL, which
 // stays visible as "Not checked" (the server skips loopback origins). Running
 // version is `server/package.json` `version`. `topology` decides which cards
-// apply: Disk only with a bundled Postgres/MinIO, Version only on self-host.
+// apply: Disk only with a bundled Postgres/Silo, Version only on self-host.
 
 import { useQuery } from "@tanstack/react-query";
 

@@ -10,7 +10,7 @@ export type LlmsSection = {label: string; docIds: string[]};
 export const LLMS_SECTIONS: LlmsSection[] = [
   {
     label: 'Overview',
-    docIds: ['intro'],
+    docIds: ['intro', 'local-quickstart'],
   },
   {
     label: 'Introduction',
@@ -27,8 +27,6 @@ export const LLMS_SECTIONS: LlmsSection[] = [
     label: 'Setup',
     docIds: [
       'setup/install',
-      'setup/cloudflare',
-      'setup/cloudfront',
       'setup/infrastructure',
       'setup/ongoing-maintenance',
       'setup/native-setup',
@@ -70,6 +68,7 @@ export const LLMS_SECTIONS: LlmsSection[] = [
       'reference/sdk-reference',
       'reference/cli-reference',
       'reference/configuration',
+      'reference/cdn',
       'reference/operations',
     ],
   },
@@ -90,7 +89,8 @@ export const LLMS_SECTIONS: LlmsSection[] = [
 
 /** The "Where to start" list at the top of llms.txt, by doc id. */
 export const LLMS_START_HERE: {label: string; docId: string}[] = [
-  {label: 'Try Patch locally', docId: 'intro'},
+  {label: 'Docs home', docId: 'intro'},
+  {label: 'Try Patch locally', docId: 'local-quickstart'},
   {label: 'How it works', docId: 'introduction/how-it-works'},
   {label: 'Install for production', docId: 'setup/install'},
   {label: 'Migrate from CodePush', docId: 'migration/migrating-from-codepush'},

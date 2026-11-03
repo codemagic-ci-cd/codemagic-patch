@@ -31,7 +31,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 
 ## 1. Stand up Patch
 
-For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/) (`cmpatch selfhost local-eval`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server.
+For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/local-quickstart) (`cmpatch selfhost local-eval`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server.
 
 | | Local eval | Running on VM |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ cmpatch deployment list --app MyApp-iOS --format table
 Map each EAS channel you use today to a Patch deployment (e.g. EAS `preview` → Patch `Staging`, EAS `production` → Patch `Production`). Use each deployment key in the native integration you choose in the next step. To build Staging and Production binaries from one project, see [Build for different deployments](/docs/setup/native-setup#build-for-different-deployments).
 
 :::info
-Local eval is enough to answer "does Patch work on our app?" It is not a production host: authentication is disabled and ports bind to localhost. Physical devices and Android emulators need a LAN IP (or `adb reverse`); see [Try it with your own app](/docs/#5-try-it-with-your-own-app).
+Local eval is enough to answer "does Patch work on our app?" It is not a production host: authentication is disabled and ports bind to localhost. A phone on the network cannot reach it. See [Reach a real phone with ngrok](/docs/local-quickstart#ngrok).
 :::
 
 ## 2. Replace the client integration
@@ -156,7 +156,7 @@ cmpatch release-react \
   --yes
 ```
 
-Confirm the update on the binary you built in step 2 (check / relaunch, same loop as the [on-device demo](/docs/#3-watch-an-update-apply-on-device-demo)). That is enough to decide whether a production install is worth it.
+Confirm the update on the binary you built in step 2 (check / relaunch, same loop as the [on-device demo](/docs/local-quickstart#3-watch-an-update-apply-on-device-demo)). That is enough to decide whether a production install is worth it.
 
 When you cut over for real, install the CLI against your hosted API and create a CI token:
 

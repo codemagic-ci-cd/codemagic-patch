@@ -23,7 +23,7 @@ cmpatch demo
 
 The command handles sign-in, dependency installation, building, and the source change. No separate clone is needed after `cmpatch selfhost local-eval`. If you used your own clone to start the stack, run the demo from inside it or pass `--checkout /path/to/codemagic-patch`. Use `--platform ios` or `--platform android` to choose explicitly.
 
-After the app reloads, confirm that the product cards load and **Add to cart** works. Accept the CLI's offer to open the release in the dashboard. To continue with your own project, keep the stack running and follow [Try it with your own app](https://patch.codemagic.io/docs/#5-try-it-with-your-own-app).
+After the app reloads, confirm that the product cards load and **Add to cart** works. Accept the CLI's offer to open the release in the dashboard. To continue with your own project, keep the stack running and follow [Try it with your own app](https://patch.codemagic.io/docs/local-quickstart#5-try-it-with-your-own-app).
 
 ## Manual walkthrough (optional)
 

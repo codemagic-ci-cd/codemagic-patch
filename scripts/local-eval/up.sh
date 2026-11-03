@@ -195,7 +195,7 @@ cat <<EOF
    Dashboard    ${DASHBOARD_URL}
                 → sign in as ${LOCAL_ADMIN_EMAIL} (prefilled, one click)
    API          ${SERVER_URL}
-   MinIO        ${MINIO_CONSOLE_URL}  (minio / minio12345)
+   Silo         ${MINIO_CONSOLE_URL}  (minio / minio12345)
 
 EOF
 

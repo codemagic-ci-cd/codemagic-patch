@@ -1,0 +1,6 @@
+{
+  "name": "@codemagic/patch-stats-site",
+  "private": true,
+  "description": "Static public stats page for patch.codemagic.io/stats/ (no dependencies, no build tooling); `type: module` lets Node import public/stats.js for the tests and the build-time snapshot check.",
+  "type": "module"
+}

@@ -164,6 +164,41 @@ export async function promptValue(
   return String(value).trim();
 }
 
+/**
+ * Whole percent 1–100. Re-asked rather than rejected, same as a mistyped
+ * server URL: the default stays in the field so accepting it is one Enter.
+ */
+export async function promptRolloutPercentage(
+  deps: Pick<CommandDeps, "stderr">,
+  prompt: PromptFn,
+  initial = "100",
+): Promise<number> {
+  for (;;) {
+    const raw = String(
+      await prompt({
+        initial,
+        message: "Rollout percentage",
+        type: "text",
+      }),
+    ).trim();
+
+    if (/^\d+$/u.test(raw)) {
+      const value = Number(raw);
+      if (value >= 1 && value <= 100) {
+        return value;
+      }
+    }
+
+    if (deps.stderr !== undefined) {
+      writeLine(
+        deps.stderr,
+        "--rollout-percentage must be an integer between 1 and 100",
+      );
+    }
+    initial = raw.length > 0 ? raw : initial;
+  }
+}
+
 /** One of a fixed set — a role, a yes/no setting. */
 export async function promptChoice(
   prompt: PromptFn,

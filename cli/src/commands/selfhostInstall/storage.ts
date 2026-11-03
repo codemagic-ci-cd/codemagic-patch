@@ -167,7 +167,7 @@ export async function chooseStorage(
     mode = (await askSelect(deps, {
       message: "Where should update files be stored?",
       choices: [
-        { title: "On this server (bundled MinIO)", value: "bundled" },
+        { title: "On this server (bundled Silo)", value: "bundled" },
         ...(onCloudflare
           ? [
               {

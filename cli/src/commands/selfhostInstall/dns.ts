@@ -92,7 +92,7 @@ export async function runDnsStep(
  * so the later record waits (the CloudFront origin, the proxy switch) read
  * the same address.
  */
-async function resolvePublicAddress(
+export async function resolvePublicAddress(
   deps: CommandDeps,
   session: SelfhostSession,
   interactive: boolean,

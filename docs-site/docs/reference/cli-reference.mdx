@@ -49,14 +49,17 @@ changes, `--allow-dirty`. Request any needed CocoaPods installation with
 
 `local-eval` runs the evaluation stack on this machine. If you want to try an OTA
 with a ready-made app first, run `cmpatch demo` to build the bundled app and watch an OTA fix apply; the demo
-handles local sign-in and setup. See [Local quickstart](/docs/) for the full walkthrough.
+handles local sign-in and setup. See [Local quickstart](/docs/local-quickstart) for the full walkthrough.
 The install, upgrade, backup, and restore commands run
 the repository's authoritative self-host scripts over SSH; on a
 [Fly install](/docs/install#fly) they run through flyctl from this machine
 instead. The guided installer
-defaults to bundled Postgres and Silo; external R2/S3/GCS storage supports
-automatic and guided first-install setup. External database setup still uses
-the direct `install.sh` path in [Infrastructure adapters](/docs/setup/infrastructure).
+defaults to bundled Postgres and Silo. A separate database is for backups and
+point-in-time recovery, and is needed for disk space around a few million daily
+active users. Point the installer at a Postgres database you already run
+with the connection string that ends in `sslmode=require`, and allow the
+server's IP. External R2/S3/GCS storage
+supports automatic and guided first-install setup.
 
 | Command | Description |
 | --- | --- |
@@ -68,6 +71,38 @@ the direct `install.sh` path in [Infrastructure adapters](/docs/setup/infrastruc
 | `cmpatch selfhost upgrade [user@vps]` | Fast-forward the server checkout and run the guarded backup-and-update workflow; on Fly, snapshot the database (when cmpatch created it) and deploy the newest release |
 | `cmpatch selfhost backup [user@vps]` | Take a mode-aware backup; add `--download` to copy it to this machine; on Fly, save the database dump on this machine |
 | `cmpatch selfhost restore [backup] [user@vps]` | Select or upload a backup, take a safety backup, and restore the components it contains; on Fly, restore a Fly backup from this machine |
+
+`cmpatch selfhost install --no-telemetry` turns off the daily anonymous
+usage report the server would otherwise send (it writes
+`SERVER_TELEMETRY=false`); on an installed server, pass it with `--repair`.
+
+### Scripted install {#scripted-install}
+
+Every answer has a flag, so the same install runs unattended. Add the two DNS records and let them resolve first. An unattended run does not prompt for them, and the install fails when the server cannot obtain its certificates.
+
+```bash
+# the secret travels in the environment, never on the command line
+export GITHUB_OAUTH_CLIENT_SECRET=<github_client_secret>
+
+cmpatch selfhost install ubuntu@203.0.113.7 \
+  --non-interactive \
+  --api-domain updates.example.com \
+  --storage-domain storage-updates.example.com \
+  --email admin@example.com \
+  --github-oauth-client-id Iv1.xxxxxxxxxxxxxxxx \
+  --install-docker
+```
+
+Pass `--bitbucket-oauth-client-id` and `--bitbucket-oauth-client-secret`, or `--gitlab-oauth-client-id` and `--gitlab-oauth-client-secret`, instead of or as well as the GitHub pair. At least one provider is required. [GitLab sign-in](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/docs/self-hosting-compose.md#gitlab-sign-in) has the app settings for gitlab.com and for self-hosted GitLab.
+
+To run the installer on the server itself, clone the repository there and run `scripts/selfhost/install.sh` with the same domain, email, and OAuth flags. Create the OAuth app yourself:
+
+| OAuth App setting | Value |
+| --- | --- |
+| Homepage URL | `https://updates.example.com` |
+| Authorization callback URL | `https://updates.example.com/auth/callback` |
+
+The installer writes `.env.selfhost` with random secrets and refuses to overwrite an existing file. The first boot prepares the `default-team`.
 
 ### DNS setup
 
@@ -94,7 +129,7 @@ scripted run with `--dns-setup cloudflare` must pass the flag.
 | `--checkout <path>` | Run from this checkout of the repository instead of the copy the CLI keeps |
 | `--start-docker` | Start Docker on this machine without asking |
 
-An ngrok install takes no `user@vps` and none of the DNS, CDN, or external storage flags. Details: [Install › ngrok](/docs/install#ngrok).
+An ngrok install takes no `user@vps` and none of the DNS, CDN, or external storage flags. Details: [Local quickstart](/docs/local-quickstart#ngrok).
 
 ### Fly flags
 

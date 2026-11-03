@@ -241,21 +241,21 @@ async function askFor(
     );
   }
 
-  if (wanted.has("sourceDeployment")) {
-    answers.sourceDeployment = await promptValue(prompt, "Source deployment");
-  }
-
-  if (wanted.has("destDeployment")) {
-    answers.destDeployment = await promptValue(prompt, "Destination deployment");
-  }
-
   if (wanted.has("serverUrl")) {
     answers.serverUrl = await promptServerUrl(deps, prompt, current.serverUrl);
   }
 
   // The server-side selectors have to be walked in order: apps belong to a
-  // team, deployments belong to an app.
-  if (wanted.has("team") || wanted.has("app") || wanted.has("deployment")) {
+  // team, deployments belong to an app. Promote's ends are deployments of that
+  // app too — listed once the app is known, not typed.
+  const needsServerWalk =
+    wanted.has("team") ||
+    wanted.has("app") ||
+    wanted.has("deployment") ||
+    wanted.has("sourceDeployment") ||
+    wanted.has("destDeployment");
+
+  if (needsServerWalk) {
     const serverUrl =
       answers.serverUrl ??
       current.serverUrl ??
@@ -273,6 +273,21 @@ async function askFor(
           serverUrl,
         }),
       );
+    } else {
+      // No server to list from yet: fall back to the flag names as free text.
+      if (wanted.has("sourceDeployment")) {
+        answers.sourceDeployment = await promptValue(
+          prompt,
+          "Source deployment",
+        );
+      }
+
+      if (wanted.has("destDeployment")) {
+        answers.destDeployment = await promptValue(
+          prompt,
+          "Destination deployment",
+        );
+      }
     }
   }
 
@@ -375,7 +390,12 @@ async function askForServerResources(
       }
     }
 
-    if (!wanted.has("app") && !wanted.has("deployment")) {
+    if (
+      !wanted.has("app") &&
+      !wanted.has("deployment") &&
+      !wanted.has("sourceDeployment") &&
+      !wanted.has("destDeployment")
+    ) {
       return answers;
     }
 
@@ -400,6 +420,63 @@ async function askForServerResources(
       shouldRecordPick(wanted.has("app"), configuredAppName, app, apps.length)
     ) {
       answers.app = app.name;
+    }
+  }
+
+  if (wanted.has("sourceDeployment") || wanted.has("destDeployment")) {
+    const deployments = await listNamedResources(
+      deps,
+      serverUrl,
+      `/v1/apps/${encodeURIComponent(appId)}/deployments`,
+      token,
+      "deployments",
+    );
+
+    if (wanted.has("sourceDeployment")) {
+      const configuredName =
+        current.sourceDeployment ??
+        readOptionValue(argv, "--source-deployment");
+      const source = await pickResource(prompt, {
+        configuredName,
+        inferSoleEntry,
+        label: "deployment",
+        message: "Select source deployment",
+        resources: deployments,
+      });
+
+      if (
+        shouldRecordPick(
+          wanted.has("sourceDeployment"),
+          configuredName,
+          source,
+          deployments.length,
+        )
+      ) {
+        answers.sourceDeployment = source.name;
+      }
+    }
+
+    if (wanted.has("destDeployment")) {
+      const configuredName =
+        current.destDeployment ?? readOptionValue(argv, "--dest-deployment");
+      const destination = await pickResource(prompt, {
+        configuredName,
+        inferSoleEntry,
+        label: "deployment",
+        message: "Select destination deployment",
+        resources: deployments,
+      });
+
+      if (
+        shouldRecordPick(
+          wanted.has("destDeployment"),
+          configuredName,
+          destination,
+          deployments.length,
+        )
+      ) {
+        answers.destDeployment = destination.name;
+      }
     }
   }
 

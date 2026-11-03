@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codemagic.io/patch/schemas/telemetry-report/v1.json",
+  "title": "Codemagic Patch daily usage report (v1)",
+  "description": "Wire contract for the usage report a Codemagic Patch server POSTs once per UTC day to the public collector (https://telemetry.codemagicpatch.dev/v1/report) when the usage report is enabled. The body is plain JSON, well under 8 KiB, and carries only per-day aggregate counts read from the server's own daily aggregate tables: never device, app, team, or deployment identifiers or names, URLs, emails, bundle hashes, or failure reasons. The root schema is the lenient envelope the collector enforces at runtime; `strictReport` is the exact shape current senders produce and is what the server's and the collector's contract tests validate fixtures against.",
+  "$comment": "Evolution rules: additive-only within v1. The collector ignores unknown fields at every level and accepts any string in `instance.mode`, `instance.storage_adapter`, and `instance.delivery_adapter`, so a newer server never gets a 400 for a value this file does not list yet. `instance.hosting` stays an enum because it selects the collector's authentication. `schema_version` is bumped only for breaking changes.",
+  "$ref": "#/$defs/report",
+  "$defs": {
+    "report": {
+      "title": "Daily usage report envelope (runtime contract)",
+      "type": "object",
+      "required": ["schema_version", "instance_id", "sent_at", "instance", "days"],
+      "properties": {
+        "schema_version": {
+          "description": "Wire-format major version. Always 1 for this schema.",
+          "const": 1
+        },
+        "instance_id": {
+          "description": "Random UUID minted once per installation, on the first report. The only identity in the report; it says nothing about the operator.",
+          "type": "string",
+          "format": "uuid",
+          "maxLength": 36
+        },
+        "sent_at": {
+          "description": "RFC 3339 timestamp of when the sender built the report.",
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "instance": { "$ref": "#/$defs/instance" },
+        "snapshot": { "$ref": "#/$defs/snapshot" },
+        "days": {
+          "description": "One row per UTC day, ascending. Servers transmit the previous UTC day, counted from the raw events that had arrived by the time of sending, and never re-send one; the collector accepts up to 31 rows for forward compatibility, replaces each (instance, day) pair it already holds, and ignores days outside its acceptance window one by one. A day a sender could not deliver stays missing for that instance.",
+          "type": "array",
+          "maxItems": 31,
+          "items": { "$ref": "#/$defs/dayRow" }
+        }
+      }
+    },
+    "instance": {
+      "description": "Coarse, non-identifying properties of the installation.",
+      "type": "object",
+      "required": ["hosting"],
+      "properties": {
+        "hosting": {
+          "description": "`self-hosted` is an operator-run install; `managed` is Codemagic's own multi-team service and must carry a bearer token the collector knows.",
+          "type": "string",
+          "enum": ["self-hosted", "managed"]
+        },
+        "server_version": {
+          "description": "`server/package.json` version of the reporting process.",
+          "type": "string",
+          "maxLength": 64
+        },
+        "mode": {
+          "description": "`MODE` the process runs in. Current senders send `all` or `api`; a `worker` process never reports.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "storage_adapter": {
+          "description": "`STORAGE_ADAPTER` of the process.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "delivery_adapter": {
+          "description": "`DELIVERY_ADAPTER` of the process.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "database": {
+          "description": "Whether the database is the bundled Compose Postgres or an operator-managed one, as the dashboard Status page derives it.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "storage": {
+          "description": "Whether object storage is the bundled Compose MinIO, an external bucket, or `none` (the in-process memory adapter).",
+          "type": "string",
+          "maxLength": 32
+        }
+      }
+    },
+    "snapshot": {
+      "description": "Point-in-time totals at send time. The collector keeps only the latest snapshot per instance and never adds snapshots across days.",
+      "type": "object",
+      "properties": {
+        "teams": { "$ref": "#/$defs/count" },
+        "teams_with_apps": { "$ref": "#/$defs/count" },
+        "apps": { "$ref": "#/$defs/count" },
+        "deployments": { "$ref": "#/$defs/count" },
+        "releases_total": { "$ref": "#/$defs/count" }
+      }
+    },
+    "dayRow": {
+      "type": "object",
+      "required": ["day"],
+      "properties": {
+        "day": { "$ref": "#/$defs/day" },
+        "active_devices": {
+          "description": "Devices that sent `Active` that day: the sum of per-deployment distinct counts.",
+          "$ref": "#/$defs/count"
+        },
+        "applied": {
+          "description": "`Applied` events with a target package hash, the success-rate numerator.",
+          "$ref": "#/$defs/count"
+        },
+        "failed": {
+          "description": "`Failed` events with a target package hash, the other half of the success-rate denominator.",
+          "$ref": "#/$defs/count"
+        },
+        "failed_unattributed": {
+          "description": "`Failed` events without a target package hash. Excluded from the success rate, kept so nothing is silently dropped.",
+          "$ref": "#/$defs/count"
+        },
+        "releases": {
+          "description": "Releases created that day (published or disabled), excluding rollbacks.",
+          "$ref": "#/$defs/count"
+        },
+        "rollbacks": {
+          "description": "Operator release rollbacks created that day (`rollback_of` set). Not SDK crash rollbacks.",
+          "$ref": "#/$defs/count"
+        },
+        "active_teams": {
+          "description": "Teams with at least one metric event that day.",
+          "$ref": "#/$defs/count"
+        },
+        "active_apps": {
+          "description": "Apps with at least one metric event that day.",
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "day": {
+      "description": "UTC calendar date.",
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "strictReport": {
+      "title": "Daily usage report, exact shape of current senders",
+      "description": "What `buildTelemetryReport` in the server produces today: every field present, no extras, one day row, the previous UTC day (the deploy smoke sends none). Contract tests validate fixtures against this; the collector enforces only `report`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "instance_id", "sent_at", "instance", "snapshot", "days"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "instance_id": { "type": "string", "format": "uuid", "maxLength": 36 },
+        "sent_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "instance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hosting",
+            "server_version",
+            "mode",
+            "storage_adapter",
+            "delivery_adapter",
+            "database",
+            "storage"
+          ],
+          "properties": {
+            "hosting": { "type": "string", "enum": ["self-hosted", "managed"] },
+            "server_version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$",
+              "maxLength": 64
+            },
+            "mode": { "type": "string", "enum": ["all", "api"] },
+            "storage_adapter": { "type": "string", "enum": ["memory", "s3", "gcs"] },
+            "delivery_adapter": { "type": "string", "enum": ["base-url", "cloudflare", "cloudfront"] },
+            "database": { "type": "string", "enum": ["bundled", "external"] },
+            "storage": { "type": "string", "enum": ["bundled", "external", "none"] }
+          }
+        },
+        "snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["teams", "teams_with_apps", "apps", "deployments", "releases_total"],
+          "properties": {
+            "teams": { "$ref": "#/$defs/count" },
+            "teams_with_apps": { "$ref": "#/$defs/count" },
+            "apps": { "$ref": "#/$defs/count" },
+            "deployments": { "$ref": "#/$defs/count" },
+            "releases_total": { "$ref": "#/$defs/count" }
+          }
+        },
+        "days": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "day",
+              "active_devices",
+              "applied",
+              "failed",
+              "failed_unattributed",
+              "releases",
+              "rollbacks",
+              "active_teams",
+              "active_apps"
+            ],
+            "properties": {
+              "day": { "$ref": "#/$defs/day" },
+              "active_devices": { "$ref": "#/$defs/count" },
+              "applied": { "$ref": "#/$defs/count" },
+              "failed": { "$ref": "#/$defs/count" },
+              "failed_unattributed": { "$ref": "#/$defs/count" },
+              "releases": { "$ref": "#/$defs/count" },
+              "rollbacks": { "$ref": "#/$defs/count" },
+              "active_teams": { "$ref": "#/$defs/count" },
+              "active_apps": { "$ref": "#/$defs/count" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

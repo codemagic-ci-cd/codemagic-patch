@@ -771,7 +771,7 @@ async function describeServerProblem(
     body = undefined;
   }
   const answersLikePatch =
-    isRecord(body) && typeof body.ok === "boolean" && Array.isArray(body.checks);
+    isRecord(body) && typeof body.ok === "boolean" && isRecord(body.checks);
 
   if (response.ok && answersLikePatch) {
     return null;

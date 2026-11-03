@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "status": "warming",
+  "generated_at": "2026-10-22T03:30:00Z",
+  "next_update_after": "2026-10-22T15:30:00Z",
+  "coverage": {
+    "first_day": null,
+    "last_reported_day": null,
+    "lag_days": 0,
+    "min_report_days": 2,
+    "instances_reporting_30d": 0,
+    "notes": []
+  },
+  "totals": {
+    "active_devices": null,
+    "success_rate_30d": {
+      "applied": 0,
+      "failed": 0,
+      "attempts": 0,
+      "rate": null,
+      "min_attempts": 100
+    },
+    "teams": {
+      "value": 0,
+      "managed_teams_with_app": 0,
+      "self_hosted_servers_30d": 0
+    },
+    "self_hosted_servers_30d": {
+      "value": 0
+    },
+    "managed_instances_30d": 0,
+    "releases_7d": {
+      "releases": 0,
+      "rollbacks": 0
+    },
+    "applied_since_first_day": 0,
+    "releases_since_first_day": 0
+  },
+  "timeseries": {
+    "days": [],
+    "active_devices": [],
+    "applied": [],
+    "failed": [],
+    "attempts": [],
+    "success_rate": [],
+    "releases": [],
+    "rollbacks": [],
+    "reporting_coverage": []
+  }
+}

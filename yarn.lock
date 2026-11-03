@@ -2417,6 +2417,8 @@ __metadata:
     "@fastify/static": "npm:^8.3.0"
     "@google-cloud/storage": "npm:^7.19.0"
     "@types/pg": "npm:^8.15.5"
+    ajv: "npm:^8.12.0"
+    ajv-formats: "npm:^3.0.1"
     eslint: "npm:^9.36.0"
     fastify: "npm:^5.4.0"
     fflate: "npm:^0.8.2"

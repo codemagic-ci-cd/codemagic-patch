@@ -62,7 +62,9 @@ export type {
 export {
   addUtcDays,
   foldCutoff,
+  formatUtcDay,
   isExpiredMetricEvent,
   isFutureMetricEvent,
+  parseUtcDay,
   utcDay,
 } from "./metricRetention";

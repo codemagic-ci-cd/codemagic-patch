@@ -169,10 +169,12 @@ import {
   type ReconcileResult,
 } from "../worker/index";
 import { sortBinaryVersionsDescending } from "../worker/binaryVersionPrecedence";
+import { createTelemetryReporter } from "../app/telemetryReport";
 import { getServerVersion } from "../version";
 import type { RuntimeConfig } from "./config";
 import { createNoopLogger, type RuntimeLogger } from "./logger";
 import { createMetricFoldTimer } from "./metricFoldTimer";
+import { createTelemetryReportTimer } from "./telemetryReportTimer";
 import { createTrackedReconcileExecutor } from "./trackedReconcileExecutor";
 
 // Self-host runs a single fixed team. The name is intentionally hard-coded
@@ -308,6 +310,21 @@ export interface ServerRuntimeOptions {
    * can point the dashboard login at their own authorize endpoint.
    */
   oauthWebConfig?: OAuthWebConfig;
+  /**
+   * Daily usage report to the public collector (`app/telemetryReport.ts`),
+   * sent by the modes that serve metrics (`all`, `api`). Absent means this
+   * process never reports and never mints an instance id: the entrypoints
+   * pass `resolveTelemetryConfig()` here, so an opt-out or an embedder that
+   * leaves it out is silent. `token` is the managed population's bearer
+   * token; `fetchImpl`, `initialDelayMs` and `tickMs` exist for tests.
+   */
+  telemetry?: {
+    endpoint: string;
+    fetchImpl?: typeof globalThis.fetch;
+    initialDelayMs?: number;
+    tickMs?: number;
+    token?: string;
+  };
 }
 
 export async function createServerRuntime(
@@ -806,6 +823,32 @@ export async function createServerRuntime(
             apiBaseUrl: config.updateCheck.githubApiBaseUrl,
           })
         : null;
+    // The report describes the database and storage the way the Status page
+    // does, so the same topology feeds both.
+    const telemetryReportTimer =
+      options.telemetry && (config.mode === "all" || config.mode === "api")
+        ? createTelemetryReportTimer({
+            initialDelayMs: options.telemetry.initialDelayMs,
+            logger,
+            reporter: createTelemetryReporter({
+              endpoint: options.telemetry.endpoint,
+              fetchImpl: options.telemetry.fetchImpl,
+              hosting: statusTopology.hosting,
+              instance: {
+                database: statusTopology.database,
+                delivery_adapter: config.deliveryAdapter,
+                mode: config.mode,
+                storage: statusTopology.storage,
+                storage_adapter: config.storageAdapter,
+              },
+              logger,
+              pool,
+              serverVersion: getServerVersion(),
+              token: options.telemetry.token,
+            }),
+            tickMs: options.telemetry.tickMs,
+          })
+        : null;
 
     return {
       ...userAuthHandlers,
@@ -916,6 +959,8 @@ export async function createServerRuntime(
           clearInterval(jobSweepTimer);
           jobSweepTimer = undefined;
         }
+        // Before the pool ends: a report in flight is reading from it.
+        await telemetryReportTimer?.stop();
         await metricFoldTimer?.stop();
         await queue?.stop();
         await executor?.waitForIdle();
@@ -929,6 +974,7 @@ export async function createServerRuntime(
         // The first fold runs in the background: on a large backlog it can
         // take a while, and serving traffic does not depend on it.
         metricFoldTimer?.start();
+        telemetryReportTimer?.start();
 
         if (queue) {
           await queue.start();

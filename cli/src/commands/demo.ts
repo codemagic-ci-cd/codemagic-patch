@@ -197,7 +197,7 @@ export async function executeDemoCommand(
     await offerReleaseDashboard(deps, parsed, dashboardUrl);
     notice(deps, [
       "Next: try Patch with your own app while the local stack is running.",
-      `${PATCH_DOCS_SITE_URL}/#5-try-it-with-your-own-app`,
+      `${PATCH_DOCS_SITE_URL}/local-quickstart#5-try-it-with-your-own-app`,
     ]);
     progress.stop();
     return null;

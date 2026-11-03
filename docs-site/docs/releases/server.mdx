@@ -20,6 +20,36 @@ Reference: [Configuration](/docs/reference/configuration) ·
 [Operations](/docs/reference/operations) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=codemagic-patch-server)
 
+## 0.9.0 {#v0-9-0}
+
+*3rd November 2026*
+
+### Upgrade impact
+
+- **Migration:** The upgrade runs migration `0020_server_instance`, which
+  creates the empty `server_instance` table that holds the usage report's
+  instance id. No existing table is touched and no lock of note is taken.
+- **Usage report, on by default:** Once a day, the server now sends Codemagic
+  an anonymous usage report of aggregate counts. Codemagic uses it only for
+  public statistics, never to enforce the licence's 1M MAU limit. Set
+  `SERVER_TELEMETRY=false` (or `DO_NOT_TRACK=1`) in `.env.selfhost` to turn
+  it off.
+- **Configuration:** `docker-compose.selfhost.yml` now passes
+  `SERVER_TELEMETRY`, `DO_NOT_TRACK`, and `SERVER_UPDATE_CHECK` through to
+  the server. A `SERVER_UPDATE_CHECK=false` line in `.env.selfhost` was
+  silently dropped before; it now turns the GitHub release lookup off as
+  documented.
+- **Rollback:** Safe. An older image ignores the `server_instance` table.
+
+### Dashboard
+
+- **Chart colours:** The deployment charts use muted series colours instead
+  of neon ones, in light and dark mode.
+- **Silo on the Status page:** The Status page names the bundled object store
+  Silo, which is what runs. The health check path is unchanged.
+
+See the [server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.9.0).
+
 ## 0.8.0 {#v0-8-0}
 
 *28th October 2026*
@@ -263,7 +293,7 @@ See the [configuration reference](/docs/reference/configuration) and
   the origin `s-maxage` and extends the stale window from five minutes to two
   hours. A leftover `MANIFEST_CACHE_CONTROL` pins the old `no-cache` value, so
   manifests are never cached at the edge. See
-  [Cloudflare setup](/docs/setup/cloudflare).
+  [CDN settings](/docs/reference/cdn#add-cache-rules).
 - No configuration change beyond the Cloudflare cleanup.
 
 ### CloudFront delivery
@@ -273,7 +303,7 @@ Cloudflare or the origin host, for bundled MinIO or external S3/GCS. The
 install wizard prints the AWS Console values, generates the origin secret, and
 verifies the distribution before you move DNS. It does not create AWS resources
 or ask for AWS credentials beyond the scoped purge key. See
-[CloudFront setup](/docs/setup/cloudfront).
+[CDN settings](/docs/reference/cdn#cloudfront).
 
 ### Failure details
 
@@ -338,7 +368,7 @@ instead of the bundled Postgres and MinIO containers. The default
 `scripts/selfhost/install.sh` run still creates the bundled stack. For an
 external database or storage, pass the install script's database and storage
 flags, then configure adapters as described in
-[Infrastructure adapters](/docs/setup/infrastructure) and
+[Infrastructure](/docs/setup/infrastructure) and
 [Configuration reference](/docs/reference/configuration).
 
 Backup and restore depend on the deployment mode: the default backup script

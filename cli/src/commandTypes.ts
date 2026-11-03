@@ -860,6 +860,7 @@ export type PromptableFlag =
   | "newName"
   | "platform"
   | "role"
+  | "rolloutPercentage"
   | "serverUrl"
   | "sourceDeployment"
   | "team";

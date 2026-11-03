@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' __PLAUSIBLE_SCRIPT_SRC__; connect-src 'self' __PATCH_STATS_SOURCE_ORIGIN__ __PLAUSIBLE_CONNECT__; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Codemagic Patch stats</title>
+  <meta name="description" content="Public usage statistics for Codemagic Patch: active devices, teams, self-hosted servers, updates applied per day and releases per week, aggregated daily from server usage reports.">
+  <link rel="canonical" href="https://patch.codemagic.io/stats/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#0d122b">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Codemagic Patch">
+  <meta property="og:title" content="Codemagic Patch, in numbers">
+  <meta property="og:description" content="Active devices, teams, self-hosted servers, updates applied per day and releases per week, updated daily from aggregate usage reports.">
+  <meta property="og:url" content="https://patch.codemagic.io/stats/">
+  <meta property="og:image" content="https://patch.codemagic.io/stats/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Codemagic Patch, in numbers">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Codemagic Patch, in numbers">
+  <meta name="twitter:description" content="Active devices, teams, self-hosted servers, updates applied per day and releases per week, updated daily from aggregate usage reports.">
+  <meta name="twitter:image" content="https://patch.codemagic.io/stats/og.png">
+  <link rel="preload" href="fonts/Metropolis-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/Metropolis-Medium.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="stats.css">
+  <script src="boot.js"></script>
+  <!-- __PLAUSIBLE_SCRIPT__ -->
+  <script type="module" src="stats.js"></script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "Codemagic Patch stats",
+      "url": "https://patch.codemagic.io/stats/",
+      "description": "Public usage statistics for Codemagic Patch, aggregated daily from server usage reports.",
+      "isPartOf": { "@type": "WebSite", "name": "Codemagic Patch", "url": "https://patch.codemagic.io/" },
+      "publisher": { "@type": "Organization", "name": "Codemagic", "url": "https://codemagic.io/" }
+    }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="nav-brand" href="https://patch.codemagic.io/">
+        <img src="logo.svg" alt="Codemagic Patch" width="100" height="26">
+        <span class="nav-brand-label">Stats</span>
+      </a>
+      <nav class="nav-links" aria-label="Site">
+        <a href="https://patch.codemagic.io/docs">Docs</a>
+        <a href="https://github.com/codemagic-ci-cd/codemagic-patch">GitHub</a>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark theme">
+          <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container">
+      <noscript>
+        <p class="banner banner--warn">This page needs JavaScript to load the numbers. The raw document is at <a href="__PATCH_STATS_SOURCE_URL__">stats.json</a>.</p>
+      </noscript>
+      <div class="banner" id="page-banner" role="status" hidden></div>
+    </div>
+
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-stars" aria-hidden="true"></div>
+      <div class="container hero-inner">
+        <h1 class="hero-title" id="hero-title">Codemagic Patch, in numbers</h1>
+      </div>
+    </section>
+
+    <section class="kpis" aria-label="Headline numbers">
+      <div class="container">
+        <ul class="kpi-grid">
+          <li class="kpi kpi--devices" data-kpi="devices">
+            <div class="kpi-label">Active devices</div>
+            <div class="kpi-value">—</div>
+            <div class="kpi-meta">
+              <span class="kpi-meta-text">loading…</span>
+              <svg class="kpi-spark" id="devices-sparkline" viewBox="0 0 120 28" width="120" height="28" role="img" aria-label="Active devices, last 7 reported days" hidden></svg>
+            </div>
+          </li>
+          <li class="kpi kpi--teams" data-kpi="teams">
+            <div class="kpi-label">Teams using Patch</div>
+            <div class="kpi-value">—</div>
+            <div class="kpi-meta"><span class="kpi-meta-text">loading…</span></div>
+          </li>
+          <li class="kpi kpi--self-hosted" data-kpi="self-hosted">
+            <div class="kpi-label">Self-hosted servers</div>
+            <div class="kpi-value">—</div>
+            <div class="kpi-meta"><span class="kpi-meta-text">loading…</span></div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="charts-state" aria-label="Chart availability" hidden>
+      <div class="container">
+        <div class="card state-card"><p>Charts appear after two days of reports.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="updates" aria-labelledby="updates-title">
+      <div class="container">
+        <h2 class="section-title" id="updates-title">Updates applied</h2>
+        <p class="section-lead">Updates applied per day across every reporting server.</p>
+        <article class="card">
+          <h3 class="card-title">Updates applied per day</h3>
+          <div class="chart-wrap" id="daily-chart" role="group" tabindex="0" aria-label="Updates applied per day chart. Use the left and right arrow keys to read values."></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="velocity" aria-labelledby="velocity-title">
+      <div class="container">
+        <h2 class="section-title" id="velocity-title">Shipping velocity</h2>
+        <p class="section-lead">Releases pushed through Patch, week by week.</p>
+        <article class="card">
+          <h3 class="card-title">Releases per week</h3>
+          <ul class="chart-legend">
+            <li><span class="legend-swatch legend-swatch--releases" aria-hidden="true"></span>Releases</li>
+            <li><span class="legend-swatch legend-swatch--partial" aria-hidden="true"></span>Partial week</li>
+          </ul>
+          <div class="chart-wrap" id="weekly-chart" role="group" tabindex="0" aria-label="Releases per week chart. Use the left and right arrow keys to read values."></div>
+          <p class="chart-caption">Twelve ISO weeks, Monday to Sunday. A dashed bar is a week with fewer than seven reported days.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section--try" id="try" aria-labelledby="try-title">
+      <div class="container">
+        <h2 class="section-title" id="try-title">Try Patch</h2>
+        <p class="section-lead">Run the real server on your machine, reach it from your phone through ngrok, and ship an update to your own app.</p>
+        <div class="section-grid">
+          <article class="card try-card">
+            <h3 class="card-title">Source</h3>
+            <p class="try-text">The SDKs and the CLI are Apache 2.0. The server and dashboard are source-available under the Codemagic Server License, free to self-host up to 1M MAU.</p>
+            <a class="button" href="https://github.com/codemagic-ci-cd/codemagic-patch" target="_blank" rel="noopener">
+              <svg class="button-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+              GitHub · <span class="button-repo">codemagic-ci-cd/codemagic-patch</span>
+              <span class="visually-hidden">(opens in a new tab)</span>
+            </a>
+          </article>
+          <article class="card try-card">
+            <h3 class="card-title">Run it with ngrok</h3>
+            <div class="code-block">
+              <div class="code-block-bar">
+                <span class="code-block-label">Terminal</span>
+                <button class="copy-button" id="copy-quickstart" type="button">Copy</button>
+              </div>
+              <pre class="code-block-pre"><code id="quickstart-command">npm install -g @codemagic/patch-cli
+cmpatch selfhost install --ngrok</code></pre>
+            </div>
+            <p class="copy-status visually-hidden" id="copy-status" role="status"></p>
+            <p class="try-note">Installs the server, with sign-in, on this machine and makes it reachable from any phone at the free <code>https://</code> address your ngrok account comes with. Needs Docker, a free ngrok account, and a GitHub, Bitbucket, or GitLab account to sign in with. No domain, DNS records, or open ports.</p>
+            <p class="try-more"><a href="https://patch.codemagic.io/docs/install#ngrok">Install with ngrok</a></p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>

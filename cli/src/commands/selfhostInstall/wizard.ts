@@ -76,6 +76,7 @@ import {
 } from "./answers";
 import { collectCloudflare, repairCloudflare } from "./cloudflare";
 import { collectCloudFront } from "./cloudfront";
+import { chooseDatabase } from "./database";
 import { runDnsStep } from "./dns";
 import { chooseStorage, prepareExternalStorage } from "./storage";
 
@@ -122,6 +123,7 @@ export async function collectAnswers(
 ): Promise<InstallAnswers> {
   if (!interactive) {
     const answers = await readInstallAnswers(deps, parsed);
+    const database = await chooseDatabase(deps, session, parsed, false);
     const plan = await chooseStorage(deps, session, parsed, answers.apiDomain, false);
     if (readStringFlag(parsed, "--dns-setup") === "cloudflare") {
       await runDnsStep(deps, session, [
@@ -131,9 +133,9 @@ export async function collectAnswers(
           ? [{ hostname: answers.delivery.storageOriginDomain, purpose: "CloudFront origin" }] : []),
       ], false);
     }
-    if (plan === null) return answers;
+    if (plan === null) return { ...answers, ...(database === null ? {} : { database }) };
     const external = await prepareExternalStorage(deps, session, parsed, plan, false);
-    return { ...answers, ...external, storageDomain: "" };
+    return { ...answers, ...external, ...(database === null ? {} : { database }), storageDomain: "" };
   }
 
   session.progress.settle();
@@ -148,6 +150,8 @@ export async function collectAnswers(
 
   const apiProblem = describeDomainProblem(apiDomain);
   if (apiProblem) throw new UsageError(apiProblem);
+
+  const database = await chooseDatabase(deps, session, parsed, true);
 
   const storagePlan = await chooseStorage(deps, session, parsed, apiDomain, true);
 
@@ -202,6 +206,7 @@ export async function collectAnswers(
     ...storageAnswers,
     adminEmail,
     apiDomain,
+    ...(database === null ? {} : { database }),
     oauth,
   };
 }

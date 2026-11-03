@@ -1,0 +1,45 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem 3rem;
+  margin: 2rem 0 2.5rem;
+}
+
+.column {
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 0.35rem;
+  font-size: var(--cm-docs-h3);
+  font-weight: 700;
+  color: var(--cm-navy);
+  line-height: 1.25;
+}
+
+.subtitle {
+  margin: 0 0 0.85rem;
+  color: var(--cm-grey-text);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.list li {
+  margin: 0.35rem 0;
+}
+
+.list a {
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}

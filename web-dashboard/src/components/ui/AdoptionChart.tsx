@@ -2,9 +2,9 @@
 // one line per release plus a deployment-wide Total line (true distinct
 // counts — not the sum of the series).
 //
-// Categorical palette (fixed assignment order, validated for CVD separation
-// and 3:1 surface contrast): blue → orange → green → magenta. Total wears a
-// neutral ink, never a series hue.
+// Categorical palette, fixed assignment order: blue, orange, green, magenta.
+// Total wears heading ink, never a series hue. Hexes live in brand.css
+// (--color-chart-*). Dark mode keeps the hues and uses a quieter chroma.
 
 import { useMemo } from "react";
 
@@ -18,12 +18,12 @@ import { CHIP, CHIP_TONE } from "./chip";
 import { TimeseriesChart } from "./TimeseriesChart";
 
 const SERIES_COLORS = [
-  "var(--color-blue)",
-  "var(--color-orange)",
-  "var(--color-green)",
-  "var(--color-magenta)",
+  "var(--color-chart-1)",
+  "var(--color-chart-2)",
+  "var(--color-chart-3)",
+  "var(--color-chart-4)",
 ] as const;
-const TOTAL_COLOR = "var(--color-fg-2)";
+const TOTAL_COLOR = "var(--color-chart-total)";
 const MAX_DRAWN_SERIES = SERIES_COLORS.length;
 
 export function AdoptionChart({
