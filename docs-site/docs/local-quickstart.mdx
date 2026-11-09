@@ -65,6 +65,14 @@ cmpatch selfhost install --ngrok
 
 You need a free [ngrok](https://ngrok.com) account, and a GitHub, Bitbucket, or GitLab account for sign-in. No domain, DNS records, certificates, or open ports. The command finds your ngrok address, walks you through the OAuth app with that address filled in, and installs the real server on this machine.
 
+If it stops and says ngrok gave the account an ephemeral address, name the dev domain instead:
+
+```bash
+cmpatch selfhost install --ngrok --ngrok-domain <name>.ngrok-free.dev
+```
+
+It is shown under Domains in the [ngrok dashboard](https://dashboard.ngrok.com/domains), and every account has one, free plans included. Unlike an ephemeral address it is the same on every run, which matters because the install registers its OAuth callback against whatever address it is given.
+
 When it finishes you get:
 
 - Dashboard at `https://<unique>.ngrok-free.app`. Sign in with the provider you chose, as the administrator email. The first sign-in creates that account.

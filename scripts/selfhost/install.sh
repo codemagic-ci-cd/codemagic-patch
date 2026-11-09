@@ -1158,7 +1158,7 @@ prepare_ngrok_install() {
   fi
   if [ -z "$API_DOMAIN" ]; then
     log_selfhost "asking ngrok for this account's address"
-    address="$(selfhost_ngrok_address)"
+    address="$(selfhost_ngrok_address "" "--api-domain")"
     address="${address#https://}"
     API_DOMAIN="${address%%/*}"
   fi

@@ -612,21 +612,42 @@ wait_for_selfhost_http() {
   fail_selfhost "${label} did not become reachable at ${url}; check DNS, firewall, and Caddy certificate logs"
 }
 
+# ngrok hands an account an ephemeral address when nothing is holding its dev
+# domain: the first label carries the client IP, as in
+# 3c16-203-0-113-7.ngrok-free.app, and the next run is given a different one.
+# A dev domain's label is a slug (brave-otter-4821) and never has that shape.
+# Both kinds live under ngrok-free.app and ngrok-free.dev, so the base domain
+# says nothing about which one this is; the label is what separates them.
+selfhost_ngrok_address_is_ephemeral() {
+  local label="${1#https://}"
+  label="${label%%/*}"
+  label="${label%%.*}"
+  printf '%s\n' "$label" |
+    grep -Eq '^[0-9a-f]+(-(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){4}$'
+}
+
 # Prints the https:// address ngrok serves for NGROK_AUTHTOKEN's account, by
 # starting a throwaway agent and reading back the endpoint it reports. With no
-# argument that is the account's dev domain, the one address of the free plan,
-# which never changes. A domain given as $1 (a paid plan's reserved domain) is
-# requested with --url instead, so a domain the account cannot serve fails
-# here, before anything is installed. The address has to be known before the
-# stack exists: SERVER_URL, the download URL, and the OAuth callback the
+# argument that is usually the account's dev domain, which never changes, but
+# an account whose dev domain nothing is holding is given an ephemeral address
+# instead, and that one cannot carry an install, so it fails here (see
+# selfhost_ngrok_address_is_ephemeral above). A domain given as $1 — the
+# account's own dev domain, or one a paid plan has reserved — is requested with
+# --url instead, so a domain the account cannot serve also fails here, before
+# anything is installed. The address has to be known before the stack exists:
+# SERVER_URL, the download URL, and the OAuth callback the
 # provider must allow are all derived from it. The agent API (inside the
 # container) is asked first; the agent's JSON log is the fallback. The token
 # reaches the container by name (-e NGROK_AUTHTOKEN), never as a value on
 # argv. The failure messages are matched by the CLI: "rejected the
-# authtoken", "already online", "cannot serve", "did not report an address",
-# and "Docker".
+# authtoken", "already online", "cannot serve", "ephemeral address", "did not
+# report an address", and "Docker".
 selfhost_ngrok_address() {
   local domain="${1:-}"
+  # Names the caller's own flag in the ephemeral failure below: --domain
+  # here, --api-domain from install.sh, --ngrok-domain once the CLI has
+  # rewritten the message.
+  local domain_flag="${2:---domain}"
   local timeout_seconds="${SELFHOST_NGROK_TIMEOUT_SECONDS:-45}"
   local container="codemagic-patch-ngrok-probe-$$"
   local deadline output url state
@@ -677,6 +698,13 @@ selfhost_ngrok_address() {
     fi
     if [ -n "$url" ]; then
       selfhost_ngrok_probe_done "$container"
+      # An ephemeral address cannot carry an install: the OAuth callback is
+      # registered against it, and ngrok issues a different address on the
+      # next run, so the install would break the moment that happened. Stop
+      # before anything is written rather than part-way through.
+      if [ -z "$domain" ] && selfhost_ngrok_address_is_ephemeral "$url"; then
+        fail_selfhost "ngrok gave this account the ephemeral address ${url}, which changes every time the agent restarts. An install is tied to its address through the OAuth callback, so it would stop working as soon as that happened. Rerun with ${domain_flag} <domain>, naming the dev domain shown under Domains at https://dashboard.ngrok.com/domains — every account has one, free plans included."
+      fi
       printf '%s\n' "$url"
       return 0
     fi
