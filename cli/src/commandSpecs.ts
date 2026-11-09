@@ -910,7 +910,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               {
                 flag: "--ngrok-domain <domain>",
                 summary:
-                  "With --ngrok: a domain your paid ngrok plan has reserved, instead of the account's own address (for example while that one is busy with another agent)",
+                  "With --ngrok: the domain to install on, instead of whichever address ngrok picks. Takes your account's own dev domain (under Domains in the ngrok dashboard, free plans included) or one a paid plan has reserved, for example while the dev domain is busy with another agent",
               },
               {
                 flag: "--checkout <path>",
