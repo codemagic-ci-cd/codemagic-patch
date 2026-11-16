@@ -1,0 +1,431 @@
+# Publish the self-host server image for one server release.
+#
+# This file is the reviewable copy. It is hand-committed to the public repo
+# (codemagic-ci-cd/codemagic-patch) as .github/workflows/publish-server-image.yml,
+# because Copybara never exports .github/** or this directory. The two files
+# must be kept identical: change this copy first, then commit the same bytes
+# to the public repo.
+#
+# For a codemagic-patch-server-vX.Y.Z release it pushes the multi-arch image
+# ghcr.io/<owner>/<repo>-server:X.Y.Z (for the public repo:
+# ghcr.io/codemagic-ci-cd/codemagic-patch-server), attests it, checks that it
+# can be pulled anonymously and, as the very last step, attaches
+# server-image.json to the release. That asset is the completion marker the
+# installer looks for.
+#
+# Reruns are safe. A release that already carries the asset is a no-op. An
+# existing image is reused when both platforms are present and its revision
+# label matches the release commit; anything else fails, because a real
+# rebuild means a new patch version.
+#
+# The release event fires only for releases created with a PAT (the Copybara
+# export's bot token). A release created with GITHUB_TOKEN does not trigger
+# workflows; use workflow_dispatch for those, for backfills and for reruns.
+
+name: Publish server image
+
+run-name: Publish server image for ${{ github.event.release.tag_name || inputs.tag }}
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Server release tag, e.g. codemagic-patch-server-v0.9.0
+        required: true
+        type: string
+
+concurrency:
+  group: publish-server-image-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  resolve:
+    name: Resolve release and image state
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'codemagic-patch-server-v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      action: ${{ steps.resolve.outputs.action }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      revision: ${{ steps.resolve.outputs.revision }}
+      image: ${{ steps.resolve.outputs.image }}
+      source: ${{ steps.resolve.outputs.source }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$TAG" =~ ^codemagic-patch-server-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            echo "::error::'$TAG' is not a server release tag (codemagic-patch-server-vX.Y.Z)."
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-server"
+          source="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+          if ! revision=$(gh api "repos/${GITHUB_REPOSITORY}/commits/tags/${TAG}" --jq .sha); then
+            echo "::error::Tag $TAG does not exist in ${GITHUB_REPOSITORY}."
+            exit 1
+          fi
+
+          # The by-tag endpoint returns published releases only, so a draft
+          # also lands here.
+          if ! release=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}"); then
+            echo "::error::No published release for $TAG. Publish the release first, then rerun."
+            exit 1
+          fi
+          if [[ "$(jq -r .draft <<<"$release")" != "false" ]]; then
+            echo "::error::The release for $TAG is a draft. Publish it first, then rerun."
+            exit 1
+          fi
+
+          {
+            echo "tag=$TAG"
+            echo "version=$version"
+            echo "revision=$revision"
+            echo "image=$image"
+            echo "source=$source"
+          } >>"$GITHUB_OUTPUT"
+
+          if jq -e '.assets[] | select(.name == "server-image.json")' <<<"$release" >/dev/null; then
+            echo "::notice::$TAG already carries server-image.json; nothing to do."
+            echo "action=done" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # GHCR answers "denied" for a package that does not exist yet, so it
+          # counts as missing here. That cannot overwrite anything: without
+          # read access the build job's push fails too.
+          if ! manifest=$(docker buildx imagetools inspect "$image:$version" --format '{{json .Manifest}}' 2>"$RUNNER_TEMP/inspect.err"); then
+            if grep -Eqi 'not found|manifest unknown|name unknown|denied|unauthorized' "$RUNNER_TEMP/inspect.err"; then
+              echo "::notice::$image:$version does not exist yet; building it."
+              echo "action=build" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/inspect.err" >&2
+            echo "::error::Could not inspect $image:$version."
+            exit 1
+          fi
+
+          digest=$(jq -r .digest <<<"$manifest")
+          platforms=$(jq -r '[.manifests[]?.platform | select(. != null and .os != "unknown") | "\(.os)/\(.architecture)"] | sort | join(",")' <<<"$manifest")
+          config=$(docker buildx imagetools inspect "$image@$digest" --format '{{json .Image}}')
+          mismatch=""
+          if [[ "$platforms" != "linux/amd64,linux/arm64" ]]; then
+            mismatch="platforms are '$platforms'"
+          else
+            for platform in linux/amd64 linux/arm64; do
+              label=$(jq -r --arg p "$platform" 'to_entries | map(select(.key | startswith($p))) | .[0].value.config.Labels["org.opencontainers.image.revision"] // ""' <<<"$config")
+              if [[ "$label" != "$revision" ]]; then
+                mismatch="$platform revision label is '$label'"
+              fi
+            done
+          fi
+          if [[ -n "$mismatch" ]]; then
+            echo "::error::$image:$version already exists but does not match $TAG ($revision): $mismatch. Tags are never overwritten; a real rebuild means a new patch version."
+            exit 1
+          fi
+
+          echo "::notice::$image:$version ($digest) matches $TAG; reusing it."
+          echo "action=reuse" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: resolve
+    if: needs.resolve.outputs.action == 'build'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            arch: amd64
+            hdiffpatch_dir: linux64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+            hdiffpatch_dir: linux_arm64
+    env:
+      IMAGE: ${{ needs.resolve.outputs.image }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.revision }}
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Labels are passed here as well as in the Dockerfile: older release
+      # checkouts have no LABEL lines, and the reuse check reads `revision`.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            VERSION=${{ needs.resolve.outputs.version }}
+            REVISION=${{ needs.resolve.outputs.revision }}
+          labels: |
+            org.opencontainers.image.source=${{ needs.resolve.outputs.source }}
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.resolve.outputs.revision }}
+          tags: ${{ env.IMAGE }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
+
+      # Runs natively on this platform's runner. Uses the hdiffpatch binaries
+      # the server's own resolveHdiffPatchBinaryPaths picks, with the worker's
+      # hdiffz flags, and checks the patched tree byte for byte.
+      - name: Smoke test zstd-napi and hdiffpatch
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+          EXPECTED_HDIFF_DIR: ${{ matrix.hdiffpatch_dir }}
+        run: |
+          docker run --rm -i --platform "$PLATFORM" -e EXPECTED_HDIFF_DIR "$IMAGE@$DIGEST" sh -s <<'SMOKE'
+          set -eu
+          work=$(mktemp -d)
+          cd /app
+          node -e '
+          const { compress, decompress } = require("zstd-napi");
+          const input = Buffer.from("codemagic-patch zstd smoke ".repeat(1000));
+          if (!decompress(compress(input)).equals(input)) {
+            throw new Error("zstd-napi round trip mismatch");
+          }
+          console.log(`zstd-napi: ok (${process.platform}/${process.arch})`);
+          '
+          node -e '
+          require("/app/dist/worker/hdiffPatchBinaries.js")
+            .resolveHdiffPatchBinaryPaths()
+            .then((p) => console.log(`${p.hdiffz}\n${p.hpatchz}`));
+          ' > "$work/binaries"
+          hdiffz=$(sed -n 1p "$work/binaries")
+          hpatchz=$(sed -n 2p "$work/binaries")
+          case "$hdiffz" in
+            */"$EXPECTED_HDIFF_DIR"/hdiffz) echo "resolved: $hdiffz" ;;
+            *) echo "expected the $EXPECTED_HDIFF_DIR binaries, got $hdiffz" >&2; exit 1 ;;
+          esac
+          mkdir -p "$work/source/assets" "$work/target/assets" "$work/target/new"
+          seq 1 20000 > "$work/source/index.bundle"
+          head -c 262144 /dev/urandom > "$work/source/assets/blob.bin"
+          printf 'removed\n' > "$work/source/assets/removed.txt"
+          seq 1 20000 | sed 's/^1000$/changed/' > "$work/target/index.bundle"
+          cp "$work/source/assets/blob.bin" "$work/target/assets/blob.bin"
+          printf 'tail' >> "$work/target/assets/blob.bin"
+          head -c 4096 /dev/urandom > "$work/target/new/added.bin"
+          "$hdiffz" -m-4 -SD -c-zstd-21-25 -d "$work/source" "$work/target" "$work/patch.bin" > /dev/null
+          "$hpatchz" "$work/source" "$work/patch.bin" "$work/output" > /dev/null
+          diff -r "$work/target" "$work/output"
+          echo "hdiffpatch: ok ($(wc -c < "$work/patch.bin") byte patch)"
+          SMOKE
+
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Create the multi-arch index
+    needs: [resolve, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    env:
+      IMAGE: ${{ needs.resolve.outputs.image }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      REVISION: ${{ needs.resolve.outputs.revision }}
+      SOURCE: ${{ needs.resolve.outputs.source }}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push the index
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          refs=()
+          for digest in *; do
+            refs+=("$IMAGE@sha256:$digest")
+          done
+          if [[ ${#refs[@]} -ne 2 ]]; then
+            echo "::error::Expected 2 platform digests, found ${#refs[@]}."
+            exit 1
+          fi
+          # Never overwrite a tag, even if one appeared after resolve.
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+            echo "::error::$IMAGE:$VERSION appeared after the resolve job; refusing to overwrite it. Rerun to take the reuse path."
+            exit 1
+          fi
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" \
+            --annotation "index:org.opencontainers.image.source=$SOURCE" \
+            --annotation "index:org.opencontainers.image.description=Codemagic Patch server (API, release worker and dashboard)" \
+            --annotation "index:org.opencontainers.image.revision=$REVISION" \
+            "${refs[@]}"
+
+  publish:
+    name: Attest, verify and attach server-image.json
+    needs: [resolve, merge]
+    if: >-
+      !cancelled() && needs.resolve.result == 'success' &&
+      (needs.resolve.outputs.action == 'reuse' ||
+       (needs.resolve.outputs.action == 'build' && needs.merge.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      IMAGE: ${{ needs.resolve.outputs.image }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      REVISION: ${{ needs.resolve.outputs.revision }}
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read and verify the index
+        id: index
+        run: |
+          set -euo pipefail
+          manifest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}')
+          digest=$(jq -r .digest <<<"$manifest")
+          media_type=$(jq -r .mediaType <<<"$manifest")
+          case "$media_type" in
+            application/vnd.oci.image.index.v1+json | application/vnd.docker.distribution.manifest.list.v2+json) ;;
+            *)
+              echo "::error::$IMAGE:$VERSION is not a multi-arch index ($media_type)."
+              exit 1
+              ;;
+          esac
+          platforms=$(jq -r '[.manifests[]?.platform | select(. != null and .os != "unknown") | "\(.os)/\(.architecture)"] | sort | join(",")' <<<"$manifest")
+          if [[ "$platforms" != "linux/amd64,linux/arm64" ]]; then
+            echo "::error::$IMAGE@$digest has platforms '$platforms', expected linux/amd64 and linux/arm64."
+            exit 1
+          fi
+          config=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Image}}')
+          for platform in linux/amd64 linux/arm64; do
+            label=$(jq -r --arg p "$platform" 'to_entries | map(select(.key | startswith($p))) | .[0].value.config.Labels["org.opencontainers.image.revision"] // ""' <<<"$config")
+            if [[ "$label" != "$REVISION" ]]; then
+              echo "::error::$IMAGE@$digest $platform revision label is '$label', expected $REVISION."
+              exit 1
+            fi
+          done
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "::notice::$IMAGE:$VERSION is $digest"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+      # An empty DOCKER_CONFIG keeps the login above from masking the result.
+      # GHCR serves anonymous pulls for public packages only.
+      - name: Check anonymous pull
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: |
+          set -euo pipefail
+          anonymous_config=$(mktemp -d)
+          for platform in linux/amd64 linux/arm64; do
+            if ! DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$IMAGE@$DIGEST"; then
+              echo "::error::Anonymous pull of $IMAGE@$DIGEST ($platform) failed; the docker output above says why. If GHCR refused it, make the package public (package settings, Change visibility), then rerun this workflow: it reuses the pushed image and finishes the publish steps."
+              exit 1
+            fi
+            # Docker refuses a second pull of the same index digest for
+            # another platform ("cannot overwrite digest"), so each platform
+            # starts from an empty local store.
+            docker image rm "$IMAGE@$DIGEST" >/dev/null
+          done
+
+      # Last step: the asset marks the release as installable. No --clobber,
+      # so an existing asset is never replaced.
+      - name: Attach server-image.json to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: |
+          set -euo pipefail
+          asset="$RUNNER_TEMP/server-image.json"
+          jq -n \
+            --arg image "$IMAGE" \
+            --arg tag "$VERSION" \
+            --arg digest "$DIGEST" \
+            --arg revision "$REVISION" \
+            '{schemaVersion: 1, image: $image, tag: $tag, digest: $digest, platforms: ["linux/amd64", "linux/arm64"], revision: $revision}' \
+            >"$asset"
+          cat "$asset"
+          gh release upload "$TAG" "$asset" --repo "$GITHUB_REPOSITORY"
