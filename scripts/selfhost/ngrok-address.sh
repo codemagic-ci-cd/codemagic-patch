@@ -12,11 +12,16 @@
 # callback from this address, and the OAuth app has to allow that callback
 # before the install can finish — so the address is what someone needs first.
 # `cmpatch selfhost install --ngrok` runs this, then asks for the OAuth app.
-# Without --domain the address is the account's dev domain, which never
-# changes and is the free plan's only one. --domain names a domain a paid plan
-# has reserved instead — for instance when the dev domain is busy with another
-# agent — and fails here if the account cannot serve it. Pass the same domain
-# to install.sh as --api-domain.
+# Without --domain the address is whichever one ngrok reports. That is
+# usually the account's dev domain, which never changes, but an account whose
+# dev domain nothing is holding can be given an ephemeral address instead, and
+# a new one on the next run. An install is tied to its address through the
+# OAuth callback, so this stops rather than returning one. --domain names the
+# domain to serve instead: the account's own dev domain, shown under Domains
+# in the dashboard and free plans have one too, or a domain a paid plan has
+# reserved — for instance when the dev domain is busy with another agent. It
+# fails here if the account cannot serve it. Pass the same domain to install.sh
+# as --api-domain.
 #
 # Starts a throwaway ngrok agent container, reads the endpoint it reports, and
 # removes it — also when the run is interrupted, and a probe an earlier run
@@ -59,4 +64,4 @@ if [ "$domain_given" -eq 1 ]; then
 fi
 
 require_command_selfhost docker
-selfhost_ngrok_address "$domain"
+selfhost_ngrok_address "$domain" "--domain"

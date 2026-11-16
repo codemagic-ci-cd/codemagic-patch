@@ -333,6 +333,7 @@ export type NgrokAddressFailure =
   | "already-online"
   | "docker"
   | "domain"
+  | "ephemeral"
   | "other"
   | "rejected"
   | "timeout";
@@ -407,6 +408,7 @@ function classifyAddressFailure(message: string): NgrokAddressFailure {
   if (message.includes("rejected the authtoken")) return "rejected";
   if (message.includes("already online")) return "already-online";
   if (message.includes("cannot serve")) return "domain";
+  if (message.includes("ephemeral address")) return "ephemeral";
   if (message.includes("did not report an address")) return "timeout";
   if (message.includes("Docker is not running")) return "docker";
   return "other";
@@ -436,7 +438,16 @@ export function renderAddressFailure(
         [
           `Your ngrok account cannot serve ${domain ?? "that domain"}.`,
           "",
-          `Reserve it under Domains at ${NGROK_DOMAINS_URL} (a paid-plan feature), or run without --ngrok-domain to use your account's own address. Nothing on this machine was changed.`,
+          `Reserve it under Domains at ${NGROK_DOMAINS_URL} — choosing your own domain is a paid-plan feature — or pass the dev domain that page shows for this account, which free plans have too. Nothing on this machine was changed.`,
+          `(${failure.message})`,
+        ].join("\n"),
+      );
+    case "ephemeral":
+      return new UsageError(
+        [
+          "ngrok gave this account an ephemeral address, which changes every time the agent restarts.",
+          "",
+          `An install is tied to its address through the OAuth callback, so it would stop working as soon as that address changed. Pass your account's dev domain instead: --ngrok-domain <domain>, naming the one shown under Domains at ${NGROK_DOMAINS_URL}. Every account has one, free plans included. Nothing on this machine was changed.`,
           `(${failure.message})`,
         ].join("\n"),
       );
