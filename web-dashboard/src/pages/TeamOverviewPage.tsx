@@ -5,16 +5,14 @@
 // `iam.manage`-gated server-side — a 403 `forbidden` HIDES those tiles (and
 // the members quick link) instead of erroring the page; other tile failures
 // degrade to "—" + Retry without failing the page (the metric-cell
-// convention). Header shows the team name/status via useTeam plus the lazy
-// role badge (skeleton while resolving, inferred confidence tolerated).
-// Quick links → apps/members. Mandatory states: per-region skeletons,
-// page-level ErrorState (useTeam failure → retry; not-found/forbidden copy
-// comes from the shared classifier). Breadcrumbs are omitted on this screen
-// (see Breadcrumbs.tsx). TeamRoleBadge mirrors the TeamsPage helper by design
-// helper by design (shared extraction would exceed this task's file set).
+// convention). Header shows the team name via useTeam; a disabled team
+// surfaces as plain text next to the title. Quick links → apps/members.
+// Mandatory states: per-region skeletons, page-level ErrorState (useTeam
+// failure → retry; not-found/forbidden copy comes from the shared
+// classifier). Breadcrumbs are omitted on this screen (see Breadcrumbs.tsx).
 
 import { Link, useParams } from "react-router";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { useApps } from "../api/hooks/apps";
 import { useInvitations, useRoleBindings } from "../api/hooks/iam";
@@ -23,21 +21,23 @@ import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ErrorState } from "../components/ui/ErrorState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Skeleton } from "../components/ui/Skeleton";
-import type { Role } from "../model/permissions";
-import type { TeamStatus } from "../model/team";
-import { useTeamRole } from "../rbac/useTeamRole";
 import { buttonVariants } from "../components/ui/Button";
 import { SUMMARY_ROW } from "../components/ui/summary";
-import { CHIP, CHIP_TONE, roleChipClass } from "../components/ui/chip";
 import { SECTION_TITLE } from "../components/ui/typography";
 import {
-  STAT,
-  STAT_ICO_ACCENT,
   STAT_ICO_BASE,
   STAT_META,
   STAT_TOP,
   STAT_VAL,
 } from "../components/ui/stat";
+
+/** Overview count card without the coloured accent strip metrics counters use. */
+const OVERVIEW_STAT =
+  "relative overflow-hidden rounded-lg border border-border bg-surface px-5 py-[18px] shadow-sm";
+
+const NEUTRAL_ICO = `${STAT_ICO_BASE} bg-surface-2 text-fg-2`;
+
+const TITLE_META = "text-[14px] font-semibold tracking-normal text-fg-3";
 
 export function TeamOverviewPage() {
   const { teamId } = useParams();
@@ -51,8 +51,8 @@ export function TeamOverviewPage() {
 
 function TeamOverview({ teamId }: { teamId: string }) {
   const teamQuery = useTeam(teamId);
-  // Same query the members tile (and useTeamRole) subscribe to — TanStack
-  // dedupes by key; read here to drive the members quick-link visibility.
+  // Same query the members tile subscribes to — TanStack dedupes by key;
+  // read here to drive the members quick-link visibility.
   const bindingsQuery = useRoleBindings(teamId);
   // Single-team OSS: the fixed `default-team` name is a machine slug, so only
   // name the team in the subtitle when there is more than one to disambiguate.
@@ -79,10 +79,9 @@ function TeamOverview({ teamId }: { teamId: string }) {
         title={
           <>
             Overview
-            {team !== undefined ? (
-              <TeamStatusChip status={team.status} />
+            {team !== undefined && team.status === "disabled" ? (
+              <span className={TITLE_META}>Disabled</span>
             ) : null}
-            <TeamRoleBadge teamId={teamId} />
           </>
         }
         description={
@@ -118,8 +117,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
           <QuickLink
             to={`/teams/${teamId}/apps`}
             icon={<AppsIcon />}
-            iconBackground="var(--color-blue-tint)"
-            iconColor="var(--color-blue)"
             title="Apps"
             subtitle="Manage apps & deployments"
           />
@@ -129,8 +126,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
               <QuickLink
                 to={`/teams/${teamId}/members`}
                 icon={<UsersIcon />}
-                iconBackground="var(--color-aqua-tint)"
-                iconColor="var(--color-tone-aqua)"
                 title="Members"
                 subtitle="Roles & access"
               />
@@ -149,7 +144,6 @@ function AppsTile({ teamId }: { teamId: string }) {
   const appsQuery = useApps(teamId);
   return (
     <CountTile
-      accent="var(--color-blue)"
       icon={<AppsIcon />}
       label="Apps"
       count={appsQuery.data?.length}
@@ -170,8 +164,6 @@ function MembersTile({ teamId }: { teamId: string }) {
   }
   return (
     <CountTile
-      accent="var(--color-aqua)"
-      accentTint="var(--color-aqua-tint)"
       icon={<UsersIcon />}
       label="Members"
       count={bindingsQuery.data?.length}
@@ -192,8 +184,6 @@ function InvitationsTile({ teamId }: { teamId: string }) {
   }
   return (
     <CountTile
-      accent="var(--color-yellow)"
-      accentTint="var(--color-yellow-tint)"
       icon={<MailIcon />}
       label="Pending invitations"
       count={invitationsQuery.data?.length}
@@ -207,8 +197,6 @@ function InvitationsTile({ teamId }: { teamId: string }) {
 }
 
 function CountTile({
-  accent,
-  accentTint,
   icon,
   label,
   count,
@@ -218,8 +206,6 @@ function CountTile({
   to,
   linkText,
 }: {
-  accent: string;
-  accentTint?: string;
   icon: ReactNode;
   label: string;
   count: number | undefined;
@@ -229,14 +215,10 @@ function CountTile({
   to: string;
   linkText: string;
 }) {
-  const style = {
-    "--accent": accent,
-    ...(accentTint !== undefined ? { "--accent-tint": accentTint } : {}),
-  } as CSSProperties;
   return (
-    <div className={STAT} style={style} aria-busy={isPending || undefined}>
+    <div className={OVERVIEW_STAT} aria-busy={isPending || undefined}>
       <div className={STAT_TOP}>
-        <span className={`${STAT_ICO_BASE} ${STAT_ICO_ACCENT}`} aria-hidden="true">
+        <span className={NEUTRAL_ICO} aria-hidden="true">
           {icon}
         </span>{" "}
         {label}
@@ -274,15 +256,11 @@ function CountTile({
 function QuickLink({
   to,
   icon,
-  iconBackground,
-  iconColor,
   title,
   subtitle,
 }: {
   to: string;
   icon: ReactNode;
-  iconBackground: string;
-  iconColor: string;
   title: string;
   subtitle: string;
 }) {
@@ -294,11 +272,7 @@ function QuickLink({
       // co-apply, so the border reset stays inline (these rows are border-less).
       style={{ border: 0 }}
     >
-      <span
-        className={STAT_ICO_BASE}
-        style={{ background: iconBackground, color: iconColor }}
-        aria-hidden="true"
-      >
+      <span className={NEUTRAL_ICO} aria-hidden="true">
         {icon}
       </span>
       <div>
@@ -309,40 +283,6 @@ function QuickLink({
         <ChevRightIcon />
       </span>
     </Link>
-  );
-}
-
-// --- Header fragments ---------------------------------------------------------
-
-const ROLE_LABELS: Record<Role, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  developer: "Developer",
-  viewer: "Viewer",
-};
-
-/** Lazy role badge — mirrors the TeamsPage helper (see module header). */
-function TeamRoleBadge({ teamId }: { teamId: string }) {
-  const { role, isLoading } = useTeamRole(teamId);
-  if (isLoading) {
-    return <Skeleton width={64} height={22} />;
-  }
-  if (role === null) {
-    return null;
-  }
-  return <span className={roleChipClass(role)}>{ROLE_LABELS[role]}</span>;
-}
-
-function TeamStatusChip({ status }: { status: TeamStatus }) {
-  const active = status === "active";
-  return (
-    <span className={`${CHIP} ${active ? CHIP_TONE.green : CHIP_TONE.red}`}>
-      <span
-        className="size-1.5 rounded-pill bg-current"
-        aria-hidden="true"
-      />
-      {active ? "Active" : "Disabled"}
-    </span>
   );
 }
 

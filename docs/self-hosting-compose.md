@@ -58,15 +58,14 @@ differ.
   a laptop — can run the stack over plain HTTP instead; see
   [Plain HTTP (no TLS)](#plain-http-no-tls). That mode has none of the DNS,
   certificate, or port 443 requirements below.)
-- Sizing: at runtime the stack (the server, Caddy, and — with the default
-  bundled modes — PostgreSQL and Silo in one Compose project) fits in roughly
-  **2 GB RAM** plus a few GB of disk that grows
-  with the OTA artifacts you store. The memory peak is the **first install**,
-  which builds the server and dashboard images on the host. The build itself
-  fits within 2 GiB (measured peak ~1.6 GiB with both images building in
-  parallel), but the OS and Docker daemon share that same memory, so headroom
-  on a 2 GB host is thin — if the build is OOM-killed, add a few GB of swap or
-  use a larger host, then rerun the installer.
+- Sizing: the stack (the server, Caddy, and — with the default bundled
+  modes — PostgreSQL and Silo in one Compose project) runs comfortably in
+  **2 GB RAM** plus a few GB of disk that grows with the OTA artifacts you
+  store. The installer pulls a published server image, so the install itself
+  needs no more memory than the running stack. Only `--build-from-source`
+  builds the server image on the host, and that build is the memory peak
+  (~1.6 GiB measured): give it at least 2 GB, and if the build is OOM-killed,
+  add a few GB of swap or use a larger host, then rerun the installer.
 - **Docker Engine** with **Docker Compose v2**.
 - **TCP ports 80 and 443 open** to the internet (host firewall / cloud security
   group).
@@ -76,10 +75,12 @@ differ.
   services, not an exact firewall allowlist — only GitHub publishes stable
   hostnames):
   - **Let's Encrypt** (ACME) — TLS certificates.
-  - **GitHub** (`github.com` / `api.github.com`) — OAuth token exchange when
+  - **GitHub** (`github.com` / `api.github.com`) — the release's
+    `server-image.json` at install and upgrade, OAuth token exchange when
     GitHub sign-in is configured, the unauthenticated lookup used by handle
     invites, and the release lookup behind the dashboard's version card
     (`SERVER_UPDATE_CHECK=false` in `.env.selfhost` turns that one off).
+  - **GitHub Container Registry** (`ghcr.io`) — the published server image.
   - **The usage report collector** (`telemetry.codemagicpatch.dev`) — the
     daily anonymous usage report: aggregate counts only, no identifiers, used
     only for public statistics and never to enforce the licence's MAU limit.
@@ -89,8 +90,8 @@ differ.
     exchange when Bitbucket sign-in is configured.
   - **GitLab** (`gitlab.com`, or your self-hosted GitLab origin) — OAuth token
     exchange and identity lookup when GitLab sign-in is configured.
-  - **A container registry** (Docker Hub) — the PostgreSQL and Silo images,
-    plus the image build base layers.
+  - **A container registry** (Docker Hub) — the PostgreSQL, Silo, and Caddy
+    images, plus the build base layers with `--build-from-source`.
   - **The Cloudflare API** — only if you enable the CDN.
 
 ### DNS — must resolve before you install
@@ -156,20 +157,24 @@ for the day-2 commands). It does not take `--allow-http`: the
 alone, which is not what an install over ssh produces. The rest of this
 section is the on-server path.
 
+The installer runs from a checkout of a server release tag,
+`codemagic-patch-server-v<version>`: use the newest one on the
+[releases page](https://github.com/codemagic-ci-cd/codemagic-patch/releases).
 If you are not already on the server, one command gets you there and starts the
 installer:
 
 ```bash
-ssh -t user@vps 'git clone https://github.com/codemagic-ci-cd/codemagic-patch && cd codemagic-patch && scripts/selfhost/install.sh'
+ssh -t user@vps 'git clone --branch codemagic-patch-server-v<version> https://github.com/codemagic-ci-cd/codemagic-patch && cd codemagic-patch && scripts/selfhost/install.sh'
 ```
 
 Use the direct script for external PostgreSQL or multiple OAuth providers.
 The SSH wizard supports external R2/S3/GCS storage and a choice of GitHub,
 Bitbucket Cloud, or GitLab (gitlab.com or self-managed) for sign-in.
 
-From a checkout already on the server:
+From a checkout already on the server, move it to the release first:
 
 ```bash
+git fetch --tags && git checkout codemagic-patch-server-v<version>
 ./scripts/selfhost/install.sh
 ```
 
@@ -184,8 +189,18 @@ Non-interactive form:
   --github-oauth-client-secret <client-secret>
 ```
 
-The installer creates `.env.selfhost`, builds the server and caddy (web
-dashboard) images, starts the Compose stack, and waits for HTTPS readiness.
+The installer creates `.env.selfhost`, pulls the server image published with
+that release (`ghcr.io/codemagic-ci-cd/codemagic-patch-server:<version>`,
+pinned by digest; it carries the web dashboard) and the stock Caddy image,
+starts the Compose stack, and waits for HTTPS readiness. A checkout that is
+not at a release tag is refused, with the ways forward. Two flags change where
+the server image comes from:
+
+- `--image <ref>` runs a server image you name, pulled from its registry.
+- `--build-from-source` builds the server image on the host from the
+  checkout. It needs the build's memory and Docker buildx (see
+  [Requirements](#requirements)), and it is the way to install a checkout that
+  is not a release, such as `main`.
 
 **At least one OAuth sign-in provider is required** — GitHub, Bitbucket, and/or
 GitLab. Create the GitHub OAuth App, Bitbucket OAuth consumer, or GitLab
@@ -886,9 +901,10 @@ running, since there is nothing to quiesce.
 `restore.sh` refuses a backup whose `backup-manifest` modes differ from the
 current deployment's flags (see [Switching modes](#switching-modes)). It also
 cannot undo a database migration the new server image has already run against
-an external database: after a failed upgrade, roll that database back with
-your provider's mechanism (for example RDS point-in-time recovery), then
-restore the remaining bundled components from the pre-upgrade backup.
+an external database: after a failed upgrade, stop the server, roll that
+database back with your provider's mechanism (for example RDS point-in-time
+recovery), then restore the remaining bundled components from the pre-upgrade
+backup (see [Upgrade](#upgrade) for the full order).
 
 The `gcs-service-account.json` key travels with the env file: `backup.sh`
 copies it into the backup, and `restore.sh` reinstalls it whenever the
@@ -934,9 +950,9 @@ built against it are retired.
 ## Web Dashboard
 
 The stack serves a web dashboard **same-origin on the API domain**, for example
-`https://updates.example.com/`. It is bundled into the caddy image —
-`deploy/selfhost/Dockerfile.caddy` builds the SPA and Caddy serves it next to
-the `/v1` API — so no extra domain, service, or host dependency is needed.
+`https://updates.example.com/`. It ships inside the server image, and the
+server serves it next to the `/v1` API behind the stock Caddy, so no extra
+domain, service, or host dependency is needed.
 
 Sign-in shows one button per configured provider (GitHub, Bitbucket Cloud,
 and/or GitLab):
@@ -1204,14 +1220,33 @@ channel — it is shown only once. The token is used with:
 cmpatch login --server-url https://updates.example.com --token cm_pat_...
 ```
 
+The provisioned account is a service account that belongs to that team: it
+cannot be added to, or invited into, another team. Run `provision` from a
+browser login; a `cmpatch login --token` session cannot mint tokens.
+
 > Use an email **not** tied to a real GitHub, Bitbucket, or GitLab account for service
-> accounts. Otherwise the owner of that email could sign in and link to the
-> account.
+> accounts. If the person who owns that email signs in, the account becomes
+> theirs: its provisioned token is revoked and the team can no longer rotate it.
 
 Useful options:
 
 - `--expires-in-days N` — expire the minted token after `N` days (default: no expiry).
 - `--display-name <name>` / `--token-display-name <name>` — label the account and token.
+
+**Rotate a service account's token.** If the token leaks or you replace it on a
+schedule, a team admin can issue a new one from a browser login:
+
+```bash
+cmpatch member rotate-token \
+  --server-url https://updates.example.com \
+  --email ci-bot@example.com
+```
+
+It asks for confirmation (pass `--yes` in scripts), prints the new one-time
+token, and the old token stops working immediately, so update your CI secret
+right away. `--expires-in-days` and `--token-display-name` work as for
+`provision`; the new token has no expiry unless you set one. Only the team that
+provisioned the account can rotate it.
 
 `provision` only onboards **brand-new** accounts: because it hands back a usable
 token, provisioning an email that already has an account is rejected (`409`) so
@@ -1295,6 +1330,14 @@ completed.
 Use `--restore-env` only when you also want to replace the current
 `.env.selfhost` with the copy from the backup.
 
+Restore starts the server image that the env file in force pins — the
+current one, or the backup's with `--restore-env` — not the checkout's.
+Restoring a backup from an older checkout without `--restore-env` therefore
+leaves the newer image running on the restored data (it migrates the database
+again at startup). Use `--restore-env` to go back to the backup's image, or
+`upgrade.sh` to move to the checkout's revision; its schema check reads the
+restored database as it is (see [Upgrade](#upgrade)).
+
 From your own machine, `cmpatch selfhost restore` lists the backups on the
 server and runs this script against the one you pick — see
 [Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine).
@@ -1340,38 +1383,116 @@ timestamp with your provider's tooling, as described in
 > (matching email). For the full upgrade smoke, get a `cm_pat_...` token — sign
 > in with `cmpatch login`, then run `cmpatch token create`.
 
-Rebuild from the checked-out source tree and recreate the stack:
+Move the checkout to the release you are upgrading to, then run the upgrade
+script from it, so the scripts that run are that release's:
 
 ```bash
+git fetch --tags && git checkout codemagic-patch-server-v<version>
 ./scripts/selfhost/upgrade.sh
 ```
 
-From your own machine, `cmpatch selfhost upgrade` fast-forwards the server's
-checkout first and then runs this script — see
+From your own machine, `cmpatch selfhost upgrade` does both — see
 [Maintaining the server from your own machine](#maintaining-the-server-from-your-own-machine).
 
-Move to a specific server image:
+The script names the ref the checkout was on before: HEAD when the checkout
+has not moved since the stack last started (`.env.selfhost` records that
+commit as `SELFHOST_SOURCE_REVISION`), else the previous checkout in the
+reflog. Pass `--previous-ref <ref>` to name it yourself. A checkout that does
+not descend from the previous ref is refused; a ref passed with
+`--previous-ref` is checked out again first, a reflog guess is left alone.
+
+Before it changes anything, the script pulls the target server image (also
+with `--skip-schema-check`) and runs that image's own schema check in a one-off container: it reads the
+migrations the database has applied with the server's own connection
+settings, so the bundled and an external database alike, and compares them
+with the migrations the image ships. One the image does not know means the
+database is newer than the server it would start, so the upgrade is refused
+with nothing changed: wait for a release that includes it, or restore the
+database from the backup taken before it was applied. Migrations the image
+knows and the database has not applied yet are the upgrade itself. With
+`--build-from-source` the image exists only after the build, so the check
+runs between the build and the restart, and a refusal puts the previous
+image settings back. When the database cannot be reached (the stack is
+stopped), the script says so; start the stack and rerun. A target image from
+before the check (older than 0.10.0) is refused too. `--skip-schema-check`
+skips the check; it is unsafe, since nothing then stops an older server from
+starting on a newer schema. `scripts/selfhost/schema-check.sh --image <ref>`
+runs the same check on its own for any image, read-only (`--local-image` for
+a tag built on the host).
+
+The script then creates a fresh backup unless `--i-have-a-backup` is passed,
+pulls the stock Caddy image, recreates the stack, waits for health, and runs smoke. The web dashboard ships
+inside the server image, so it always matches the server. An `.env.selfhost`
+that still names the locally built Caddy image of older installs is switched
+to the stock one.
+
+To choose the server image yourself:
 
 ```bash
-./scripts/selfhost/upgrade.sh ghcr.io/example/codemagic-patch-server:v1.2.3
+# an image from a registry (add --local-image for one that exists only on this host)
+./scripts/selfhost/upgrade.sh --image ghcr.io/example/codemagic-patch-server:1.2.3
+# build it on this host from the checkout (needs the build's memory, see Requirements)
+./scripts/selfhost/upgrade.sh --build-from-source
 ```
 
-The upgrade command prints the current image, creates a fresh backup unless
-`--i-have-a-backup` is passed, updates or rebuilds the server image, recreates
-the stack, waits for health, and runs smoke. The caddy (web dashboard) image is
-**always rebuilt** from the checked-out source — the dashboard ships inside the
-caddy image, so this keeps it in step with the server even when a pinned server
-image is pulled, and upgrades never ship a stale dashboard. Set
-`CODEMAGIC_PATCH_TOKEN=cm_pat_...` to run the full publish/artifact smoke; without it
-only unauthenticated checks run. In automation, make sure the token is actually
-set if you rely on the full smoke — a missing token downgrades to the
-unauthenticated checks with a warning instead of failing.
+A source build replaces `codemagic-patch-server:selfhost`. When the stack runs
+that host-built image, the script first tags it
+`codemagic-patch-server:pre-upgrade-<UTC time>`, the image a rollback runs. A
+failure before the stack is recreated tags it back; after a completed upgrade,
+remove it with `docker image rm` once the upgrade is confirmed.
 
-Automatic rollback is not built in. To roll back, restore a
-known-good backup or set `CODEMAGIC_PATCH_SERVER_IMAGE` in `.env.selfhost` back to a
-previous image and rerun the upgrade command. To roll back only the dashboard,
-set `CODEMAGIC_PATCH_CADDY_IMAGE` to a previously built image and recreate the stack
-(the upgrade command always rebuilds the caddy image from source).
+Set `CODEMAGIC_PATCH_TOKEN=cm_pat_...` to run the full publish/artifact smoke;
+without it only unauthenticated checks run. In automation, make sure the token
+is actually set if you rely on the full smoke — a missing token downgrades to
+the unauthenticated checks with a warning instead of failing.
+
+**If an upgrade fails** before the stack is recreated, the script puts the
+previous checkout and both image values in `.env.selfhost` back by itself;
+nothing else has changed. After the stack is recreated, the new server may
+already have migrated the database, so re-pinning the old image is not a
+rollback. A half-finished upgrade is finished by rerunning `upgrade.sh`, or
+rolled back with `restore.sh --restore-env`; running the previous release's
+`upgrade.sh` instead is refused by the schema check once the new server has
+migrated the database. The script prints the rollback steps that apply, with
+absolute paths; the order matters:
+
+1. `docker compose … stop server` — the new server migrates whatever database
+   it meets at startup, so it must stay stopped until the data is back. The
+   printed command carries this deployment's compose file list.
+2. After a `--build-from-source` upgrade from a host-built image only:
+   `docker tag codemagic-patch-server:pre-upgrade-<time> codemagic-patch-server:selfhost`
+   — the image the host ran before.
+3. `git -C <checkout> checkout <previous ref>` — the compose and Caddy files
+   the backup was taken with; `restore.sh` starts the stack on whatever
+   checkout is present.
+4. With an external database only: roll it back to just before the upgrade
+   with your provider's own mechanism (for example RDS point-in-time
+   recovery), the server still stopped. `restore.sh` does not restore it.
+5. `<checkout>/scripts/selfhost/restore.sh --restore-env <backup>` — the env
+   file with the old image values, the bundled database, and storage. It
+   leaves the stopped server stopped until the data is restored, then starts
+   the stack.
+
+Keep the previous server image on the host (no `docker image prune`) until
+the upgrade is confirmed: the rollback runs it from the local image cache.
+
+### Installs from before published images
+
+Older installs run a checkout of `main`, usually with a server image built on
+the host (`CODEMAGIC_PATCH_SERVER_IMAGE=codemagic-patch-server:selfhost`).
+`cmpatch selfhost upgrade` moves any install still on `main` onto the newest
+release and its published image, whichever image it runs today, behind its
+usual confirmation. It refuses when the `main` checkout is ahead of that
+release: running the release would put an older server on a database a newer
+one may already have migrated. Wait for the next release, or keep building
+from `main` with `--build-from-source`.
+
+On the server, the same move is
+`git fetch --tags && git checkout codemagic-patch-server-v<version> && scripts/selfhost/upgrade.sh`.
+`upgrade.sh` run on `main` without a flag refuses and prints that sequence.
+If the server ran a locally built image, do not prune the old local images
+until the migration is confirmed: no registry has them, and the rollback above
+runs them.
 
 ## Maintaining the server from your own machine
 
@@ -1436,12 +1557,21 @@ machine: a teammate, or your next laptop, pairs the same way.
   already existed when the backup was taken can pass it (the restore replaces
   the database its row lives in), so it is supplied explicitly:
   `CODEMAGIC_PATCH_TOKEN=cm_pat_... cmpatch selfhost restore --smoke`.
-- **`upgrade`** fast-forwards the server's checkout to the default branch first
-  — on every path, including `--image`, because the dashboard image is rebuilt
-  from that checkout either way — and refuses a checkout that is dirty,
-  detached, diverged, or tracking another repository. Then it runs
-  `upgrade.sh`, and reports the source revision and the server image
-  separately.
+- **`upgrade`** first reads the server's checkout and finds the newest server
+  release, and refuses a checkout that is dirty, diverged, tracking another
+  repository, on neither `main` nor a release tag, or newer than that
+  release. It then pulls the release's server image on the server and runs
+  that image's own schema check, and refuses a database that has migrations
+  the release does not know, or that it cannot reach (`--skip-schema-check`
+  skips this, unsafely; with `--build-from-source` the server checks the
+  built image after the build instead). It shows the plan (current and target release and image, how the
+  checkout moves, and the rollback ref) and asks before it changes anything;
+  `--yes` skips the question, and a run that cannot ask needs it. Then it
+  moves the checkout and runs that release's `upgrade.sh` with the previous ref and
+  the release's published image (or your `--image`, or `--build-from-source`),
+  and reports the source revision and the server image separately. An install
+  from before published images is migrated; see
+  [Installs from before published images](#installs-from-before-published-images).
 
 Every prompt has a flag equivalent, and `--non-interactive` runs the flags-only
 form. The full output of each run is kept at

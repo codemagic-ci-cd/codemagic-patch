@@ -16,6 +16,7 @@ import type {
   ReleaseDelivery,
   ReleaseMetrics,
 } from "../model/metrics";
+import type { MonthlyActiveDevices } from "../model/monthlyActiveDevices";
 import type { Release, ReleaseJob } from "../model/release";
 import type { Team } from "../model/team";
 import type {
@@ -33,6 +34,8 @@ import type {
   IamRoleBindingUpdateBody,
   IamUserProvisionBody,
   IamUserProvisionResponse,
+  IamUserTokenRotateBody,
+  IamUserTokenRotateResponse,
   InvitationCreateResponse,
   OAuthCallbackBody,
   OAuthRefreshBody,
@@ -215,6 +218,7 @@ export interface RoleBindingWire {
     display_name: string | null;
     email: string;
     id: string;
+    owner_team_id: string | null;
   };
 }
 
@@ -387,6 +391,8 @@ export interface ReleaseBinaryVersionMetricsWire {
   failed: number;
   installed: number;
   success: number;
+  /** Absent from servers older than server-computed success rates. */
+  success_rate?: number | null;
 }
 
 export interface ReleaseMetricsWireResponse {
@@ -405,6 +411,8 @@ export interface TimeseriesPointWire {
 }
 
 export interface TimeseriesSeriesWire {
+  /** Absent from servers older than the range summary. */
+  cumulative_success?: number[] | null;
   points: TimeseriesPointWire[];
   release_id: string | null;
   release_label: string | null;
@@ -418,8 +426,29 @@ export interface DeploymentTimeseriesWireResponse {
   from: string;
   series: TimeseriesSeriesWire[];
   series_truncated: boolean;
+  /** Absent from servers older than the range summary. */
+  summary?: {
+    totals: {
+      downloaded: number;
+      failed: number;
+      installed: number;
+      success: number;
+      success_rate: number | null;
+    };
+  };
   to: string;
   totals: TimeseriesPointWire[];
+  /** Absent from servers older than the range summary. */
+  unlisted_series?: "no_events" | "unavailable";
+}
+
+export interface MonthlyActiveDevicesWire {
+  data_through: string | null;
+  months: {
+    active_devices: number;
+    first_day: string;
+    month: string;
+  }[];
 }
 
 export interface RolesListWireResponse {
@@ -461,6 +490,17 @@ export interface IamUserProvisionWireResponse {
   user: IamUserProvisionResponse["user"];
 }
 
+export interface IamUserTokenRotateWireResponse {
+  api_token: ApiTokenWire;
+  revoked_api_token_count: number;
+  token: string;
+  user: {
+    email: string;
+    id: string;
+    owner_team_id: string | null;
+  };
+}
+
 export interface MeWireResponse {
   user: UserWire;
 }
@@ -472,6 +512,11 @@ export interface ApiTokensListWireResponse {
 export interface ApiTokenCreateWireResponse {
   api_token: ApiTokenWire;
   token: string;
+}
+
+export interface RevokeAllCredentialsWireResponse {
+  revoked_api_token_count: number;
+  revoked_session_count: number;
 }
 
 export function fromTeamWire(team: TeamWire): Team {
@@ -655,6 +700,7 @@ export function fromRoleBindingWire(
       displayName: roleBinding.user.display_name,
       email: roleBinding.user.email,
       id: roleBinding.user.id,
+      ownerTeamId: roleBinding.user.owner_team_id,
     },
   };
 }
@@ -758,6 +804,7 @@ export function fromReleaseMetricsWireResponse(
       failed: row.failed,
       installed: row.installed,
       success: row.success,
+      successRate: row.success_rate ?? null,
     })),
   };
 }
@@ -786,14 +833,27 @@ export function fromDeploymentTimeseriesWire(
     bucket: response.bucket,
     from: response.from,
     series: response.series.map((series) => ({
+      cumulativeSuccess: series.cumulative_success ?? null,
       points: series.points.map(fromTimeseriesPointWire),
       releaseId: series.release_id,
       releaseLabel: series.release_label,
       targetPackageHash: series.target_package_hash,
     })),
     seriesTruncated: response.series_truncated,
+    summary: response.summary
+      ? {
+          totals: {
+            downloaded: response.summary.totals.downloaded,
+            failed: response.summary.totals.failed,
+            installed: response.summary.totals.installed,
+            success: response.summary.totals.success,
+            successRate: response.summary.totals.success_rate,
+          },
+        }
+      : null,
     to: response.to,
     totals: response.totals.map(fromTimeseriesPointWire),
+    unlistedSeries: response.unlisted_series ?? null,
   };
 }
 
@@ -805,6 +865,19 @@ function fromTimeseriesPointWire(point: TimeseriesPointWire): TimeseriesPoint {
     failed: point.failed,
     installed: point.installed,
     success: point.success,
+  };
+}
+
+export function fromMonthlyActiveDevicesWire(
+  response: MonthlyActiveDevicesWire,
+): MonthlyActiveDevices {
+  return {
+    dataThrough: response.data_through,
+    months: response.months.map((row) => ({
+      activeDevices: row.active_devices,
+      firstDay: row.first_day,
+      month: row.month,
+    })),
   };
 }
 
@@ -927,6 +1000,21 @@ export function fromIamUserProvisionWireResponse(
   };
 }
 
+export function fromIamUserTokenRotateWireResponse(
+  response: IamUserTokenRotateWireResponse,
+): IamUserTokenRotateResponse {
+  return {
+    apiToken: fromApiTokenWire(response.api_token),
+    revokedApiTokenCount: response.revoked_api_token_count,
+    token: response.token,
+    user: {
+      email: response.user.email,
+      id: response.user.id,
+      ownerTeamId: response.user.owner_team_id,
+    },
+  };
+}
+
 export function fromApiTokenCreateWireResponse(
   response: ApiTokenCreateWireResponse,
 ) {
@@ -1004,6 +1092,19 @@ export function toIamUserProvisionWireBody(body: IamUserProvisionBody) {
       ? { expires_in_days: body.expiresInDays }
       : {}),
     role_id: body.roleId,
+    team_id: body.teamId,
+    ...(body.tokenDisplayName !== undefined
+      ? { token_display_name: body.tokenDisplayName }
+      : {}),
+  };
+}
+
+/** The user id is a path segment, so the body carries the team and token options only. */
+export function toIamUserTokenRotateWireBody(body: IamUserTokenRotateBody) {
+  return {
+    ...(body.expiresInDays !== undefined
+      ? { expires_in_days: body.expiresInDays }
+      : {}),
     team_id: body.teamId,
     ...(body.tokenDisplayName !== undefined
       ? { token_display_name: body.tokenDisplayName }

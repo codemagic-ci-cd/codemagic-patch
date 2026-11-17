@@ -2,10 +2,14 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 /**
  * CLI loopback authorization codes: short-TTL, single-audience, HMAC-signed
- * blobs binding the approving user to the CLI's PKCE challenge and loopback
+ * blobs binding the approving session to the CLI's PKCE challenge and loopback
  * port (same stateless pattern as oauthDevicePollToken.ts). Strict one-time
  * use would need a replay store; PKCE binding + the short TTL is the accepted
  * stateless trade-off.
+ *
+ * The code names the approving session, not a generation or a deadline: the
+ * exchange reads both from that session's row, and refuses the code once the
+ * session has ended.
  */
 
 export interface CreateOAuthCliAuthorizationCodeInput {
@@ -13,6 +17,7 @@ export interface CreateOAuthCliAuthorizationCodeInput {
   expiresAt: Date;
   port: number;
   secret: string;
+  sessionId: string;
   userId: string;
 }
 
@@ -26,6 +31,7 @@ export type VerifyOAuthCliAuthorizationCodeResult =
       outcome: "valid";
       codeChallenge: string;
       port: number;
+      sessionId: string;
       userId: string;
     }
   | {
@@ -40,8 +46,9 @@ interface CliAuthorizationCodePayload {
   ch: string;
   exp: number;
   port: number;
+  sid: string;
   uid: string;
-  v: 1;
+  v: 2;
 }
 
 const CLI_AUTHORIZATION_CODE_PREFIX = "cp_cliac_";
@@ -53,8 +60,9 @@ export function createOAuthCliAuthorizationCode(
     ch: input.codeChallenge,
     exp: input.expiresAt.getTime(),
     port: input.port,
+    sid: input.sessionId,
     uid: input.userId,
-    v: 1,
+    v: 2,
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
   const signature = sign(encodedPayload, input.secret);
@@ -105,7 +113,7 @@ export function verifyOAuthCliAuthorizationCode(
     };
   }
 
-  if (payload.v !== 1) {
+  if (payload.v !== 2) {
     return {
       outcome: "invalid",
       reason: "unsupported_version",
@@ -122,6 +130,7 @@ export function verifyOAuthCliAuthorizationCode(
     codeChallenge: payload.ch,
     outcome: "valid",
     port: payload.port,
+    sessionId: payload.sid,
     userId: payload.uid,
   };
 }
@@ -156,6 +165,7 @@ function decodePayload(
       !("ch" in value) ||
       !("exp" in value) ||
       !("port" in value) ||
+      !("sid" in value) ||
       !("uid" in value) ||
       !("v" in value)
     ) {
@@ -169,8 +179,9 @@ function decodePayload(
       !Number.isInteger(candidate.exp) ||
       typeof candidate.port !== "number" ||
       !Number.isInteger(candidate.port) ||
+      typeof candidate.sid !== "string" ||
       typeof candidate.uid !== "string" ||
-      candidate.v !== 1
+      candidate.v !== 2
     ) {
       return null;
     }
@@ -179,8 +190,9 @@ function decodePayload(
       ch: candidate.ch,
       exp: candidate.exp,
       port: candidate.port,
+      sid: candidate.sid,
       uid: candidate.uid,
-      v: 1,
+      v: 2,
     };
   } catch {
     return null;

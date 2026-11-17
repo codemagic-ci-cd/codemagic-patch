@@ -85,6 +85,17 @@ export function isTerminalJobStatus(status: ReleaseJobStatus): boolean {
   return TERMINAL_JOB_STATUSES.has(status);
 }
 
+/**
+ * Release statuses that still move on the deployment history table
+ * (`Processing` → `Published`). Settled rows (`published` / `failed` /
+ * `disabled`) do not keep the list polling.
+ */
+export function releaseStatusNeedsHistoryPoll(
+  status: ReleaseStatus,
+): boolean {
+  return status === "uploaded" || status === "processing";
+}
+
 /** Disable is offered for published releases only. */
 export function canDisable(release: Release): boolean {
   return release.status === "published";

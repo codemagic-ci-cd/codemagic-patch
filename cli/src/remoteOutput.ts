@@ -318,8 +318,11 @@ export const INSTALL_MILESTONES: readonly RemoteMilestone[] = [
     label: "checking the CloudFront key",
     match: "verifying CloudFront invalidation access",
   },
-  // The long one — twenty minutes on a cold cache. It stays visibly alive
-  // through the renderer's detail line rather than through a milestone.
+  // The default: the release's published image.
+  { label: "downloading the server", match: "pulling images" },
+  // --build-from-source, the long one — twenty minutes on a cold cache. It
+  // stays visibly alive through the renderer's detail line rather than
+  // through a milestone.
   { label: "building the server (this takes a while)", match: "building images" },
   { label: "starting the server", match: "starting self-host stack" },
   {
@@ -338,6 +341,7 @@ export const INSTALL_MILESTONES: readonly RemoteMilestone[] = [
 export const NGROK_INSTALL_MILESTONES: readonly RemoteMilestone[] = [
   { label: "writing the server's settings", match: "created /" },
   { label: "reusing the settings from the last run", match: "reusing existing" },
+  { label: "downloading the server", match: "pulling images" },
   { label: "building the server (this takes a while)", match: "building images" },
   { label: "starting the server", match: "starting self-host stack" },
   {
@@ -364,6 +368,7 @@ export const RESTORE_MILESTONES: readonly RemoteMilestone[] = [
 ] as const;
 
 export const UPGRADE_MILESTONES: readonly RemoteMilestone[] = [
+  { label: "checking the database schema", match: "checking the database's applied migrations" },
   {
     label: "backing up before the upgrade",
     match: "creating a pre-upgrade backup",

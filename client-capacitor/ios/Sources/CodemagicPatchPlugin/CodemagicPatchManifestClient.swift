@@ -27,10 +27,21 @@ final class CodemagicPatchManifestClient {
 
     private let config: CodemagicPatchConfig
     private let session: URLSession
+    private let scheduleMetaFetch: (@escaping () -> Void) -> Void
 
-    init(config: CodemagicPatchConfig, session: URLSession = .shared) {
+    /// `scheduleMetaFetch` starts the parallel meta.json fetch; the default puts it on
+    /// a background queue. Overridable so a test can tell when that fetch has finished,
+    /// which nothing else exposes — see CodemagicPatchManifestClientTests.swift.
+    init(
+        config: CodemagicPatchConfig,
+        session: URLSession = .shared,
+        scheduleMetaFetch: @escaping (@escaping () -> Void) -> Void = { fetch in
+            DispatchQueue.global(qos: .utility).async { fetch() }
+        }
+    ) {
         self.config = config
         self.session = session
+        self.scheduleMetaFetch = scheduleMetaFetch
     }
 
     /// `PROTOCOL.md` § Manifest Path Rule: try the primary path
@@ -51,7 +62,7 @@ final class CodemagicPatchManifestClient {
         var metaResult: HttpBody?
         let metaGroup = DispatchGroup()
         metaGroup.enter()
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        scheduleMetaFetch { [weak self] in
             metaResult = try? self?.requestSync(metaUrl)
             metaGroup.leave()
         }

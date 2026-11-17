@@ -36,6 +36,7 @@ export type ProblemTypeSuffix =
   | "release-conflict"
   | "role-binding-exists"
   | "role-not-supported"
+  | "service-account-conflict"
   | "rollback-no-op"
   | "status-transition-conflict"
   | "team-conflict"
@@ -184,6 +185,10 @@ function problemTitleForType(
 
   if (typeSuffix === "last-owner") {
     return "Last owner";
+  }
+
+  if (typeSuffix === "service-account-conflict") {
+    return "Service account conflict";
   }
 
   if (typeSuffix === "validation-error") {

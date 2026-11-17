@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createFingerprintAsync } from "@expo/fingerprint";
 
 import { ValidationError } from "./commands/shared";
+import { detectIosDependencyManager } from "./nativeProjectPaths";
 
 export type FingerprintPlatform = "android" | "ios";
 export type FingerprintSource = {
@@ -22,8 +23,31 @@ export type ProjectFingerprintComputer = (
   options: {
     platforms: FingerprintPlatform[];
     silent: true;
+    ignorePaths?: string[];
   },
 ) => Promise<NativeFingerprint>;
+
+/**
+ * Files Xcode writes into a React Native SwiftPM-mode app on a developer's
+ * machine. None of them reaches a CI clone or the npm tarball, so opening or
+ * building the app locally must not change the hash
+ * (wiki/discussions/FINGERPRINT_DISCUSSION.md has the measurements):
+ * - `Package.resolved`, written when Xcode resolves the Swift packages and
+ *   gitignored by React Native's SwiftPM setup;
+ * - per-user IDE state (`xcuserdata`), written as soon as the project is
+ *   opened, both in the app's `.xcodeproj` and in the `.swiftpm/xcode` folder
+ *   of every local package Xcode shows, the SDK's package root in
+ *   `node_modules` included. The leading `**\/` also matches a hoisted
+ *   package reached through `../`.
+ * @expo/fingerprint's own `**\/ios/**\/project.xcworkspace` ignore does not
+ * reach files below that directory. A `!` line in `.fingerprintignore` puts a
+ * file back: those lines are applied after these.
+ */
+export const SWIFTPM_FINGERPRINT_IGNORES: readonly string[] = [
+  "ios/**/xcshareddata/swiftpm/Package.resolved",
+  "iOS/**/xcshareddata/swiftpm/Package.resolved",
+  "**/xcuserdata/**/*",
+];
 
 export async function computeNativeFingerprint(input: {
   platform: FingerprintPlatform;
@@ -66,9 +90,14 @@ export function createNativeFingerprintDetailsComputer(
     const projectRoot = resolve(input.projectRoot);
 
     try {
+      // CocoaPods projects and Android keep exactly the options, and so the
+      // hashes, that earlier releases computed.
+      const swiftPM =
+        input.platform === "ios" && (await detectIosDependencyManager(projectRoot)) === "swiftpm";
       const fingerprint = await createFingerprint(projectRoot, {
         platforms: [input.platform],
         silent: true,
+        ...(swiftPM ? { ignorePaths: [...SWIFTPM_FINGERPRINT_IGNORES] } : {}),
       });
 
       if (fingerprint.hash.length === 0) {

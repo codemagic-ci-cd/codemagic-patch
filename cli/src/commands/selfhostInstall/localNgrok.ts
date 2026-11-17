@@ -25,6 +25,7 @@ import {
   OAUTH_PROVIDERS,
   type OAuthCredentials,
 } from "../../selfhostInstall";
+import { serverSourceRepo } from "../../serverRelease";
 import { getCliVersion } from "../../version";
 import { formatElapsed, isSshSession } from "../localEval";
 import { adoptDefaultServer } from "../localEval/defaultServer";
@@ -40,6 +41,12 @@ import {
   type FlagShape,
   type ParsedArgs,
 } from "../selfhostSession";
+import {
+  planServerSource,
+  readImageFlags,
+  sourceBundlePath,
+  type ServerSourcePlan,
+} from "./hostBootstrap";
 import { UsageError, type CommandDeps } from "../shared";
 import {
   OAUTH_FLAGS,
@@ -49,6 +56,7 @@ import {
 } from "./answers";
 import { askChecked, notice, offerBrowserOpen, paletteFor } from "./ask";
 import type { InstallOutcome } from "./index";
+import { askInstallSurvey } from "./installSurvey";
 import {
   askNgrokDomain,
   checkNgrokAuthtoken,
@@ -70,8 +78,10 @@ import {
 import { askAdminEmail, collectOAuth } from "./wizard";
 
 export const NGROK_FLAGS: FlagShape = {
+  "--build-from-source": "boolean",
   "--checkout": "value",
   "--email": "value",
+  "--image": "value",
   "--install-docker": "boolean",
   "--ngrok": "boolean",
   "--ngrok-domain": "value",
@@ -129,6 +139,16 @@ export async function runLocalNgrokInstall(
       notice(deps, renderWelcome());
     }
 
+    // The release and its image first: a lookup that fails (GitHub out of
+    // reach, nothing published yet) stops the run before anything here is
+    // installed, started, or cloned.
+    const checkout = resolveCheckout(deps, parsed);
+    const source = await planServerSource(deps, {
+      ...readImageFlags(parsed),
+      freshClone: checkout.managed && !(await exists(deps, checkout.path)),
+      sourceBundle: sourceBundlePath(deps) !== null,
+    });
+
     progress.write("checking Docker");
     await ensureDocker(deps, {
       parsed,
@@ -137,8 +157,7 @@ export async function runLocalNgrokInstall(
       stack: "self-host stack",
     });
 
-    const checkout = resolveCheckout(deps, parsed);
-    await ensureCheckout(deps, progress, checkout);
+    await ensureCheckout(deps, progress, checkout, source.checkoutTag);
     await refuseOtherInstall(deps, checkout.path);
 
     const previous = await readPreviousInstall(checkout.path);
@@ -187,8 +206,11 @@ export async function runLocalNgrokInstall(
       );
     }
 
-    const reported = await runInstaller(deps, progress, checkout.path, first?.env ?? {}, {
+    const reported = await runInstaller(deps, progress, {
+      answers: first?.env ?? {},
+      checkoutPath: checkout.path,
       noTelemetry: first !== null && noTelemetry,
+      source,
     });
     const host = first?.host ?? reported ?? previous?.host ?? undefined;
     if (host === undefined) {
@@ -202,6 +224,11 @@ export async function runLocalNgrokInstall(
     // The installer's last milestone may still be animating, and the
     // questions below must not draw under it.
     progress.settle();
+    // Before the dashboard offer: a browser that opens takes the person away
+    // from the terminal, and the summary must not be left behind a question.
+    if (first !== null) {
+      await askInstallSurvey(deps, { install: "ngrok", interactive, noTelemetry });
+    }
     const defaulted = await adoptDefaultServer(deps, parsed, {
       name: "the server on this machine",
       serverUrl,
@@ -245,7 +272,7 @@ export async function runLocalNgrokInstall(
 function renderWelcome(): string[] {
   return [
     `Welcome! This command installs the ${PRODUCT_NAME} server on this machine with Docker — the real server, with sign-in — and makes it reachable at the free https:// address your ngrok account comes with, so you can connect your own app and test it on any device. No domain, DNS records, certificates, or open ports are needed.`,
-    "It needs Docker, a free ngrok account, and a GitHub, Bitbucket, or GitLab account to sign in with. The first run builds the server, which takes 10–20 minutes, and it asks before installing or starting anything.",
+    "It needs Docker, a free ngrok account, and a GitHub, Bitbucket, or GitLab account to sign in with. The first run downloads the published server image, and it asks before installing or starting anything.",
     `Once a day the server sends ${PRODUCT_NAME} an anonymous usage report of aggregate counts, with no identifiers; add --no-telemetry to turn it off.`,
   ];
 }
@@ -286,6 +313,7 @@ async function ensureCheckout(
   deps: CommandDeps,
   progress: Progress,
   checkout: Checkout,
+  checkoutTag: string | null,
 ): Promise<void> {
   if (!(await exists(deps, checkout.path))) {
     if (!checkout.managed) {
@@ -293,7 +321,16 @@ async function ensureCheckout(
         `${checkout.path} does not exist; --checkout must point at a checkout of ${SOURCE_REPO_URL}.`,
       );
     }
-    await cloneSource(deps, progress, checkout.path, "the self-host stack's source");
+    await cloneSource(
+      deps,
+      progress,
+      checkout.path,
+      "the self-host stack's source",
+      serverSourceRepo(deps.env).url,
+    );
+    if (checkoutTag !== null) {
+      await checkOutReleaseTag(deps, checkout.path, checkoutTag);
+    }
   }
 
   if (!(await isFile(deps, join(checkout.path, INSTALL_SCRIPT)))) {
@@ -314,6 +351,38 @@ async function ensureCheckout(
         checkout.managed
           ? "Pass --checkout <path> with a checkout of the repository that has it."
           : "Update that checkout, or pass --checkout <path> with one that has it.",
+      ].join("\n"),
+    );
+  }
+}
+
+/**
+ * Detaches the fresh clone at the release the plan chose, so the scripts that
+ * run are that release's.
+ */
+async function checkOutReleaseTag(
+  deps: CommandDeps,
+  checkoutPath: string,
+  tag: string,
+): Promise<void> {
+  const result = await captureLocal(deps, {
+    args: [
+      "-C",
+      checkoutPath,
+      "-c",
+      "advice.detachedHead=false",
+      "checkout",
+      "--quiet",
+      `refs/tags/${tag}`,
+    ],
+    command: "git",
+  });
+  if (result.spawnError !== null || result.exitCode !== 0) {
+    throw new RemoteScriptFailure(
+      [
+        `Could not check out ${tag} in ${checkoutPath}.`,
+        "",
+        result.output.trim(),
       ].join("\n"),
     );
   }
@@ -648,10 +717,14 @@ function suppliedFirstInstallAnswers(parsed: ParsedArgs): boolean {
 async function runInstaller(
   deps: CommandDeps,
   progress: Progress,
-  checkoutPath: string,
-  answers: Record<string, string>,
-  options: { noTelemetry: boolean },
+  input: {
+    answers: Record<string, string>;
+    checkoutPath: string;
+    noTelemetry: boolean;
+    source: ServerSourcePlan;
+  },
 ): Promise<string | undefined> {
+  const { answers, checkoutPath, noTelemetry, source } = input;
   let reported: string | undefined;
   let partial = "";
   const watch = (chunk: string) => {
@@ -677,7 +750,8 @@ async function runInstaller(
           join(checkoutPath, INSTALL_SCRIPT),
           "--ngrok",
           "--yes",
-          ...(options.noTelemetry ? ["--no-telemetry"] : []),
+          ...source.installArgs,
+          ...(noTelemetry ? ["--no-telemetry"] : []),
         ],
         command: "bash",
         env: { ...deps.env, ...answers },

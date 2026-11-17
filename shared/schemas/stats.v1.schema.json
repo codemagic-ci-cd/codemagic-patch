@@ -3,7 +3,7 @@
   "$id": "https://codemagic.io/patch/schemas/stats/v1.json",
   "title": "Codemagic Patch public stats document (v1)",
   "description": "The document the collector serves at https://telemetry.codemagicpatch.dev/v1/stats.json and the public stats page (patch.codemagic.io/stats/) renders. Every number is an aggregate over the daily usage reports of eligible instances (reported on two or more distinct days, not disabled, not the deploy smoke instance). Per-day series carry `null`, never 0, for days with no data; `success_rate` is `null` on days with fewer than 20 attempts. Every date is a UTC calendar date and every timestamp is RFC 3339.",
-  "$comment": "Additive-only within v1. The page treats a document that fails its structural check as unavailable and falls back to its deploy-time snapshot, so fields are only ever added.",
+  "$comment": "Additive-only within v1. The page treats a document that fails its structural check as unavailable and may show a browser-saved last-good document instead, so fields are only ever added.",
   "type": "object",
   "required": ["schema_version", "status", "generated_at", "next_update_after", "coverage", "totals", "timeseries"],
   "properties": {

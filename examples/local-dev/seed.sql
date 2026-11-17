@@ -14,13 +14,26 @@
 -- Plaintext local token:
 --   cm_pat_local-dev-token-change-me-00000001
 
-INSERT INTO user_account (id, email, display_name)
+-- The admin is seeded already linked to its local-dev identity (provider
+-- 'local-dev', subject = the canonical email). A first sign-in that links an
+-- existing account by email revokes every credential the account held, which
+-- would delete the seeded token below. The UPDATE links an admin seeded by an
+-- older version of this file.
+INSERT INTO user_account (id, email, display_name, oauth_provider, oauth_subject)
 VALUES (
   'user_local_admin',
   'local-admin@example.com',
-  'Local Admin'
+  'Local Admin',
+  'local-dev',
+  'local-admin@example.com'
 )
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE user_account
+SET oauth_provider = 'local-dev', oauth_subject = 'local-admin@example.com'
+WHERE id = 'user_local_admin'
+  AND oauth_provider IS NULL
+  AND oauth_subject IS NULL;
 
 INSERT INTO membership (id, team_id, user_id)
 VALUES (
@@ -50,20 +63,25 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- Stamped with the admin's current credential generation, so a re-run after a
+-- revoke-all restores a working token rather than a dead one.
 INSERT INTO api_token (
   id,
   user_id,
   display_name,
   token_hash,
-  masked_prefix
+  masked_prefix,
+  generation
 )
-VALUES (
+SELECT
   'api_token_local_admin',
-  'user_local_admin',
+  u.id,
   'local-dev',
   '24331315d3d8bb8e182045ad03670042a0e2d30cf67813d0526a54438aaa77a8',
-  'cm_pat_lo...'
-)
+  'cm_pat_lo...',
+  u.credential_generation
+FROM user_account u
+WHERE u.id = 'user_local_admin'
 ON CONFLICT (id) DO NOTHING;
 
 -- One app per platform, matching the recommended setup (see the top-level

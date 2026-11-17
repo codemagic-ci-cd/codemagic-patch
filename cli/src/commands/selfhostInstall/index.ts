@@ -91,9 +91,14 @@ import { finishCloudflare } from "./cloudflare";
 import { finishCloudFront } from "./cloudfront";
 import {
   ensureCheckout,
+  planServerSource,
+  readImageFlags,
   runHostPreflight,
+  sourceBundlePath,
+  sourceRepoScriptEnv,
   startOver,
 } from "./hostBootstrap";
+import { askInstallSurvey } from "./installSurvey";
 import { NGROK_FLAGS, runLocalNgrokInstall } from "./localNgrok";
 import {
   askRecoveryEdge,
@@ -116,6 +121,7 @@ const INSTALL_FLAGS = {
    */
   "--allow-http": "boolean",
   "--api-domain": "value",
+  "--build-from-source": "boolean",
   "--database-url": "value",
   "--cloudflare": "boolean",
   "--cloudflare-api-token": "value",
@@ -128,6 +134,7 @@ const INSTALL_FLAGS = {
   /** The irreversible half of `--start-over`; see readRequestedEdge. */
   "--discard-data": "boolean",
   "--email": "value",
+  "--image": "value",
   ...OAUTH_FLAGS,
   "--install-curl": "boolean",
   "--install-docker": "boolean",
@@ -336,16 +343,25 @@ export async function runInstall(
     dnsSetup = createDnsSetup(deps, parsed, interactive, session.progress);
     session.dnsSetup = dnsSetup;
 
+    // Which release and which image, before any host work: the releases
+    // lookup is the step most likely to fail (GitHub unreachable, no
+    // published image yet), and it fails with nothing on the host touched.
+    const source = await planServerSource(deps, {
+      ...readImageFlags(parsed),
+      freshClone: session.facts.checkoutPath === null,
+      sourceBundle: sourceBundlePath(deps) !== null,
+    });
+
     // Before the recovery question, not after: the host checks are the same
     // whichever edge is taken, one of them can end the run outright, and the
     // start-over edge below cannot remove a stack without a working Docker.
-    await runHostPreflight(deps, session, parsed);
+    await runHostPreflight(deps, session, parsed, source);
     // The flag wins over the survey: it exists for the hosts whose survey
     // answer is wrong or empty, and the DNS step reads the address from here.
     if (publicIp !== undefined && session.facts.install !== undefined) {
       session.facts.install.publicIp = publicIp;
     }
-    await ensureCheckout(deps, session);
+    await ensureCheckout(deps, session, source.checkoutTag);
 
     let edge: RecoveryEdge | null =
       oauthRepair
@@ -415,7 +431,7 @@ export async function runInstall(
             )
           : buildInstallEnv(answers as InstallAnswers);
 
-    const args = ["-y"];
+    const args = ["-y", ...source.installArgs];
     if (edge === "repair") {
       args.push("--repair-env");
     }
@@ -467,7 +483,7 @@ export async function runInstall(
     try {
       await runSelfhostScript(deps, session, {
         args,
-        env: scriptEnv,
+        env: { ...scriptEnv, ...sourceRepoScriptEnv(deps.env) },
         milestones: INSTALL_MILESTONES,
         name: "install",
         script: "install.sh",
@@ -518,6 +534,15 @@ export async function runInstall(
     }
 
     dnsSetup.dispose();
+    if (edge === null) {
+      session.progress.settle();
+      await askInstallSurvey(deps, {
+        install: "ssh",
+        // A Ctrl+C in the finish phase meant "stop asking".
+        interactive: interactive && !stopped,
+        noTelemetry,
+      });
+    }
     session.progress.stop("Install complete.");
     const signInProvider = describeConfiguredProvider(scriptEnv);
     // What this run settled about the usage report, for the summary: a fresh

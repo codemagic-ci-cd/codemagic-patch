@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import {
   createDatabasePool,
   createPostgresAuthRepository,
-  migrateDatabase,
 } from "../src";
 import type { MembershipId, RoleBindingId, TeamId } from "../src/domain";
 
@@ -51,8 +50,8 @@ export async function runGrantTeamOwnerCli(
   });
 
   try {
-    await migrateDatabase(pool);
-
+    // No migration here: the server owns its schema, and the managed chain
+    // carries migrations the public list does not know.
     const repository = createPostgresAuthRepository(pool);
     const result = await repository.grantTeamOwnerByEmail({
       createdAt: new Date(),
@@ -69,6 +68,13 @@ export async function runGrantTeamOwnerCli(
 
     if (result.outcome === "account_disabled") {
       streams.stderr.write(`${accountDisabledMessage(result.reason)}\n`);
+      return 1;
+    }
+
+    if (result.outcome === "service_account_other_team") {
+      streams.stderr.write(
+        "User is a service account owned by another team; it has no access outside that team\n",
+      );
       return 1;
     }
 

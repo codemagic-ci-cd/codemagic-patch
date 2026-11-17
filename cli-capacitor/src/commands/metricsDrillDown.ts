@@ -115,15 +115,35 @@ function readTimeseriesRange(values: FlagValues, now: number): { from?: string; 
 }
 
 /**
- * The lines under the daily table: the per-release series the JSON carries, and the
- * binary versions that reported, which are the values the filter flags take.
+ * The lines under the daily table: the server's range summary (none from a server
+ * without `summary`, never a local sum), the per-release series the JSON carries, and
+ * the binary versions that reported, which are the values the filter flags take.
  */
 function timeseriesFooter(result: unknown): { footer?: string } {
   if (!isRecord(result)) return {};
   const lines: string[] = [];
+  if (isRecord(result.summary)) {
+    const { last_complete_day: lastDay, totals } = result.summary;
+    if (isRecord(totals)) {
+      const rate = typeof totals.success_rate === "number" ? `${(totals.success_rate * 100).toFixed(1)}%` : "n/a";
+      lines.push(
+        `Range totals: ${String(totals.downloaded)} downloaded, ${String(totals.installed)} ready, ${String(totals.failed)} failed, ${String(totals.success)} applied; success rate ${rate}.`,
+      );
+    }
+    lines.push(
+      isRecord(lastDay) && typeof lastDay.bucket_start === "string"
+        ? `Last complete day: ${lastDay.bucket_start.slice(0, 10)}, ${String(lastDay.active_devices)} active devices.`
+        : "Last complete day: none in this range.",
+    );
+  }
   const series = Array.isArray(result.series) ? result.series : [];
   if (series.length > 0 || result.series_truncated === true) {
-    const truncated = result.series_truncated === true ? " (truncated)" : "";
+    const truncated =
+      result.unlisted_series === "unavailable"
+        ? " (truncated; packages not listed are unavailable, not zero)"
+        : result.series_truncated === true
+          ? " (truncated)"
+          : "";
     lines.push(`Per-release series: ${series.length}${truncated}. Read them with --format json.`);
   }
   const versions = Array.isArray(result.binary_versions)

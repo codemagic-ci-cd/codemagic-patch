@@ -105,6 +105,12 @@ export interface SelfhostPendingInstall {
 }
 
 export interface CliConfig {
+  /**
+   * ISO 8601 time the "How did you hear about us?" question was shown on
+   * this machine. Its presence is the whole record: the question is asked
+   * once, and what was answered is not kept here.
+   */
+  installSurveyAskedAt?: string;
   /** Keyed by ssh host — see SelfhostPendingInstall. */
   pendingInstall?: Record<string, SelfhostPendingInstall>;
   /** Existing-server OAuth repairs must never enable unfinished-install recovery. */
@@ -200,6 +206,12 @@ export async function loadCliConfig(
   }
 
   return stripEmptyConfig({
+    // Read leniently, like a selfhost entry: a value this field cannot hold
+    // must not make every command refuse the config file.
+    installSurveyAskedAt:
+      "installSurveyAskedAt" in parsed && typeof parsed.installSurveyAskedAt === "string"
+        ? parsed.installSurveyAskedAt
+        : undefined,
     pendingInstall: normalizePendingInstalls(parsed.pendingInstall),
     pendingOAuthRepair: normalizePendingInstalls(parsed.pendingOAuthRepair),
     selfhost: normalizeSelfhostMappings(parsed.selfhost),
@@ -496,6 +508,9 @@ export async function saveProjectConfig(
 
 function stripEmptyConfig(config: CliConfig): CliConfig {
   return {
+    ...(resolveOptionalString(config.installSurveyAskedAt) !== undefined
+      ? { installSurveyAskedAt: resolveOptionalString(config.installSurveyAskedAt) }
+      : {}),
     // Sections survive `config set`/`unset` because those callers spread the
     // loaded config; stripping them here would silently unpair every server
     // the moment someone stored a team default.

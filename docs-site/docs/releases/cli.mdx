@@ -10,8 +10,8 @@ toc_max_heading_level: 2
 Release notes for `cmpatch`, published as `@codemagic/patch-cli`. The CLI has
 commands for app developers (`release-react`, `wire`, `doctor`) and for
 self-host operators (`selfhost install`, `upgrade`, `backup`); entries name the
-audience where it matters. The other surfaces' releases and the compatibility
-table are on the [Release Notes](/docs/releases) page.
+audience where it matters. The other surfaces' releases are on the
+[Release Notes](/docs/releases) page.
 
 ```bash
 npm install -g @codemagic/patch-cli@latest
@@ -19,6 +19,102 @@ npm install -g @codemagic/patch-cli@latest
 
 Reference: [CLI reference](/docs/reference/cli-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=patch-cli)
+
+## 0.10.0 {#v0-10-0}
+
+*17th November 2026*
+
+### Breaking
+
+`cmpatch selfhost upgrade` shows its plan and asks before it changes
+anything, on a server and on Fly. A run that cannot ask (CI,
+`--non-interactive`) needs `--yes`.
+
+### Install and upgrade from the published server image
+
+`cmpatch selfhost install` and `upgrade` pull the image published with each
+server release instead of building it on the server. An install no longer
+waits for a build or needs the 2 GB of memory a build takes. On Fly, the
+image is deployed directly, without the remote builder.
+
+- **Release checkout:** `upgrade` moves the server's checkout to the newest
+  server release and runs that release's upgrade script. An install from
+  before published images runs the default branch and moves the same way.
+  A checkout with local edits or commits, or one newer than the
+  release, is refused.
+- **Schema check:** Before it asks, `upgrade` pulls the target image and runs
+  the image's check against the database. A database that has applied a
+  migration the release does not know is refused. `--skip-schema-check`
+  skips the check and is unsafe.
+- **`--build-from-source`, `--image <ref>`:** Build the image on the server
+  (or on Fly's remote builder), or run an image you name. Both work on
+  `install` and `upgrade`, Fly included.
+- **Rollback steps:** If an upgrade fails after the stack is recreated, the
+  command prints the recovery steps in order, with this server's paths.
+
+Update the CLI before upgrading a server to
+[0.10.0](/docs/releases/server#v0-10-0). See
+[Upgrades](/docs/setup/ongoing-maintenance#upgrades).
+
+### React Native SwiftPM mode
+
+`cmpatch wire` detects an app converted with `npx react-native spm add`. It
+skips the CocoaPods step and the `pod install` prompt, upgrades an installed
+SDK that has no `Package.swift`, and adds `npx react-native spm` to the next
+steps. The plan shows an **iOS packages** row, and `--format json` adds
+`project.iosDependencyManager`.
+
+- **SDK 0.7.0 in every app:** `wire` installs
+  [React Native SDK 0.7.0](/docs/releases/react-native#v0-7-0) or later, so
+  an app that converts from CocoaPods later needs no SDK upgrade.
+- **Fingerprint inputs:** In SwiftPM mode, the iOS fingerprint leaves out
+  `Package.resolved` under `xcshareddata/swiftpm` and Xcode's `xcuserdata`
+  folders, which exist on your machine but not in a CI checkout. CocoaPods
+  and Android fingerprints are unchanged. See
+  [Fingerprinting](/docs/using-patch/fingerprinting).
+
+### API tokens and service accounts
+
+- **`cmpatch member rotate-token --email <email>`:** Replaces the token of a
+  service account created with `member provision` and prints the new token
+  once. The old token stops working immediately, so update the CI secret
+  that held it. Confirms unless `--yes`, and needs a browser login.
+  `member list` marks service accounts. Requires server 0.10.0.
+- **Commands an API token cannot run:** Server 0.10.0 refuses the commands
+  that create credentials or grant access, such as `token create`,
+  `member invite`, and `app transfer`, from a `--token` login or
+  `CODEMAGIC_PATCH_TOKEN`. The CLI says to remove the token and run
+  `cmpatch login`. Full list in the
+  [server notes](/docs/releases/server#v0-10-0-api-tokens).
+
+### Smaller changes
+
+- **Metrics totals and success rate:** `deployment timeseries` prints the
+  range totals, the success rate, and the active devices of the last
+  complete day under its table. In `--format json`, `deployment metrics`,
+  `release metrics`, and `deployment timeseries` add `success_rate` and a
+  `summary`, and each timeseries series adds its cumulative Applied count.
+  Requires [server 0.10.0](/docs/releases/server#v0-10-0); output is
+  unchanged against an older server.
+- **`error.hint` in JSON errors:** A `--format json` error carries the remedy
+  that text output prints, such as the sign-in command after a `401`.
+- **Install survey:** After a first successful `selfhost install`, the CLI
+  asks once per machine how you heard about Codemagic Patch. Enter skips it
+  and sends nothing. An answer sends the choice, the install method, and for
+  Other the text you type. `--no-telemetry` and `DO_NOT_TRACK=1` turn it
+  off, and a run that cannot prompt never asks.
+
+### Fixes
+
+- **`selfhost install --ngrok` on an ephemeral address:** The install
+  registered its OAuth callback against an address that changes on the next
+  run. It now stops and asks for your account's dev domain with
+  `--ngrok-domain`. Free plans have one. Contributed in
+  [codemagic-patch#42](https://github.com/codemagic-ci-cd/codemagic-patch/pull/42).
+  See [Reach a real phone with ngrok](/docs/local-quickstart#ngrok).
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.10.0).
 
 ## 0.9.0 {#v0-9-0}
 

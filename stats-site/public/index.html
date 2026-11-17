@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' __PLAUSIBLE_SCRIPT_SRC__; connect-src 'self' __PATCH_STATS_SOURCE_ORIGIN__ __PLAUSIBLE_CONNECT__; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'">
   <title>Codemagic Patch stats</title>
-  <meta name="description" content="Public usage statistics for Codemagic Patch: active devices, teams, self-hosted servers, updates applied per day and releases per week, aggregated daily from server usage reports.">
+  <meta name="description" content="Public usage statistics for Codemagic Patch: active devices, teams, self-hosted servers, and updates applied and releases per week, aggregated daily from server usage reports.">
   <link rel="canonical" href="https://patch.codemagic.io/stats/">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/stats/favicon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#0d122b">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Codemagic Patch">
   <meta property="og:title" content="Codemagic Patch, in numbers">
-  <meta property="og:description" content="Active devices, teams, self-hosted servers, updates applied per day and releases per week, updated daily from aggregate usage reports.">
+  <meta property="og:description" content="Active devices, teams, self-hosted servers, and updates applied and releases per week, updated daily from aggregate usage reports.">
   <meta property="og:url" content="https://patch.codemagic.io/stats/">
   <meta property="og:image" content="https://patch.codemagic.io/stats/og.png">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="Codemagic Patch, in numbers">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Codemagic Patch, in numbers">
-  <meta name="twitter:description" content="Active devices, teams, self-hosted servers, updates applied per day and releases per week, updated daily from aggregate usage reports.">
+  <meta name="twitter:description" content="Active devices, teams, self-hosted servers, and updates applied and releases per week, updated daily from aggregate usage reports.">
   <meta name="twitter:image" content="https://patch.codemagic.io/stats/og.png">
-  <link rel="preload" href="fonts/Metropolis-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="fonts/Metropolis-Medium.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="stats.css">
-  <script src="boot.js"></script>
+  <link rel="preload" href="/stats/fonts/Metropolis-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/stats/fonts/Metropolis-Medium.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/stats/stats.css">
+  <script src="/stats/boot.js"></script>
   <!-- __PLAUSIBLE_SCRIPT__ -->
-  <script type="module" src="stats.js"></script>
+  <script type="module" src="/stats/stats.js"></script>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -46,7 +46,7 @@
   <header class="nav">
     <div class="container nav-inner">
       <a class="nav-brand" href="https://patch.codemagic.io/">
-        <img src="logo.svg" alt="Codemagic Patch" width="100" height="26">
+        <img src="/stats/logo.svg" alt="Codemagic Patch" width="100" height="26">
         <span class="nav-brand-label">Stats</span>
       </a>
       <nav class="nav-links" aria-label="Site">
@@ -109,10 +109,15 @@
     <section class="section" id="updates" aria-labelledby="updates-title">
       <div class="container">
         <h2 class="section-title" id="updates-title">Updates applied</h2>
-        <p class="section-lead">Updates applied per day across every reporting server.</p>
+        <p class="section-lead">Updates applied per week across every reporting server.</p>
         <article class="card">
-          <h3 class="card-title">Updates applied per day</h3>
-          <div class="chart-wrap" id="daily-chart" role="group" tabindex="0" aria-label="Updates applied per day chart. Use the left and right arrow keys to read values."></div>
+          <h3 class="card-title">Updates applied per week</h3>
+          <ul class="chart-legend">
+            <li><span class="legend-swatch legend-swatch--applied" aria-hidden="true"></span>Updates applied</li>
+            <li><span class="legend-swatch legend-swatch--partial" aria-hidden="true"></span>Partial week</li>
+          </ul>
+          <div class="chart-wrap" id="applied-chart" role="group" tabindex="0" aria-label="Updates applied per week chart. Use the left and right arrow keys to read values."></div>
+          <p class="chart-caption">Twelve ISO weeks, Monday to Sunday. A dashed bar is a week with fewer than seven reported days.</p>
         </article>
       </div>
     </section>
@@ -127,7 +132,7 @@
             <li><span class="legend-swatch legend-swatch--releases" aria-hidden="true"></span>Releases</li>
             <li><span class="legend-swatch legend-swatch--partial" aria-hidden="true"></span>Partial week</li>
           </ul>
-          <div class="chart-wrap" id="weekly-chart" role="group" tabindex="0" aria-label="Releases per week chart. Use the left and right arrow keys to read values."></div>
+          <div class="chart-wrap" id="releases-chart" role="group" tabindex="0" aria-label="Releases per week chart. Use the left and right arrow keys to read values."></div>
           <p class="chart-caption">Twelve ISO weeks, Monday to Sunday. A dashed bar is a week with fewer than seven reported days.</p>
         </article>
       </div>

@@ -11,7 +11,7 @@ const enablePlausible = siteUrl === "https://patch.codemagic.io";
 const llmsIndex = {
   title: "Codemagic Patch documentation",
   description:
-    "Self-hosted OTA updates for React Native: setup, SDK, cmpatch CLI, and operations.",
+    "Self-hosted OTA updates for React Native (optional Codemagic hosting): setup, SDK, cmpatch CLI, and operations.",
 };
 
 const config: Config = {
@@ -113,6 +113,11 @@ const config: Config = {
         docsRouteBasePath: "/",
         indexBlog: false,
         highlightSearchTermsOnTargetPage: true,
+        // Release notes and the roadmap are browsed by date/version, not
+        // searched; indexing them crowds how-to results with old bullets.
+        // Cost at scale is an ad/eval landing page, not a how-to.
+        // Matched against the route without baseUrl (e.g. "releases/server").
+        ignoreFiles: [/^releases(\/|$)/, /^roadmap$/, /^cost$/],
       },
     ],
   ],
@@ -132,6 +137,26 @@ const config: Config = {
         src: "img/logo.svg",
         href: baseUrl,
       },
+      items: [
+        {
+          type: "docSidebar",
+          sidebarId: "guidesSidebar",
+          label: "Guides",
+          position: "left",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "releasesSidebar",
+          label: "Releases",
+          position: "left",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "roadmapSidebar",
+          label: "Roadmap",
+          position: "left",
+        },
+      ],
     },
     footer: {
       style: "light",

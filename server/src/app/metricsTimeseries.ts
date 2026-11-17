@@ -66,3 +66,76 @@ export function assembleDeploymentTimeseries(
     totals: input.totals,
   };
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface DeploymentTimeseriesSummary {
+  /**
+   * The last UTC day fully inside [from, to) that had ended at request time,
+   * with that day's distinct active devices; null when no such day exists.
+   */
+  lastCompleteDay: { activeDevices: number; bucketStart: Date } | null;
+  /**
+   * Event counts summed over the deployment-wide `totals` buckets. Active
+   * devices are left out: per-day distinct counts do not add up to distinct
+   * devices across the range.
+   */
+  totals: { downloaded: number; failed: number; installed: number; success: number };
+}
+
+/** `from` is UTC-day aligned by the route; `now` is the request time. */
+export function summarizeDeploymentTimeseries(
+  range: { from: Date; to: Date },
+  totals: readonly TimeseriesBucket[],
+  now: Date,
+): DeploymentTimeseriesSummary {
+  const summed = { downloaded: 0, failed: 0, installed: 0, success: 0 };
+  for (const bucket of totals) {
+    summed.downloaded += bucket.downloaded;
+    summed.failed += bucket.failed;
+    summed.installed += bucket.installed;
+    summed.success += bucket.success;
+  }
+
+  const end = Math.min(range.to.getTime(), now.getTime());
+  const lastStart = end - (end % DAY_MS) - DAY_MS;
+  const lastCompleteDay =
+    lastStart < range.from.getTime()
+      ? null
+      : {
+          // Sparse buckets: a missing day had no active devices.
+          activeDevices:
+            totals.find((bucket) => bucket.bucketStart.getTime() === lastStart)
+              ?.activeDevices ?? 0,
+          bucketStart: new Date(lastStart),
+        };
+
+  return { lastCompleteDay, totals: summed };
+}
+
+/**
+ * Running Applied total of one series per UTC day of [from, to), from 0 at
+ * `from` (events before the range are not counted). Null for the null-hash
+ * series: its Applied events are reverts to the embedded bundle, not
+ * adoption of a release.
+ */
+export function cumulativeSuccess(
+  range: { from: Date; to: Date },
+  series: { points: readonly TimeseriesBucket[]; targetPackageHash: string | null },
+): number[] | null {
+  if (series.targetPackageHash === null) {
+    return null;
+  }
+
+  const successByDay = new Map(
+    series.points.map((point) => [point.bucketStart.getTime(), point.success]),
+  );
+  const cumulative: number[] = [];
+  let running = 0;
+  for (let day = range.from.getTime(); day < range.to.getTime(); day += DAY_MS) {
+    running += successByDay.get(day) ?? 0;
+    cumulative.push(running);
+  }
+
+  return cumulative;
+}

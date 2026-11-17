@@ -471,8 +471,12 @@ export async function runSelfhostScript(
   input: {
     args: readonly string[];
     env?: Record<string, string>;
+    /** Extra lines for the Ctrl+C notice, after the standard ones. */
+    interruptNotes?: readonly string[];
     milestones: readonly RemoteMilestone[];
     name: string;
+    /** Sees every chunk of the script's output, beside the renderer. */
+    onOutput?: (chunk: string) => void;
     script: string;
   },
 ): Promise<void> {
@@ -488,6 +492,7 @@ export async function runSelfhostScript(
             "Run the same command again to continue from where this install stopped.",
           ]
         : []),
+      ...(input.interruptNotes ?? []),
     ],
     launch: (onOutput) =>
       runRemoteScript({
@@ -498,7 +503,10 @@ export async function runSelfhostScript(
         connection: pairedSshInvocation(session.sshTarget, session.identityFile),
         cwd: session.remotePath,
         ...(input.env !== undefined ? { env: input.env } : {}),
-        onOutput,
+        onOutput: (chunk) => {
+          input.onOutput?.(chunk);
+          onOutput(chunk);
+        },
         runProcess: deps.runProcess,
       }),
     milestones: input.milestones,
@@ -915,4 +923,20 @@ export async function confirmTypedRestore(deps: CommandDeps): Promise<void> {
   if (typed.toLowerCase() !== "restore") {
     throw new DeclinedError("Restore cancelled.");
   }
+}
+
+/**
+ * Whether an upgrade asks before it changes the server, shared by the ssh and
+ * Fly paths. `--yes` answers it; a run that cannot ask and was not given
+ * `--yes` is refused here, before anything connects to the server.
+ */
+export function upgradeAsksFirst(deps: CommandDeps, parsed: ParsedArgs): boolean {
+  const yes = readBooleanFlag(parsed, "--yes");
+  const interactive = canAsk(deps, parsed);
+  if (!interactive && !yes) {
+    throw new UsageError(
+      "cmpatch selfhost upgrade changes the server. Pass --yes to confirm in a non-interactive run.",
+    );
+  }
+  return interactive && !yes;
 }

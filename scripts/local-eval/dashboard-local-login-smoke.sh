@@ -10,8 +10,11 @@
 #   1. GET  /v1/auth/oauth/web-config   → expect mode=local-dev, provider entry
 #   2. POST /v1/auth/oauth/callback     with code=local:<email> → real session
 #   3. GET  /v1/users/me                with the access token → identity check
-#   4. POST /v1/auth/logout             with the refresh token → 204
-#   5. GET  /v1/users/me                again → the session is really revoked
+#   4. GET  /v1/users/me                with the seeded API token → the sign-in
+#                                       did not revoke it (the seed pre-links the
+#                                       admin to its local-dev identity)
+#   5. POST /v1/auth/logout             with the refresh token → 204
+#   6. GET  /v1/users/me                again → the session is really revoked
 #
 # Runs against the dashboard origin (same-origin proxy) by default so the
 # Caddy /v1/* route is covered too; point DASHBOARD_URL elsewhere (or at the
@@ -24,6 +27,7 @@ set -euo pipefail
 
 DASHBOARD_URL="${DASHBOARD_URL:-http://localhost:8080}"
 LOCAL_ADMIN_EMAIL="${LOCAL_ADMIN_EMAIL:-local-admin@example.com}"
+SEEDED_API_TOKEN="${SEEDED_API_TOKEN:-cm_pat_local-dev-token-change-me-00000001}"
 
 LOCAL_EVAL_LOG_PREFIX="dashboard-smoke"
 # shellcheck source=scripts/local-eval/common.sh
@@ -86,6 +90,15 @@ if [ "${OAUTH_PROVIDER}" != "local-dev" ]; then
   fail "user oauth_provider is '${OAUTH_PROVIDER}', expected 'local-dev' (audit-trail contract)"
 fi
 log "authenticated route OK (oauth_provider=local-dev recorded)"
+
+if [ "${LOCAL_ADMIN_EMAIL}" = "local-admin@example.com" ]; then
+  SEEDED_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer ${SEEDED_API_TOKEN}" "${DASHBOARD_URL}/v1/users/me")"
+  if [ "${SEEDED_STATUS}" != "200" ]; then
+    fail "the seeded API token stopped working after sign-in (HTTP ${SEEDED_STATUS}); is the admin seeded as linked to local-dev?"
+  fi
+  log "seeded API token still works after sign-in"
+fi
 
 log "logging out"
 LOGOUT_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${DASHBOARD_URL}/v1/auth/logout" \

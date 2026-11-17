@@ -21,10 +21,25 @@ Pod::Spec.new do |s|
     "libs/hdiffpatch/libHDiffPatch/HDiff/private_diff/limit_mem_diff/adler_roll.{h,c}",
     "libs/hdiffpatch/dirDiffPatch/dir_patch/*.{h,c}",
     "libs/zstd/lib/zstd.h",
-    "libs/zstd/lib/common/*.{h,c}",
-    "libs/zstd/lib/decompress/*.{h,c}"
+    "libs/zstd/lib/common/*.h",
+    "libs/zstd/lib/decompress/*.h",
+    # The zstd decompression sources, listed one by one. This is the same set as
+    # android/CMakeLists.txt and the CodemagicPatchNativeLibs target in Package.swift,
+    # and the set codemagic_patch_zstd_prefix.h is generated from. A glob over
+    # common/*.c would also pull in debug.c, pool.c and threading.c, which only serve
+    # zstd's multithreaded compression and export symbols the prefix header does not
+    # rename.
+    "libs/zstd/lib/common/entropy_common.c",
+    "libs/zstd/lib/common/error_private.c",
+    "libs/zstd/lib/common/fse_decompress.c",
+    "libs/zstd/lib/common/xxhash.c",
+    "libs/zstd/lib/common/zstd_common.c",
+    "libs/zstd/lib/decompress/huf_decompress.c",
+    "libs/zstd/lib/decompress/zstd_ddict.c",
+    "libs/zstd/lib/decompress/zstd_decompress.c",
+    "libs/zstd/lib/decompress/zstd_decompress_block.c"
   ]
-  s.public_header_files = "ios/CodemagicPatchHashing.h", "ios/CodemagicPatchBundleOps.h"
+  s.public_header_files = "ios/CodemagicPatchObjCBridge/*.h"
   s.requires_arc = true
   s.dependency "React-Core"
   s.pod_target_xcconfig = {

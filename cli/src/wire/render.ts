@@ -53,6 +53,9 @@ export function renderProject(plan: WirePlan): string[] {
   const rows: Array<[string, string]> = [
     ["Project", `${shape.name}, ${framework}${reactNative} (${manager})`],
     ["SDK", sdk],
+    ...(plan.iosDependencyManager === undefined
+      ? []
+      : [["iOS packages", plan.iosDependencyManager === "swiftpm" ? "SwiftPM (React Native spm)" : "CocoaPods"] as [string, string]]),
   ];
   // The server and download URLs are the same for every platform of one
   // connection; they are listed once unless they are not.

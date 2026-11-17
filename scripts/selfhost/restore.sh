@@ -302,6 +302,11 @@ if [ -f "${BACKUP_DIR}/gcs-service-account.json" ] &&
 fi
 
 load_selfhost_env
+# A backup from before stock Caddy names the locally built
+# codemagic-patch-caddy:selfhost, which this checkout's compose file no longer
+# builds and which a pruned host no longer has: point it at the pinned stock
+# image. The server image value is restored as it was; that is the restore.
+migrate_selfhost_caddy_image
 # The restored env may predate mandatory OAuth (notably with --restore-env);
 # validate and backfill before any destructive step so the stack can boot.
 ensure_selfhost_oauth_env

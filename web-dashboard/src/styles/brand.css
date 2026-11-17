@@ -132,6 +132,10 @@
   --color-gh-fg: #ffffff;
   --color-gh-hover: #000000;
 
+  /* Provider logo marks: same in both themes. */
+  --color-bitbucket: #2684ff;
+  --color-gitlab: #fc6d26;
+
   /* Inverse chrome (toasts, codeblocks, tooltips): navy in light, lifted
      card in dark so it does not collapse into canvas. */
   --color-inverse: var(--cm-color-text-heading);

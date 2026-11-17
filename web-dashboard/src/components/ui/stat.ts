@@ -1,11 +1,12 @@
-// Stat-tile literals (legacy `.stat` family on TeamOverviewPage's count
-// tiles). 1:1 port of the legacy rules; the colored top strip (`.stat::after`,
-// a pseudo-element painting `var(--accent)`) cannot be a utility — it stays in
-// app.css's component keep-list as the `.stat-strip::after` rule, and STAT carries
-// the `stat-strip` marker plus `relative overflow-hidden` so it paints.
+// Stat-tile literals (legacy `.stat` family). Used by metrics counters with a
+// coloured top strip. The strip (`.stat::after`, a pseudo-element painting
+// `var(--accent)`) cannot be a utility — it stays in app.css's component
+// keep-list as the `.stat-strip::after` rule, and STAT carries the
+// `stat-strip` marker plus `relative overflow-hidden` so it paints.
 //
-// `--accent` / `--accent-tint` are injected inline by the caller (preserve that
-// mechanism); the icon reads them with the legacy blue fallbacks.
+// `--accent` / `--accent-tint` are injected inline by the caller; the icon
+// reads them with the legacy blue fallbacks. Team Overview uses a plain card
+// without this strip.
 export const STAT =
   "stat-strip relative overflow-hidden rounded-lg border border-border bg-surface px-5 py-[18px] shadow-sm";
 

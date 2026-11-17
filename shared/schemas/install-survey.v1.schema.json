@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codemagic.io/patch/schemas/install-survey/v1.json",
+  "title": "Codemagic Patch install survey answer (v1)",
+  "description": "Wire contract for the one answer `cmpatch selfhost install` POSTs to the collector (https://telemetry.codemagicpatch.dev/v1/install-survey) when the operator answers \"How did you hear about us?\" after a first install. The body is plain JSON under 2 KiB and carries the chosen answer, the install path, and, for `other` only, the text as typed. It carries no identity: no instance id, no install id, nothing about the machine or the operator. The root schema is the lenient envelope the collector enforces at runtime; `strictAnswer` is the exact shape current senders produce and is what the CLI's and the collector's contract tests validate fixtures against.",
+  "$comment": "Evolution rules: additive-only within v1. The collector ignores unknown fields and counts an `answer` or `install` slug it does not list as `other`, so a newer CLI never gets a 400 for a choice this file does not list yet. `schema_version` is bumped only for breaking changes.",
+  "$ref": "#/$defs/answer",
+  "$defs": {
+    "answer": {
+      "title": "Install survey answer envelope (runtime contract)",
+      "type": "object",
+      "required": ["schema_version", "answer", "install"],
+      "properties": {
+        "schema_version": {
+          "description": "Wire-format major version. Always 1 for this schema.",
+          "const": 1
+        },
+        "answer": {
+          "description": "The chosen answer. Current senders send `ai-assistant`, `search-engine`, `colleague-community-docs`, `events-outreach-ads`, or `other`; any other slug is counted as `other`.",
+          "$ref": "#/$defs/slug"
+        },
+        "install": {
+          "description": "The install path that asked the question. Current senders send `ssh`, `ngrok`, or `fly`; any other slug is counted as `other`. `smoke` is the deploy smoke value: accepted and never stored.",
+          "$ref": "#/$defs/slug"
+        },
+        "other_text": {
+          "description": "Free text typed after choosing `other`, at most 200 characters. Read only when `answer` is `other`.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,40}$"
+    },
+    "strictAnswer": {
+      "title": "Install survey answer, exact shape of current senders",
+      "description": "What the CLI produces today: a listed answer and install path, no extras, and `other_text` (never empty) only with `other`. Contract tests validate fixtures against this; the collector enforces only `answer`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "answer", "install"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "answer": {
+          "type": "string",
+          "enum": ["ai-assistant", "search-engine", "colleague-community-docs", "events-outreach-ads", "other"]
+        },
+        "install": { "type": "string", "enum": ["ssh", "ngrok", "fly", "smoke"] },
+        "other_text": { "type": "string", "minLength": 1, "maxLength": 200 }
+      },
+      "if": { "required": ["other_text"] },
+      "then": { "properties": { "answer": { "const": "other" } } }
+    }
+  }
+}

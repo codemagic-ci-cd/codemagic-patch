@@ -109,6 +109,13 @@ case "${SELFHOST_SCHEME:-}" in
 esac
 NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN:-}"
 SCHEME=https
+# The server image: by default the published image of the server release tag
+# the checkout is at (resolve_server_image_for_head), --image names one, and
+# --build-from-source builds it here. select_install_server_image settles it
+# into INSTALL_SERVER_IMAGE before anything is written.
+INSTALL_IMAGE=""
+BUILD_FROM_SOURCE=0
+INSTALL_SERVER_IMAGE=""
 
 usage() {
   cat <<'USAGE'
@@ -129,6 +136,12 @@ port 443, or certificate prerequisites apply (see the option below). With
 --ngrok the stack runs on this machine and is reached at an ngrok address,
 so none of them apply either: no domain, DNS record, certificate, or open
 port.
+
+The server image: run from a checkout of a codemagic-patch-server-v* release
+tag (`git checkout <tag>`), the installer pulls the image published with that
+release (its server-image.json asset on GitHub). --image runs an image you
+name instead, and --build-from-source builds it on this host from the
+checkout (the only path that needs the build's memory and Docker buildx).
 
 Options:
   --api-domain <domain>        Public API domain, for example updates.example.com.
@@ -316,6 +329,14 @@ Options:
                                mode, the storage mode, or the delivery adapter
                                on an existing deployment stays a manual
                                migration these scripts do not perform.
+  --image <ref>                Run this server image (pulled from its
+                               registry) instead of the release's published
+                               one, e.g. a digest-pinned registry ref.
+  --build-from-source          Build the server image on this host from the
+                               checkout instead of pulling one. Required on a
+                               checkout that is not at a server release tag,
+                               and on a rerun of an install that built its
+                               image here.
   -y, --yes                    Use defaults for non-destructive prompts.
   -h, --help                   Show this help.
 USAGE
@@ -369,11 +390,19 @@ while [ "$#" -gt 0 ]; do
     --allow-http) ALLOW_HTTP=1; shift ;;
     --ngrok) USE_NGROK=1; shift ;;
     --repair-env) REPAIR_ENV=1; shift ;;
+    --image)
+      [ -n "${2:-}" ] || fail_selfhost "--image needs an image reference"
+      INSTALL_IMAGE="$2"; shift 2 ;;
+    --build-from-source) BUILD_FROM_SOURCE=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail_selfhost "unknown option: $1" ;;
   esac
 done
+
+if [ -n "$INSTALL_IMAGE" ] && [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+  fail_selfhost "--image and --build-from-source cannot be combined: one runs an image built elsewhere, the other builds it here. Pick one."
+fi
 
 if [ "$ALLOW_HTTP" -eq 1 ] && [ "$USE_NGROK" -eq 1 ]; then
   fail_selfhost "--allow-http and --ngrok cannot be combined: --allow-http serves this machine alone over plain HTTP, --ngrok serves an https:// ngrok address. Pick one."
@@ -1047,6 +1076,49 @@ check_tooling() {
   docker compose version >/dev/null || fail_selfhost "Docker Compose v2 is required"
 }
 
+# The ways forward when the installer cannot pick the server image by itself,
+# after the reason. A checkout already at a server release tag is not told to
+# check one out: that is where it is (a failed --build-from-source rerun).
+refuse_server_image_choice() {
+  if [ -n "$(selfhost_server_tag_at_head)" ]; then
+    fail_selfhost "$1
+  1. Rerun with --image <ref> to run a server image you choose.
+  2. Rerun with --build-from-source to build the server image on this host."
+  fi
+  fail_selfhost "$1
+  1. Check out the latest server release and rerun:
+       git fetch --tags && git checkout ${SELFHOST_SERVER_TAG_PREFIX}<version>
+     (an install that is already running upgrades with scripts/selfhost/upgrade.sh after the checkout instead)
+  2. Rerun with --image <ref> to run a server image you choose.
+  3. Rerun with --build-from-source to build the server image on this host."
+}
+
+# Settles INSTALL_SERVER_IMAGE before anything is written, so a refusal or a
+# release that cannot be resolved leaves no half-written env file behind.
+select_install_server_image() {
+  local recorded
+  if [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+    INSTALL_SERVER_IMAGE="$SELFHOST_LOCAL_SERVER_IMAGE"
+    return 0
+  fi
+  if [ -n "$INSTALL_IMAGE" ]; then
+    INSTALL_SERVER_IMAGE="$INSTALL_IMAGE"
+    return 0
+  fi
+  # A rerun reuses the env file. One whose image was built on this host names
+  # a local-only tag that no registry has, and switching it to a pulled image
+  # here would be a migration nobody asked for; the operator says which.
+  recorded="$(selfhost_env_value_from_file CODEMAGIC_PATCH_SERVER_IMAGE)"
+  if [ "$recorded" = "$SELFHOST_LOCAL_SERVER_IMAGE" ]; then
+    refuse_server_image_choice "${SELFHOST_ENV_FILE} records CODEMAGIC_PATCH_SERVER_IMAGE=${SELFHOST_LOCAL_SERVER_IMAGE}, an image built on this host, so this rerun cannot pick its server image by itself. Either:"
+  fi
+  if [ -z "$(selfhost_server_tag_at_head)" ]; then
+    refuse_server_image_choice "the checkout in ${SELFHOST_REPO_ROOT} is not at a ${SELFHOST_SERVER_TAG_PREFIX}* release tag, so there is no published server image that matches it. Either:"
+  fi
+  resolve_server_image_for_head
+  INSTALL_SERVER_IMAGE="$SELFHOST_RESOLVED_SERVER_IMAGE"
+}
+
 # US36: state the network prerequisites up front. Caddy obtains Let's Encrypt
 # certificates during install, which needs public DNS + ports 80/443 reachable —
 # otherwise the install hangs at the HTTPS readiness wait with a late, opaque
@@ -1280,8 +1352,8 @@ EOF
 SERVER_URL=${URL_SCHEME}://${API_DOMAIN}
 PUBLIC_BASE_URL='${PUBLIC_BASE_URL}'
 
-CODEMAGIC_PATCH_SERVER_IMAGE=codemagic-patch-server:selfhost
-CODEMAGIC_PATCH_CADDY_IMAGE=codemagic-patch-caddy:selfhost
+CODEMAGIC_PATCH_SERVER_IMAGE=${INSTALL_SERVER_IMAGE}
+CODEMAGIC_PATCH_CADDY_IMAGE=${SELFHOST_CADDY_IMAGE}
 EOF
 
   if [ "$STORAGE_MODE" = "bundled" ] && [ "$USE_CLOUDFRONT" -eq 1 ]; then
@@ -1740,6 +1812,7 @@ main() {
   if [ "$REPAIR_ENV" -eq 1 ] && [ ! -f "$SELFHOST_ENV_FILE" ]; then
     fail_selfhost "--repair-env applies only to an existing ${SELFHOST_ENV_FILE}; there is nothing to repair here. Run the install without it."
   fi
+  select_install_server_image
   if [ ! -f "$SELFHOST_ENV_FILE" ]; then
     print_prerequisites
   fi
@@ -1872,6 +1945,14 @@ main() {
       set_selfhost_env_literal NGROK_AUTHTOKEN "$NGROK_AUTHTOKEN"
       log_selfhost "updated NGROK_AUTHTOKEN in ${SELFHOST_ENV_FILE}"
     fi
+  fi
+
+  # A rerun takes this run's server image (the flag, or the release HEAD is
+  # at); everything else in a reused file stays as it was.
+  if [ "$env_reused" -eq 1 ] &&
+    [ "$(selfhost_env_value_from_file CODEMAGIC_PATCH_SERVER_IMAGE)" != "$INSTALL_SERVER_IMAGE" ]; then
+    set_selfhost_env_value CODEMAGIC_PATCH_SERVER_IMAGE "$INSTALL_SERVER_IMAGE"
+    log_selfhost "set CODEMAGIC_PATCH_SERVER_IMAGE=${INSTALL_SERVER_IMAGE} in ${SELFHOST_ENV_FILE}"
   fi
 
   # Reset so detection below reflects the env file, not flags or the ambient
@@ -2082,8 +2163,21 @@ main() {
   # server container would crash-loop.
   ensure_selfhost_oauth_env
 
-  log_selfhost "building images ${CODEMAGIC_PATCH_SERVER_IMAGE:-codemagic-patch-server:selfhost} and ${CODEMAGIC_PATCH_CADDY_IMAGE:-codemagic-patch-caddy:selfhost}"
-  compose_selfhost build server caddy
+  # A rerun over an env file from before stock Caddy still names the locally
+  # built caddy image, which nothing builds any more; point it at the stock one.
+  migrate_selfhost_caddy_image
+
+  # Caddy is always the stock image, pulled. The server is pulled too unless
+  # --build-from-source builds it here. The "building images" and "pulling
+  # images" wordings are what the CLI's install progress keys on.
+  if [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+    log_selfhost "building images: ${CODEMAGIC_PATCH_SERVER_IMAGE} from source, pulling ${CODEMAGIC_PATCH_CADDY_IMAGE}"
+    compose_selfhost pull caddy
+    compose_selfhost build server
+  else
+    log_selfhost "pulling images: ${CODEMAGIC_PATCH_SERVER_IMAGE} and ${CODEMAGIC_PATCH_CADDY_IMAGE}"
+    compose_selfhost pull server caddy
+  fi
   verify_cloudfront
   if [ "${STORAGE_MODE:-bundled}" != "bundled" ]; then
     if [ "$SKIP_STORAGE_CHECK" -eq 1 ]; then
@@ -2111,6 +2205,9 @@ main() {
     wait_for_selfhost_service minio
   fi
   wait_for_selfhost_service server
+  # The stack now runs this checkout, so upgrade.sh can tell later whether the
+  # checkout moved since.
+  record_selfhost_source_revision
 
   # The label names what is being waited for: certificates over https, bare
   # reachability over http.

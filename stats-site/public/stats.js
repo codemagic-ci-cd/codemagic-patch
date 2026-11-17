@@ -19,9 +19,7 @@ export const FIXTURE_NAMES = Object.freeze(["empty", "young", "large", "stale", 
 // The "now" the page uses in fixture mode, so fixture freshness is stable: the
 // fixtures are generated against this clock (fixtures/generate.mjs).
 export const FIXTURE_CLOCK_ISO = "2026-10-22T12:00:00Z";
-export const SNAPSHOT_PATH = "data/snapshot.json";
 export const MAX_DOCUMENT_AGE_MS = 72 * 60 * 60 * 1000;
-export const CHART_DAYS = 90;
 export const WEEK_BUCKETS = 12;
 export const EM_DASH = "—";
 
@@ -152,12 +150,12 @@ export function isoWeekNumber(day) {
 }
 
 /**
- * Sums daily releases into the newest `bucketCount` ISO weeks. A week with
- * fewer than seven reported days is `partial` (the series starts or ends
- * inside it, or the collector missed days); a week with no reported day at
- * all keeps a null sum.
+ * Sums a daily series (releases, updates applied) into the newest
+ * `bucketCount` ISO weeks. A week with fewer than seven reported days is
+ * `partial` (the series starts or ends inside it, or the collector missed
+ * days); a week with no reported day at all keeps a null sum.
  */
-export function bucketWeeks(days, releases, bucketCount = WEEK_BUCKETS) {
+export function bucketWeeks(days, values, bucketCount = WEEK_BUCKETS) {
   const byMonday = new Map();
   days.forEach((day, index) => {
     const monday = isoWeekMonday(day);
@@ -169,15 +167,15 @@ export function bucketWeeks(days, releases, bucketCount = WEEK_BUCKETS) {
         isoWeek: week,
         isoYear: year,
         partial: true,
-        releases: null,
+        sum: null,
         weekEnd: addDays(monday, 6),
         weekStart: monday,
       };
       byMonday.set(monday, bucket);
     }
-    if (releases[index] !== null) {
+    if (values[index] !== null) {
       bucket.coveredDays += 1;
-      bucket.releases = (bucket.releases ?? 0) + releases[index];
+      bucket.sum = (bucket.sum ?? 0) + values[index];
     }
   });
   return [...byMonday.values()]
@@ -352,7 +350,7 @@ export function isWarming(doc) {
 }
 
 /* ----------------------------------------------------------------------------
-   Source selection: live document, deploy-time snapshot, last good copy.
+   Source selection: live document, last good browser copy.
    ------------------------------------------------------------------------- */
 
 export function isPlaceholder(value) {
@@ -389,13 +387,13 @@ export function isFresh(doc, nowMs) {
 /**
  * Picks what to render. `live` is the fetch outcome for the collector
  * (`{kind: "ok", doc}`, `{kind: "http", status}`, `{kind: "error"}`, or null
- * when no live source is configured); `snapshot` and `cached` are documents or
- * null. A 404 is the collector saying the public stats are paused, so it wins
- * over every fallback. Otherwise a fresh, valid live document is used as is;
- * failing that, the newest valid copy among live, snapshot, and cache is shown
- * behind a banner; with none, the page says so instead of inventing numbers.
+ * when no live source is configured); `cached` is a document or null. A 404
+ * is the collector saying the public stats are paused, so it wins over the
+ * cache. Otherwise a fresh, valid live document is used as is; failing that,
+ * the newest valid copy among live and cache is shown behind a banner; with
+ * none, the page says so instead of inventing numbers.
  */
-export function resolveStatsSource({ cached = null, live = null, snapshot = null }, nowMs) {
+export function resolveStatsSource({ cached = null, live = null }, nowMs) {
   if (live !== null && live.kind === "http" && live.status === 404) {
     return { doc: null, origin: null, reason: "http-404", state: "paused" };
   }
@@ -418,9 +416,6 @@ export function resolveStatsSource({ cached = null, live = null, snapshot = null
   const candidates = [];
   if (liveProblem === "stale") {
     candidates.push({ doc: live.doc, origin: "live" });
-  }
-  if (snapshot !== null && validateStats(snapshot).ok) {
-    candidates.push({ doc: snapshot, origin: "snapshot" });
   }
   if (cached !== null && validateStats(cached).ok) {
     candidates.push({ doc: cached, origin: "cache" });
@@ -455,7 +450,7 @@ export function describeSourceProblem(reason) {
 /* ----------------------------------------------------------------------------
    Chart geometry. Every chart is an inline SVG on a 720×220 view box (360×200
    on phones, 1080×260 on a full-width card); the helpers below are pure so
-   the tests can cover their logic (gaps, windows, view choice), while the
+   the tests can cover their logic (gaps, view choice), while the
    drawn result is checked by eye on the fixtures.
    ------------------------------------------------------------------------- */
 
@@ -588,16 +583,6 @@ export function roundedTopRectPath(x, y, width, height, radius) {
     `V${bottom}`,
     "Z",
   ].join(" ");
-}
-
-/** The newest `count` days of every parallel series. */
-export function lastDays(timeseries, count) {
-  const start = Math.max(0, timeseries.days.length - count);
-  const window = { days: timeseries.days.slice(start) };
-  for (const series of Object.keys(SERIES_CHECKS)) {
-    window[series] = timeseries[series].slice(start);
-  }
-  return window;
 }
 
 /* ----------------------------------------------------------------------------
@@ -775,11 +760,19 @@ function saveCachedDocument(doc) {
   try {
     localStorage.setItem(DOCUMENT_STORAGE_KEY, JSON.stringify(doc));
   } catch {
-    // Quota or blocked storage: the snapshot remains the fallback.
+    // Quota or blocked storage: the next visit will use the live source only.
   }
 }
 
 /* Fetching ---------------------------------------------------------------- */
+
+// The page is served at both /stats/ and /stats (CloudFront maps the
+// slash-less path to the same index.html), so a path relative to the document
+// would resolve against the site root. Files that ship with the page resolve
+// against this module's own URL instead.
+function pageFileUrl(path) {
+  return new URL(path, import.meta.url).href;
+}
 
 async function fetchLive(url) {
   try {
@@ -790,15 +783,6 @@ async function fetchLive(url) {
     return { doc: await response.json(), kind: "ok" };
   } catch (error) {
     return { kind: "error", reason: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function fetchOptionalJson(path) {
-  try {
-    const response = await fetch(path, { signal: AbortSignal.timeout(10_000) });
-    return response.ok ? await response.json() : null;
-  } catch {
-    return null;
   }
 }
 
@@ -972,91 +956,41 @@ function renderSparkline(svg, values) {
   svg.removeAttribute("hidden");
 }
 
-/* Daily applied bars ------------------------------------------------------- */
+/* Weekly bars -------------------------------------------------------------- */
 
-function renderDailyChart(wrap, window) {
-  clearChildren(wrap);
-  const { applied, days } = window;
-  const count = days.length;
-  const known = applied.filter(isNumber);
-  if (count === 0 || known.length === 0) {
-    wrap.append(createElement("p", { class: "chart-empty" }, "No reported day in this window."));
-    return;
-  }
-
-  const view = chartViewFor(wrap);
-  const { baseline, innerHeight, innerWidth, plot } = plotBox(view);
-  const top = niceCeiling(Math.max(...known));
-  const yAt = linearScale(0, top, baseline, plot.top);
-  const heightFor = (value) => (innerHeight * value) / top;
-  // Ninety slots in a compact view leave no room for a 2-unit gap.
-  const layout = barLayout(count, { gap: innerWidth / count < 5 ? 1 : 2, left: plot.left, width: innerWidth });
-  const radius = Math.min(4, layout.barWidth / 2);
-  const latest = count - 1;
-  const svg = createChartSvg(
-    view,
-    `Updates applied per day, ${formatUtcDate(days[0])} to ${formatUtcDate(days[latest])}. ` +
-      `Latest day: ${applied[latest] === null ? "no report" : `${formatInteger(applied[latest])} applied`}. ` +
-      `Highest day: ${formatInteger(Math.max(...known))} applied.`,
-  );
-
-  gridLines(svg, view, [0, top / 2, top].filter(Number.isInteger), yAt, compactNumber);
-  xAxisLabels(svg, view, count, (index) => layout.x(index) + layout.barWidth / 2, (index) => formatShortUtcDate(days[index]));
-
-  const groups = days.map((_, index) => {
-    const group = createSvgElement("g", { class: "chart-bar-group" });
-    if (applied[index] !== null) {
-      const height = heightFor(applied[index]);
-      group.append(
-        createSvgElement("path", {
-          class: "chart-bar chart-bar--applied",
-          d: roundedTopRectPath(layout.x(index), baseline - height, layout.barWidth, height, radius),
-        }),
-      );
-    }
-    return group;
-  });
-  svg.append(...groups);
-
-  const tooltip = buildTooltip();
-  wrap.append(svg, tooltip);
-  let highlighted = null;
-  attachChartHover({
-    count,
-    indexAt: (viewX) => Math.floor((viewX - plot.left) / layout.slot),
-    onChange: (index) => {
-      if (highlighted !== null) {
-        highlighted.classList.remove("is-active");
-        highlighted = null;
-      }
-      if (index === null) {
-        tooltip.hidden = true;
-        return;
-      }
-      highlighted = groups[index];
-      highlighted.classList.add("is-active");
-      fillTooltip(tooltip, formatUtcDate(days[index]), applied[index] === null ? "no report for this day" : "", [
-        { label: "Applied", swatchClass: "legend-key--applied", value: formatInteger(applied[index]) },
-      ]);
-      placeTooltip(tooltip, layout.x(index) + layout.barWidth / 2, view);
-      tooltip.hidden = false;
-    },
-    svg,
-    view,
-    wrap,
-  });
-}
-
-/* Weekly releases bars ----------------------------------------------------- */
+// Both charts sum a daily series into the same twelve ISO weeks; a series
+// names what one bar counts and how the bar and its tooltip swatch are drawn.
+const APPLIED_SERIES = Object.freeze({
+  barClass: "chart-bar--applied",
+  countText: (value) => `${formatInteger(value)} applied`,
+  label: "Applied",
+  swatchClass: "legend-key--applied",
+  title: "Updates applied per ISO week",
+});
+const RELEASES_SERIES = Object.freeze({
+  barClass: "chart-bar--releases",
+  countText: (value) => `${formatInteger(value)} ${value === 1 ? "release" : "releases"}`,
+  label: "Releases",
+  swatchClass: "legend-key--releases",
+  title: "Releases per ISO week",
+});
 
 function describeWeek(week) {
   return `Week ${week.isoWeek}, ${week.isoYear} · ${formatShortUtcDate(week.weekStart)} – ${formatShortUtcDate(week.weekEnd)}`;
 }
 
-function renderWeeklyChart(wrap, weeks) {
+/** Tooltip note: why a bar is missing or dashed, empty for a full week. */
+function describeWeekCoverage(week) {
+  if (week.coveredDays === 0) {
+    return "no report for this week";
+  }
+  return week.partial ? `partial: ${week.coveredDays} of 7 days reported` : "";
+}
+
+function renderWeeklyChart(wrap, weeks, series) {
   clearChildren(wrap);
   const count = weeks.length;
-  const known = weeks.map((week) => week.releases).filter(isNumber);
+  const known = weeks.map((week) => week.sum).filter(isNumber);
   if (count === 0 || known.length === 0) {
     wrap.append(createElement("p", { class: "chart-empty" }, "No reported week yet."));
     return;
@@ -1070,15 +1004,14 @@ function renderWeeklyChart(wrap, weeks) {
   const layout = barLayout(count, { left: plot.left, width: innerWidth });
   const radius = Math.min(4, layout.barWidth / 2);
   const latest = weeks[count - 1];
-  const latestReleases =
-    latest.releases === null
+  const latestValue =
+    latest.sum === null
       ? "no report"
-      : `${formatInteger(latest.releases)} ${latest.releases === 1 ? "release" : "releases"}`;
+      : `${series.countText(latest.sum)}${latest.partial ? ` (partial, ${latest.coveredDays} of 7 days reported)` : ""}`;
   const svg = createChartSvg(
     view,
-    `Releases per ISO week, ${formatUtcDate(weeks[0].weekStart)} to ${formatUtcDate(latest.weekEnd)}. ` +
-      `Latest week, ${describeWeek(latest)}: ${latestReleases}` +
-      `${latest.partial ? ` (partial, ${latest.coveredDays} of 7 days reported)` : ""}.`,
+    `${series.title}, ${formatUtcDate(weeks[0].weekStart)} to ${formatUtcDate(latest.weekEnd)}. ` +
+      `Latest week, ${describeWeek(latest)}: ${latestValue}.`,
   );
 
   gridLines(svg, view, [0, top / 2, top].filter(Number.isInteger), yAt, compactNumber);
@@ -1086,11 +1019,11 @@ function renderWeeklyChart(wrap, weeks) {
 
   const groups = weeks.map((week, index) => {
     const group = createSvgElement("g", { class: "chart-bar-group" });
-    if (isNumber(week.releases) && week.releases > 0) {
-      const height = heightFor(week.releases);
+    if (isNumber(week.sum) && week.sum > 0) {
+      const height = heightFor(week.sum);
       group.append(
         createSvgElement("path", {
-          class: `chart-bar chart-bar--releases${week.partial ? " chart-bar--partial" : ""}`,
+          class: `chart-bar ${series.barClass}${week.partial ? " chart-bar--partial" : ""}`,
           d: roundedTopRectPath(layout.x(index), baseline - height, layout.barWidth, height, radius),
         }),
       );
@@ -1117,8 +1050,8 @@ function renderWeeklyChart(wrap, weeks) {
       const week = weeks[index];
       highlighted = groups[index];
       highlighted.classList.add("is-active");
-      fillTooltip(tooltip, describeWeek(week), week.partial ? `partial: ${week.coveredDays} of 7 days reported` : "", [
-        { label: "Releases", swatchClass: "legend-key--releases", value: formatInteger(week.releases) },
+      fillTooltip(tooltip, describeWeek(week), describeWeekCoverage(week), [
+        { label: series.label, swatchClass: series.swatchClass, value: formatInteger(week.sum) },
       ]);
       placeTooltip(tooltip, layout.x(index) + layout.barWidth / 2, view);
       tooltip.hidden = false;
@@ -1186,7 +1119,7 @@ function showCharts() {
   }
 }
 
-const CHART_WRAP_IDS = ["daily-chart", "weekly-chart"];
+const CHART_WRAP_IDS = ["applied-chart", "releases-chart"];
 // The last rendered document, kept so a resize across a view-box breakpoint
 // can redraw the charts with the other view box.
 let renderedDoc = null;
@@ -1205,11 +1138,9 @@ function rerenderChartsOnResize() {
 }
 
 function renderCharts(doc) {
-  renderDailyChart(document.getElementById("daily-chart"), lastDays(doc.timeseries, CHART_DAYS));
-  renderWeeklyChart(
-    document.getElementById("weekly-chart"),
-    bucketWeeks(doc.timeseries.days, doc.timeseries.releases, WEEK_BUCKETS),
-  );
+  const { applied, days, releases } = doc.timeseries;
+  renderWeeklyChart(document.getElementById("applied-chart"), bucketWeeks(days, applied, WEEK_BUCKETS), APPLIED_SERIES);
+  renderWeeklyChart(document.getElementById("releases-chart"), bucketWeeks(days, releases, WEEK_BUCKETS), RELEASES_SERIES);
 }
 
 function renderDocument(doc) {
@@ -1261,29 +1192,6 @@ function renderResolution(resolution) {
   }
 }
 
-async function loadResolution() {
-  const fixtureName = fixtureNameFromSearch(window.location.search, fixturesEnabled());
-  if (fixtureName !== null) {
-    // Fixture runs never touch the last-good cache: a visitor must not see
-    // synthetic numbers behind the fallback banner later.
-    const [live, snapshot] = await Promise.all([
-      fetchLive(`fixtures/${fixtureName}.json`),
-      fetchOptionalJson(SNAPSHOT_PATH),
-    ]);
-    return { fixtureName, resolution: resolveStatsSource({ live, snapshot }, Date.parse(FIXTURE_CLOCK_ISO)) };
-  }
-  const url = liveSourceUrl();
-  const [live, snapshot] = await Promise.all([
-    url === null ? Promise.resolve(null) : fetchLive(url),
-    fetchOptionalJson(SNAPSHOT_PATH),
-  ]);
-  const resolution = resolveStatsSource({ cached: readCachedDocument(), live, snapshot }, Date.now());
-  if (resolution.state === "live") {
-    saveCachedDocument(resolution.doc);
-  }
-  return { fixtureName, resolution };
-}
-
 async function bootstrap() {
   wireThemeToggle();
   wireCopyButton();
@@ -1294,8 +1202,20 @@ async function bootstrap() {
     resizeTimer = setTimeout(rerenderChartsOnResize, 150);
   });
   try {
-    const { fixtureName, resolution } = await loadResolution();
+    const fixtureName = fixtureNameFromSearch(window.location.search, fixturesEnabled());
     document.documentElement.dataset.fixture = fixtureName ?? "";
+    // Fixture runs must neither display nor save a visitor's last-good copy.
+    const cached = fixtureName === null ? readCachedDocument() : null;
+    if (cached !== null) {
+      renderResolution({ doc: cached, origin: "cache", reason: null, state: "fallback" });
+    }
+    const url = fixtureName === null ? liveSourceUrl() : pageFileUrl(`fixtures/${fixtureName}.json`);
+    const live = url === null ? null : await fetchLive(url);
+    const now = fixtureName === null ? Date.now() : Date.parse(FIXTURE_CLOCK_ISO);
+    const resolution = resolveStatsSource({ cached, live }, now);
+    if (fixtureName === null && resolution.state === "live") {
+      saveCachedDocument(resolution.doc);
+    }
     renderResolution(resolution);
   } catch (error) {
     console.error(error);

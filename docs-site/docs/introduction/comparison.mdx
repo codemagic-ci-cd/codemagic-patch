@@ -36,8 +36,8 @@ The headline difference is build vs buy.
 
 | | Expo Updates | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Hosted-only (EAS) | Self-hosted; you run the stack |
-| Pricing | Free tier, then usage-based pricing | Free to self-host under 1 million MAU, [commercial pricing](/docs/introduction/pricing) at scale |
+| Hosting | Hosted-only (EAS) | Self-hosted by default; Codemagic can host on request |
+| Pricing | Free tier, then usage-based pricing | Free to self-host under 1 million MAU, [commercial pricing](/docs/introduction/pricing) at scale; [hosted rates](/docs/introduction/pricing#hosted-by-codemagic) separately |
 | Bare React Native | Works, but needs Expo modules in bare projects | Bare RN and Expo (prebuild plugin) |
 | Fingerprinting | Yes | Yes |
 | Binary diffs | Yes | Yes |
@@ -51,9 +51,9 @@ The headline difference is build vs buy.
 
 Expo Updates is a strong default if you already use EAS Build and EAS Update together; channel wiring is largely handled inside that ecosystem with minimal setup.
 
-Costs can climb quickly past free limits if you ship often or have a large install base. That is the main trade-off against running Patch yourself.
+Costs can climb quickly past free limits if you ship often or have a large install base. That is the main trade-off against running Patch yourself, or asking Codemagic to host it.
 
-Patch does not require EAS. You operate the server (Docker Compose or your own deployment), use `cmpatch` from CI or locally, and point the SDK at your API and storage domains. Setup is more involved, but you control hosting, scaling, and data.
+Patch does not require EAS. Most teams self-host (Docker Compose or your own deployment), use `cmpatch` from CI or locally, and point the SDK at their API and storage domains. Setup is more involved than EAS Update, but you control hosting, scaling, and data. If you want the same product without running the stack, Codemagic can host Patch; see [Pricing](/docs/introduction/pricing#hosted-by-codemagic).
 
 Both offer a team-facing UI for managing releases, not only CLI workflows.
 
@@ -67,7 +67,7 @@ After App Center CodePush, a family of compatible forks and hosted successors re
 
 | | CodePush forks | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Hosted SaaS or a self-hosted CodePush-compatible server | All-in-one Compose stack (Postgres, Silo, API, dashboard) |
+| Hosting | Hosted SaaS or a self-hosted CodePush-compatible server | Self-hosted Compose stack (Postgres, Silo, API, dashboard), or Codemagic-hosted on request |
 | Architecture | CodePush-compatible control plane (often access-key based) | Integrated server product you deploy anywhere Docker runs |
 | Local dev | Varies by fork; many assume a remote server | Full stack can run locally |
 | Update check | Typically server API checks | Static manifest on storage or CDN |
@@ -79,7 +79,7 @@ After App Center CodePush, a family of compatible forks and hosted successors re
 | Stewardship | Community forks or third-party hosts | Built and maintained by [Codemagic](https://codemagic.io) |
 | License / terms | Varies by fork | [Codemagic Server License](/docs/introduction/pricing) |
 
-Choose a CodePush fork when you want drop-in CodePush compatibility or a managed host. Choose Patch when you want an integrated self-host stack with dashboard, metrics, and CDN-oriented delivery, without staying on the CodePush wire protocol.
+Choose a CodePush fork when you want drop-in CodePush compatibility. Choose Patch when you want an integrated stack with dashboard, metrics, and CDN-oriented delivery, without staying on the CodePush wire protocol. Self-host that stack yourself, or ask Codemagic to host it.
 
 Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush).
 
@@ -91,7 +91,7 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 
 | | Hot Updater | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Provider plugins (Supabase, Cloudflare, and others) | All-in-one Compose stack (Postgres, Silo, API, dashboard) |
+| Hosting | Provider plugins (Supabase, Cloudflare, and others) | Self-hosted Compose stack (Postgres, Silo, API, dashboard), or Codemagic-hosted on request |
 | Architecture | Bring-your-own backend | Integrated server product you deploy anywhere Docker runs |
 | Local dev | Unsupported | Full stack can run locally |
 | Update check | Server polling database | Static manifest on storage or CDN |
@@ -105,13 +105,13 @@ Migrating? See [Migrating from CodePush](/docs/migration/migrating-from-codepush
 | Stewardship | Community open source | Built and maintained by [Codemagic](https://codemagic.io) |
 | License | MIT | [Codemagic Server License](/docs/introduction/pricing) |
 
-Hot Updater is a good fit if you want MIT licensing and are comfortable assembling storage and hosting yourself. Patch targets teams that want an integrated server with dashboard and metrics, and optional vendor support for licensed deployments.
+Hot Updater is a good fit if you want MIT licensing and are comfortable assembling storage and hosting yourself. Patch targets teams that want an integrated server with dashboard and metrics, whether they self-host or use Codemagic-hosted Patch, plus optional vendor support for licensed deployments.
 
 ---
 
 ## Licensing
 
-Patch uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) for the server (based on FSL 1.1, converting to Apache 2.0 after two years on each version), and Apache 2.0 for the SDK and CLI. You may use, modify, and self-host without a paid license while monthly active users stay at or below one million. Above that, you need a commercial license from Codemagic. Details and pricing: [Pricing](/docs/introduction/pricing).
+Patch uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) for the server (based on FSL 1.1, converting to Apache 2.0 after two years on each version), and Apache 2.0 for the SDK and CLI. You may use, modify, and self-host without a paid license while monthly active users stay at or below one million. Above that, you need a commercial license from Codemagic. Codemagic-hosted Patch is priced separately. Details: [Pricing](/docs/introduction/pricing).
 
 Hot Updater is MIT. Expo Updates is tied to EAS pricing, not a source license on the client SDK. CodePush forks use their own hosted terms or upstream licenses.
 
@@ -130,8 +130,9 @@ Those details are worth comparing during integration, not at the hosting layer. 
 | If you… | Consider |
 | --- | --- |
 | Already live on EAS and want minimal setup | Expo Updates |
-| Want CodePush-compatible APIs or a managed CodePush host | A CodePush fork |
-| Want to self-host with dashboard, metrics, and team IAM | Codemagic Patch |
+| Want CodePush-compatible APIs | A CodePush fork |
+| Want Patch with dashboard, metrics, and team IAM, and will run the server | Codemagic Patch (self-host) |
+| Want Patch without running infrastructure | Codemagic Patch ([hosted](/docs/introduction/pricing#hosted-by-codemagic)) |
 | Want MIT and BYO storage via plugins | Hot Updater |
 
-To try Patch locally, start with the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install).
+To try Patch locally, start with the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install). For Codemagic-hosted Patch, email [sales@codemagic.io](mailto:sales@codemagic.io).

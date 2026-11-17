@@ -80,10 +80,6 @@ function BlockingJobNotice() {
   );
 }
 
-/** Page-title icon (40px tile, off-grid 12px radius). */
-const APP_ICON_CLASS =
-  "size-10 rounded-[12px] bg-blue text-[15px]";
-
 // Danger-zone row literals (legacy `.danger-zone__row` / `.dz-text`). Rows
 // are separated by the wrapping `divide-y`; the panel itself is styled
 // like the neutral Settings card next to it — only the actions are red, and
@@ -220,12 +216,6 @@ export function AppDetailPage() {
         <div className="min-w-0 flex-1">
           {editingName ? (
             <div className={PAGE_TITLE}>
-              <span
-                className={`grid flex-none place-items-center font-bold text-white ${APP_ICON_CLASS}`}
-                aria-hidden="true"
-              >
-                {app.name.slice(0, 2).toLowerCase()}
-              </span>
               <form
                 className="flex items-center gap-2"
                 onSubmit={submitRename}
@@ -273,12 +263,6 @@ export function AppDetailPage() {
             </div>
           ) : (
             <h1 className={PAGE_TITLE}>
-              <span
-                className={`grid flex-none place-items-center font-bold text-white ${APP_ICON_CLASS}`}
-                aria-hidden="true"
-              >
-                {app.name.slice(0, 2).toLowerCase()}
-              </span>
               {app.name}
               <span className="tip" data-tip={canManage ? "Rename app" : manageTip}>
                 <button

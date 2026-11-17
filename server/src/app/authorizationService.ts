@@ -20,6 +20,7 @@ import {
   type TeamRow,
   type UserAccountRow,
 } from "../repositories/rowMappers";
+import { isHonoredInTeam } from "./serviceAccount";
 
 export type ResourceScopeLookupResult =
   | {
@@ -102,7 +103,10 @@ export function createAuthorizationService(
         };
       }
 
-      if (await hasPermission(pool, user.id, team.id, action)) {
+      if (
+        isHonoredInTeam(user, team.id) &&
+        (await hasPermission(pool, user.id, team.id, action))
+      ) {
         return {
           outcome: "authorized",
         };
@@ -144,9 +148,11 @@ export function createAuthorizationService(
            AND rp.action = 'team.read'
           WHERE m.user_id = $1
             AND t.status = 'active'
+            AND ($2::text IS NULL OR t.id = $2)
           ORDER BY t.created_at ASC, t.id ASC
         `,
-        [user.id],
+        // A service account sees its owner team only (see isHonoredInTeam).
+        [user.id, user.ownerTeamId],
       );
 
       return {

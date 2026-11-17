@@ -415,7 +415,7 @@ function finish(
     result,
     exitCode: WIRE_EXIT_CODES[result],
     dryRun: options.dryRun,
-    project: summarizeProject(plan.shape, plan.platforms),
+    project: summarizeProject(plan.shape, plan.platforms, plan.iosDependencyManager),
     destinations: plan.destinations,
     steps,
     ...(notApplied === undefined ? {} : { notApplied }),
@@ -461,6 +461,12 @@ function nextSteps(plan: WirePlan, steps: WireStep[], mode: Mode): string[] {
         // CocoaPods does not run on this OS; the command is for a Mac.
         lines.push(`Install the iOS pods on a Mac: \`${pods.manual[0]}\``);
       }
+    }
+    // In SwiftPM mode the SDK links through React Native's generated packages,
+    // which `spm` refreshes after the SDK is installed or upgraded.
+    const install = steps.find((step) => step.id === "sdk-install");
+    if (plan.iosDependencyManager === "swiftpm" && install?.state === "changed") {
+      lines.push("Refresh React Native's Swift packages: `npx react-native spm`");
     }
     lines.push("Build a release binary, so the SDK and its configuration ship in the app.");
   }

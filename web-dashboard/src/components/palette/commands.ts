@@ -14,8 +14,6 @@ export type CommandGroup =
   | "Navigate"
   | "Apps"
   | "Releases"
-  | "Metrics - Rolled up"
-  | "Metrics - Per Deployment"
   | "Teams"
   | "Account";
 
@@ -27,8 +25,6 @@ export const COMMAND_GROUP_ORDER: readonly CommandGroup[] = [
   "Navigate",
   "Apps",
   "Releases",
-  "Metrics - Rolled up",
-  "Metrics - Per Deployment",
   "Teams",
   "Account",
 ];
@@ -69,8 +65,6 @@ export const MAX_RESULTS = 50;
 export const DEFAULT_SECTION_LIMITS: Partial<Record<CommandGroup, number>> = {
   Apps: 6,
   Releases: 4,
-  "Metrics - Rolled up": 6,
-  "Metrics - Per Deployment": 4,
   Teams: 4,
 };
 

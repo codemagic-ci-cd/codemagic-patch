@@ -71,23 +71,27 @@ cmpatch selfhost upgrade
 cmpatch selfhost upgrade --image registry.example.com/codemagic-patch-server:tag
 ```
 
-The command first fast-forwards the server's copy of the source (and refuses to touch a checkout with local edits or commits of its own), then runs `scripts/selfhost/upgrade.sh` over SSH. By default that script:
+It shows the plan and asks before it changes anything; `--yes` skips the question, and a scripted run needs it. The command then moves the server's copy of the source to the newest server release (it refuses a checkout with local edits or commits of its own, one newer than that release, or a database that already has migrations the release does not know, before asking; for that last check it pulls the release's server image and runs the image's own schema check), then runs that release's `scripts/selfhost/upgrade.sh` over SSH. By default that script:
 
-1. Creates a pre-upgrade backup (under `~/codemagic-patch-backups/pre-upgrade/` when run through the CLI, so `cmpatch selfhost restore` can find it)
-2. Pulls or rebuilds the server image, and rebuilds the Caddy (dashboard) image from source
+1. Pulls the server image published with the release (it includes the dashboard)
+2. Creates a pre-upgrade backup (under `~/codemagic-patch-backups/pre-upgrade/` when run through the CLI, so `cmpatch selfhost restore` can find it) and pulls the stock Caddy image
 3. Recreates the Compose stack and waits for health
 4. Runs `scripts/selfhost/smoke.sh` (full publish smoke needs `CODEMAGIC_PATCH_TOKEN`)
 
-Pass `--i-have-a-backup` only if you already took an external backup for this upgrade. If the upgrade fails after the stack is recreated, run `cmpatch selfhost restore` and pick the pre-upgrade backup — the picker labels it as one. Re-pinning the old image alone is not a safe rollback once migrations may have run.
+`--build-from-source` builds the server image on the server instead of pulling it; that needs at least 2 GB of memory.
+
+Pass `--i-have-a-backup` only if you already took an external backup for this upgrade. If the upgrade fails before the stack is recreated, the source and image settings are put back and nothing else changed. If it fails after, the new server may already have migrated the database, so re-pinning the old image is not a safe rollback: follow the steps the command prints, in order — stop the new server, check the previous release out again, roll back an external database with your provider's tooling, then restore the pre-upgrade backup with its settings. Keep the previous server image on the server until you have confirmed the upgrade; the rollback runs it. A `--build-from-source` upgrade keeps a host-built image as `codemagic-patch-server:pre-upgrade-<time>` for that.
+
+An install made before published server images runs the default branch, usually with a server image built on the server. `cmpatch selfhost upgrade` moves any install still on the default branch onto the newest release and its published image. If the server's copy is ahead of the newest release, it refuses, because that would run an older server on a newer database: wait for the next release, or pass `--build-from-source`. If the server ran a locally built image, do not prune the old images until the upgrade is confirmed.
 
 ### On Fly {#fly-upgrades}
 
-On a Fly install, `cmpatch selfhost upgrade` builds the newest server release on Fly and deploys it with the app's current Fly configuration. Before the deploy it:
+On a Fly install, `cmpatch selfhost upgrade` deploys the newest server release's published image with the app's current Fly configuration (`--image` deploys an image you name; `--build-from-source` builds the release on Fly's remote builder instead). Before the deploy it:
 
 1. Snapshots the database volume, when cmpatch created the database
 2. Writes a baseline folder with a `ROLLBACK.md` under `codemagic-patch-backups/<app>.fly.dev/` in the current directory
 
-With a database you run yourself there is no snapshot: take your own backup, or note a point-in-time recovery point, before you upgrade.
+It shows the plan and asks before the snapshot, as on a server; `--yes` skips the question. With a database you run yourself there is no snapshot: take your own backup, or note a point-in-time recovery point, before you upgrade.
 
 The CLI does not roll back by itself. To go back, follow that `ROLLBACK.md`; its commands already carry your snapshot, image, and tag.
 

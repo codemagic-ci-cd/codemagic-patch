@@ -30,6 +30,8 @@ export interface RoleBinding {
     id: string;
     email: string;
     displayName: string | null;
+    /** The owning team of a service account (a provisioned account); `null` for a person. */
+    ownerTeamId: string | null;
   };
   role: RoleRef;
   scope: {

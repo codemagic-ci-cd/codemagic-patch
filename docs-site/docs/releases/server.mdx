@@ -13,12 +13,133 @@ starts with **Upgrade impact**: migrations, configuration changes, and anything
 that restarts or replaces a service. Review it before upgrading. Managed Patch
 runs the latest server; self-host operators upgrade with
 [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting). The
-other surfaces' releases and the compatibility table are on the
+other surfaces' releases are on the
 [Release Notes](/docs/releases) page.
 
 Reference: [Configuration](/docs/reference/configuration) ·
 [Operations](/docs/reference/operations) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=codemagic-patch-server)
+
+## 0.10.0 {#v0-10-0}
+
+*17th November 2026*
+
+### Upgrade impact
+
+- **Update `cmpatch` first:** Upgrade with
+  [CLI 0.10.0](/docs/releases/cli#v0-10-0) or later. CLI 0.9.0 and older
+  leave the server's checkout on the default branch, and this release's
+  upgrade script refuses a checkout that is not at a release tag. A refused
+  upgrade changes nothing. Update the CLI and run it again.
+- **Image:** The upgrade checks out the `codemagic-patch-server-v0.10.0` tag
+  and pulls `ghcr.io/codemagic-ci-cd/codemagic-patch-server:0.10.0` instead
+  of building, so the server must reach `ghcr.io`. `--build-from-source`
+  builds on the server as before.
+- **Caddy:** The stack runs the stock `caddy:2-alpine` image, pinned by
+  digest, and the server image serves the dashboard. `/worker/*` answers 404
+  instead of the dashboard page, and a plain-HTTP install no longer sends an
+  HSTS header.
+- **Migrations:** `0021_credential_generation` adds one integer column each
+  to `user_account`, `api_token`, and `oauth_session`.
+  `0022_service_account_owner_team` adds `user_account.owner_team_id` and
+  marks a `member provision` account as a service account of its team when
+  it has never signed in and belongs to that team only. Existing tokens and
+  sessions stay valid.
+- **Sessions:** A session older than 90 days fails at its next refresh. Sign
+  in again.
+- **API tokens:** CI that creates tokens, adds or invites members, changes
+  roles, or transfers apps with an API token stops working. See
+  [API tokens](#v0-10-0-api-tokens).
+- **Rollback:** Do not switch back to an older image alone once the database
+  is migrated. If the upgrade fails after the stack is recreated, follow the
+  steps the command prints, which end with restoring the pre-upgrade backup.
+  See [Upgrades](/docs/setup/ongoing-maintenance#upgrades).
+
+### Breaking: API tokens cannot create credentials or grant access {#v0-10-0-api-tokens}
+
+An API token (`cm_pat_…`) can no longer give access to anyone else, so a
+leaked token cannot leave access behind after it is deleted. These need a
+browser sign-in (the dashboard, or `cmpatch login` without `--token`) and
+answer a token with `403`, reason `session_required`:
+
+- `token create`, and approving a CLI login
+- `member add`, `member invite`, `member update`
+- `member provision`, `member rotate-token`
+- `app transfer`
+
+A token can still manage apps, deployments, and releases, and remove
+members, invitations, and tokens.
+
+- **Logging:** The server logs each refused request with the token's ID.
+- **Earlier grants:** Roles and invitations a token granted before this
+  release are not revoked. If a token may have leaked, review your team's
+  members.
+- **First provider sign-in:** An account that has never
+  signed in through a provider loses its API tokens at its first provider
+  sign-in. This covers `member provision` accounts, and accounts created
+  before OAuth sign-in that are linked by email. Create new tokens after
+  that sign-in.
+
+See [API tokens](/docs/using-patch/security#api-tokens-ci-and-automation).
+
+### Sessions
+
+- **90-day limit:** A sign-in ends 90 days after the provider sign-in,
+  however often it refreshes. A CLI sign-in approved from the dashboard
+  shares that dashboard sign-in's deadline.
+- **Sign out everywhere:** The dashboard's API tokens page can now end every
+  session on your account, including the current browser and every CLI, and
+  delete all your API tokens. Use it when a token or device may be
+  compromised. See
+  [Sessions and signing out everywhere](/docs/using-patch/security#sessions-and-signing-out-everywhere).
+
+### Service accounts
+
+- **Owned by one team:** A `member provision` account is a service account
+  of the team that created it. It has access in that team only, even if it
+  is added to another team. The Members page marks it with a
+  **Service account** badge.
+- **Token rotation:** An admin of the owning team replaces the token with
+  **Rotate token** on the Members page or
+  [`cmpatch member rotate-token`](/docs/releases/cli#v0-10-0). The old token
+  stops working immediately.
+
+### Self-hosting
+
+- **Published image:** Each server release publishes one image for x86 and
+  ARM, with a build provenance attestation.
+  [CLI 0.10.0](/docs/releases/cli#v0-10-0) installs and upgrades from it
+  instead of building on the server.
+- **Schema guard:** The server refuses to start on a database that has
+  applied a migration the release does not know.
+  `cmpatch selfhost upgrade` checks for that before it changes anything.
+
+### Metrics API
+
+Metrics responses now include values the dashboard used to calculate itself.
+Existing fields are unchanged.
+
+- **`success_rate`** on every metrics object: applied over applied plus
+  failed, from 0 to 1, or `null` when both are 0.
+- **`summary`** on deployment metrics and timeseries responses: the totals of
+  the returned page or range, and the active devices of the last complete
+  UTC day.
+- **`cumulative_success`** on each timeseries series: the running Applied
+  total per day.
+
+### Dashboard
+
+- **Metrics pages removed:** A deployment page shows adoption over time and
+  the totals of the selected range; a release page shows its counters and
+  the failure drill-down. Old `/metrics` links answer 404.
+- **Who changed a release:** The release page shows who created and last
+  updated the release, what they did, and when. Job attempts and failure
+  detail appear only while a job runs or after it fails.
+- **Live release history:** The deployment page refreshes its release
+  history while a release is processing.
+- **Sign-in buttons:** Each provider's button shows its logo.
+
+See the [server release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/codemagic-patch-server-v0.10.0).
 
 ## 0.9.0 {#v0-9-0}
 
@@ -219,7 +340,8 @@ See the [server release](https://github.com/codemagic-ci-cd/codemagic-patch/rele
 - **Lifecycle names:** The server stores events from SDK 0.4.x and earlier
   under the new `Ready` and `Applied` names. Existing data is kept as is, and
   the metrics API response keys (`installed`, `success`) are unchanged. SDK
-  0.5.0 needs this server; see the [upgrade order](/docs/releases#upgrade-order-and-compatibility).
+  0.5.0 needs this server; see
+  [compatibility](/docs/releases#upgrade-order-and-compatibility).
 - **New optional setting:** `GITLAB_OAUTH_BASE_URL`, for GitLab sign-in on a
   self-managed instance. Leaving it unset changes nothing.
 

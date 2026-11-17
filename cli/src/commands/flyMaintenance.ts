@@ -8,17 +8,14 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SOURCE_REPO_URL } from "../branding";
 import type { SelfhostFlyMapping } from "../configStore";
 import {
   autostopArgs,
-  compareServerTags,
   DATABASE_MOUNT,
   describeVmDrift,
   isServerTag,
   isSnapshotInProgress,
   latestRelease,
-  listServerTags,
   MIGRATION_COUNT_SQL,
   missingFlyEnv,
   parseFlyAppConfig,
@@ -44,6 +41,7 @@ import { localBackupRoot, utcStamp } from "../selfhostRemote";
 import type { SelfhostFlyTarget } from "../selfhostTarget";
 import {
   cloneServerTag,
+  chooseServerSource,
   createFlyContext,
   errorMessage,
   firstLine,
@@ -51,20 +49,20 @@ import {
   flyProgress,
   flyServerUrl,
   lastLines,
-  latestServerTag,
-  listRemoteTags,
   pollUntil,
+  refuseImageWithBuild,
   requireTool,
   run,
   signedIn,
   waitUntilReady,
   type FlyContext,
+  type FlyServerSource,
 } from "./flyProcess";
-import { askSelect, notice } from "./selfhostInstall/ask";
+import { confirmUpgradePlan, notice, shortImageRef } from "./selfhostInstall/ask";
 import {
-  canAsk,
   readBooleanFlag,
   readStringFlag,
+  upgradeAsksFirst,
   type ParsedArgs,
 } from "./selfhostSession";
 import { UsageError, type CommandDeps } from "./shared";
@@ -352,8 +350,8 @@ const UPGRADE = "cmpatch selfhost upgrade";
 /** The ssh upgrade's flags that mean nothing on Fly, each with why. */
 const SSH_ONLY_UPGRADE_FLAGS: Readonly<Record<string, string>> = {
   "--i-have-a-backup": "--i-have-a-backup does not apply to a Fly install: the upgrade always snapshots the database volume first, which takes a minute and costs nothing to keep.",
-  "--image": "--image does not apply to a Fly install: the upgrade builds the server from a release tag on Fly. Pass --tag to choose the release.",
   "--local-image": "--local-image does not apply to a Fly install: Fly builds the image itself, so there is no image on a host to reuse.",
+  "--skip-schema-check": "--skip-schema-check does not apply to a Fly install: the database check it skips is the ssh upgrade's.",
   "--skip-smoke": "--skip-smoke does not apply to a Fly install: the upgrade only waits for /health/ready and runs no smoke test.",
   "--ssh-key": "--ssh-key does not apply to a Fly install: the upgrade reaches Fly through flyctl, not ssh.",
 };
@@ -370,22 +368,26 @@ export async function runFlyUpgrade(
   deps: CommandDeps,
   parsed: ParsedArgs,
   target: SelfhostFlyTarget,
-): Promise<string> {
+): Promise<string | null> {
   const { fly, localRoot } = openFlyCommand(deps, parsed, { label: UPGRADE, sshOnlyFlags: SSH_ONLY_UPGRADE_FLAGS, target });
   const requested = readStringFlag(parsed, "--tag");
   if (requested !== undefined && !isServerTag(requested)) {
     throw new UsageError(`--tag takes a server release tag such as codemagic-patch-server-v0.7.0, not ${requested}.`);
   }
-
-  const interactive = canAsk(deps, parsed);
+  const image = readStringFlag(parsed, "--image");
+  const buildFromSource = readBooleanFlag(parsed, "--build-from-source");
+  refuseImageWithBuild(image, buildFromSource);
+  // Before the preflight, which may start a stopped database machine.
+  const asksFirst = upgradeAsksFirst(deps, parsed);
   const app = target.app;
 
   let baseline: Baseline | undefined;
   let parent: string | undefined;
+  let cloned = false;
   let deploying = false;
   const removeInterruptHook = onInterruptCleanup(async () => {
     if (deploying && baseline !== undefined) {
-      notice(deps, ["Interrupted. The deploy Fly already accepted may still finish, and cmpatch does not roll back by itself.", ...afterDeployText(parent, baseline)]);
+      notice(deps, ["Interrupted. The deploy Fly already accepted may still finish, and cmpatch does not roll back by itself.", ...afterDeployText(parent, cloned, baseline)]);
       return;
     }
     if (parent !== undefined) {
@@ -407,19 +409,29 @@ export async function runFlyUpgrade(
     const live: FlyPreflight = { ...preflight, marker };
 
     fly.progress.write("Looking up the server releases");
-    const tag = pickTag(await listRemoteTags(fly), requested, live.marker, app);
-    if (tag === live.marker && !readBooleanFlag(parsed, "--redeploy")) {
-      const again = interactive && await askRedeploy(deps, fly, app, tag);
-      if (!again) {
-        await rm(parent, { force: true, recursive: true });
-        fly.progress.stop();
-        return `${app} is already on ${tag}. Nothing was deployed.${interactive ? "" : " Pass --redeploy to deploy it again."}`;
-      }
+    const source = await chooseServerSource(fly, { buildFromSource, image, live: { app, marker: live.marker }, requested });
+    const tag = source.tag;
+    // An operator's --image is deployed even under the live tag: the tag
+    // says nothing about which image runs. A run that asks puts the redeploy
+    // to the operator in its one confirmation; one told not to ask needs
+    // --redeploy.
+    const redeploy = image === undefined && tag === live.marker;
+    if (redeploy && !asksFirst && !readBooleanFlag(parsed, "--redeploy")) {
+      await rm(parent, { force: true, recursive: true });
+      fly.progress.stop();
+      return `${app} is already on ${tag}. Nothing was deployed. Pass --redeploy to deploy it again.`;
     }
 
-    const checkout = await cloneServerTag(fly, tag, parent);
-    const flyToml = join(checkout, "fly.toml");
-    await rename(savedToml, flyToml);
+    // An image deploy reads nothing from the source tree: the saved release
+    // config is the whole config, and `--image` overrides its [build].
+    let checkout = parent;
+    let flyToml = savedToml;
+    if (source.kind === "build") {
+      checkout = await cloneServerTag(fly, tag, parent);
+      cloned = true;
+      flyToml = join(checkout, "fly.toml");
+      await rename(savedToml, flyToml);
+    }
     await checkReleaseConfig(fly, app, flyToml, live.liveGuest);
 
     const directory = join(localRoot, `${app}-upgrade-${utcStamp(deps.now())}`);
@@ -431,13 +443,30 @@ export async function runFlyUpgrade(
       ]);
     }
 
+    // Nothing on Fly has changed yet: the snapshot is the first change.
+    fly.progress.settle();
+    const approved = await confirmUpgradePlan(deps, {
+      ask: asksFirst,
+      lines: flyUpgradePlan({ app, live, redeploy, source }),
+      question: redeploy ? `Deploy ${tag} to ${app} again?` : `Upgrade ${app} to ${tag}?`,
+    });
+    if (!approved) {
+      await rm(parent, { force: true, recursive: true });
+      parent = undefined;
+      fly.progress.stop("Nothing was changed.");
+      return null;
+    }
+
     baseline = await takeBaseline(fly, target, live, { directory, tag });
     await copyFile(flyToml, join(baseline.directory, "fly.toml"));
 
-    fly.progress.write(`Building ${tag} on Fly and deploying it. The build takes several minutes.`);
+    fly.progress.write(source.kind === "build"
+      ? `Building ${tag} on Fly and deploying it. The build takes several minutes.`
+      : `Deploying ${tag} from ${source.imageRef}`);
     deploying = true;
     // `--env` wins over the saved [env], so the new release's config carries the new marker. The
-    // saved config already has [build] dockerfile = 'server/Dockerfile'; --dockerfile only says so.
+    // saved config already has [build] dockerfile = 'server/Dockerfile'; --dockerfile only says so,
+    // and --image overrides it.
     await run(fly, "fly", [
       "deploy",
       "--ha=false",
@@ -445,8 +474,7 @@ export async function runFlyUpgrade(
       app,
       "--config",
       flyToml,
-      "--dockerfile",
-      "server/Dockerfile",
+      ...(source.kind === "build" ? ["--dockerfile", "server/Dockerfile"] : ["--image", source.imageRef]),
       "--env",
       `PATCH_SERVER_TAG=${tag}`,
     ], { cwd: checkout, show: true });
@@ -464,7 +492,7 @@ export async function runFlyUpgrade(
         message,
         "",
         "The upgrade stopped during or after the deploy. cmpatch does not roll back by itself.",
-        ...afterDeployText(parent, baseline),
+        ...afterDeployText(parent, cloned, baseline),
       ].join("\n"));
     }
     if (parent !== undefined) {
@@ -482,9 +510,10 @@ export async function runFlyUpgrade(
 }
 
 /** Where to look once a deploy has started, whether it failed or was interrupted. */
-function afterDeployText(parent: string | undefined, baseline: Baseline): string[] {
+function afterDeployText(parent: string | undefined, cloned: boolean, baseline: Baseline): string[] {
+  const kept = cloned ? `The checkout is still at ${parent}.` : `The release config is still at ${parent}.`;
   return [
-    ...(parent === undefined ? [] : [`The checkout is still at ${parent}.`]),
+    ...(parent === undefined ? [] : [kept]),
     `Baseline: ${baseline.directory}`,
     `To go back, follow ${join(baseline.directory, "ROLLBACK.md")}`,
   ];
@@ -513,42 +542,24 @@ function reconcileMarker(app: string, liveImage: string, shown: string | null, s
   return shown ?? saved;
 }
 
-/**
- * `--tag` or the newest release, never older than the live marker: that
- * server may already have migrated the database.
- */
-function pickTag(lsRemote: string, requested: string | undefined, marker: string | null, app: string): string {
-  let tag: string;
-  if (requested !== undefined) {
-    if (!listServerTags(lsRemote).includes(requested)) {
-      throw new UsageError(`${requested} is not a release in ${SOURCE_REPO_URL}. git ls-remote --tags ${SOURCE_REPO_URL} lists them.`);
-    }
-    tag = requested;
-  } else {
-    tag = latestServerTag(lsRemote);
-  }
-
-  if (marker !== null && (compareServerTags(tag, marker) ?? 0) < 0) {
-    throw new UsageError([
-      `${tag} is older than ${marker}, which ${app} runs. An upgrade does not go back: ${marker} may already have migrated the database.`,
-      `To go back, follow the ROLLBACK.md of the upgrade that deployed ${marker}.`,
-    ].join("\n"));
-  }
-  return tag;
-}
-
-async function askRedeploy(deps: CommandDeps, fly: FlyContext, app: string, tag: string): Promise<boolean> {
-  fly.progress.settle();
-  const answer = await askSelect(deps, {
-    choices: [
-      { title: "No, leave it", value: "no" },
-      { title: "Yes, redeploy it", value: "yes" },
-    ],
-    fallback: "no",
-    initial: 0,
-    message: `${app} is already on ${tag}. Redeploy it anyway?`,
-  });
-  return answer === "yes";
+/** What the Fly upgrade is about to do, shown before the snapshot, which is its first change. */
+function flyUpgradePlan(input: {
+  app: string;
+  live: FlyPreflight;
+  redeploy: boolean;
+  source: FlyServerSource;
+}): string[] {
+  const { live, source } = input;
+  return [
+    `Fly app: ${input.app}`,
+    `Current: ${live.marker ?? "no recorded server tag"}`,
+    `Current image: ${shortImageRef(live.liveImage)}`,
+    `Target: ${source.tag}${input.redeploy ? " (already live: deployed again)" : ""}`,
+    `Target image: ${source.kind === "image" ? shortImageRef(source.imageRef) : "built on Fly's remote builder"}`,
+    live.database.kind === "managed"
+      ? `Before the deploy: a snapshot of ${live.database.app}'s volume, and a ROLLBACK.md`
+      : "Before the deploy: a ROLLBACK.md, no snapshot (external database)",
+  ];
 }
 
 /** D8: `baseline.json` and `ROLLBACK.md`, and with a managed database a snapshot, before any deploy. */

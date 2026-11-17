@@ -16,22 +16,33 @@ import type {
   IamInvitationRouteModel,
   IamRoleBindingRouteModel,
   IamRoleRouteModel,
+  MonthlyActiveDevices,
   OAuthWebConfig,
   OAuthSessionCreatedHandlerResult,
   ReleaseCreationWarning,
   TimeseriesBucket,
   TimeseriesSeries,
 } from "../../app/types";
+import {
+  cumulativeSuccess,
+  type DeploymentTimeseriesSummary,
+} from "../../app/metricsTimeseries";
+import {
+  successRate,
+  type DeploymentMetricsSummary,
+} from "../../app/releaseMetricsSummary";
 import type {
   ActiveJobWire,
   ApiTokenWire,
   AppWire,
+  DeploymentMetricsSummaryWire,
   DeploymentWire,
   FailureCodesWireResponse,
   FailureDistributionEntryWire,
   FailureDistributionWireResponse,
   FailureEventsWireResponse,
   InvitationWire,
+  MonthlyActiveDevicesWire,
   OAuthCliAuthorizationWire,
   OAuthRefreshWire,
   OAuthSessionWire,
@@ -45,7 +56,6 @@ import type {
   ReleaseMetricsWire,
   ReleaseWire,
   TimeseriesBucketWire,
-  TimeseriesSeriesWire,
   RoleBindingWire,
   RoleRefWire,
   RoleWire,
@@ -289,6 +299,7 @@ export function toRoleBindingWire(
       display_name: roleBinding.user.displayName,
       email: roleBinding.user.email,
       id: roleBinding.user.id,
+      owner_team_id: roleBinding.user.ownerTeamId,
     },
   };
 }
@@ -314,8 +325,8 @@ export function toInvitationWire(
   };
 }
 
-// Identity copy on purpose: pins the wire field set so a counter added to the
-// domain metrics shape is not exposed until it is added here deliberately.
+// Field-by-field copy on purpose: pins the wire field set so a counter added
+// to the domain metrics shape is not exposed until it is added here deliberately.
 export function toReleaseMetricsWire(metrics: {
   active: number;
   downloaded: number;
@@ -333,6 +344,16 @@ export function toReleaseMetricsWire(metrics: {
     failure_reasons: { ...metrics.failureReasons },
     installed: metrics.installed,
     success: metrics.success,
+    success_rate: successRate(metrics),
+  };
+}
+
+export function toDeploymentMetricsSummaryWire(
+  summary: DeploymentMetricsSummary,
+): DeploymentMetricsSummaryWire {
+  return {
+    coverage: summary.coverage,
+    metrics: toReleaseMetricsWire(summary.metrics),
   };
 }
 
@@ -375,6 +396,7 @@ export function toReleaseBinaryVersionMetricsWire(row: {
     failed: row.failed,
     installed: row.installed,
     success: row.success,
+    success_rate: successRate(row),
   };
 }
 
@@ -449,24 +471,43 @@ export function toDeploymentTimeseriesWire(
     seriesTruncated: boolean;
     totals: TimeseriesBucket[];
   },
+  summary: DeploymentTimeseriesSummary,
 ): DeploymentTimeseriesWire {
   return {
     binary_versions: result.binaryVersions,
     bucket: "day",
     from: input.from.toISOString(),
-    series: result.series.map(toTimeseriesSeriesWire),
+    series: result.series.map((series) => ({
+      cumulative_success: cumulativeSuccess(input, series),
+      points: series.points.map(toTimeseriesBucketWire),
+      release_id: series.releaseId,
+      release_label: series.releaseLabel,
+      target_package_hash: series.targetPackageHash,
+    })),
     series_truncated: result.seriesTruncated,
+    summary: {
+      last_complete_day: summary.lastCompleteDay && {
+        active_devices: summary.lastCompleteDay.activeDevices,
+        bucket_start: summary.lastCompleteDay.bucketStart.toISOString(),
+      },
+      totals: { ...summary.totals, success_rate: successRate(summary.totals) },
+    },
     to: input.to.toISOString(),
     totals: result.totals.map(toTimeseriesBucketWire),
+    unlisted_series: result.seriesTruncated ? "unavailable" : "no_events",
   };
 }
 
-function toTimeseriesSeriesWire(series: TimeseriesSeries): TimeseriesSeriesWire {
+export function toMonthlyActiveDevicesWire(
+  result: MonthlyActiveDevices,
+): MonthlyActiveDevicesWire {
   return {
-    points: series.points.map(toTimeseriesBucketWire),
-    release_id: series.releaseId,
-    release_label: series.releaseLabel,
-    target_package_hash: series.targetPackageHash,
+    data_through: result.dataThrough,
+    months: result.months.map((month) => ({
+      active_devices: month.activeDevices,
+      first_day: month.firstDay,
+      month: month.month,
+    })),
   };
 }
 

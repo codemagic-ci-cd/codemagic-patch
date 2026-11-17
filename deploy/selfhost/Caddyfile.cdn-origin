@@ -12,37 +12,34 @@
 {$CODEMAGIC_PATCH_SITE_SCHEME}{$CODEMAGIC_PATCH_API_DOMAIN} {
 	encode zstd gzip
 
-	handle /v1/* {
-		reverse_proxy server:3000
-	}
-
-	# /health* covers both /health and /health/ready
-	handle /health* {
-		reverse_proxy server:3000
-	}
+	# Drop the Server header Caddy puts on every response this site writes,
+	# its own /worker/* 404 included. The automatic port 80 -> HTTPS redirect
+	# is served outside this site and still says "Server: Caddy".
+	header -Server
 
 	# /worker/* is intentionally NOT exposed publicly. In MODE=all (the only
 	# self-host topology) release reconciliation runs in-process; the HTTP
 	# /worker/reconcile route is only used by the distributed worker topology.
 	# Exposing it here would put the worker endpoint on the public internet for
-	# no functional gain. Do not add a `handle /worker/*` block.
+	# no functional gain. The catch-all proxy below would forward it, so it is
+	# answered here instead. Do not remove this block.
+	handle /worker/* {
+		respond 404
+	}
 
+	# The server answers everything else: /v1/*, /health*, and the dashboard
+	# SPA, which it serves from its own image (unknown paths outside the API
+	# fall back to index.html, so deep links and /auth/callback work). It sets
+	# the dashboard's Content-Security-Policy and Strict-Transport-Security on
+	# every response, so Caddy adds neither.
 	handle {
-		root * /srv/dashboard
-		try_files {path} /index.html
-		file_server
-		header {
-			# style-src 'unsafe-inline': the SPA uses React inline style=
-			# attributes; img-src data:: app.css embeds data:image/svg+xml
-			# backgrounds (modal icons, select chevrons).
-			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-			-Server
-		}
-		# HSTS only on TLS responses: browsers ignore the header over plain
-		# HTTP and RFC 6797 forbids sending it there. Over HTTPS every request
-		# matches, so the https stack's behavior is unchanged.
-		@https protocol https
-		header @https Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		reverse_proxy server:3000
+		# The server sends HSTS unconditionally. Browsers ignore it over plain
+		# HTTP and RFC 6797 forbids sending it there, so drop it when this site
+		# is served without TLS (SELFHOST_SCHEME=http). Over HTTPS nothing
+		# matches: port 80 only redirects and never reaches this site.
+		@plain_http protocol http
+		header @plain_http -Strict-Transport-Security
 	}
 }
 

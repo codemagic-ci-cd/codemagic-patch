@@ -1,16 +1,18 @@
 ---
 title: Migrating from Expo Updates
-description: Move from Expo Updates or EAS Update to self-hosted Patch.
+description: Move from Expo Updates or EAS Update to Codemagic Patch.
 llmsDescription: >-
   Expo Updates/EAS to Patch: local eval PoC on your app, then SDK swap and
-  cutover.
+  cutover. Self-host by default; Codemagic can host.
 sidebar_custom_props:
   sdk: react-native
 ---
 
 # Migrating from Expo Updates
 
-This guide covers moving from [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/) / EAS Update to self-hosted Codemagic Patch. You can keep EAS Build for native binaries if you want; only the update delivery layer changes. Start against the [local evaluation stack](/docs/) with your own app before provisioning domains. For trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-expo-updates).
+This guide covers moving from [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/) / EAS Update to Codemagic Patch. You can keep EAS Build for native binaries if you want; only the update delivery layer changes. Start against the [local evaluation stack](/docs/) with your own app before provisioning domains. For trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-expo-updates).
+
+Patch is designed to be simple to self-host, but if you would prefer us to host it then email [sales@codemagic.io](mailto:sales@codemagic.io).
 
 :::warning
 Patch requires a **development build** (not Expo Go) and a **new native binary** with the Patch SDK embedded. Plan a store or internal build before OTA can flow through Patch.
@@ -20,7 +22,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 
 | Expo Updates | Codemagic Patch |
 | --- | --- |
-| EAS-hosted update server | [Self-hosted](/docs/install) Patch API + storage |
+| EAS-hosted update server | Your Patch API + storage ([self-host](/docs/install) or [Codemagic-hosted](/docs/introduction/pricing#hosted-by-codemagic)) |
 | Update channel (`preview`, `production`, …) | Deployment (`Staging`, `Production`, …) |
 | `runtimeVersion` (EAS) | `targetBinaryVersion` |
 | `eas update` | `cmpatch release-react` |
@@ -31,7 +33,7 @@ Patch requires a **development build** (not Expo Go) and a **new native binary**
 
 ## 1. Stand up Patch
 
-For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/local-quickstart) (`cmpatch selfhost local-eval`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server.
+For a proof of concept on your own Expo app, start with the [Local quickstart](/docs/local-quickstart) (`cmpatch selfhost local-eval`). That runs the real API, storage, and dashboard on your laptop without domains or OAuth. Use [Install](/docs/install) when you want a shared Staging/Production server, or use a Codemagic-hosted instance if you already have one.
 
 | | Local eval | Running on VM |
 | --- | --- | --- |
@@ -78,7 +80,7 @@ Skip Prebuild and keep your existing native projects. Remove the previous `expo-
 - In Android `AndroidManifest.xml`, remove the `expo.modules.updates.*` metadata and any resources used only by those entries, such as `expo_runtime_version`.
 - Remove any manually added `expo-updates` build hooks or custom initialization code. Older integrations may reference `create-manifest-ios.sh` in an Xcode build phase or `create-manifest-android.gradle` in `app/build.gradle`; remove those references if present, since the package is no longer installed. Keep the shared Expo modules, host wrappers, and bundling setup.
 
-Follow [manual native setup](/docs/setup/native-setup#option-a-bare-react-native) to add Patch's configuration and bundle selection using the Expo-specific diffs to preserve your host structure, then run `pod install` in `ios/` to refresh native dependencies. Adding the Patch config plugin to app config alone does not update manually maintained native files.
+Follow [manual native setup](/docs/setup/native-setup#option-a-bare-react-native) to add Patch's configuration and bundle selection using the Expo-specific diffs to preserve your host structure, then refresh native dependencies: `pod install` in `ios/` for a CocoaPods project, or `npx react-native spm` in [React Native SwiftPM mode](/docs/setup/native-setup#ios-swiftpm). Adding the Patch config plugin to app config alone does not update manually maintained native files.
 
 For EAS Build, ensure the maintained native directories are included in the upload: check `.gitignore` and `.easignore` ([Expo upload rules](https://docs.expo.dev/build-reference/easignore/)). If the platform's native directory is absent, EAS Build generates it with Prebuild and your manual Patch changes will be missing. Commit the native projects so they are available in fresh checkouts; `npx expo run:ios` / `npx expo run:android` also generate the corresponding native project when it is absent.
 
@@ -123,6 +125,8 @@ npx expo prebuild --clean
 cd ios && pod install && cd ..
 ```
 
+`pod install` is the CocoaPods step; with Expo's experimental Swift Package Manager support, prebuild sets up the Swift packages and you skip it (see [Option B](/docs/setup/native-setup#option-b-expo-prebuild)).
+
 ### Build and update the JavaScript integration
 
 Build a **development or release** binary (not Expo Go) and install it on a simulator or emulator. Replace update logic in JS:
@@ -158,7 +162,7 @@ cmpatch release-react \
 
 Confirm the update on the binary you built in step 2 (check / relaunch, same loop as the [on-device demo](/docs/local-quickstart#3-watch-an-update-apply-on-device-demo)). That is enough to decide whether a production install is worth it.
 
-When you cut over for real, install the CLI against your hosted API and create a CI token:
+When you cut over for real, install the CLI against your production API and create a CI token:
 
 ```bash
 npm install -g @codemagic/patch-cli
@@ -182,12 +186,12 @@ If your app reads `EXPO_PUBLIC_*` variables, set them in the `release-react` job
 
 ## Checklist
 
-- [ ] Local eval (or hosted Install) running; apps and deployments created
+- [ ] Local eval, [Install](/docs/install), or a Codemagic-hosted instance running; apps and deployments created
 - [ ] `expo-updates` removed, including its previous native integration when maintaining native projects manually
 - [ ] Chosen integration completed (local URLs for PoC): CNG — configure the Patch plugin and run `expo prebuild`; manual — apply Patch's native configuration and bundle selection directly
 - [ ] New development/release binary built and installed (not Expo Go)
 - [ ] `sync()` (or manual API) replaces Expo Updates calls
 - [ ] Local `cmpatch release-react` lands an update on that binary
-- [ ] Hosted Install done before any shared/Staging cutover
+- [ ] Production server ready (self-host Install or Codemagic-hosted) before any shared/Staging cutover
 - [ ] CI publishes with `cmpatch` instead of `eas update`
 - [ ] New native binary in users' hands; Staging validated before Production

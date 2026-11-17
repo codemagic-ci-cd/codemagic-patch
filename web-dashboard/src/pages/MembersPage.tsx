@@ -14,7 +14,11 @@
 // instead of a toast. Role changes are NOT optimistic: the confirm dialog
 // stays open until the PATCH lands, so both 409s (last-owner, the member
 // already holds the role) surface in its inline error slot where the user can
-// pick a different role. The sole owner's kebab disables both actions. The
+// pick a different role. The sole owner's kebab disables both actions.
+// Service-account rows (an account this team
+// provisioned, `user.ownerTeamId`) carry a badge and a Rotate token action:
+// a type-to-confirm dialog with the provision form's optional token name and
+// expiry, then the same show-once modal. The
 // Add-member modal is ONE flow over the three IAM endpoints: it tries
 // role-bindings first and falls back to an invitation on 404 user_not_found
 // (no invitation is ever "sent" — access materializes on the invitee's next
@@ -51,6 +55,7 @@ import {
   useRevokeInvitation,
   useRoleBindings,
   useRoles,
+  useRotateServiceAccountToken,
   useUpdateRoleBinding,
 } from "../api/hooks/iam";
 import { useWebConfig } from "../api/hooks/webConfig";
@@ -59,7 +64,6 @@ import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ConfirmDialog } from "../components/overlay/ConfirmDialog";
 import { Modal } from "../components/overlay/Modal";
 import { useToast } from "../components/overlay/ToastProvider";
-import { avatarClass } from "../components/ui/avatar";
 import { Copyable } from "../components/ui/Copyable";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
@@ -71,6 +75,8 @@ import type {
   IamRoleBindingCreateBody,
   IamUserProvisionBody,
   IamUserProvisionResponse,
+  IamUserTokenRotateBody,
+  IamUserTokenRotateResponse,
 } from "../api/types";
 import type {
   RoleBinding,
@@ -80,8 +86,7 @@ import type {
 import { formatDate } from "../model/format";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
-import { CELL_APP, CELL_MAIN, CELL_SUB } from "../components/ui/cell";
-import { CHIP, CHIP_TONE, roleChipClass } from "../components/ui/chip";
+import { CELL_MAIN, CELL_SUB } from "../components/ui/cell";
 import {
   FIELD,
   FIELD_ERR,
@@ -141,9 +146,11 @@ function MembersScreen({ teamId }: { teamId: string }) {
   const [pendingRoleChange, setPendingRoleChange] = useState<RoleBinding | null>(
     null,
   );
+  const [pendingRotation, setPendingRotation] = useState<RoleBinding | null>(
+    null,
+  );
   const [lastOwnerBlocked, setLastOwnerBlocked] = useState(false);
-  const [provisionResult, setProvisionResult] =
-    useState<IamUserProvisionResponse | null>(null);
+  const [issuedToken, setIssuedToken] = useState<IssuedToken | null>(null);
 
   const canManage = !isLoading && can("iam.manage");
 
@@ -214,7 +221,20 @@ function MembersScreen({ teamId }: { teamId: string }) {
     // Bindings were already invalidated by useProvisionMember's onSuccess —
     // only the modal handoff happens here.
     closeAddModal();
-    setProvisionResult(result);
+    setIssuedToken({
+      token: result.token,
+      description: `${result.user.email} was provisioned as ${result.roleBinding.role.key}. This is the only time the full token is shown.`,
+      note: `Store it as a secret wherever ${result.user.email} is used, such as your CI.`,
+    });
+  };
+
+  const handleRotated = (result: IamUserTokenRotateResponse) => {
+    setPendingRotation(null);
+    setIssuedToken({
+      token: result.token,
+      description: `${result.user.email} has a new token and its earlier tokens no longer work. This is the only time the full token is shown.`,
+      note: `Replace the old token wherever ${result.user.email} is used, such as your CI secrets.`,
+    });
   };
 
   let body: ReactNode;
@@ -245,6 +265,10 @@ function MembersScreen({ teamId }: { teamId: string }) {
           onChangeRole={(binding) => {
             setLastOwnerBlocked(false);
             setPendingRoleChange(binding);
+          }}
+          onRotateToken={(binding) => {
+            setLastOwnerBlocked(false);
+            setPendingRotation(binding);
           }}
         />
       </>
@@ -324,10 +348,18 @@ function MembersScreen({ teamId }: { teamId: string }) {
           onClose={() => setPendingRoleChange(null)}
         />
       ) : null}
-      {provisionResult !== null ? (
-        <ProvisionedTokenModal
-          result={provisionResult}
-          onAcknowledge={() => setProvisionResult(null)}
+      {pendingRotation !== null ? (
+        <RotateTokenDialog
+          binding={pendingRotation}
+          teamId={teamId}
+          onClose={() => setPendingRotation(null)}
+          onRotated={handleRotated}
+        />
+      ) : null}
+      {issuedToken !== null ? (
+        <IssuedTokenModal
+          issued={issuedToken}
+          onAcknowledge={() => setIssuedToken(null)}
         />
       ) : null}
     </>
@@ -343,11 +375,13 @@ function ManagedMembersTable({
   bindingsQuery,
   onRemove,
   onChangeRole,
+  onRotateToken,
 }: {
   teamId: string;
   bindingsQuery: ReturnType<typeof useRoleBindings>;
   onRemove: (binding: RoleBinding) => void;
   onChangeRole: (binding: RoleBinding) => void;
+  onRotateToken: (binding: RoleBinding) => void;
 }) {
   // One query for every status: the server flips lapsed pending invitations
   // to expired on read, and the pending/expired split happens client-side.
@@ -432,11 +466,13 @@ function ManagedMembersTable({
   return (
     <>
       <MemberTable
+        teamId={teamId}
         bindings={bindingsQuery.data ?? []}
         pendingInvitations={pendingInvitations}
         expiredInvitations={expiredInvitations}
         onRemove={onRemove}
         onChangeRole={onChangeRole}
+        onRotateToken={onRotateToken}
         onRevokeInvitation={(invitation) => {
           setRevokeError(null);
           setPendingRevoke(invitation);
@@ -491,18 +527,22 @@ type MemberTableRow =
   | { kind: "invitation"; invitation: TeamInvitation };
 
 function MemberTable({
+  teamId,
   bindings,
   pendingInvitations,
   expiredInvitations,
   onRemove,
   onChangeRole,
+  onRotateToken,
   onRevokeInvitation,
 }: {
+  teamId: string;
   bindings: readonly RoleBinding[];
   pendingInvitations: readonly TeamInvitation[];
   expiredInvitations: readonly TeamInvitation[];
   onRemove: (binding: RoleBinding) => void;
   onChangeRole: (binding: RoleBinding) => void;
+  onRotateToken: (binding: RoleBinding) => void;
   onRevokeInvitation: (invitation: TeamInvitation) => void;
 }) {
   const ownerCount = useMemo(
@@ -582,38 +622,28 @@ function MemberTable({
                 ) : (
                   <tr key={`member:${row.binding.id}`} className={TBL_TR}>
                     <td className={TBL_TD}>
-                      <div className={CELL_APP}>
-                        <span
-                          className={avatarClass("sm")}
-                          aria-hidden="true"
-                        >
-                          {initialsOf(
-                            row.binding.user.displayName,
-                            row.binding.user.email,
-                          )}
-                        </span>
-                        <div>
-                          <div className={CELL_MAIN}>
-                            {row.binding.user.displayName ??
-                              row.binding.user.email}
-                          </div>
-                          {row.binding.user.displayName !== null ? (
-                            <div className={CELL_SUB}>
-                              {row.binding.user.email}
-                            </div>
-                          ) : null}
+                      <div className={CELL_MAIN}>
+                        {row.binding.user.displayName ??
+                          row.binding.user.email}
+                      </div>
+                      {row.binding.user.displayName !== null ? (
+                        <div className={CELL_SUB}>
+                          {row.binding.user.email}
                         </div>
+                      ) : null}
+                    </td>
+                    <td className={TBL_TD}>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span>{row.binding.role.key}</span>
+                        {row.binding.user.ownerTeamId !== null ? (
+                          <span className="text-fg-3 text-[12px]">
+                            Service account
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className={TBL_TD}>
-                      <span className={roleChipClass(row.binding.role.key)}>
-                        {row.binding.role.key}
-                      </span>
-                    </td>
-                    <td className={TBL_TD}>
-                      <span className={ACTIVE_STATUS_CHIP.className}>
-                        {ACTIVE_STATUS_CHIP.label}
-                      </span>
+                      <span className="text-[13px] text-fg">Active</span>
                     </td>
                     <td className={TBL_TD}>
                       <span className="text-fg-3 text-[13px]">
@@ -632,6 +662,13 @@ function MemberTable({
                         }
                         onRemove={onRemove}
                         onChangeRole={onChangeRole}
+                        // Only the owning team can rotate (the server answers
+                        // 404 for anything else).
+                        onRotateToken={
+                          row.binding.user.ownerTeamId === teamId
+                            ? onRotateToken
+                            : undefined
+                        }
                       />
                     </td>
                   </tr>
@@ -647,7 +684,7 @@ function MemberTable({
 
 /**
  * Invitation row, pending or expired. Expired rows are greyed-out history:
- * neutral chip, absolute expiry date, and no Revoke — the server 409s
+ * absolute expiry date, and no Revoke — the server 409s
  * (`invitation-not-pending`) on anything but a pending invitation.
  */
 function InvitationRow({
@@ -658,34 +695,23 @@ function InvitationRow({
   onRevoke: (invitation: TeamInvitation) => void;
 }) {
   const pending = invitation.status === "pending";
-  const chip = pending ? PENDING_STATUS_CHIP : EXPIRED_STATUS_CHIP;
 
   return (
     <tr className={pending ? TBL_TR : `${TBL_TR} opacity-60`}>
       <td className={TBL_TD}>
-        <div className={CELL_APP}>
-          <span
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-3"
-            aria-hidden="true"
-          >
-            <MailIcon className="size-4" />
-          </span>
-          <div>
-            <div className={CELL_MAIN}>{invitationContactValue(invitation)}</div>
-            <div className={CELL_SUB}>
-              {pending ? "Pending invitation" : "Expired invitation"}
-            </div>
-          </div>
+        <div className={CELL_MAIN}>{invitationContactValue(invitation)}</div>
+        <div className={CELL_SUB}>
+          {pending ? "Pending invitation" : "Expired invitation"}
         </div>
       </td>
       <td className={TBL_TD}>
-        <span className={roleChipClass(invitation.role.key)}>
-          {invitation.role.key}
-        </span>
+        <span>{invitation.role.key}</span>
       </td>
       <td className={TBL_TD}>
         <div>
-          <span className={chip.className}>{chip.label}</span>
+          <span className="text-[13px] text-fg">
+            {pending ? "Pending" : "Expired"}
+          </span>
           <div className="text-fg-3 mt-1 text-[12px]">
             {pending
               ? relativeExpiry(invitation.expiresAt)
@@ -717,19 +743,23 @@ function InvitationRow({
 }
 
 /**
- * Row kebab → Change role / Remove (AccountMenu's outside-close/Esc/
- * first-item-focus pattern).
+ * Row kebab → [Rotate token] / Change role / Remove (AccountMenu's
+ * outside-close/Esc/first-item-focus pattern). Rotate token is offered only
+ * when `onRotateToken` is passed (a service account this team owns), and stays
+ * available on a last owner: rotating changes no role.
  */
 function RowKebab({
   binding,
   lastOwner,
   onRemove,
   onChangeRole,
+  onRotateToken,
 }: {
   binding: RoleBinding;
   lastOwner: boolean;
   onRemove: (binding: RoleBinding) => void;
   onChangeRole: (binding: RoleBinding) => void;
+  onRotateToken?: (binding: RoleBinding) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -792,6 +822,22 @@ function RowKebab({
         menuId={menuId}
         label={`Actions for ${binding.user.email}`}
       >
+        {onRotateToken !== undefined ? (
+          <>
+            <button
+              type="button"
+              className={MENU_ITEM}
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onRotateToken(binding);
+              }}
+            >
+              <KeyIcon /> Rotate token
+            </button>
+            <div className={MENU_SEP} />
+          </>
+        ) : null}
         {lastOwner ? (
             // aria-disabled (not `disabled`) keeps the items focusable so the
             // reason is discoverable by keyboard/screen-reader users.
@@ -923,16 +969,12 @@ function ChangeRoleDialog({
           label: "Role",
           value: (
             <>
-              <span className={roleChipClass(binding.role.key)}>
-                {binding.role.key}
-              </span>
+              <span>{binding.role.key}</span>
               <span className={SUMMARY_ARROW}>→</span>
               {selectedRole === undefined ? (
                 <span className="text-fg-3">…</span>
               ) : (
-                <span className={roleChipClass(selectedRole.key)}>
-                  {selectedRole.key}
-                </span>
+                <span>{selectedRole.key}</span>
               )}
             </>
           ),
@@ -1076,14 +1118,10 @@ function AddMemberModalContent({
     !provisioning && parseDays(inviteExpires, 90) === "invalid"
       ? "Enter a whole number between 1 and 90."
       : null;
-  const tokenExpiresError =
-    provisioning && parseDays(tokenExpires, 3650) === "invalid"
-      ? "Enter a whole number between 1 and 3650."
-      : null;
   const formValid =
     identifierError === null &&
     inviteExpiresError === null &&
-    tokenExpiresError === null &&
+    (!provisioning || tokenExpiresError(tokenExpires) === null) &&
     selectedRoleId !== null;
 
   const requestClose = () => {
@@ -1225,22 +1263,16 @@ function AddMemberModalContent({
   /** Mint-token path (`POST /iam/users`) — new accounts only, email required. */
   const submitWithToken = (roleIdValue: string) => {
     const trimmedEmail = identifier.trim();
-    const expires = parseDays(tokenExpires, 3650);
-    if (expires === "invalid") {
+    const options = tokenOptions(tokenName, tokenExpires);
+    if (options === "invalid") {
       return; // unreachable: formValid gates submit
     }
     const body: IamUserProvisionBody = {
       teamId,
       email: trimmedEmail,
       roleId: roleIdValue,
+      ...options,
     };
-    const trimmedTokenName = tokenName.trim();
-    if (trimmedTokenName !== "") {
-      body.tokenDisplayName = trimmedTokenName;
-    }
-    if (expires !== null) {
-      body.expiresInDays = expires;
-    }
     provisionMember.mutate(body, {
       // Owner closes this modal and opens the show-once PAT modal.
       onSuccess: (result) => onProvisioned(result),
@@ -1452,9 +1484,10 @@ function AddMemberModalContent({
         )}
         {target === "email" ? (
           <>
-            <label className="mb-3.5 flex items-center gap-2.5 text-[13px] font-semibold">
+            <label className="mb-3.5 flex items-start gap-2.5 text-[13px]">
               <input
                 type="checkbox"
+                className="mt-0.5"
                 checked={mintToken}
                 onChange={(event) => {
                   setMintToken(event.target.checked);
@@ -1463,52 +1496,25 @@ function AddMemberModalContent({
                 }}
                 disabled={busy}
               />
-              Provision with an API token
+              <span>
+                <span className="font-semibold">
+                  Provision with an API token
+                </span>
+                <span className={`${FIELD_HINT} block`}>
+                  Creates a service account that belongs to this team and
+                  can&apos;t be added to another team.
+                </span>
+              </span>
             </label>
             {mintToken ? (
               <>
-                <label className={FIELD}>
-                  <span className={FIELD_LABEL}>Token display name</span>
-                  <input
-                    className={`${INPUT} ${INPUT_STATE.normal}`}
-                    value={tokenName}
-                    onChange={(event) => setTokenName(event.target.value)}
-                    placeholder="CI deploy token"
-                    autoComplete="off"
-                    disabled={busy}
-                  />
-                  <span className={FIELD_HINT}>
-                    Optional — how the minted personal API token is listed.
-                  </span>
-                </label>
-                <label className={FIELD}>
-                  <span className={FIELD_LABEL}>Token expires in (days)</span>
-                  <input
-                    className={`${INPUT} ${
-                      tokenExpiresError !== null
-                        ? INPUT_STATE.invalid
-                        : INPUT_STATE.normal
-                    }`}
-                    type="number"
-                    min={1}
-                    max={3650}
-                    value={tokenExpires}
-                    onChange={(event) => setTokenExpires(event.target.value)}
-                    placeholder="365"
-                    aria-invalid={tokenExpiresError !== null || undefined}
-                    disabled={busy}
-                  />
-                  {tokenExpiresError !== null ? (
-                    <span className={FIELD_ERR} role="alert">
-                      {tokenExpiresError}
-                    </span>
-                  ) : (
-                    <span className={FIELD_HINT}>
-                      Optional — leave empty for the server default. Maximum
-                      3650 days.
-                    </span>
-                  )}
-                </label>
+                <TokenFields
+                  name={tokenName}
+                  onNameChange={setTokenName}
+                  expires={tokenExpires}
+                  onExpiresChange={setTokenExpires}
+                  disabled={busy}
+                />
                 <div className={`${CALLOUT} ${CALLOUT_TONE.warn}`}>
                   <AlertIcon />
                   <div>
@@ -1624,15 +1630,187 @@ function parseDays(raw: string, max: number): number | null | "invalid" {
     : "invalid";
 }
 
+const TOKEN_EXPIRES_MAX_DAYS = 3650;
+
+/** Token-expiry field message, shared by provisioning and rotation. */
+function tokenExpiresError(raw: string): string | null {
+  return parseDays(raw, TOKEN_EXPIRES_MAX_DAYS) === "invalid"
+    ? `Enter a whole number between 1 and ${TOKEN_EXPIRES_MAX_DAYS}.`
+    : null;
+}
+
+/**
+ * The optional token name and expiry as request fields: a blank name lets the
+ * server name the token, a blank expiry means it never expires.
+ */
+function tokenOptions(
+  name: string,
+  expires: string,
+): Pick<IamUserTokenRotateBody, "tokenDisplayName" | "expiresInDays"> | "invalid" {
+  const expiresInDays = parseDays(expires, TOKEN_EXPIRES_MAX_DAYS);
+  if (expiresInDays === "invalid") {
+    return "invalid";
+  }
+  const tokenDisplayName = name.trim();
+  return {
+    ...(tokenDisplayName !== "" ? { tokenDisplayName } : {}),
+    ...(expiresInDays !== null ? { expiresInDays } : {}),
+  };
+}
+
+/** Optional token name + expiry fields (provision mode and the rotate dialog). */
+function TokenFields({
+  name,
+  onNameChange,
+  expires,
+  onExpiresChange,
+  disabled,
+}: {
+  name: string;
+  onNameChange: (value: string) => void;
+  expires: string;
+  onExpiresChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const expiresError = tokenExpiresError(expires);
+  return (
+    <>
+      <label className={FIELD}>
+        <span className={FIELD_LABEL}>Token display name</span>
+        <input
+          className={`${INPUT} ${INPUT_STATE.normal}`}
+          value={name}
+          onChange={(event) => onNameChange(event.target.value)}
+          placeholder="CI deploy token"
+          autoComplete="off"
+          disabled={disabled}
+        />
+        <span className={FIELD_HINT}>Optional — how the token is listed.</span>
+      </label>
+      <label className={FIELD}>
+        <span className={FIELD_LABEL}>Token expires in (days)</span>
+        <input
+          className={`${INPUT} ${
+            expiresError !== null ? INPUT_STATE.invalid : INPUT_STATE.normal
+          }`}
+          type="number"
+          min={1}
+          max={TOKEN_EXPIRES_MAX_DAYS}
+          value={expires}
+          onChange={(event) => onExpiresChange(event.target.value)}
+          placeholder="365"
+          aria-invalid={expiresError !== null || undefined}
+          disabled={disabled}
+        />
+        {expiresError !== null ? (
+          <span className={FIELD_ERR} role="alert">
+            {expiresError}
+          </span>
+        ) : (
+          <span className={FIELD_HINT}>
+            Optional — leave empty for a token that never expires. Maximum{" "}
+            {TOKEN_EXPIRES_MAX_DAYS} days.
+          </span>
+        )}
+      </label>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rotate token dialog (service accounts this team owns)
+// ---------------------------------------------------------------------------
+
+const ROTATE_SESSION_ENDED_DESCRIPTION =
+  "This sign-in had already ended before the token could be rotated, so the account's token was not changed. Sign in again and retry.";
+
+/**
+ * Type-to-confirm around `POST /iam/users/:userId/rotate-token`: rotation ends
+ * the account's current token at once, as irreversible as revoking one.
+ * Mounted only while a binding is pending, so the fields reset with it.
+ * Problems (the 409 service-account-conflict reasons among them) show the
+ * server's `detail` inline; an ended sign-in is reported by the hook, which
+ * outlives this dialog.
+ */
+function RotateTokenDialog({
+  binding,
+  teamId,
+  onClose,
+  onRotated,
+}: {
+  binding: RoleBinding;
+  teamId: string;
+  onClose: () => void;
+  onRotated: (result: IamUserTokenRotateResponse) => void;
+}) {
+  const toast = useToast();
+  const rotate = useRotateServiceAccountToken({
+    onSessionEnded: () =>
+      toast.warning("Sign in again", {
+        description: ROTATE_SESSION_ENDED_DESCRIPTION,
+      }),
+  });
+
+  const [tokenName, setTokenName] = useState("");
+  const [tokenExpires, setTokenExpires] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const confirm = () => {
+    const options = tokenOptions(tokenName, tokenExpires);
+    // The expiry field already shows why.
+    if (rotate.isPending || options === "invalid") {
+      return;
+    }
+    setError(null);
+    rotate.mutate(
+      { teamId, userId: binding.user.id, ...options },
+      {
+        onSuccess: onRotated,
+        onError: (mutationError) => setError(problemDescription(mutationError)),
+      },
+    );
+  };
+
+  return (
+    <ConfirmDialog
+      open
+      variant="typeToConfirm"
+      confirmationText={binding.user.email}
+      title="Rotate token"
+      description={`${binding.user.email}'s current token stops working at once. Anything that uses it, such as CI, must be updated with the new token.`}
+      confirmLabel="Rotate token"
+      busy={rotate.isPending}
+      error={error}
+      onCancel={onClose}
+      onConfirm={confirm}
+    >
+      <TokenFields
+        name={tokenName}
+        onNameChange={setTokenName}
+        expires={tokenExpires}
+        onExpiresChange={setTokenExpires}
+        disabled={rotate.isPending}
+      />
+    </ConfirmDialog>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Show-once PAT modal (non-dismissible until acknowledged)
 // ---------------------------------------------------------------------------
 
-function ProvisionedTokenModal({
-  result,
+/** A just-issued token (provisioned or rotated) and the copy around it. */
+interface IssuedToken {
+  token: string;
+  description: string;
+  note: string;
+}
+
+function IssuedTokenModal({
+  issued,
   onAcknowledge,
 }: {
-  result: IamUserProvisionResponse;
+  issued: IssuedToken;
   onAcknowledge: () => void;
 }) {
   return (
@@ -1641,8 +1819,8 @@ function ProvisionedTokenModal({
       // Unreachable: disableEscapeClose also removes overlay-click and the X.
       onClose={onAcknowledge}
       disableEscapeClose
-      title="Copy the personal access token"
-      description={`${result.user.email} was provisioned as ${result.roleBinding.role.key}. This is the only time the full token is shown.`}
+      title="Copy the API token"
+      description={issued.description}
       footer={
         <button
           type="button"
@@ -1663,14 +1841,8 @@ function ProvisionedTokenModal({
           now — once this dialog closes the token cannot be retrieved.
         </div>
       </div>
-      <Copyable value={result.token} ariaLabel="Copy personal access token" />
-      <p className="text-fg-3 mt-3 text-[12.5px]">
-        Hand the token to {result.user.email}
-        {result.user.created
-          ? " (account created)"
-          : " (existing account reused)"}
-        . A human teammate can simply sign in with GitHub afterwards.
-      </p>
+      <Copyable value={issued.token} ariaLabel="Copy API token" />
+      <p className="text-fg-3 mt-3 text-[12.5px]">{issued.note}</p>
     </Modal>
   );
 }
@@ -1722,21 +1894,6 @@ function problemDescription(error: unknown): string {
   return "The request couldn't be completed. Check your connection and try again.";
 }
 
-const ACTIVE_STATUS_CHIP = {
-  className: `${CHIP} ${CHIP_TONE.green}`,
-  label: "Active",
-} as const;
-
-const PENDING_STATUS_CHIP = {
-  className: `${CHIP} ${CHIP_TONE.blue}`,
-  label: "Pending",
-} as const;
-
-const EXPIRED_STATUS_CHIP = {
-  className: `${CHIP} ${CHIP_TONE.neutral}`,
-  label: "Expired",
-} as const;
-
 const DAY_MS = 86_400_000;
 
 function invitationContactValue(invitation: TeamInvitation): string {
@@ -1770,24 +1927,6 @@ function grantedLine(
   }
   const granter = emailById.get(binding.createdBy);
   return granter === undefined ? date : `by ${granter} · ${date}`;
-}
-
-/** Up to two initials from `displayName ?? email` (email → its local part). */
-function initialsOf(displayName: string | null, email: string): string {
-  const atIndex = email.indexOf("@");
-  const source = displayName ?? (atIndex > 0 ? email.slice(0, atIndex) : email);
-  const words = source
-    .trim()
-    .split(/\s+/)
-    .filter((word) => word.length > 0);
-  const first = words[0];
-  if (first === undefined) {
-    return "?";
-  }
-  const second = words[1];
-  return second === undefined
-    ? first.slice(0, 2).toUpperCase()
-    : `${first.charAt(0)}${second.charAt(0)}`.toUpperCase();
 }
 
 // --- Icons (paths mirror the shared icon set) ------------------------------
@@ -1828,15 +1967,6 @@ function UsersIcon({ className }: { className?: string }) {
   );
 }
 
-function MailIcon({ className }: { className?: string }) {
-  return (
-    <Glyph className={className}>
-      <rect x="2" y="4" width="20" height="16" rx="2.5" />
-      <path d="m3 7 9 6 9-6" />
-    </Glyph>
-  );
-}
-
 function PlusIcon() {
   return (
     <Glyph>
@@ -1869,6 +1999,15 @@ function ShieldIcon() {
   return (
     <Glyph className={MENU_ICON}>
       <path d="M12 2 4 5v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V5l-8-3z" />
+    </Glyph>
+  );
+}
+
+function KeyIcon() {
+  return (
+    <Glyph className={MENU_ICON}>
+      <circle cx="7.5" cy="15.5" r="4.5" />
+      <path d="m10.7 12.3 8.8-8.8M16 6l3 3M14 8l2 2" />
     </Glyph>
   );
 }

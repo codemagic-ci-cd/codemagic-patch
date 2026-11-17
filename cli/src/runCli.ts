@@ -42,8 +42,10 @@ import {
   exitCodeForProblemDetails,
   getProblemTypeSuffix,
   HttpProblemError,
+  type ProblemDetails,
   ServerFeatureUnavailableError,
 } from "./problem-details";
+import { deriveProblemHint } from "./releaseHints";
 import {
   colorizeTable,
   createPalette,
@@ -494,8 +496,11 @@ export async function runCli(
           // `--format json` is machine-readable structured output: forward the
           // full RFC 9457 body as the `error` field on stdout so CI pipelines can
           // consume server-provided detail (cli-tech-spec §Server Error Response
-          // Parsing). Data goes to stdout; the exit code is unchanged.
-          writeJson(deps.stdout, { error: error.problem });
+          // Parsing), with the same remedy human output prints. Data goes to
+          // stdout; the exit code is unchanged.
+          writeJson(deps.stdout, {
+            error: problemForJsonOutput(error, commandForExecution),
+          });
           return exitCodeForProblemDetails(error.problem, error.responseStatus);
         }
         deps.stderr.write(renderHttpProblem(error, err));
@@ -936,6 +941,7 @@ const JSON_NON_INTERACTIVE_KINDS = {
   login: true,
   "member-invite-revoke": true,
   "member-remove": true,
+  "member-rotate-token": true,
   "member-update": true,
   wire: true,
   "release-create": true,
@@ -1117,24 +1123,41 @@ function renderAuthenticationHint(
   command: CliCommand | null,
   error: HttpProblemError,
 ): string | null {
-  const serverUrl =
-    command !== null &&
-    "serverUrl" in command &&
-    typeof command.serverUrl === "string"
-      ? command.serverUrl
-      : error.serverUrl;
+  const serverUrl = resolveAuthenticationServerUrl(command, error);
 
-  if (
-    getProblemTypeSuffix(error.problem.type) !== "authentication-required" ||
-    serverUrl === undefined
-  ) {
-    return null;
+  return serverUrl === null
+    ? null
+    : [
+        `Authentication required for ${serverUrl}.`,
+        authenticationRemedy(serverUrl),
+      ].join("\n");
+}
+
+function authenticationRemedy(serverUrl: string): string {
+  return `Run \`cmpatch login --server-url ${serverUrl}\` or pass --token/CODEMAGIC_PATCH_TOKEN.`;
+}
+
+/**
+ * The problem as `--format json` forwards it: the server's body plus, as
+ * `hint`, the command human output names. A caller that reads only stdout would
+ * otherwise know what failed but not what to run next. A hint already on the
+ * problem (the server's, or one attached where the problem was parsed) wins.
+ */
+function problemForJsonOutput(
+  error: HttpProblemError,
+  command: CliCommand | null,
+): ProblemDetails {
+  const { problem } = error;
+  if (typeof problem.hint === "string" && problem.hint.length > 0) {
+    return problem;
   }
 
-  return [
-    `Authentication required for ${serverUrl}.`,
-    `Run \`cmpatch login --server-url ${serverUrl}\` or pass --token/CODEMAGIC_PATCH_TOKEN.`,
-  ].join("\n");
+  const serverUrl = resolveAuthenticationServerUrl(command, error);
+  const hint =
+    deriveProblemHint(problem) ??
+    (serverUrl === null ? null : authenticationRemedy(serverUrl));
+
+  return hint === null ? problem : { ...problem, hint };
 }
 
 function resolveDefaultFlagValues(

@@ -37,19 +37,6 @@ export interface ReleaseDelivery {
   };
 }
 
-/** Application success rate as a 0..1 fraction; null when no Applied/Failed events exist. */
-export function successRate(metrics: {
-  failed: number;
-  success: number;
-}): number | null {
-  const attempts = metrics.success + metrics.failed;
-  if (attempts === 0) {
-    return null;
-  }
-
-  return metrics.success / attempts;
-}
-
 /** True when the delivery payload has a size or a download count to show. */
 export function hasDeliveryData(
   delivery: ReleaseDelivery | null,
@@ -64,38 +51,6 @@ export function hasDeliveryData(
     delivery.fullBundle.sizeBytes !== null ||
     delivery.patch.sizeBytes !== null
   );
-}
-
-/** Field-wise sum; an empty list yields all-zero counters. */
-export function aggregateMetrics(list: ReleaseMetrics[]): ReleaseMetrics {
-  const total: ReleaseMetrics = {
-    active: 0,
-    downloaded: 0,
-    failed: 0,
-    failureReasonDetailCounts: {},
-    failureReasons: {},
-    installed: 0,
-    success: 0,
-  };
-
-  for (const metrics of list) {
-    total.active += metrics.active;
-    total.downloaded += metrics.downloaded;
-    total.failed += metrics.failed;
-    total.installed += metrics.installed;
-    total.success += metrics.success;
-    for (const [reason, count] of Object.entries(metrics.failureReasons)) {
-      total.failureReasons[reason] = (total.failureReasons[reason] ?? 0) + count;
-    }
-    for (const [reason, count] of Object.entries(
-      metrics.failureReasonDetailCounts,
-    )) {
-      total.failureReasonDetailCounts[reason] =
-        (total.failureReasonDetailCounts[reason] ?? 0) + count;
-    }
-  }
-
-  return total;
 }
 
 export interface FailureReasonShare {
@@ -216,10 +171,7 @@ export interface FailureCodeShare extends FailureCodeBreakdown {
 
 /**
  * Per-code shares within one reason, preserving the server's count-desc order.
- *
- * The denominator is the reason's own total from the counters card, not the
- * sum of the loaded page — otherwise a code's share would climb as the reader
- * scrolls more pages in.
+ * The denominator is the reason's own total from the counters card.
  */
 export function failureCodeShares(
   codes: FailureCodeBreakdown[],

@@ -383,3 +383,9 @@ fabric.properties
 !/gradle/wrapper/gradle-wrapper.jar
 
 # End of https://www.toptal.com/developers/gitignore/api/androidstudio,reactnative
+
+# Swift Package Manager state, if Xcode or `swift` ever opens Package.swift here.
+# The manifest only resolves inside an app's React Native autolinking tree.
+.build/
+.swiftpm/
+Package.resolved

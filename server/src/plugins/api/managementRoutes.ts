@@ -76,6 +76,7 @@ export function registerManagementRoutes(
 
   controlPlane.post<{ Body: TeamCreateBody }>(
     "/teams",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       if (!options.teamCreateHandler) {
         return sendProblem(reply, createManagementNotEnabledProblem());
@@ -223,6 +224,7 @@ export function registerManagementRoutes(
 
   controlPlane.post<{ Body: AppCreateBody }>(
     "/apps",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       if (!options.appCreateHandler) {
         return sendProblem(reply, createManagementNotEnabledProblem());
@@ -371,7 +373,7 @@ export function registerManagementRoutes(
   controlPlane.patch<{
     Body: AppUpdateBody;
     Params: AppParams;
-  }>("/apps/:appId", async (request, reply) => {
+  }>("/apps/:appId", { config: { allowApiToken: true } }, async (request, reply) => {
     if (!options.appUpdateHandler) {
       return sendProblem(reply, createManagementNotEnabledProblem());
     }
@@ -550,6 +552,7 @@ export function registerManagementRoutes(
 
   controlPlane.delete<{ Params: AppParams }>(
     "/apps/:appId",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       if (!options.appDeleteHandler) {
         return sendProblem(reply, createManagementNotEnabledProblem());
@@ -606,7 +609,7 @@ export function registerManagementRoutes(
   controlPlane.post<{
     Body: DeploymentCreateBody;
     Params: AppParams;
-  }>("/apps/:appId/deployments", async (request, reply) => {
+  }>("/apps/:appId/deployments", { config: { allowApiToken: true } }, async (request, reply) => {
     if (!options.deploymentCreateHandler) {
       return sendProblem(reply, createManagementNotEnabledProblem());
     }
@@ -713,7 +716,7 @@ export function registerManagementRoutes(
   controlPlane.patch<{
     Body: DeploymentUpdateBody;
     Params: DeploymentParams;
-  }>("/deployments/:deploymentId", async (request, reply) => {
+  }>("/deployments/:deploymentId", { config: { allowApiToken: true } }, async (request, reply) => {
     if (!options.deploymentUpdateHandler) {
       return sendProblem(reply, createManagementNotEnabledProblem());
     }
@@ -765,6 +768,7 @@ export function registerManagementRoutes(
 
   controlPlane.delete<{ Params: DeploymentParams }>(
     "/deployments/:deploymentId",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       if (!options.deploymentDeleteHandler) {
         return sendProblem(reply, createManagementNotEnabledProblem());
@@ -821,6 +825,7 @@ export function registerManagementRoutes(
 
   controlPlane.post<{ Params: DeploymentParams }>(
     "/deployments/:deploymentId/clear",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       if (!options.deploymentClearHandler) {
         return sendProblem(reply, createManagementNotEnabledProblem());

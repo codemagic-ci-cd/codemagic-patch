@@ -31,7 +31,9 @@ import {
   type PartialDestination,
 } from "./nativeConfig";
 import type { HookTransform } from "./nativeHooks";
+import type { IosDependencyManager } from "../nativeProjectPaths";
 import {
+  MIN_SWIFTPM_SDK_VERSION,
   SDK_INSTALL_RANGE,
   SDK_PACKAGE,
   type PackageManager,
@@ -79,6 +81,8 @@ export type WirePlan = {
   platforms: NativePlatform[];
   destinations: WireDestination[];
   steps: PlannedStep[];
+  /** From the plan facts: set when iOS is selected and wire decides the iOS project's mode. */
+  iosDependencyManager?: IosDependencyManager;
 };
 
 export function hasWork(planned: PlannedStep): boolean {
@@ -118,7 +122,7 @@ export async function buildPlan(input: PlanInput): Promise<WirePlan> {
 export function createPlan(input: PlanInput, facts: PlanFacts): WirePlan {
   const { shape, platforms } = input;
   const steps: PlannedStep[] = [];
-  const install = planInstall(shape);
+  const install = planInstall(shape, facts.iosDependencyManager);
   steps.push(install.step);
   // Bundle ownership also matters on linked platforms not selected for edits.
   const conflicted = new Set([...input.linkedPlatforms, ...platforms].filter((platform) => {
@@ -191,6 +195,7 @@ export function createPlan(input: PlanInput, facts: PlanFacts): WirePlan {
   const podInstall =
     platforms.includes("ios") &&
     shape.expoNative !== "generated" &&
+    facts.iosDependencyManager !== "swiftpm" &&
     facts.pods !== undefined
       ? planPodInstall(shape, iosRoot, hasWork(install.step), input.os, facts.pods)
       : undefined;
@@ -201,6 +206,7 @@ export function createPlan(input: PlanInput, facts: PlanFacts): WirePlan {
     platforms,
     destinations: input.destinations,
     steps,
+    ...(facts.iosDependencyManager === undefined ? {} : { iosDependencyManager: facts.iosDependencyManager }),
   };
 }
 
@@ -243,12 +249,27 @@ export function stepTitle(id: WireStep["id"], platform?: NativePlatform): string
 
 // --- SDK package -----------------------------------------------------------
 
-function planInstall(shape: ProjectShape): {
+function planInstall(shape: ProjectShape, iosDependencyManager?: IosDependencyManager): {
   step: PlannedStep;
   /** Whether Patch.wrap can be generated once this run's install step has succeeded. */
   supportsWrapAfter: boolean;
 } {
   const { sdk, packageManager } = shape;
+  // React Native's SwiftPM mode links the SDK through its Package.swift; an
+  // installed SDK without one (before MIN_SWIFTPM_SDK_VERSION) cannot be linked.
+  const swiftPM = iosDependencyManager === "swiftpm";
+  if (swiftPM && sdk.kind === "local" && sdk.installedRoot !== undefined && !sdk.supportsSwiftPM) {
+    return {
+      step: planStep(
+        "sdk-install",
+        undefined,
+        "manual",
+        `${sdk.declared} is kept as declared; it has no Package.swift, so React Native's SwiftPM mode cannot link it`,
+        [`Point ${sdk.declared} at an SDK with Package.swift (${MIN_SWIFTPM_SDK_VERSION} or later),`, "then run `cmpatch wire` again."],
+      ),
+      supportsWrapAfter: sdk.supportsWrap,
+    };
+  }
   if (sdk.kind === "local") {
     return {
       step: planStep(
@@ -263,7 +284,7 @@ function planInstall(shape: ProjectShape): {
   // A version that only resolves from a parent directory (a hoisted workspace
   // install) is not the app's own dependency: autolinking reads the app's
   // package.json, so the app must declare the SDK itself.
-  if (sdk.kind === "registry" && sdk.installedVersion !== undefined && sdk.supportsWrap) {
+  if (sdk.kind === "registry" && sdk.installedVersion !== undefined && sdk.supportsWrap && (!swiftPM || sdk.supportsSwiftPM)) {
     return {
       step: planStep("sdk-install", undefined, "already-configured", `${SDK_PACKAGE}@${sdk.installedVersion} is installed`),
       supportsWrapAfter: true,
@@ -277,7 +298,9 @@ function planInstall(shape: ProjectShape): {
         : `install ${SDK_PACKAGE}@${SDK_INSTALL_RANGE} (${sdk.installedVersion} resolves from a parent directory but the app does not declare it)`
       : sdk.installedVersion === undefined
         ? `install ${SDK_PACKAGE}@${SDK_INSTALL_RANGE} (declared as ${sdk.declared} but not installed)`
-        : `upgrade ${SDK_PACKAGE} from ${sdk.installedVersion} to ${SDK_INSTALL_RANGE} for Patch.wrap`;
+        : swiftPM && !sdk.supportsSwiftPM
+          ? `upgrade ${SDK_PACKAGE} from ${sdk.installedVersion} to ${SDK_INSTALL_RANGE} for React Native's SwiftPM mode`
+          : `upgrade ${SDK_PACKAGE} from ${sdk.installedVersion} to ${SDK_INSTALL_RANGE} for Patch.wrap`;
   if (packageManager.pnp) {
     return {
       step: planStep("sdk-install", undefined, "manual", `${detail} (Yarn Plug'n'Play installs are not run by wire)`, [

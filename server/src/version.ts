@@ -12,3 +12,16 @@ export function getServerVersion(): string {
   }
   return parsed.version;
 }
+
+/** Null when the version cannot be read: it only decorates messages. */
+export function readServerVersion(): string | null {
+  try {
+    return getServerVersion();
+  } catch {
+    return null;
+  }
+}
+
+export function serverLabel(version: string | null): string {
+  return version ? `this server (v${version})` : "this server";
+}

@@ -119,6 +119,13 @@ volumes do not exist (or the direct script is passed `--skip-safety-backup`). It
 restores only the components present in the selected backup; recover any
 external database or object storage separately with the provider's tooling.
 
+Restore runs the server image `.env.selfhost` pins, not the checkout's: without
+`--restore-env` a backup taken on an older release comes back under the newer
+server, which migrates it again. Use `--restore-env` to return to the backup's
+server, or upgrade to move forward: the next upgrade checks the database's
+applied migrations against the release and refuses one the release does not
+know.
+
 ### Fly restore
 
 ```bash
@@ -142,22 +149,46 @@ restore that stopped, go to `<app>-restore-<timestamp>.md` next to the backups.
 
 To see if a new server version is available, check the repo or the Status page in the dashboard.
 
-Backs up, updates server + Caddy images, then smoke-tests:
+Moves to the newest server release, backs up, pulls that release's published
+server image and the stock Caddy image, then smoke-tests:
 
 ```bash
 cmpatch selfhost upgrade
 # pin a specific server image:
 cmpatch selfhost upgrade --image registry.example.com/codemagic-patch-server:tag
+# build the server image on the server instead of pulling it:
+cmpatch selfhost upgrade --build-from-source
 ```
 
-The CLI fast-forwards the server's checkout first, and refuses to build from a
-tree with local edits or commits of its own.
+The CLI moves the server's checkout to the release tag first, and refuses a
+tree with local edits or commits of its own, or one newer than that release.
+Before anything changes it also pulls the release's server image and runs that
+image's own schema check, which reads the database with the server's own
+connection settings: a database that has already applied a migration the
+release does not know is refused, since that would run an older server on a
+newer schema. With `--build-from-source` the check runs after the build,
+before the restart. A stopped stack cannot be checked; start it and retry.
+`--skip-schema-check` skips the check, unsafely.
 
 ```bash
-# on the host:
+# on the host: move to the release, then run its script
+git fetch --tags && git checkout codemagic-patch-server-v<x.y.z>
 scripts/selfhost/upgrade.sh
 scripts/selfhost/upgrade.sh --image registry.example.com/codemagic-patch-server:tag
 ```
+
+A failure after the stack is recreated is rolled back in this order. The
+script prints each step with this host's compose files, ref, and absolute
+paths.
+
+1. `docker compose … stop server`, so the new server cannot migrate the
+   database again. It stays stopped until the restore.
+2. After a `--build-from-source` upgrade from a host-built image:
+   `docker tag codemagic-patch-server:pre-upgrade-<time> codemagic-patch-server:selfhost`.
+3. `git -C <checkout> checkout <previous ref>`.
+4. With an external database: roll it back with your provider's tooling.
+5. `<checkout>/scripts/selfhost/restore.sh --restore-env <pre-upgrade backup>`,
+   which starts the stack.
 
 ### Fly upgrade
 

@@ -28,6 +28,7 @@ import type {
   AppId,
   DeploymentId,
   MembershipId,
+  OAuthSessionId,
   ReleaseId,
   ReleaseJobId,
   RoleBindingId,
@@ -61,6 +62,7 @@ import type {
   ApiTokenCreateRouteHandler,
   ApiTokenDeleteRouteHandler,
   ApiTokenListRouteHandler,
+  CredentialsRevokeAllRouteHandler,
   AppCreateRouteHandler,
   AppDeleteRouteHandler,
   AppDeploymentsListRouteHandler,
@@ -75,6 +77,7 @@ import type {
   FailureDistributionRouteHandler,
   FailureEventsRouteHandler,
   DeploymentMetricsRouteHandler,
+  DeploymentMonthlyActiveDevicesRouteHandler,
   DeploymentRollbackRouteHandler,
   DeploymentTimeseriesRouteHandler,
   DeploymentUpdateRouteHandler,
@@ -90,6 +93,7 @@ import type {
   IamInvitationRouteModel,
   IamRoleListRouteHandler,
   IamUserProvisionRouteHandler,
+  IamUserTokenRotateRouteHandler,
   IdempotencyHandler,
   MetricEventIngestRouteHandler,
   OAuthCallbackRouteHandler,
@@ -142,7 +146,6 @@ import {
   createApiTokenMaskedPrefix,
   generateApiToken,
 } from "../app/apiToken";
-import { getOrCreateUser } from "../app/userProvisioning";
 import { canonicalizeEmail } from "../app/email";
 import {
   createOAuthSessionRouteHandlers,
@@ -185,6 +188,7 @@ export interface ServerRuntime {
   apiTokenCreateHandler?: ApiTokenCreateRouteHandler;
   apiTokenDeleteHandler?: ApiTokenDeleteRouteHandler;
   apiTokenListHandler?: ApiTokenListRouteHandler;
+  credentialsRevokeAllHandler?: CredentialsRevokeAllRouteHandler;
   appCreateHandler?: AppCreateRouteHandler;
   appDeleteHandler?: AppDeleteRouteHandler;
   appDeploymentsListHandler?: AppDeploymentsListRouteHandler;
@@ -202,6 +206,8 @@ export interface ServerRuntime {
   deploymentFailureDistributionHandler?: FailureDistributionRouteHandler;
   deploymentFailureEventsHandler?: FailureEventsRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
+  /** Set only by an embedder; absent means the route answers 501. */
+  deploymentMonthlyActiveDevicesHandler?: DeploymentMonthlyActiveDevicesRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
@@ -216,6 +222,7 @@ export interface ServerRuntime {
   iamRoleBindingUpdateHandler?: IamRoleBindingUpdateRouteHandler;
   iamRoleListHandler?: IamRoleListRouteHandler;
   iamUserProvisionHandler?: IamUserProvisionRouteHandler;
+  iamUserTokenRotateHandler?: IamUserTokenRotateRouteHandler;
   idempotencyHandler?: IdempotencyHandler;
   metricEventIngestHandler?: MetricEventIngestRouteHandler;
   oauthCallbackHandler?: OAuthCallbackRouteHandler;
@@ -473,6 +480,7 @@ export async function createServerRuntime(
             refreshTokenTtlDays: config.oauthRefreshTokenTtlDays,
             registrationMode: config.registrationMode,
             repository: authRepository,
+            sessionMaxAgeDays: config.oauthSessionMaxAgeDays,
           })
         : {};
     // Web OAuth is enabled exactly when at least one web provider is
@@ -581,7 +589,7 @@ export async function createServerRuntime(
     const iamHandlers = iamRepository ? createIamHandlers(iamRepository) : {};
     const iamUserProvisionHandlers =
       authRepository && iamRepository
-        ? createIamUserProvisionHandler(authRepository, iamRepository)
+        ? createIamUserProvisionHandler(iamRepository)
         : {};
     const iamInvitationHandlers = managementRepository && iamInvitationRepository
       ? createIamInvitationHandlers(
@@ -1051,6 +1059,7 @@ function createUserAuthHandlers(
   | "apiTokenCreateHandler"
   | "apiTokenDeleteHandler"
   | "apiTokenListHandler"
+  | "credentialsRevokeAllHandler"
   | "userProfileHandler"
 > {
   return {
@@ -1068,10 +1077,18 @@ function createUserAuthHandlers(
         displayName: input.displayName,
         expiresAt,
         id: createRandomPrefixedId("tok") as ApiTokenId,
+        issuingSession: {
+          id: input.issuingSessionId as OAuthSessionId,
+          userId: input.userId as UserId,
+        },
         maskedPrefix: generated.maskedPrefix,
         tokenHash: generated.tokenHash,
-        userId: input.userId as UserId,
       });
+      if (!apiToken) {
+        return {
+          outcome: "session_revoked",
+        };
+      }
 
       return {
         apiToken,
@@ -1099,6 +1116,24 @@ function createUserAuthHandlers(
       return {
         apiTokens: await repository.listApiTokensForUser(userId as UserId),
       };
+    },
+
+    async credentialsRevokeAllHandler(input) {
+      const result = await repository.revokeAllCredentials({
+        callingSession: {
+          id: input.sessionId as OAuthSessionId,
+          userId: input.userId as UserId,
+        },
+        revokedAt: new Date(),
+      });
+
+      return result.outcome === "revoked"
+        ? {
+            outcome: "revoked",
+            revokedApiTokenCount: result.apiTokenCount,
+            revokedSessionCount: result.sessionCount,
+          }
+        : result;
     },
 
     async userProfileHandler(userId) {
@@ -1713,98 +1748,94 @@ function createIamHandlers(
 }
 
 function createIamUserProvisionHandler(
-  authRepository: ReturnType<typeof createPostgresAuthRepository>,
   iamRepository: ReturnType<typeof createPostgresIamRepository>,
-): Pick<ServerRuntime, "iamUserProvisionHandler"> {
+): Pick<
+  ServerRuntime,
+  "iamUserProvisionHandler" | "iamUserTokenRotateHandler"
+> {
   return {
-    async iamUserProvisionHandler(input) {
+    async iamUserTokenRotateHandler(input) {
       const now = new Date();
-
-      // 1. Create the user account. The API token is minted last (step 3), so a
-      //    failed role grant never leaves an orphaned secret behind.
-      const userResult = await getOrCreateUser(authRepository, {
+      const generated = generateApiToken();
+      const result = await iamRepository.rotateServiceAccountToken({
         createdAt: now,
-        displayName: input.displayName,
-        email: input.email,
-        id: createRandomPrefixedId("usr") as UserId,
+        issuedBy: input.issuedBy as UserId,
+        issuingSessionId: input.issuingSessionId as OAuthSessionId,
+        teamId: input.teamId as TeamId,
+        token: {
+          displayName: input.tokenDisplayName,
+          expiresAt:
+            input.expiresInDays === undefined
+              ? null
+              : new Date(
+                  now.getTime() + input.expiresInDays * 24 * 60 * 60 * 1000,
+                ),
+          id: createRandomPrefixedId("tok") as ApiTokenId,
+          maskedPrefix: createApiTokenMaskedPrefix(generated.token),
+          tokenHash: generated.tokenHash,
+        },
+        userId: input.userId as UserId,
       });
-      if (!userResult.created) {
-        // Provisioning mints and returns a usable credential, so it is limited to
-        // brand-new accounts. Minting a token for a pre-existing user would let
-        // any team admin obtain an API token that impersonates that user across
-        // every team they belong to. Grant roles to existing users with
-        // POST /v1/iam/role-bindings instead.
-        return {
-          outcome: "user_exists",
-        };
+      if (result.outcome !== "rotated") {
+        return result;
       }
 
-      // 2. Grant the team role binding. This validates that the team is active
-      //    and the role exists/is supported before any token is created.
-      const grant = await iamRepository.grantTeamRoleBinding({
+      return {
+        apiToken: result.apiToken,
+        outcome: "rotated",
+        plaintextToken: generated.token,
+        revokedApiTokenCount: result.revokedApiTokenCount,
+        user: {
+          email: result.user.email,
+          id: result.user.id,
+          ownerTeamId: result.user.ownerTeamId,
+        },
+      };
+    },
+
+
+    async iamUserProvisionHandler(input) {
+      const now = new Date();
+      const generated = generateApiToken();
+      const result = await iamRepository.provisionUser({
         bindingId: createRandomPrefixedId("rb") as RoleBindingId,
         createdAt: now,
         createdBy: input.createdBy as UserId,
+        displayName: input.displayName,
+        email: input.email,
+        issuingSessionId: input.issuingSessionId as OAuthSessionId,
         membershipId: createRandomPrefixedId("mem") as MembershipId,
         roleId: input.roleId as RoleDefinitionId,
         teamId: input.teamId as TeamId,
-        userSelector: {
-          email: input.email,
-          type: "email",
+        token: {
+          displayName: input.tokenDisplayName,
+          expiresAt:
+            input.expiresInDays === undefined
+              ? null
+              : new Date(
+                  now.getTime() + input.expiresInDays * 24 * 60 * 60 * 1000,
+                ),
+          id: createRandomPrefixedId("tok") as ApiTokenId,
+          maskedPrefix: createApiTokenMaskedPrefix(generated.token),
+          tokenHash: generated.tokenHash,
         },
+        userId: createRandomPrefixedId("usr") as UserId,
       });
-      if (grant.outcome === "not_found") {
-        if (grant.reason === "user_not_found") {
-          throw new Error(
-            "provisioned user was not found when granting its role binding",
-          );
-        }
-        return {
-          outcome: "not_found",
-          reason: grant.reason,
-        };
+      if (result.outcome !== "provisioned") {
+        return result;
       }
-      if (grant.outcome === "account_disabled") {
-        return {
-          outcome: "account_disabled",
-          reason: grant.reason,
-        };
-      }
-      if (grant.outcome === "role_not_supported") {
-        return {
-          outcome: "role_not_supported",
-        };
-      }
-
-      // 3. Mint the API token only after the account and role grant succeeded.
-      const generated = generateApiToken();
-      const expiresAt =
-        input.expiresInDays === undefined
-          ? null
-          : new Date(
-              now.getTime() + input.expiresInDays * 24 * 60 * 60 * 1000,
-            );
-      const apiToken = await authRepository.createApiToken({
-        createdAt: now,
-        displayName: input.tokenDisplayName,
-        expiresAt,
-        id: createRandomPrefixedId("tok") as ApiTokenId,
-        maskedPrefix: createApiTokenMaskedPrefix(generated.token),
-        tokenHash: generated.tokenHash,
-        userId: userResult.user.id,
-      });
 
       return {
-        apiToken,
-        membershipCreated: grant.membershipCreated,
+        apiToken: result.apiToken,
+        membershipCreated: result.membershipCreated,
         outcome: "provisioned",
         plaintextToken: generated.token,
-        roleBinding: grant.roleBinding,
-        roleBindingCreated: grant.outcome === "created",
+        roleBinding: result.roleBinding,
+        roleBindingCreated: true,
         user: {
-          created: userResult.created,
-          email: userResult.user.email,
-          id: userResult.user.id,
+          created: true,
+          email: result.user.email,
+          id: result.user.id,
         },
       };
     },
@@ -1897,6 +1928,7 @@ function createIamInvitationHandlers(
         case "account_disabled":
         case "not_found":
         case "role_not_supported":
+        case "service_account_other_team":
           return result;
       }
     },

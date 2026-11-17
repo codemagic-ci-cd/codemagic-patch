@@ -1,7 +1,7 @@
 ---
 title: Comparison
 description: 'Compare Codemagic Patch with Appflow Live Updates and other Capacitor OTA options.'
-llmsDescription: 'Patch vs Appflow Live Updates for Capacitor — self-host vs hosted, licensing.'
+llmsDescription: 'Patch vs Appflow Live Updates for Capacitor — self-host or Codemagic-hosted, licensing.'
 sidebar_label: How Patch compares
 sidebar_custom_props:
   sdk: capacitor
@@ -29,18 +29,18 @@ All of them still require a store release for native plugin, permission, or Capa
 
 ## vs Appflow Live Updates
 
-Appflow is a hosted service. Patch is self-hosted.
+Appflow is a hosted service. Patch is self-hosted by default, and Codemagic can host it on request.
 
 | | Appflow Live Updates | Codemagic Patch |
 | --- | --- | --- |
-| Hosting | Hosted by Ionic | Self-hosted |
+| Hosting | Hosted by Ionic | Self-hosted, or Codemagic-hosted on request |
 | Payload | Capacitor `webDir` | Capacitor `webDir` |
 | Publishing | Appflow dashboard / Ionic CLI | `cmpatch-capacitor release create --bundle-path www` |
 | Channels | Appflow channels | Deployments (`Staging` and `Production` by default) |
 | Dashboard | Appflow web UI | Patch web dashboard |
 | React Native support | No | Yes, from the same server |
 
-Appflow suits teams that already build and ship Ionic apps through Ionic's cloud. Patch suits teams that want to run updates on their own domains and storage, with the same dashboard, metrics, and team management as Patch for React Native.
+Appflow suits teams that already build and ship Ionic apps through Ionic's cloud. Patch suits teams that want dashboard, metrics, and team management on their own domains and storage, or the same product hosted by Codemagic.
 
 To migrate, see [Migrating from Appflow](/docs/migration/migrating-from-appflow).
 
@@ -54,7 +54,7 @@ Expo Updates, CodePush-compatible forks, and Hot Updater support React Native on
 
 ## Licensing
 
-The Patch server uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) (based on FSL 1.1; each version converts to Apache 2.0 after two years). The SDK and CLI use Apache 2.0. You can use, modify, and self-host Patch without a paid license up to one million monthly active users. Above that, you need a commercial license from Codemagic. See [Pricing](/docs/introduction/pricing).
+The Patch server uses the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) (based on FSL 1.1; each version converts to Apache 2.0 after two years). The SDK and CLI use Apache 2.0. You can use, modify, and self-host Patch without a paid license up to one million monthly active users. Above that, you need a commercial license from Codemagic. Codemagic-hosted Patch is priced separately. See [Pricing](/docs/introduction/pricing).
 
 ---
 
@@ -62,8 +62,9 @@ The Patch server uses the [Codemagic Server License](https://github.com/codemagi
 
 | If you… | Consider |
 | --- | --- |
-| Use Appflow and want to stay on a hosted service | Appflow Live Updates |
-| Want to self-host, with a dashboard, metrics, and team access control | Codemagic Patch |
+| Use Appflow and want to stay on Ionic's cloud | Appflow Live Updates |
+| Want Patch with a dashboard, metrics, and team access control, and will run the server | Codemagic Patch (self-host) |
+| Want Patch without running infrastructure | Codemagic Patch ([hosted](/docs/introduction/pricing#hosted-by-codemagic)) |
 | Have a React Native app | The React Native comparison (switch the SDK selector) |
 
-To try Patch, start with the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install).
+To try Patch, start with the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install). For Codemagic-hosted Patch, email [sales@codemagic.io](mailto:sales@codemagic.io).

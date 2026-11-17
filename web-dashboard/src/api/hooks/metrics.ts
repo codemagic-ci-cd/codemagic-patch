@@ -3,8 +3,9 @@
 // (`{ releases, pagination }`) is multi-field and returned as-is; the release
 // envelope (`{ release }`) unwraps to its `ReleaseMetricsEntry`. Counters are
 // hash-keyed server-side (releases sharing a target_package_hash report
-// identical counts); derivation helpers (successRate, aggregation, active-
-// version distribution) live in model/metrics.ts — these hooks only fetch.
+// identical counts); the server computes success rates and totals, and the
+// remaining derivation helpers (active-version distribution) live in
+// model/metrics.ts — these hooks only fetch.
 // The deployment query is also what the DeploymentTable's lazy metric cells
 // call with `limit: 1`: a cell failure propagates as
 // HttpProblemError so the cell renders "—" + retry without failing the table.
@@ -16,11 +17,13 @@ import {
 } from "@tanstack/react-query";
 
 import { authenticatedRequest } from "../client";
+import { HttpProblemError } from "../problem";
 import {
   fromDeploymentTimeseriesWire,
   fromFailureCodesWire,
   fromFailureDistributionWire,
   fromFailureEventsWire,
+  fromMonthlyActiveDevicesWire,
   fromReleaseMetricsRowWire,
   fromReleaseMetricsWireResponse,
   type DeploymentMetricsWireResponse,
@@ -28,6 +31,7 @@ import {
   type FailureCodesWireResponse,
   type FailureDistributionWireResponse,
   type FailureEventsWireResponse,
+  type MonthlyActiveDevicesWire,
   type ReleaseMetricsWireResponse,
 } from "../wire";
 import {
@@ -58,6 +62,8 @@ export const metricsKeys = {
     [...metricsKeys.all, kind, id, "failures", reason, "distribution", code] as const,
   failureEvents: (kind: string, id: string, reason: string, code: string | null) =>
     [...metricsKeys.all, kind, id, "failures", reason, "events", code] as const,
+  monthlyActiveDevices: (deploymentId: string) =>
+    [...metricsKeys.all, "deployment", deploymentId, "monthly-active-devices"] as const,
   release: (releaseId: string) => [...metricsKeys.all, "release", releaseId] as const,
   timeseries: (
     deploymentId: string,
@@ -281,6 +287,37 @@ export function useFailureEvents(
 /** The server's own cursor, or undefined once it stops issuing one. */
 function nextEventCursor(lastPage: FailureEventPage): string | undefined {
   return lastPage.nextCursor ?? undefined;
+}
+
+/**
+ * A 501 is this server saying it does not offer the figure at all. A 404 with no
+ * problem type is a server older than the route; the route's own not-found has
+ * one.
+ */
+export function isMonthlyActiveDevicesUnavailable(error: unknown): boolean {
+  return (
+    error instanceof HttpProblemError &&
+    (error.status === 501 || (error.status === 404 && error.typeSuffix === null))
+  );
+}
+
+/**
+ * `GET /v1/metrics/deployments/:deploymentId/monthly-active-devices`
+ * (`release.view`) — estimated active devices per UTC calendar month, newest
+ * first. A server without the figure hides the section; see
+ * `isMonthlyActiveDevicesUnavailable`. Coverage logic lives in
+ * model/monthlyActiveDevices.ts.
+ */
+export function useMonthlyActiveDevices(deploymentId: string) {
+  return useQuery({
+    queryKey: metricsKeys.monthlyActiveDevices(deploymentId),
+    queryFn: ({ signal }) =>
+      authenticatedRequest<MonthlyActiveDevicesWire>({
+        method: "GET",
+        path: `/metrics/deployments/${encodeURIComponent(deploymentId)}/monthly-active-devices`,
+        signal,
+      }).then(fromMonthlyActiveDevicesWire),
+  });
 }
 
 /** Serializes defined params only; returns "" when nothing is set. */

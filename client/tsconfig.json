@@ -18,5 +18,8 @@
     "test/**/*.ts",
     "e2e/**/*.ts",
     "plugin/**/*.ts"
+  ],
+  "exclude": [
+    "e2e/fixture-app/apps/*/ios/build"
   ]
 }

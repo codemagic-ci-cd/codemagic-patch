@@ -5,8 +5,10 @@
 // gated server-side: a 403 `forbidden` from useRoleBindings is EXPECTED for
 // viewer/developer members and propagates untouched — useTeamRole
 // catches it and falls back to non-IAM role inference. Nothing is caught or
-// remapped here. Provisioning returns the show-once plaintext PAT in
-// `token`; it is surfaced verbatim as mutation data and never cached.
+// remapped here. Provisioning and service-account token rotation return the
+// show-once plaintext PAT in `token` as mutation data. Both mutations set
+// `gcTime: 0`, so the result leaves the mutation cache as soon as the dialog
+// that ran it unmounts instead of lingering for the default five minutes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -17,9 +19,11 @@ import type {
   IamRoleBindingCreateBody,
   IamRoleBindingUpdateBody,
   IamUserProvisionBody,
+  IamUserTokenRotateBody,
 } from "../types";
 import {
   fromIamUserProvisionWireResponse,
+  fromIamUserTokenRotateWireResponse,
   fromInvitationCreateWireResponse,
   fromInvitationWire,
   fromRoleBindingWire,
@@ -28,13 +32,16 @@ import {
   toIamRoleBindingUpdateWireBody,
   toIamRoleBindingWireBody,
   toIamUserProvisionWireBody,
+  toIamUserTokenRotateWireBody,
   type IamUserProvisionWireResponse,
+  type IamUserTokenRotateWireResponse,
   type InvitationCreateWireResponse,
   type InvitationsListWireResponse,
   type RoleBindingCreateWireResponse,
   type RoleBindingsListWireResponse,
   type RolesListWireResponse,
 } from "../wire";
+import { isSessionEnded } from "./tokens";
 
 /** `status` filter accepted by `GET /v1/iam/invitations`. */
 export type InvitationStatusFilter = TeamInvitationStatus | "all";
@@ -244,10 +251,40 @@ export function useProvisionMember() {
         path: "/iam/users",
         body: toIamUserProvisionWireBody(body),
       }).then(fromIamUserProvisionWireResponse),
+    gcTime: 0,
     onSuccess: async (_data, { teamId }) => {
       await queryClient.invalidateQueries({
         queryKey: iamKeys.roleBindingList(teamId),
       });
+    },
+  });
+}
+
+/**
+ * `POST /v1/iam/users/:userId/rotate-token` (`iam.manage`, browser session) —
+ * replaces a service account's token; its earlier tokens stop working. The
+ * envelope's `token` is the show-once plaintext PAT. Nothing cached changes
+ * (bindings stay, and the token list is the caller's own), so nothing is
+ * invalidated. A 401 means the admin's sign-in ended before the rotation (the
+ * server rolled it back) and the client has cleared the session, so the route
+ * guard unmounts the page: `onSessionEnded` runs here, where it survives
+ * that, as in useRevokeAllCredentials. Other problems propagate.
+ */
+export function useRotateServiceAccountToken(callbacks: {
+  onSessionEnded: () => void;
+}) {
+  return useMutation({
+    mutationFn: (body: IamUserTokenRotateBody) =>
+      authenticatedRequest<IamUserTokenRotateWireResponse>({
+        method: "POST",
+        path: `/iam/users/${encodeURIComponent(body.userId)}/rotate-token`,
+        body: toIamUserTokenRotateWireBody(body),
+      }).then(fromIamUserTokenRotateWireResponse),
+    gcTime: 0,
+    onError: (error) => {
+      if (isSessionEnded(error)) {
+        callbacks.onSessionEnded();
+      }
     },
   });
 }

@@ -55,6 +55,13 @@ function findHint(problem: ProblemDetails): string | undefined {
     return "Run `cmpatch login` again.";
   }
 
+  // A write an API token may not make (credentials, access, app transfer). The
+  // CLI sends `--token` first, then CODEMAGIC_PATCH_TOKEN, then the stored
+  // login, so a browser login alone would not be used while either is set.
+  if (problem.reason === "session_required") {
+    return "This command needs a browser sign-in. Remove --token and unset CODEMAGIC_PATCH_TOKEN, then run `cmpatch login` (without --token).";
+  }
+
   if (problem.reason === "signature_required") {
     return SIGNATURE_REQUIRED_HINTS[missingSignatureField(problem)];
   }

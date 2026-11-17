@@ -29,12 +29,14 @@ Capacitor apps use a separate CLI, [`cmpatch-capacitor`](#cmpatch-capacitor). Us
 | Command | Description |
 | --- | --- |
 | `cmpatch login` / `logout` / `whoami` | Browser sign-in via the dashboard (or `--token`) / sign out / identity |
-| `cmpatch token create \| list \| revoke` | Manage personal access tokens (`cm_pat_…`); revoke by `--token-id` or by the exact `--name` given at creation (confirms unless `--yes`) |
+| `cmpatch token create \| list \| revoke` | Manage personal access tokens (`cm_pat_…`); revoke by `--token-id` or by the exact `--name` given at creation (confirms unless `--yes`). `token create` needs a browser login, not `--token` |
 | `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
 | `cmpatch team list \| show` | List the teams you can see / show one (`--team`, `--team-id`, or the stored default) |
 | `cmpatch init` | Link a project to a server and write `codemagic-patch.config.json`; interactively install a server or enter an existing URL, sign in after a new install, create or select an app for each platform, then wire the SDK (`--skip-wire` for the link only) |
 | `cmpatch wire` | Wire the SDK into the linked app: install the package, write each platform's deployment key and URLs, hook native bundle selection, export the root through `Patch.wrap`; shows the plan first (`--dry-run --diff` to only look) and exits `2` when steps remain for you |
 | `cmpatch context` | Show the effective resolved context; add `--remote` to include server SDK configuration (`downloadBaseUrl`) |
+
+A `--token` login (or `CODEMAGIC_PATCH_TOKEN`) cannot run `token create`, `member add`, `member invite`, `member update`, `member provision`, `member rotate-token`, or `app transfer`; sign in with `cmpatch login` without `--token` for those.
 
 `init` now returns the SDK wiring result, so it can exit `2` with the connection
 saved but setup incomplete. Existing scripts that only need to link the project
@@ -44,6 +46,8 @@ should use `init --skip-wire`. It also accepts every `wire` flag; see
 For unattended wiring, use `--yes` and, if the working tree has uncommitted
 changes, `--allow-dirty`. Request any needed CocoaPods installation with
 `--pod-install` on macOS; on Linux that step remains incomplete even with the flag.
+A project in React Native's SwiftPM mode has no CocoaPods step: wire never runs
+`pod install` there and ignores `--pod-install`.
 
 ## Local evaluation and self-hosting {#self-hosting}
 
@@ -68,13 +72,20 @@ supports automatic and guided first-install setup.
 | `cmpatch selfhost install [user@vps]` | Check and prepare a server, then run the guided install with DNS, OAuth sign-in (GitHub, Bitbucket Cloud, or GitLab), and optional CDN setup |
 | `cmpatch selfhost install --ngrok` | Install on this machine, reachable at your ngrok account's `https://` address, for testing on real devices without a domain |
 | `cmpatch selfhost install --fly` | Deploy Patch onto Fly.io from this machine; `--register` records an existing Fly install on this machine |
-| `cmpatch selfhost upgrade [user@vps]` | Fast-forward the server checkout and run the guarded backup-and-update workflow; on Fly, snapshot the database (when cmpatch created it) and deploy the newest release |
+| `cmpatch selfhost upgrade [user@vps]` | Move the server checkout to the newest release and run the guarded backup-and-update workflow with its published image; on Fly, snapshot the database (when cmpatch created it) and deploy the newest release |
 | `cmpatch selfhost backup [user@vps]` | Take a mode-aware backup; add `--download` to copy it to this machine; on Fly, save the database dump on this machine |
 | `cmpatch selfhost restore [backup] [user@vps]` | Select or upload a backup, take a safety backup, and restore the components it contains; on Fly, restore a Fly backup from this machine |
 
 `cmpatch selfhost install --no-telemetry` turns off the daily anonymous
 usage report the server would otherwise send (it writes
 `SERVER_TELEMETRY=false`); on an installed server, pass it with `--repair`.
+
+After a first install succeeds, the CLI asks once per machine how you heard
+about Codemagic Patch. The question is optional: Enter skips it and sends
+nothing, and an answer sends only the choice you pick, the install method
+(`ssh`, `ngrok`, or `fly`), and for Other the text you type. `--no-telemetry`
+and `DO_NOT_TRACK=1` turn the question off too, and a run that cannot prompt
+never asks.
 
 ### Scripted install {#scripted-install}
 
@@ -143,7 +154,13 @@ An ngrok install takes no `user@vps` and none of the DNS, CDN, or external stora
 | `upgrade --redeploy` | Allow a target equal to the release already running; with `--tag <running tag>` it deploys that release again |
 | `restore <backup> --yes` | Restore the named backup without the confirmation prompt |
 
-On Fly, `upgrade` refuses `--image`, `--local-image`, `--skip-smoke`, `--i-have-a-backup` and `--ssh-key`; `backup` refuses `--download` and `--ssh-key`; `restore` refuses `--restore-env`, `--smoke`, `--skip-smoke` and `--ssh-key`.
+`--image <ref>` and `--build-from-source` work on `install` and `upgrade`, Fly included: the first runs a server image you name instead of the release's published one, the second builds it (on the server, or on Fly's remote builder) instead of pulling it. A build on the server needs at least 2 GB of memory.
+
+`upgrade` shows its plan and asks before it changes anything, on a server and on Fly; `--yes` skips the question, and a run that cannot ask (`--non-interactive`, CI) needs it. An install still on the default branch is moved onto the newest release tag and its published image.
+
+On a server, `upgrade` pulls the target server image and runs that image's own schema check before it asks; `--skip-schema-check` upgrades without it, which is unsafe and only for a database the check cannot read or an image from before the check.
+
+On Fly, `upgrade` refuses `--local-image`, `--skip-smoke`, `--skip-schema-check`, `--i-have-a-backup` and `--ssh-key`; `backup` refuses `--download` and `--ssh-key`; `restore` refuses `--restore-env`, `--smoke`, `--skip-smoke` and `--ssh-key`.
 
 ### External storage install flags
 
@@ -207,12 +224,12 @@ Android auto-detection supports a static `defaultConfig.versionName` and a liter
 
 | Command | Description |
 | --- | --- |
-| `cmpatch deployment metrics` | Per-release counters for a deployment |
-| `cmpatch deployment timeseries` | Daily counters for a deployment, one row per UTC day; `--range 7d\|30d\|90d\|1y` or `--from` / `--to`, `--binary-version` / `--binary-version-prefix`; `--format json` adds the per-release series |
+| `cmpatch deployment metrics` | Per-release counters for a deployment; `--format json` adds each release's `success_rate` and a `summary` of the returned page, whose `coverage` is `deployment` only when the page holds every release |
+| `cmpatch deployment timeseries` | Daily counters for a deployment, one row per UTC day; `--range 7d\|30d\|90d\|1y` or `--from` / `--to`, `--binary-version` / `--binary-version-prefix`; under the table, the range totals with success rate and the last complete day's active devices; `--format json` adds the per-release series with cumulative Applied counts |
 | `cmpatch deployment failures` | The codes under one failure reason (`--reason`); add `--code <code>` for that code's top exit reasons and messages, or `--no-code` for the failures that reported no code |
 | `cmpatch deployment failure-events` | Single failure events for one reason and code (`--reason`, `--code` or `--no-code`); `--limit`, and `--cursor` for the next page |
 | `cmpatch deployment history` | Release history with per-release metrics, most recent 50 |
-| `cmpatch release metrics` | Metrics for one release |
+| `cmpatch release metrics` | Metrics for one release; `--format json` includes `success_rate`, overall and per binary version |
 | `cmpatch release failures` | `deployment failures` for one release |
 | `cmpatch release failure-events` | `deployment failure-events` for one release |
 
@@ -222,15 +239,15 @@ The failure drill-down starts from a reason in the `failure_reasons` of `cmpatch
 
 | Command | Description |
 | --- | --- |
-| `cmpatch member add \| invite \| provision \| list \| remove …` | Team membership and invitations; `member remove`, `member update`, and `member invite-revoke` confirm unless `--yes` |
+| `cmpatch member add \| invite \| provision \| rotate-token \| list \| remove …` | Team membership and invitations; `member rotate-token` replaces the token of a service account the team provisioned. `member remove`, `member update`, `member rotate-token`, and `member invite-revoke` confirm unless `--yes` |
 | `cmpatch doctor` | Diagnose React Native / Expo setup on configured platforms; optionally verify delivery with `--verify-delivery` |
 | `cmpatch server status` | Show the server's own health checks (database, storage, disk, download URL, version), as on the dashboard's Status page |
 | `cmpatch fingerprint --platform ios\|android` | Compute the native fingerprint |
 
 List/metrics commands accept `--format table|json`.
 
-`member remove`, `member update`, `member invite-revoke`, and `token revoke`
-show what they change and ask before changing access, as `app remove` does. In
+`member remove`, `member update`, `member rotate-token`, `member invite-revoke`,
+and `token revoke` show what they change and ask before changing access, as `app remove` does. In
 CI, when stdin or stderr is not a terminal, with `--non-interactive`, or with
 `--format json`, they exit `2` unless you pass `--yes`.
 
@@ -241,7 +258,7 @@ CLI for Capacitor and Ionic apps. Install it with `npm install -g @codemagic/cap
 | Command | Description |
 | --- | --- |
 | `cmpatch-capacitor login` / `logout` / `whoami` | Sign in through the browser (or with `--token`), sign out, show the current user. `--no-browser` prints the sign-in URL |
-| `cmpatch-capacitor token create \| list \| revoke` | Manage personal access tokens. `token revoke` takes `--token-id` or `--name` and confirms unless `--yes` |
+| `cmpatch-capacitor token create \| list \| revoke` | Manage personal access tokens. `token create` needs a browser login, not `--token`. `token revoke` takes `--token-id` or `--name` and confirms unless `--yes` |
 | `cmpatch-capacitor team list \| show` | List the teams you can see and show one, to find what to pass as `--team` |
 | `cmpatch-capacitor config list \| set \| unset` | Manage the default server URL |
 | `cmpatch-capacitor app create \| list \| show \| rename \| setting \| remove` | Manage apps (one per platform). `app create` adds `Staging` and `Production` deployments; `app setting` without a flag shows the current settings |

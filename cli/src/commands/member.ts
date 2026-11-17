@@ -6,6 +6,7 @@ import type {
   MemberListCommand,
   MemberProvisionCommand,
   MemberRemoveCommand,
+  MemberRotateTokenCommand,
   MemberUpdateCommand,
   MemberUserSelector,
 } from "../commandTypes";
@@ -34,6 +35,8 @@ type RoleBinding = {
   user: {
     email?: string;
     id: string;
+    /** Set on a service account: the team that owns it. */
+    ownerTeamId?: string;
   };
 };
 
@@ -176,6 +179,77 @@ export async function executeMemberProvision(
     serverUrl: command.serverUrl,
     token: command.token,
     url: buildApiUrl(command.serverUrl, "/v1/iam/users"),
+  });
+}
+
+export async function executeMemberRotateToken(
+  command: MemberRotateTokenCommand,
+  deps: CommandDeps,
+): Promise<unknown> {
+  const safety = {
+    commandName: "member rotate-token",
+    nonInteractive: command.nonInteractive === true,
+    yes: command.yes === true,
+  };
+  // As in member remove: the note names the account the reads find.
+  assertMutationConfirmable(deps, safety);
+
+  const teamId = await resolveTeamId(
+    command.team,
+    command.serverUrl,
+    command.token,
+    deps,
+  );
+  const binding = (
+    await listRoleBindings(teamId, command.serverUrl, command.token, deps)
+  ).find((roleBinding) => sameEmail(roleBinding.user.email, command.email));
+
+  if (binding === undefined) {
+    throw new UsageError(
+      `Email "${command.email}" is not a member of team "${teamId}".`,
+    );
+  }
+
+  // The server answers this case with a plain 404; the list already says why.
+  if (binding.user.ownerTeamId !== teamId) {
+    throw new UsageError(
+      `"${command.email}" is not a service account this team owns. A member who signs in creates their own tokens with \`cmpatch token create\`.`,
+    );
+  }
+
+  await enforceMutationSafety(deps, {
+    ...safety,
+    fields: [
+      ["serverUrl", command.serverUrl],
+      ["teamId", teamId],
+      ["userId", binding.user.id],
+      ["email", binding.user.email],
+      ["effect", "the account's current token stops working"],
+    ],
+  });
+
+  return authenticatedRequest(deps, {
+    init: {
+      body: JSON.stringify({
+        ...(command.expiresInDays !== undefined
+          ? { expires_in_days: command.expiresInDays }
+          : {}),
+        team_id: teamId,
+        ...(command.tokenDisplayName !== undefined
+          ? { token_display_name: command.tokenDisplayName }
+          : {}),
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    },
+    serverUrl: command.serverUrl,
+    token: command.token,
+    url: buildApiUrl(
+      command.serverUrl,
+      `/v1/iam/users/${encodeURIComponent(binding.user.id)}/rotate-token`,
+    ),
   });
 }
 
@@ -395,17 +469,7 @@ async function resolveRoleBinding(
   deps: CommandDeps,
 ): Promise<{ binding: RoleBinding; teamId: string }> {
   const teamId = await resolveTeamId(team, serverUrl, token, deps);
-  const response = await authenticatedRequest(deps, {
-    init: {
-      method: "GET",
-    },
-    serverUrl,
-    token,
-    url: buildApiUrlWithQuery(serverUrl, "/v1/iam/role-bindings", {
-      team_id: teamId,
-    }),
-  });
-  const roleBindings = parseRoleBindingListResponse(response);
+  const roleBindings = await listRoleBindings(teamId, serverUrl, token, deps);
   const matches = roleBindings.filter(
     (roleBinding) =>
       (roleKey === undefined || roleBinding.role.key === roleKey) &&
@@ -440,6 +504,26 @@ async function resolveRoleBinding(
   );
 }
 
+async function listRoleBindings(
+  teamId: string,
+  serverUrl: string,
+  token: string | undefined,
+  deps: CommandDeps,
+): Promise<RoleBinding[]> {
+  const response = await authenticatedRequest(deps, {
+    init: {
+      method: "GET",
+    },
+    serverUrl,
+    token,
+    url: buildApiUrlWithQuery(serverUrl, "/v1/iam/role-bindings", {
+      team_id: teamId,
+    }),
+  });
+
+  return parseRoleBindingListResponse(response);
+}
+
 function userSelectorMatches(
   roleBinding: RoleBinding,
   user: MemberUserSelector,
@@ -448,7 +532,12 @@ function userSelectorMatches(
     return roleBinding.user.id === user.userId;
   }
 
-  return roleBinding.user.email === user.email;
+  return sameEmail(roleBinding.user.email, user.email);
+}
+
+/** The server stores emails trimmed and lowercased; compare the way it does. */
+function sameEmail(stored: string | undefined, given: string): boolean {
+  return stored === given.trim().toLowerCase();
 }
 
 function toUserSelectorRequestBody(
@@ -532,6 +621,9 @@ function parseRoleBindingListResponse(response: unknown): RoleBinding[] {
           ? { email: roleBinding.user.email }
           : {}),
         id: roleBinding.user.id,
+        ...(typeof roleBinding.user.owner_team_id === "string"
+          ? { ownerTeamId: roleBinding.user.owner_team_id }
+          : {}),
       },
     };
   });

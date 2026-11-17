@@ -11,8 +11,8 @@ export function releaseInspectWaitCommand(releaseId: string): string {
  * busy") but need opposite reactions: an active release job clears on its own
  * once the worker finishes, an active partial rollout never does — so each hint
  * says which, names the release involved when the problem carries it, and gives
- * the exact command to run. Human output only: `--format json` forwards the
- * server body untouched.
+ * the exact command to run. Human output prints it as a `Hint:` line and
+ * `--format json` carries it as `error.hint`.
  */
 export function deriveProblemHint(problem: ProblemDetails): string | null {
   switch (getProblemTypeSuffix(problem.type)) {

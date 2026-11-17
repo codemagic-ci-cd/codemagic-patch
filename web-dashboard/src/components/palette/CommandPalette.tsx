@@ -35,15 +35,9 @@ import { deploymentsQueryOptions } from "../../api/hooks/deployments";
 import { useServerStatusAvailability } from "../../api/hooks/serverStatus";
 import { useTeams } from "../../api/hooks/teams";
 import { logoutSession } from "../../auth/webConfig";
-import { initialsFor } from "../../lib/appTile";
 import type { App } from "../../model/app";
 import type { Deployment } from "../../model/deployment";
 import type { Team } from "../../model/team";
-import {
-  metricsAppPath,
-  metricsDeploymentPath,
-  metricsIndexPath,
-} from "../../pages/metrics/metricsPaths";
 import { useTeamRole } from "../../rbac/useTeamRole";
 import { KBD } from "../ui/kbd";
 import { MENU_LABEL } from "../ui/menu";
@@ -64,8 +58,8 @@ const NO_DEPLOYMENTS: readonly Deployment[] = [];
 
 /**
  * Deployment lists cost one request per app. Apps past this many still get
- * their own row in Apps and Metrics - Rolled up; only their per-deployment rows
- * are skipped, and typing still reaches every app.
+ * their own row in Apps; only their per-deployment Releases rows are skipped,
+ * and typing still reaches every app.
  */
 const DEPLOYMENT_FANOUT_LIMIT = 25;
 
@@ -265,29 +259,6 @@ function buildCommands(
         },
       },
       {
-        id: "nav-metrics",
-        label: "Metrics",
-        group: "Navigate",
-        subtitle: "Adoption, installs and failures",
-        keywords: [
-          "analytics",
-          "stats",
-          "adoption",
-          "charts",
-          "usage",
-          "installs",
-        ],
-        icon: (
-          <Glyph>
-            <path d="M3 3v18h18" />
-            <path d="M8 17v-5M12.5 17V8M17 17v-3" />
-          </Glyph>
-        ),
-        run: () => {
-          context.go(metricsIndexPath(teamId));
-        },
-      },
-      {
         id: "nav-team-overview",
         label: "Overview",
         group: "Navigate",
@@ -333,12 +304,12 @@ function buildCommands(
       });
     }
 
-    // Apps stays flat and the per-deployment rows live in their own sections:
-    // nested under each app, one app with several deployments pushed the next
-    // app's row off the default view. Collected in one pass and appended in
-    // section order, since insertion order is the order WITHIN a section.
+    // Apps stays flat and the per-deployment Releases rows live in their own
+    // section: nested under each app, one app with several deployments pushed
+    // the next app's row off the default view. Collected in one pass and
+    // appended in section order, since insertion order is the order WITHIN a
+    // section.
     const releaseCommands: Command[] = [];
-    const deploymentMetricsCommands: Command[] = [];
 
     for (const { app, deployments } of options.appTargets) {
       commands.push({
@@ -347,30 +318,16 @@ function buildCommands(
         group: "Apps",
         subtitle: "Deployments, releases and settings",
         keywords: ["app", "deployment", "release", "rollout", app.id],
-        icon: <AppTile app={app} />,
+        icon: (
+          <Glyph>
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+          </Glyph>
+        ),
         run: () => {
           context.go(`/teams/${teamId}/apps/${app.id}`);
-        },
-      });
-
-      commands.push({
-        id: `metrics-app-${app.id}`,
-        label: `${app.name} metrics`,
-        group: "Metrics - Rolled up",
-        subtitle: "Rollup across every deployment",
-        keywords: [
-          "metrics",
-          "rollup",
-          "analytics",
-          "adoption",
-          "installs",
-          "failures",
-          "success rate",
-          app.id,
-        ],
-        icon: <AppTile app={app} />,
-        run: () => {
-          context.go(metricsAppPath(teamId, app.id));
         },
       });
 
@@ -406,39 +363,10 @@ function buildCommands(
             );
           },
         });
-
-        // Shares its label with the Releases row above; the section heading and
-        // the subtitle are what tell the two destinations apart.
-        deploymentMetricsCommands.push({
-          id: `metrics-deployment-${deployment.id}`,
-          label: `${app.name} · ${deployment.name}`,
-          group: "Metrics - Per Deployment",
-          subtitle: "Versions, adoption and update outcomes",
-          cluster: app.id,
-          keywords: [
-            "metrics",
-            "analytics",
-            "adoption",
-            "installs",
-            "failures",
-            "deployment",
-            app.name,
-            deployment.id,
-          ],
-          icon: (
-            <Glyph>
-              <path d="M3 3v18h18" />
-              <path d="M8 17v-5M12.5 17V8M17 17v-3" />
-            </Glyph>
-          ),
-          run: () => {
-            context.go(metricsDeploymentPath(teamId, app.id, deployment.id));
-          },
-        });
       }
     }
 
-    commands.push(...releaseCommands, ...deploymentMetricsCommands);
+    commands.push(...releaseCommands);
 
     for (const team of options.otherTeams) {
       commands.push({
@@ -685,18 +613,6 @@ function Glyph({ children }: { children: ReactNode }) {
   );
 }
 
-/** The `.app-ico` identicon at palette-row scale (see ui/cell.ts). */
-function AppTile({ app }: { app: App }) {
-  return (
-    <span
-      className={`${ICON_SLOT} rounded-xs bg-blue text-[10.5px] font-bold text-white`}
-      aria-hidden="true"
-    >
-      {initialsFor(app.name)}
-    </span>
-  );
-}
-
 interface PaletteFrameProps {
   commands: readonly Command[];
   onClose: () => void;
@@ -935,7 +851,7 @@ function PaletteFrame({
               <p className="mt-1 text-[13px] text-fg-3">
                 {appsPending
                   ? "Still loading this team's apps — try again in a moment."
-                  : "Try an app name, or a page like Metrics or Members."}
+                  : "Try an app name, or a page like Apps or Members."}
               </p>
             </div>
           ) : (

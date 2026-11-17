@@ -4,10 +4,17 @@
 // (`CODEMAGIC_PATCH_*`), and SDK log tags are NOT brand prose — leave them as-is.
 export const PRODUCT_NAME = "Codemagic Patch";
 
+// The public repo's `owner/name`. GitHub's API and GHCR key on this pair, so
+// the repository link, the releases API and the server image all derive from it.
+export const SOURCE_REPO_SLUG = "codemagic-ci-cd/codemagic-patch";
+
 // User-visible repository links must point at the public repo, which is where
 // the docs live for everyone outside the org (the internal mirror 404s).
-export const SOURCE_REPO_URL =
-  "https://github.com/codemagic-ci-cd/codemagic-patch";
+export const SOURCE_REPO_URL = `https://github.com/${SOURCE_REPO_SLUG}`;
+
+// The published server image. The public repo's Actions push it to GHCR under
+// the repository's own name plus `-server`.
+export const SERVER_IMAGE_REPOSITORY = `ghcr.io/${SOURCE_REPO_SLUG}-server`;
 
 // The self-hosting guide, on the public repo. Deep-linked from `selfhost`
 // wherever a step cannot be completed from the CLI (an unsupported Docker

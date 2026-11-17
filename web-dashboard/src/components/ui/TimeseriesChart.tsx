@@ -1,14 +1,14 @@
-// Shared UTC-day line chart used by adoption (Active) and per-release Applied.
-// Inline SVG on purpose: the dashboard has no chart dependency.
+// Shared line chart used by adoption (Active), per-release Applied and monthly
+// active devices. Inline SVG on purpose: the dashboard has no chart dependency.
 //
-// The bucket containing `to` is partial by server contract and rendered as a
-// dashed segment with a hollow end marker.
+// A bucket that covers only part of its period (the day holding `to`, a month
+// still in progress or counted from mid-month) is drawn with dashed segments
+// and a hollow marker, and its note shows in the tooltip.
 
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { formatCompactCount, formatCount } from "../../model/format";
-import { dayBucketStarts, isPartialBucket } from "../../model/timeseries";
-import type { DeploymentTimeseries } from "../../model/timeseries";
+import type { ChartBucket } from "../../model/timeseries";
 
 const FULL_VIEW = {
   height: 220,
@@ -30,26 +30,37 @@ export interface TimeseriesChartRow {
 
 export function TimeseriesChart({
   ariaLabel,
+  bucketHeading,
+  buckets,
   emptyMessage,
   fill = false,
+  formatValue = formatCount,
   legendExtra,
   rows,
   showLegend = true,
-  timeseries,
 }: {
   ariaLabel: string;
+  /** Column heading of the screen-reader table, e.g. "Day". */
+  bucketHeading: string;
+  /** One per value in each row, oldest first. */
+  buckets: readonly ChartBucket[];
   emptyMessage: string;
   /** Stretch the plot to the parent. Used by the deployment overview card. */
   fill?: boolean;
+  /** Values in the tooltip and the table; the y-axis stays compact. */
+  formatValue?: (value: number) => string;
   legendExtra?: ReactNode;
   rows: TimeseriesChartRow[];
   showLegend?: boolean;
-  timeseries: Pick<DeploymentTimeseries, "from" | "to">;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   // State (not a plain ref) so empty ↔ plot remounts re-run the observer effect.
   const [plotNode, setPlotNode] = useState<HTMLDivElement | null>(null);
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  // Where the pointer sits across the plot, 0 at the first bucket and 1 at the
+  // last, not a bucket index: the range selector keeps the previous chart up
+  // while a new range loads, so a shorter bucket list can replace the chart
+  // under a resting pointer, and an index into the old list would overrun it.
+  const [hoverFraction, setHoverFraction] = useState<number | null>(null);
   const [plotSize, setPlotSize] = useState({ height: 0, width: 0 });
 
   useLayoutEffect(() => {
@@ -75,11 +86,6 @@ export function TimeseriesChart({
   const innerW = viewW - plot.left - plot.right;
   const innerH = viewH - plot.top - plot.bottom;
 
-  const buckets = useMemo(
-    () => dayBucketStarts(timeseries.from, timeseries.to),
-    [timeseries.from, timeseries.to],
-  );
-
   const maxValue = Math.max(0, ...rows.flatMap((row) => row.values));
 
   if (buckets.length < 2 || maxValue === 0) {
@@ -91,7 +97,9 @@ export function TimeseriesChart({
     plot.left + (index / (buckets.length - 1)) * innerW;
   const y = (value: number) => plot.top + innerH * (1 - value / top);
   const lastIndex = buckets.length - 1;
-  const lastIsPartial = isPartialBucket(buckets[lastIndex], timeseries.to);
+  const isPartial = (index: number) => buckets[index].partialNote !== undefined;
+  const hoverIndex =
+    hoverFraction === null ? null : Math.round(hoverFraction * lastIndex);
 
   const handleMove = (event: React.MouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -100,8 +108,7 @@ export function TimeseriesChart({
     }
     const rect = svg.getBoundingClientRect();
     const viewX = ((event.clientX - rect.left) / rect.width) * viewW;
-    const index = Math.round(((viewX - plot.left) / innerW) * lastIndex);
-    setHoverIndex(Math.min(lastIndex, Math.max(0, index)));
+    setHoverFraction(Math.min(1, Math.max(0, (viewX - plot.left) / innerW)));
   };
 
   const gridValues = [0, top / 2, top];
@@ -144,7 +151,7 @@ export function TimeseriesChart({
           role="img"
           aria-label={ariaLabel}
           onMouseMove={handleMove}
-          onMouseLeave={() => setHoverIndex(null)}
+          onMouseLeave={() => setHoverFraction(null)}
         >
           {gridValues.map((value) => (
             <g key={value}>
@@ -182,53 +189,59 @@ export function TimeseriesChart({
                   index === 0 ? "start" : index === lastIndex ? "end" : "middle"
                 }
               >
-                {bucketDateLabel(buckets[index])}
+                {buckets[index].label}
               </text>
             ))}
 
           {rows.map((row) => {
-            const solidEnd = lastIsPartial ? lastIndex - 1 : lastIndex;
             const first = row.values.findIndex((value) => value > 0);
-            const from = first > 0 ? first - 1 : first;
-            const solidPoints =
-              first === -1 || from > solidEnd
-                ? ""
-                : row.values
-                    .slice(from, solidEnd + 1)
-                    .map((value, offset) => `${x(from + offset)},${y(value)}`)
-                    .join(" ");
+            const start = first === -1 ? lastIndex : Math.max(0, first - 1);
+            const { dashed, solid } = lineRuns(start, lastIndex, isPartial);
+            const markers = row.values
+              .map((_, index) => index)
+              .filter(
+                (index) =>
+                  index === lastIndex || (index >= start && isPartial(index)),
+              );
             return (
               <g key={row.key}>
-                {solidPoints ? (
+                {solid.map((run) => (
                   <polyline
+                    key={run[0]}
                     fill="none"
                     stroke={row.color}
                     strokeWidth={2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
-                    points={solidPoints}
+                    points={run
+                      .map((index) => `${x(index)},${y(row.values[index])}`)
+                      .join(" ")}
                   />
-                ) : null}
-                {lastIsPartial ? (
+                ))}
+                {dashed.map((index) => (
                   <line
+                    key={index}
                     stroke={row.color}
                     strokeWidth={2}
                     strokeLinecap="round"
                     strokeDasharray="3 5"
-                    x1={x(lastIndex - 1)}
-                    y1={y(row.values[lastIndex - 1])}
-                    x2={x(lastIndex)}
-                    y2={y(row.values[lastIndex])}
+                    x1={x(index)}
+                    y1={y(row.values[index])}
+                    x2={x(index + 1)}
+                    y2={y(row.values[index + 1])}
                   />
-                ) : null}
-                <circle
-                  cx={x(lastIndex)}
-                  cy={y(row.values[lastIndex])}
-                  r={3.5}
-                  fill={lastIsPartial ? "var(--color-surface)" : row.color}
-                  stroke={row.color}
-                  strokeWidth={1.5}
-                />
+                ))}
+                {markers.map((index) => (
+                  <circle
+                    key={index}
+                    cx={x(index)}
+                    cy={y(row.values[index])}
+                    r={3.5}
+                    fill={isPartial(index) ? "var(--color-surface)" : row.color}
+                    stroke={row.color}
+                    strokeWidth={1.5}
+                  />
+                ))}
               </g>
             );
           })}
@@ -273,9 +286,12 @@ export function TimeseriesChart({
             }
           >
             <div className="mb-1.5 text-[12px] font-semibold text-fg">
-              {bucketDateLabel(buckets[hoverIndex])}
-              {hoverIndex === lastIndex && lastIsPartial ? (
-                <span className="font-normal text-fg-3"> · partial day</span>
+              {buckets[hoverIndex].label}
+              {isPartial(hoverIndex) ? (
+                <span className="font-normal text-fg-3">
+                  {" "}
+                  · {buckets[hoverIndex].partialNote}
+                </span>
               ) : null}
             </div>
             {rows.map((row) => (
@@ -292,7 +308,7 @@ export function TimeseriesChart({
                   {row.label}
                 </span>
                 <span className="mono tabular-nums text-fg">
-                  {formatCount(row.values[hoverIndex])}
+                  {formatValue(row.values[hoverIndex])}
                 </span>
               </div>
             ))}
@@ -309,7 +325,7 @@ export function TimeseriesChart({
           <caption>{ariaLabel}</caption>
           <thead>
             <tr>
-              <th scope="col">Day</th>
+              <th scope="col">{bucketHeading}</th>
               {rows.map((row) => (
                 <th key={row.key} scope="col">
                   {row.label}
@@ -319,10 +335,13 @@ export function TimeseriesChart({
           </thead>
           <tbody>
             {buckets.map((bucket, index) => (
-              <tr key={bucket}>
-                <th scope="row">{bucketDateLabel(bucket)}</th>
+              <tr key={bucket.key}>
+                <th scope="row">
+                  {bucket.label}
+                  {bucket.partialNote ? `, ${bucket.partialNote}` : null}
+                </th>
                 {rows.map((row) => (
-                  <td key={row.key}>{row.values[index]}</td>
+                  <td key={row.key}>{formatValue(row.values[index])}</td>
                 ))}
               </tr>
             ))}
@@ -344,10 +363,29 @@ function niceCeiling(max: number): number {
   return 10 * magnitude;
 }
 
-function bucketDateLabel(bucketStart: string): string {
-  return new Date(bucketStart).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
+/**
+ * Splits the segments from `start` to `last` into solid runs of indices and the
+ * dashed segments (by their left index) that touch a partial bucket.
+ */
+function lineRuns(
+  start: number,
+  last: number,
+  isPartial: (index: number) => boolean,
+): { dashed: number[]; solid: number[][] } {
+  const dashed: number[] = [];
+  const solid: number[][] = [];
+  let run: number[] = [];
+  for (let index = start; index < last; index += 1) {
+    if (isPartial(index) || isPartial(index + 1)) {
+      dashed.push(index);
+      run = [];
+      continue;
+    }
+    if (run.length === 0) {
+      run = [index];
+      solid.push(run);
+    }
+    run.push(index + 1);
+  }
+  return { dashed, solid };
 }

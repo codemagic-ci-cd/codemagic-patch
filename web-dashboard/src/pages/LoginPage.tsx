@@ -142,6 +142,7 @@ export function LoginPage() {
               key={provider.provider}
               provider={provider}
               localDev={localDev}
+              isOnlyProvider={configQuery.data.providers.length === 1}
               redirecting={redirectingProvider === provider.provider}
               disabled={redirectingProvider !== null}
               onClick={() => {
@@ -188,20 +189,45 @@ function sanitizeReturnTo(value: string | null): string | undefined {
   return value;
 }
 
+/**
+ * Several providers are equal choices, so they share a neutral button and only
+ * the logo tells them apart. A lone provider is the page's main action and
+ * keeps a filled button.
+ */
+function providerButtonIntent(
+  provider: string,
+  localDev: boolean,
+  isOnlyProvider: boolean,
+) {
+  if (localDev) {
+    return "primary";
+  }
+  if (!isOnlyProvider) {
+    return "ghost";
+  }
+  return provider === "github" ? "gh" : "primary";
+}
+
 function ProviderButton({
   provider,
   localDev,
+  isOnlyProvider,
   redirecting,
   disabled,
   onClick,
 }: {
   provider: OAuthWebConfigProvider;
   localDev: boolean;
+  isOnlyProvider: boolean;
   redirecting: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
-  const intent = provider.provider === "github" && !localDev ? "gh" : "primary";
+  const intent = providerButtonIntent(
+    provider.provider,
+    localDev,
+    isOnlyProvider,
+  );
   return (
     <button
       type="button"
@@ -212,29 +238,43 @@ function ProviderButton({
     >
       {redirecting ? (
         <>
-          <span className="spinner sm" aria-hidden="true" /> Redirecting…
+          <span
+            className={intent === "ghost" ? "spinner sm blue" : "spinner sm"}
+            aria-hidden="true"
+          />{" "}
+          Redirecting…
         </>
       ) : localDev ? (
         <>Sign in (local evaluation)</>
       ) : (
         <>
-          <ProviderIcon provider={provider.provider} /> Continue with{" "}
-          {providerDisplayName(provider.provider)}
+          <ProviderIcon
+            provider={provider.provider}
+            brandColor={intent === "ghost"}
+          />{" "}
+          Continue with {providerDisplayName(provider.provider)}
         </>
       )}
     </button>
   );
 }
 
-function ProviderIcon({ provider }: { provider: string }) {
+function ProviderIcon({
+  provider,
+  brandColor,
+}: {
+  provider: string;
+  /** Tint the logo; on a filled button it inherits the button's text color. */
+  brandColor: boolean;
+}) {
   if (provider === "github") {
     return <GitHubIcon />;
   }
   if (provider === "bitbucket") {
-    return <BitbucketIcon />;
+    return <BitbucketIcon className={brandColor ? "text-bitbucket" : ""} />;
   }
   if (provider === "gitlab") {
-    return <GitLabIcon />;
+    return <GitLabIcon className={brandColor ? "text-gitlab" : ""} />;
   }
   return null;
 }
@@ -256,17 +296,27 @@ function GitHubIcon() {
 }
 
 // Bitbucket mark (fill-based, like the logo): the official 24x24 bucket path.
-function BitbucketIcon() {
+function BitbucketIcon({ className }: { className: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
       <path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.899zM14.52 15.53H9.522L8.17 8.466h7.561z" />
     </svg>
   );
 }
 
-function GitLabIcon() {
+function GitLabIcon({ className }: { className: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
       <path d="m23.6 9.593-.033-.086L20.3.98a.851.851 0 0 0-.336-.405.875.875 0 0 0-1 .054.875.875 0 0 0-.29.44l-2.205 6.748H7.535L5.33 1.07a.857.857 0 0 0-.29-.441.875.875 0 0 0-1-.054.86.86 0 0 0-.336.405L.433 9.502l-.032.086a6.066 6.066 0 0 0 2.012 7.01l.01.009.03.02 4.977 3.727 2.462 1.863 1.5 1.132a1.009 1.009 0 0 0 1.22 0l1.5-1.132 2.461-1.863 5.006-3.75.013-.01a6.068 6.068 0 0 0 2.008-7.001Z" />
     </svg>
   );

@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 import { isRecord } from "../output";
+import type { IosDependencyManager } from "../nativeProjectPaths";
 import type { NativePlatform } from "../projectAnalysis";
 import { compareVersions } from "../semver";
 import { isDirectory, isFile, readJsonFile, readTextFile } from "./fs";
@@ -19,8 +20,14 @@ import type { WireProjectSummary } from "./types";
 export const SDK_PACKAGE = "@codemagic/react-native-patch";
 /** The first SDK release that exports `wrap`. */
 export const MIN_WRAP_SDK_VERSION = "0.5.0";
-/** What an absent or too-old registry SDK is installed as. */
-export const SDK_INSTALL_RANGE = `^${MIN_WRAP_SDK_VERSION}`;
+/** The first SDK release that ships a Package.swift (React Native's SwiftPM mode). */
+export const MIN_SWIFTPM_SDK_VERSION = "0.7.0";
+/**
+ * What an absent or too-old registry SDK is installed as. A 0.x caret range only
+ * spans one minor, so it names the newest minimum: every install gets an SDK
+ * that works in both CocoaPods and SwiftPM mode.
+ */
+export const SDK_INSTALL_RANGE = `^${MIN_SWIFTPM_SDK_VERSION}`;
 
 /**
  * Packages that ship their own OTA flow. Being declared is not a conflict —
@@ -60,6 +67,12 @@ export type SdkDependency = {
   installedRoot?: string;
   /** Whether the installed package exports `wrap` (version gate or, for local packages, the source itself). */
   supportsWrap: boolean;
+  /**
+   * Whether the installed package ships a Package.swift, which React Native's
+   * SwiftPM mode needs. Decided by the file for every kind of dependency; false
+   * when the package root cannot be resolved (Yarn Plug'n'Play).
+   */
+  supportsSwiftPM: boolean;
 };
 
 export type ExpoConfigFile = {
@@ -149,6 +162,7 @@ export async function inspectProject(root: string): Promise<ProjectShape> {
 export function summarizeProject(
   shape: ProjectShape,
   platforms: NativePlatform[],
+  iosDependencyManager?: IosDependencyManager,
 ): WireProjectSummary {
   return {
     root: shape.root,
@@ -163,6 +177,7 @@ export function summarizeProject(
     ...(shape.expoVersion !== undefined ? { expoVersion: shape.expoVersion } : {}),
     platforms,
     sdk: shape.sdk,
+    ...(iosDependencyManager === undefined ? {} : { iosDependencyManager }),
   };
 }
 
@@ -203,12 +218,16 @@ async function inspectSdk(
           (await isFile(path.join(installedRoot, "dist", "wrap.js")))
         : false;
 
+  const supportsSwiftPM =
+    installedRoot !== undefined && (await isFile(path.join(installedRoot, "Package.swift")));
+
   return {
     ...(declared !== undefined ? { declared } : {}),
     kind,
     ...(version !== undefined ? { installedVersion: version } : {}),
     ...(installedRoot !== undefined ? { installedRoot } : {}),
     supportsWrap,
+    supportsSwiftPM,
   };
 }
 

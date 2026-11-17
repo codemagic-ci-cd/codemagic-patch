@@ -5,6 +5,7 @@ import type {
   ApiTokenCreateRouteHandler,
   ApiTokenDeleteRouteHandler,
   ApiTokenListRouteHandler,
+  CredentialsRevokeAllRouteHandler,
   AppCreateRouteHandler,
   AppDeleteRouteHandler,
   AppDeploymentsListRouteHandler,
@@ -19,6 +20,7 @@ import type {
   FailureDistributionRouteHandler,
   FailureEventsRouteHandler,
   DeploymentMetricsRouteHandler,
+  DeploymentMonthlyActiveDevicesRouteHandler,
   DeploymentRollbackRouteHandler,
   DeploymentTimeseriesRouteHandler,
   DeploymentUpdateRouteHandler,
@@ -33,6 +35,7 @@ import type {
   IamRoleBindingUpdateRouteHandler,
   IamRoleListRouteHandler,
   IamUserProvisionRouteHandler,
+  IamUserTokenRotateRouteHandler,
   IdempotencyHandler,
   MetricEventIngestRouteHandler,
   OAuthCallbackRouteHandler,
@@ -241,10 +244,21 @@ export interface IamUserProvisionBody {
   token_display_name?: unknown;
 }
 
+export interface IamUserParams {
+  userId: string;
+}
+
+export interface IamUserTokenRotateBody {
+  expires_in_days?: unknown;
+  team_id?: unknown;
+  token_display_name?: unknown;
+}
+
 export interface ApiRoutesOptions {
   apiTokenCreateHandler?: ApiTokenCreateRouteHandler;
   apiTokenDeleteHandler?: ApiTokenDeleteRouteHandler;
   apiTokenListHandler?: ApiTokenListRouteHandler;
+  credentialsRevokeAllHandler?: CredentialsRevokeAllRouteHandler;
   appCreateHandler?: AppCreateRouteHandler;
   appDeleteHandler?: AppDeleteRouteHandler;
   appDeploymentsListHandler?: AppDeploymentsListRouteHandler;
@@ -261,6 +275,7 @@ export interface ApiRoutesOptions {
   deploymentFailureDistributionHandler?: FailureDistributionRouteHandler;
   deploymentFailureEventsHandler?: FailureEventsRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
+  deploymentMonthlyActiveDevicesHandler?: DeploymentMonthlyActiveDevicesRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
@@ -275,6 +290,7 @@ export interface ApiRoutesOptions {
   iamRoleBindingUpdateHandler?: IamRoleBindingUpdateRouteHandler;
   iamRoleListHandler?: IamRoleListRouteHandler;
   iamUserProvisionHandler?: IamUserProvisionRouteHandler;
+  iamUserTokenRotateHandler?: IamUserTokenRotateRouteHandler;
   idempotencyHandler?: IdempotencyHandler;
   maxUploadSizeBytes: number;
   metricEventIngestHandler?: MetricEventIngestRouteHandler;

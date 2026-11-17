@@ -1,4 +1,4 @@
-// Worker-job status badge (WorkerJobPanel + release rows).
+// Worker-job status badge (release detail header / activity + release rows).
 // Visual contract: the `.status` pill with the job palette —
 // `st-queued`/`st-running live`/`st-succeeded`/`st-failed`/`st-dead`, ported
 // to the statusPill utility literals. Distinct from StatusChip by convention:

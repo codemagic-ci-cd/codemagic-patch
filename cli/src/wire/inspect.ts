@@ -2,7 +2,7 @@
 // facts without reading files or depending on destination lookup success.
 import path from "node:path";
 
-import { findIosRoot } from "../nativeProjectPaths";
+import { detectIosDependencyManager, findIosRoot, type IosDependencyManager } from "../nativeProjectPaths";
 import type { NativePlatform } from "../projectAnalysis";
 import { isFile, readTextFile } from "./fs";
 import {
@@ -42,6 +42,12 @@ export type PlanFacts = {
   unresolvedJsRoots: Array<{ platform: NativePlatform; resolution: Extract<JsRootResolution, { kind: "unresolved" }> }>;
   jsRoots: Map<string, JsRootFacts>;
   pods?: { lock: string | null; bundler: boolean };
+  /**
+   * How the selected iOS project gets its dependencies. Unset when iOS is not
+   * selected, there is no iOS project, or Expo prebuild owns the native
+   * projects (prebuild then decides the mode itself).
+   */
+  iosDependencyManager?: IosDependencyManager;
 };
 
 export async function inspectPlanFacts(input: {
@@ -80,7 +86,14 @@ export async function inspectPlanFacts(input: {
         facts.hooks.android = await inspectHook(await locateAndroidMainApplication(shape.root), transformAndroidMainApplication);
       }
     }
-    if (platforms.includes("ios") && await isFile(path.join(iosRoot, "Podfile"))) {
+    // React Native's SwiftPM mode (`npx react-native spm add`) keeps ios/Podfile
+    // and Podfile.lock but must never see `pod install` again, so the marker
+    // decides before any CocoaPods fact is collected.
+    if (platforms.includes("ios")) {
+      const manager = await detectIosDependencyManager(shape.root);
+      if (manager !== undefined) facts.iosDependencyManager = manager;
+    }
+    if (platforms.includes("ios") && facts.iosDependencyManager !== "swiftpm" && await isFile(path.join(iosRoot, "Podfile"))) {
       facts.pods = {
         lock: await readTextFile(path.join(iosRoot, "Podfile.lock")),
         bundler: await isFile(path.join(shape.root, "Gemfile")),

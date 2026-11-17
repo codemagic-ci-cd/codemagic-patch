@@ -20,15 +20,21 @@ import type { CloudProvider, RemoteHostFacts } from "./selfhostRemote";
 // ---------------------------------------------------------------------------
 
 /**
- * The floor, in bytes of `MemTotal` **as the kernel reports it** — deliberately
- * not "2 GB of advertised instance memory". A 2 GiB t3.small reports around
- * 1.9 GiB once firmware and the kernel's own reservations are subtracted, so a
- * 2 GiB threshold would reject exactly the smallest instance the installer is
- * known to complete on (measured peak: ~1.62 GiB for a cold-cache parallel
- * build). 1.75 GiB sits between that measured peak and the 1 GiB instances the
- * build reliably OOMs on.
+ * The build floor, in bytes of `MemTotal` **as the kernel reports it** —
+ * deliberately not "2 GB of advertised instance memory". A 2 GiB t3.small
+ * reports around 1.9 GiB once firmware and the kernel's own reservations are
+ * subtracted.
+ *
+ * It holds for `--build-from-source` only. Building the server image is the
+ * memory-hungry step (measured peak: ~1.62 GiB for a cold-cache parallel
+ * build); 1.75 GiB sits between that peak and the 1 GiB instances the build
+ * reliably OOMs on, and still passes a 2 GiB instance.
+ *
+ * A pulled image has no memory gate: in testing the stack idled around
+ * 180 MiB and peaked around 510 MiB diffing a 20 MB bundle, so the smallest
+ * instances run it.
  */
-export const MINIMUM_MEMORY_BYTES = Math.round(1.75 * 1024 * 1024 * 1024);
+export const BUILD_MEMORY_FLOOR_BYTES = Math.round(1.75 * 1024 * 1024 * 1024);
 
 export type MemoryVerdict =
   | { kind: "ok"; reportedBytes: number }
@@ -38,12 +44,13 @@ export type MemoryVerdict =
 
 export function checkHostMemory(
   memoryTotalBytes: number | null,
+  floorBytes: number,
 ): MemoryVerdict {
   if (memoryTotalBytes === null) {
     return { kind: "unknown" };
   }
 
-  return memoryTotalBytes >= MINIMUM_MEMORY_BYTES
+  return memoryTotalBytes >= floorBytes
     ? { kind: "ok", reportedBytes: memoryTotalBytes }
     : { kind: "too-small", reportedBytes: memoryTotalBytes };
 }
@@ -52,7 +59,10 @@ export function formatMemory(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-/** Instance-size guidance, in the words each provider's console uses. */
+/**
+ * Instance-size guidance for a `--build-from-source` host below the build
+ * floor, in the words each provider's console uses.
+ */
 export function renderMemoryRejection(
   reportedBytes: number,
   cloudProvider: CloudProvider | null,
@@ -68,13 +78,13 @@ export function renderMemoryRejection(
   };
 
   return [
-    `This server reports ${formatMemory(reportedBytes)} of memory, and the install needs at least ${formatMemory(
-      MINIMUM_MEMORY_BYTES,
+    `This server reports ${formatMemory(reportedBytes)} of memory, and building the server needs at least ${formatMemory(
+      BUILD_MEMORY_FLOOR_BYTES,
     )}.`,
     "",
     // Named, because the failure it prevents lands twenty minutes in and looks
     // like a compiler crash rather than a too-small machine.
-    "Building the server images is the memory-hungry step; on a smaller machine it is killed part-way through with no useful message.",
+    "Building the server image (--build-from-source) is the memory-hungry step; on a smaller machine it is killed part-way through with no useful message. Without --build-from-source the install pulls the published image, which needs far less.",
     upgrade[cloudProvider ?? "other"],
     "",
     "Resize the server and run this again, or pass --skip-memory-check to try anyway.",

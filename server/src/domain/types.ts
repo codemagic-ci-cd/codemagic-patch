@@ -144,6 +144,8 @@ export interface UserAccount {
   status: UserStatus;
   oauthProvider: string | null;
   oauthSubject: string | null;
+  /** Set on a service account: the one team that owns it. */
+  ownerTeamId: TeamId | null;
   createdAt: Date;
   updatedAt: Date;
 }

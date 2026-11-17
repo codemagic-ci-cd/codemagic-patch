@@ -2,8 +2,12 @@ import Foundation
 import React
 import UIKit
 
+// `public` so the class symbol is exported from this module: under Swift Package
+// Manager, CodemagicPatchModule.mm (the CodemagicPatchModuleBridge target) is
+// compiled separately and links against _OBJC_CLASS_$_CodemagicPatchModule. Under
+// CocoaPods both live in one module and the keyword changes nothing.
 @objc(CodemagicPatchModule)
-class CodemagicPatchModule: NSObject {
+public class CodemagicPatchModule: NSObject {
   @objc var bridge: RCTBridge?
 
   private let storage = CodemagicPatchStorage.shared

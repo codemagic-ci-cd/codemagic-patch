@@ -10,7 +10,10 @@ import type {
   RefreshTokenId,
   UserId,
 } from "../domain";
-import type { AuthRepository } from "../repositories";
+import type {
+  AuthRepository,
+  CreateOAuthSessionResult,
+} from "../repositories";
 import type {
   OAuthCallbackRouteHandler,
   OAuthCliAuthorizationIssueRouteHandler,
@@ -99,6 +102,12 @@ export interface CreateOAuthSessionRouteHandlersOptions {
   refreshTokenTtlDays: number;
   registrationMode: "invite_only" | "open";
   repository: AuthRepository;
+  /**
+   * Absolute session lifetime from the provider sign-in; refresh stops at
+   * `created_at` plus this many days. A CLI login inherits the approving
+   * session's `created_at`.
+   */
+  sessionMaxAgeDays: number;
 }
 
 export interface OAuthSessionRouteHandlers {
@@ -134,68 +143,70 @@ export function createOAuthSessionRouteHandlers(
   const idGenerator =
     options.idGenerator ?? createDefaultOAuthSessionHandlerIdGenerator();
   const getNow = options.now ?? (() => new Date());
-  const issueSessionForUser = async (
+  const newTokenPair = (now: Date) => {
+    const accessToken = generateOAuthAccessToken();
+    const refreshToken = generateOAuthRefreshToken();
+
+    return {
+      plaintext: {
+        accessToken: accessToken.token,
+        refreshToken: refreshToken.token,
+      },
+      stored: {
+        accessToken: {
+          expiresAt: addSeconds(now, options.accessTokenTtlSeconds),
+          id: idGenerator.createOAuthAccessTokenId(),
+          tokenHash: accessToken.tokenHash,
+        },
+        refreshToken: {
+          expiresAt: addDays(now, options.refreshTokenTtlDays),
+          id: idGenerator.createRefreshTokenId(),
+          tokenHash: refreshToken.tokenHash,
+        },
+      },
+    };
+  };
+  const sessionCreated = (
     user: {
       createdAt: Date;
       displayName: string | null;
       email: string;
       id: UserId;
     },
-    provider: string,
-    subject: string,
-    now: Date,
-  ): Promise<OAuthSessionCreatedHandlerResult> => {
-    const accessToken = generateOAuthAccessToken();
-    const refreshToken = generateOAuthRefreshToken();
-    const accessTokenExpiresAt = addSeconds(
-      now,
-      options.accessTokenTtlSeconds,
-    );
-    const refreshTokenExpiresAt = addDays(now, options.refreshTokenTtlDays);
-
-    await options.repository.createOAuthSession({
-      accessToken: {
-        expiresAt: accessTokenExpiresAt,
-        id: idGenerator.createOAuthAccessTokenId(),
-        tokenHash: accessToken.tokenHash,
-      },
-      createdAt: now,
-      provider,
-      refreshToken: {
-        expiresAt: refreshTokenExpiresAt,
-        id: idGenerator.createRefreshTokenId(),
-        tokenHash: refreshToken.tokenHash,
-      },
-      sessionId: idGenerator.createOAuthSessionId(),
-      subject,
-      userId: user.id,
-    });
-
-    return {
-      accessToken: accessToken.token,
-      accessTokenExpiresAt,
-      outcome: "created",
-      refreshToken: refreshToken.token,
-      refreshTokenExpiresAt,
-      user: {
-        createdAt: user.createdAt,
-        displayName: user.displayName,
-        email: user.email,
-        id: user.id,
-      },
-    };
-  };
+    plaintext: { accessToken: string; refreshToken: string },
+    created: CreateOAuthSessionResult,
+  ): OAuthSessionCreatedHandlerResult => ({
+    accessToken: plaintext.accessToken,
+    accessTokenExpiresAt: created.accessToken.expiresAt,
+    outcome: "created",
+    refreshToken: plaintext.refreshToken,
+    refreshTokenExpiresAt: created.refreshToken.expiresAt,
+    user: {
+      createdAt: user.createdAt,
+      displayName: user.displayName,
+      email: user.email,
+      id: user.id,
+    },
+  });
   const createSessionFromIdentity = async (
     identity: OAuthProviderIdentity,
     auditContext?: PublicAuthAuditContext,
   ): Promise<OAuthSessionIdentityResult> => {
     const now = getNow();
+    const credentials = newTokenPair(now);
     const resolved = await options.repository.resolveOAuthIdentity({
       createdAt: now,
       identity,
       initialAdminEmails: options.initialAdminEmails,
       newUserId: idGenerator.createUserId(),
       registrationMode: options.registrationMode,
+      session: {
+        ...credentials.stored,
+        createdAt: now,
+        provider: identity.provider,
+        sessionId: idGenerator.createOAuthSessionId(),
+        subject: identity.subject,
+      },
     });
 
     if (resolved.outcome === "conflict") {
@@ -219,18 +230,29 @@ export function createOAuthSessionRouteHandlers(
       };
     }
 
-    if (resolved.user.status === "disabled") {
+    if (
+      resolved.outcome === "linked" &&
+      (resolved.revoked.apiTokenCount > 0 || resolved.revoked.sessionCount > 0)
+    ) {
+      // An account that held nothing (a managed admin granted before its
+      // first sign-in, say) links silently.
+      (options.logger ?? console).warn(
+        `Linked a provider identity to existing account ${resolved.user.id} on its first sign-in; revoked ${resolved.revoked.apiTokenCount} API token(s) and ${resolved.revoked.sessionCount} session(s) issued before it`,
+      );
+    }
+
+    if (!resolved.session) {
+      // resolveOAuthIdentity skips the session only for a disabled account.
       return {
         outcome: "account_disabled",
         reason: "user_disabled",
       };
     }
 
-    const created = await issueSessionForUser(
+    const created = sessionCreated(
       resolved.user,
-      identity.provider,
-      identity.subject,
-      now,
+      credentials.plaintext,
+      resolved.session,
     );
 
     try {
@@ -282,35 +304,22 @@ export function createOAuthSessionRouteHandlers(
 
     async oauthRefreshHandler(input) {
       const now = getNow();
-      const accessToken = generateOAuthAccessToken();
-      const refreshToken = generateOAuthRefreshToken();
-      const accessTokenExpiresAt = addSeconds(
-        now,
-        options.accessTokenTtlSeconds,
-      );
-      const refreshTokenExpiresAt = addDays(now, options.refreshTokenTtlDays);
+      const credentials = newTokenPair(now);
       const result = await options.repository.rotateOAuthRefreshToken({
-        accessToken: {
-          expiresAt: accessTokenExpiresAt,
-          id: idGenerator.createOAuthAccessTokenId(),
-          tokenHash: accessToken.tokenHash,
-        },
+        accessToken: credentials.stored.accessToken,
         now,
-        refreshToken: {
-          expiresAt: refreshTokenExpiresAt,
-          id: idGenerator.createRefreshTokenId(),
-          tokenHash: refreshToken.tokenHash,
-        },
+        refreshToken: credentials.stored.refreshToken,
         refreshTokenHash: hashOAuthRefreshToken(input.refreshToken),
+        sessionMaxAgeDays: options.sessionMaxAgeDays,
       });
 
       if (result.outcome === "rotated") {
         return {
-          accessToken: accessToken.token,
-          accessTokenExpiresAt,
+          accessToken: credentials.plaintext.accessToken,
+          accessTokenExpiresAt: result.accessToken.expiresAt,
           outcome: "rotated",
-          refreshToken: refreshToken.token,
-          refreshTokenExpiresAt,
+          refreshToken: credentials.plaintext.refreshToken,
+          refreshTokenExpiresAt: result.refreshToken.expiresAt,
         };
       }
 
@@ -356,6 +365,7 @@ export function createOAuthSessionRouteHandlers(
           expiresAt: addSeconds(getNow(), codeTtlSeconds),
           port: input.port,
           secret: cliAuthSecret,
+          sessionId: input.sessionId,
           userId: input.userId,
         }),
         expiresInSeconds: codeTtlSeconds,
@@ -396,17 +406,27 @@ export function createOAuthSessionRouteHandlers(
       }
 
       // No sign-in grants here: the user approved from an already signed-in
-      // dashboard session, so invitation fulfillment and the initial-admin
-      // grant ran at that web sign-in. Session bookkeeping mirrors the
-      // linked OAuth identity; the "cli" fallback covers the theoretical
-      // caller without one (e.g. a PAT-provisioned account driving the
-      // issuance endpoint directly).
-      return issueSessionForUser(
-        user,
-        user.oauthProvider ?? "cli",
-        user.oauthSubject ?? user.id,
+      // session, so invitation fulfillment and the initial-admin grant ran at
+      // that sign-in. The CLI session copies the approving session's provider
+      // identity and sign-in time, and is refused if that session has ended
+      // by now (logout, revoke-all, or its maximum age).
+      const credentials = newTokenPair(now);
+      const created = await options.repository.createCliOAuthSession({
+        accessToken: credentials.stored.accessToken,
+        approvingSession: {
+          id: verified.sessionId as OAuthSessionId,
+          userId: user.id,
+        },
         now,
-      );
+        refreshToken: credentials.stored.refreshToken,
+        sessionId: idGenerator.createOAuthSessionId(),
+        sessionMaxAgeDays: options.sessionMaxAgeDays,
+      });
+      if (created.outcome === "refused") {
+        return invalid;
+      }
+
+      return sessionCreated(user, credentials.plaintext, created);
     };
   }
 

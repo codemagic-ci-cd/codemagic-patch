@@ -14,10 +14,16 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import java.util.function.Supplier
 
 internal class CodemagicPatchManifestClient(
     private val config: CodemagicPatchConfig,
+    // Where the parallel meta.json fetch runs; null keeps CompletableFuture's own
+    // default. Overridable so a test can tell when that fetch has finished, which
+    // nothing else exposes — see CodemagicPatchManifestClientTest.kt.
+    private val metaExecutor: Executor? = null,
 ) {
     /** Mirrors `ManifestFetchResult` (src/definitions.ts) field-for-field. */
     data class Result(
@@ -52,9 +58,12 @@ internal class CodemagicPatchManifestClient(
         val metaUrl = "$base/$deploymentKey/meta.json"
         val candidateUrl = "$base${primaryPath ?: fallbackPath}"
 
+        val fetchMeta = Supplier { runCatching { getWithStatus(metaUrl) }.getOrNull() }
         val metaFuture =
-            CompletableFuture.supplyAsync {
-                runCatching { getWithStatus(metaUrl) }.getOrNull()
+            if (metaExecutor == null) {
+                CompletableFuture.supplyAsync(fetchMeta)
+            } else {
+                CompletableFuture.supplyAsync(fetchMeta, metaExecutor)
             }
 
         val candidate = getWithStatus(candidateUrl)

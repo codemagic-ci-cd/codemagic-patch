@@ -18,6 +18,8 @@ import { appFrameworkMigration } from "./0017_appFramework";
 import { dropMetricEventSdkVersionMigration } from "./0018_dropMetricEventSdkVersion";
 import { metricEventDailyAggregatesMigration } from "./0019_metricEventDailyAggregates";
 import { serverInstanceMigration } from "./0020_serverInstance";
+import { credentialGenerationMigration } from "./0021_credentialGeneration";
+import { serviceAccountOwnerTeamMigration } from "./0022_serviceAccountOwnerTeam";
 
 export interface SqlMigration {
   name: string;
@@ -45,4 +47,6 @@ export const dbMigrations: readonly SqlMigration[] = [
   dropMetricEventSdkVersionMigration,
   metricEventDailyAggregatesMigration,
   serverInstanceMigration,
+  credentialGenerationMigration,
+  serviceAccountOwnerTeamMigration,
 ];

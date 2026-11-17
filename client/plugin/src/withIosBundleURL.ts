@@ -8,7 +8,7 @@ import { type ConfigPlugin, withAppDelegate } from 'expo/config-plugins';
  * left untouched so local development keeps working.
  *
  * Mirrors the seam the bare-RN fixtures wire by hand; see
- * `client/ios/CodemagicPatch.swift` `bundleURL()`.
+ * `client/ios/CodemagicPatchClient/CodemagicPatch.swift` `bundleURL()`.
  */
 
 // ObjC: forward-declare the CodemagicPatch class (same approach as the bare fixtures)

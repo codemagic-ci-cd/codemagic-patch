@@ -33,6 +33,16 @@ SELFHOST_COMPOSE_NGROK_FILE="${SELFHOST_REPO_ROOT}/deploy/selfhost/compose.ngrok
 # before the stack exists. compose.ngrok.yml pins the same reference; the
 # environment override exists for test harnesses.
 SELFHOST_NGROK_IMAGE="${SELFHOST_NGROK_IMAGE:-ngrok/ngrok:3.39.11-alpine@sha256:187e588f6c4efe3b29cd3eea9fcd768a1afa7342319e3cee9aeb5af6a9cf64fd}"
+# The stock Caddy image the caddy service runs (2.11.7, alpine, multi-arch
+# index digest). docker-compose.selfhost.yml's CODEMAGIC_PATCH_CADDY_IMAGE
+# default and docker-compose.dev.yml's dashboard pin the same reference;
+# compose-rendering.test.sh keeps them in step. install.sh writes it into a
+# new env file, where any other value is the operator's override.
+SELFHOST_CADDY_IMAGE="caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f"
+# The value installs wrote while caddy was built on the host from the source
+# tree (deploy/selfhost/Dockerfile.caddy, now gone). Nothing builds it any more
+# and no registry has it, so migrate_selfhost_caddy_image replaces it.
+SELFHOST_LEGACY_CADDY_IMAGE="codemagic-patch-caddy:selfhost"
 # GCS service-account key the gcs storage overlay bind-mounts into the server
 # container (gitignored). The overlay references the fixed repo-root path, so
 # like the operator override the file's presence is part of the deployment's
@@ -427,13 +437,10 @@ validate_selfhost_http_loopback_only() {
 $(printf '%s\n' "$rendered" | grep -n -B1 -A3 '^ *published:')"
 }
 
-compose_selfhost() {
-  if [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] && selfhost_compose_override_required; then
-    fail_selfhost "this deployment requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true in ${SELFHOST_ENV_FILE}), but the file is missing — running compose without it would silently revert the stack to the base configuration. Restore the override (re-run the installer that wrote it), or set SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false to proceed without it."
-  fi
-
-  validate_selfhost_stack_shape
-
+# The -f list for this deployment, into SELFHOST_COMPOSE_FILE_ARGS, chosen by
+# the mode flags in the env file. compose_selfhost runs compose with it, and
+# selfhost_compose_command prints it for an operator to run by hand.
+selfhost_compose_file_args() {
   local db_mode storage_mode origin_mode scheme
   db_mode="$(selfhost_mode_from_env_file SELFHOST_DATABASE_MODE)"
   storage_mode="$(selfhost_mode_from_env_file SELFHOST_STORAGE_MODE)"
@@ -473,6 +480,28 @@ compose_selfhost() {
   if [ -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ]; then
     compose_files+=(-f "$SELFHOST_COMPOSE_OVERRIDE_FILE")
   fi
+  SELFHOST_COMPOSE_FILE_ARGS=("${compose_files[@]}")
+}
+
+# The compose invocation compose_selfhost runs, shell-quoted, for guidance
+# that tells the operator to run a compose command themselves.
+selfhost_compose_command() {
+  selfhost_compose_file_args
+  printf 'docker compose --project-name %q --env-file %q' "$SELFHOST_PROJECT_NAME" "$SELFHOST_ENV_FILE"
+  printf ' %q' "${SELFHOST_COMPOSE_FILE_ARGS[@]}"
+}
+
+compose_selfhost() {
+  if [ ! -f "$SELFHOST_COMPOSE_OVERRIDE_FILE" ] && selfhost_compose_override_required; then
+    fail_selfhost "this deployment requires ${SELFHOST_COMPOSE_OVERRIDE_FILE} (SELFHOST_REQUIRE_COMPOSE_OVERRIDE=true in ${SELFHOST_ENV_FILE}), but the file is missing — running compose without it would silently revert the stack to the base configuration. Restore the override (re-run the installer that wrote it), or set SELFHOST_REQUIRE_COMPOSE_OVERRIDE=false to proceed without it."
+  fi
+
+  validate_selfhost_stack_shape
+
+  local scheme
+  scheme="$(selfhost_scheme_from_env_file)"
+  selfhost_compose_file_args
+  local -a compose_files=("${SELFHOST_COMPOSE_FILE_ARGS[@]}")
 
   # The loopback rule guards the commands that apply port bindings (and
   # `config`, which is how the stack is inspected), not every ps/logs/exec:
@@ -926,6 +955,265 @@ remove_selfhost_env_value() {
 
   chmod 600 "$tmp"
   mv "$tmp" "$SELFHOST_ENV_FILE"
+}
+
+# Point CODEMAGIC_PATCH_CADDY_IMAGE at the stock image when the env file lacks
+# it (older than the key) or still names the locally built legacy image. Any
+# other non-empty value is an operator override and is kept. Updates the file
+# and the exported value, so the next compose call sees it either way.
+migrate_selfhost_caddy_image() {
+  local current="${CODEMAGIC_PATCH_CADDY_IMAGE:-}"
+
+  if [ -z "$current" ]; then
+    log_selfhost "CODEMAGIC_PATCH_CADDY_IMAGE was missing; defaulting to ${SELFHOST_CADDY_IMAGE}"
+  elif [ "$current" = "$SELFHOST_LEGACY_CADDY_IMAGE" ]; then
+    log_selfhost "CODEMAGIC_PATCH_CADDY_IMAGE=${current} was built on this host, which the stack no longer does; switching to the stock ${SELFHOST_CADDY_IMAGE}"
+  else
+    return 0
+  fi
+  set_selfhost_env_value CODEMAGIC_PATCH_CADDY_IMAGE "$SELFHOST_CADDY_IMAGE"
+  export CODEMAGIC_PATCH_CADDY_IMAGE="$SELFHOST_CADDY_IMAGE"
+}
+
+# ---------------------------------------------------------------------------
+# The published server image
+# ---------------------------------------------------------------------------
+
+# The server image a source build produces. Compose tags the build result
+# with the service's image value, so a source build always sets this local
+# ref first: a `repo:tag@sha256:` ref cannot be a build tag. On its own the
+# value is not a legacy install; together with branch `main` it is.
+# shellcheck disable=SC2034  # consumed by the sourcing scripts (install/upgrade)
+SELFHOST_LOCAL_SERVER_IMAGE="codemagic-patch-server:selfhost"
+SELFHOST_SERVER_TAG_PREFIX="codemagic-patch-server-v"
+SELFHOST_SERVER_IMAGE_ASSET="server-image.json"
+# The repository releases (and their server-image.json) come from, as
+# owner/name. Test-only override: CMPATCH_TEST_SOURCE_REPO=owner/name, the
+# same variable the CLI reads, points the asset download and the expected
+# image repository (ghcr.io/<owner/name lowercased>-server) at a scratch
+# repository. The CLI exports it to the scripts it runs when it is set; it is
+# never written to the env file.
+SELFHOST_SOURCE_REPO_SLUG="codemagic-ci-cd/codemagic-patch"
+
+selfhost_source_repo_slug() {
+  local slug="${CMPATCH_TEST_SOURCE_REPO:-$SELFHOST_SOURCE_REPO_SLUG}"
+  case "$slug" in
+    */*/* | /* | */ | *[!A-Za-z0-9._/-]*) fail_selfhost "CMPATCH_TEST_SOURCE_REPO must be owner/name, got ${slug}" ;;
+    */*) ;;
+    *) fail_selfhost "CMPATCH_TEST_SOURCE_REPO must be owner/name, got ${slug}" ;;
+  esac
+  printf '%s' "$slug"
+}
+
+selfhost_source_repo_url() {
+  printf 'https://github.com/%s' "$(selfhost_source_repo_slug)"
+}
+
+selfhost_server_image_repository() {
+  printf 'ghcr.io/%s-server' "$(selfhost_source_repo_slug | tr '[:upper:]' '[:lower:]')"
+}
+
+# The server release tag the checkout's HEAD is at, or nothing. One release
+# commit carries every component's tag, so this filters `tag --points-at`
+# rather than trusting `describe --exact-match` to pick the server one.
+selfhost_server_tag_at_head() {
+  git -C "$SELFHOST_REPO_ROOT" tag --points-at HEAD 2>/dev/null |
+    grep "^${SELFHOST_SERVER_TAG_PREFIX}" | head -n 1 || true
+}
+
+# SELFHOST_SOURCE_REVISION in the env file: the commit of this checkout the
+# stack last started from, written after every successful install and
+# upgrade, both of which start HEAD's image. upgrade.sh reads it only to
+# default its previous ref: a checkout that has not moved since has nothing to
+# roll back to, one moved to a new release just before the run takes the
+# reflog's previous entry. It guards nothing; what the database can run is
+# settled by the schema check below. Not a git checkout: nothing
+# to record.
+record_selfhost_source_revision() {
+  local revision
+  [ -f "$SELFHOST_ENV_FILE" ] || return 0
+  revision="$(git -C "$SELFHOST_REPO_ROOT" rev-parse --verify --quiet 'HEAD^{commit}' 2>/dev/null)" || return 0
+  [ -n "$revision" ] || return 0
+  set_selfhost_env_value SELFHOST_SOURCE_REVISION "$revision"
+}
+
+# --- schema check ---------------------------------------------------------------
+#
+# The server must not be older than the database: a server migrates the
+# database it meets at startup, and one that does not know a migration the
+# database already has runs code from before that migration against the
+# schema after it. The server that would run is the image an upgrade is about
+# to start, so the check is that image's own: `node dist/schemaCheck.js` reads
+# schema_migration with the server's own connection settings (DATABASE_URL,
+# DATABASE_SEARCH_PATH, SSL), compares it with the migrations the image ships,
+# and prints one JSON line ({"schemaVersion":1,"status":…,"unknown":[…],
+# "known":N,"applied":N,"server":"<version>"}) on stdout and a human message on
+# stderr. Its exit code is the answer:
+#   0  compatible: every applied migration is known, or the database is fresh
+#   3  the database has migrations the image does not know ("unknown")
+#   4  the database could not be reached
+#   2  usage
+# An image from before the check has no such file: node's own exit 1 with
+# "Cannot find module".
+
+# Makes the server image <ref> available on this host, without touching the
+# stack: a plain `docker pull` (so the check's `compose run` neither pulls nor
+# builds on its own, and the recreate finds it here), or with <local-only> = 1
+# (--local-image) only a check that the image is already here. Returns 1 with
+# SELFHOST_SCHEMA_ERROR set.
+selfhost_fetch_server_image() {
+  local ref="$1" local_only="${2:-0}"
+  SELFHOST_SCHEMA_ERROR=""
+  if [ "$local_only" -eq 1 ]; then
+    docker image inspect "$ref" >/dev/null 2>&1 && return 0
+    SELFHOST_SCHEMA_ERROR="--local-image was given but ${ref} is not present locally; build it first"
+    return 1
+  fi
+  # The CLI's upgrade progress keys on this wording.
+  log_selfhost "pulling target server image ${ref}"
+  docker pull "$ref" && return 0
+  SELFHOST_SCHEMA_ERROR="could not pull ${ref}; check the image reference and that this host can reach its registry (docker login for a private one)"
+  return 1
+}
+
+# Runs the schema check of the server image <ref> against this deployment's
+# database. Read-only: a one-off container (--no-deps: it starts nothing else,
+# so a stopped database is reported, not started; --rm: it leaves nothing
+# behind) of <ref>, which the exported CODEMAGIC_PATCH_SERVER_IMAGE puts in
+# place of the env file's image for this one run. The caller loads the env
+# file first, so the database settings are the deployment's even when the
+# operator's shell exports others (compose prefers those to --env-file), and
+# has the image on this host already (selfhost_fetch_server_image, or a
+# build). Sets SELFHOST_SCHEMA_UNKNOWN (the applied names the image does not know, space-separated),
+# SELFHOST_SCHEMA_APPLIED_COUNT, SELFHOST_SCHEMA_EXIT and SELFHOST_SCHEMA_ERROR
+# (the check's own message), and returns
+#   0  compatible
+#   3  the database has migrations the image does not know
+#   4  the database could not be reached
+#   5  the image predates the check
+#   1  anything else
+selfhost_schema_compat() {
+  local ref="$1" output err_file status=0
+  SELFHOST_SCHEMA_UNKNOWN=""
+  SELFHOST_SCHEMA_ERROR=""
+  err_file="$(mktemp "${TMPDIR:-/tmp}/selfhost-schema-check.XXXXXX")"
+  output="$(
+    export CODEMAGIC_PATCH_SERVER_IMAGE="$ref"
+    compose_selfhost run --rm --no-deps -T server node dist/schemaCheck.js 2>"$err_file"
+  )" || status=$?
+  SELFHOST_SCHEMA_EXIT="$status"
+  output="$(printf '%s\n' "$output" | tr -d '\r' | grep '"schemaVersion"' | tail -n 1 || true)"
+  SELFHOST_SCHEMA_ERROR="$(tr -d '\r' <"$err_file" | sed '/^[[:space:]]*$/d' | tail -n 1)"
+  if [ "$status" -eq 1 ] && grep -q "Cannot find module.*schemaCheck" "$err_file"; then
+    status=5
+  fi
+  rm -f "$err_file"
+  # shellcheck disable=SC2034  # consumed by the sourcing scripts (upgrade/schema-check)
+  SELFHOST_SCHEMA_APPLIED_COUNT="$(printf '%s' "$output" |
+    sed -n 's/.*"applied"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+  case "$status" in
+    0) return 0 ;;
+    3)
+      # Migration names are [0-9a-z_], so the array needs no real JSON parser.
+      SELFHOST_SCHEMA_UNKNOWN="$(printf '%s' "$output" |
+        sed -n 's/.*"unknown"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p' |
+        tr -d '"' | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //;s/ $//')"
+      return 3
+      ;;
+    4 | 5) return "$status" ;;
+    *) return 1 ;;
+  esac
+}
+
+# The message for selfhost_schema_compat's non-zero status $1 on the image
+# $2, shared by upgrade.sh and schema-check.sh. $3 says what the stack was
+# left as.
+selfhost_schema_message() {
+  local ref="$2" left="${3:-Nothing was changed.}"
+  local skip="pass --skip-schema-check to upgrade without this check (unsafe: nothing then stops an older server from starting on a newer schema)"
+  case "$1" in
+    3)
+      printf 'the database has migrations %s does not know (%s); running it would run an older server on a newer schema. %s Wait for a release that includes them, or restore the database from the backup taken before they were applied (%s/scripts/selfhost/restore.sh --restore-env <backup>).' \
+        "$ref" "$(printf '%s' "${SELFHOST_SCHEMA_UNKNOWN:-the check named none}" | sed 's/ /, /g')" "$left" "$SELFHOST_REPO_ROOT"
+      ;;
+    4)
+      printf "could not read the database's migration state (%s); start the stack (%s up -d) and rerun, or %s. %s" \
+        "${SELFHOST_SCHEMA_ERROR:-no detail}" "$(selfhost_compose_command)" "$skip" "$left"
+      ;;
+    5) printf 'the server image %s predates the schema check (it needs 0.10.0 or newer); %s. %s' "$ref" "$skip" "$left" ;;
+    *)
+      printf 'the schema check of %s failed (exit %s: %s); fix that and rerun, or %s. %s' \
+        "$ref" "$SELFHOST_SCHEMA_EXIT" "${SELFHOST_SCHEMA_ERROR:-no output}" "$skip" "$left"
+      ;;
+  esac
+}
+
+# One string field of a small JSON document, read without jq or node (the
+# host has neither). The asset is flat and its values carry no quotes, so a
+# value that would need escaping simply fails the cross-checks.
+selfhost_json_string_field() {
+  tr -d '\n\r' <"$1" |
+    sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p"
+}
+
+selfhost_json_number_field() {
+  tr -d '\n\r' <"$1" |
+    sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p"
+}
+
+# Resolves the published image for the server tag HEAD is at, into
+# SELFHOST_RESOLVED_SERVER_IMAGE (`image:version@sha256:…`). Which release to
+# run is the CLI's choice (or the operator's `git checkout`); this only
+# validates the one tag HEAD is at, with the CLI's cross-checks: the asset's
+# tag against the version, its revision against the tag's commit, its image
+# against the fixed repository. A prerelease tag is accepted, because the
+# operator checked it out on purpose. Fails (exits) on anything else, with a
+# 404 told apart from not reaching GitHub at all.
+resolve_server_image_for_head() {
+  local tag version url asset http_code curl_status=0 schema image asset_tag digest revision commit
+  SELFHOST_RESOLVED_SERVER_IMAGE=""
+  tag="$(selfhost_server_tag_at_head)"
+  [ -n "$tag" ] || fail_selfhost "the checkout in ${SELFHOST_REPO_ROOT} is not at a ${SELFHOST_SERVER_TAG_PREFIX}* release tag, so there is no published server image to resolve"
+  version="${tag#"$SELFHOST_SERVER_TAG_PREFIX"}"
+  url="$(selfhost_source_repo_url)/releases/download/${tag}/${SELFHOST_SERVER_IMAGE_ASSET}"
+  asset="$(mktemp "${TMPDIR:-/tmp}/selfhost-server-image.XXXXXX")"
+
+  log_selfhost "resolving the published server image for ${tag}"
+  http_code="$(curl -sSL --connect-timeout 15 --max-time 60 -o "$asset" -w '%{http_code}' "$url" 2>/dev/null)" || curl_status=$?
+  case "${curl_status}:${http_code}" in
+    0:200) ;;
+    0:404)
+      rm -f "$asset"
+      fail_selfhost "this release has no published image (${tag} has no ${SELFHOST_SERVER_IMAGE_ASSET}); use --image <ref> to run an image you choose, or --build-from-source to build the server here."
+      ;;
+    *)
+      rm -f "$asset"
+      fail_selfhost "could not reach GitHub releases for ${url} (curl exit ${curl_status}, HTTP ${http_code:-none}). Retry, or pass --image <ref> to run an image you choose, or --build-from-source to build the server here."
+      ;;
+  esac
+
+  schema="$(selfhost_json_number_field "$asset" schemaVersion)"
+  image="$(selfhost_json_string_field "$asset" image)"
+  asset_tag="$(selfhost_json_string_field "$asset" tag)"
+  digest="$(selfhost_json_string_field "$asset" digest)"
+  revision="$(selfhost_json_string_field "$asset" revision | tr '[:upper:]' '[:lower:]')"
+  rm -f "$asset"
+
+  [ "$schema" = "1" ] ||
+    fail_selfhost "${SELFHOST_SERVER_IMAGE_ASSET} on ${tag} has schemaVersion ${schema:-<missing>}, which these scripts do not understand; use --image <ref> or --build-from-source."
+  [ "$asset_tag" = "$version" ] ||
+    fail_selfhost "${SELFHOST_SERVER_IMAGE_ASSET} on ${tag} does not match the release: \"tag\" is ${asset_tag:-<missing>}, expected ${version}"
+  [ "$image" = "$(selfhost_server_image_repository)" ] ||
+    fail_selfhost "${SELFHOST_SERVER_IMAGE_ASSET} on ${tag} does not match the release: \"image\" is ${image:-<missing>}, expected $(selfhost_server_image_repository)"
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    fail_selfhost "${SELFHOST_SERVER_IMAGE_ASSET} on ${tag} does not match the release: \"digest\" is ${digest:-<missing>}, expected sha256:<64 hex characters>"
+  commit="$(git -C "$SELFHOST_REPO_ROOT" rev-parse "${tag}^{commit}" 2>/dev/null || true)"
+  if [ -z "$commit" ] || [ "$revision" != "$commit" ]; then
+    fail_selfhost "${SELFHOST_SERVER_IMAGE_ASSET} on ${tag} does not match the release: \"revision\" is ${revision:-<missing>}, expected ${commit:-the commit ${tag} points at}"
+  fi
+
+  SELFHOST_RESOLVED_SERVER_IMAGE="${image}:${asset_tag}@${digest}"
+  log_selfhost "published server image for ${tag}: ${SELFHOST_RESOLVED_SERVER_IMAGE}"
 }
 
 confirm_selfhost_destructive_action() {

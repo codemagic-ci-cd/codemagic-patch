@@ -1,10 +1,10 @@
 ---
 title: Migrating from Appflow
 description: >-
-  Move from Ionic Appflow Live Updates to self-hosted Codemagic Patch.
+  Move from Ionic Appflow Live Updates to Codemagic Patch.
 llmsDescription: >-
   Appflow Live Updates to Patch: SDK swap, per-platform deployment keys, start(),
-  cmpatch-capacitor CLI mapping.
+  cmpatch-capacitor CLI mapping. Self-host by default; Codemagic can host.
 sidebar_label: Migrating from Appflow
 sidebar_custom_props:
   sdk: capacitor
@@ -12,12 +12,12 @@ sidebar_custom_props:
 
 # Migrating from Appflow
 
-This guide covers moving from Ionic Appflow Live Updates (`@capacitor/live-updates`) to self-hosted Codemagic Patch. The migration has two parts:
+This guide covers moving from Ionic Appflow Live Updates (`@capacitor/live-updates`) to Codemagic Patch. The migration has two parts:
 
 1. Replace `@capacitor/live-updates` with `@codemagic/capacitor-patch` in your app.
 2. Replace the Appflow dashboard and build service with your Patch server and `cmpatch-capacitor`.
 
-This guide assumes you already have a Patch server. To set one up, see the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install). For a feature comparison, see [How Patch compares](/docs/introduction/comparison-capacitor).
+This guide assumes you already have a Patch server. To set one up, see the [Local quickstart](/docs/local-quickstart) or [Install](/docs/install). If you would prefer us to host it then email [sales@codemagic.io](mailto:sales@codemagic.io).
 
 :::note
 `@codemagic/capacitor-patch` and `cmpatch-capacitor` are 0.x releases; their API and flags may still change. Install both as described in [Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk).
@@ -43,7 +43,7 @@ Devices running the old plugin cannot receive Patch releases, so the switch ship
 
 ## Prerequisites
 
-- A Patch server you can reach ([Local quickstart](/docs/local-quickstart) or [Install](/docs/install))
+- A Patch server you can reach ([Local quickstart](/docs/local-quickstart), [Install](/docs/install), or a [Codemagic-hosted](/docs/introduction/pricing#hosted-by-codemagic) instance)
 - `cmpatch-capacitor`, installed and signed in ([Native setup](/docs/setup/native-setup-capacitor#install-the-cli-and-the-sdk))
 
 Create one app per platform and list the deployment keys:

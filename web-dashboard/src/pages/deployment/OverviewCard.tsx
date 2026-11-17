@@ -15,8 +15,6 @@ import {
   type useTimeseriesRange,
 } from "../../components/ui/TimeseriesRangeSelector";
 import { formatCount, formatSuccessRate } from "../../model/format";
-import { successRate } from "../../model/metrics";
-import { sumTimeseriesTotals } from "../../model/timeseries";
 
 const METRIC_CELL =
   "tip flex h-full min-w-0 flex-col justify-center rounded-lg border border-border py-3 pl-[22px] pr-4";
@@ -33,10 +31,9 @@ export function OverviewCard({
 }: {
   range: ReturnType<typeof useTimeseriesRange>;
 }) {
-  const totals = timeseriesQuery.data
-    ? sumTimeseriesTotals(timeseriesQuery.data.totals)
-    : null;
-  const rate = totals === null ? null : successRate(totals);
+  // Older servers send no summary: the cells stay "—" rather than zero.
+  const totals = timeseriesQuery.data?.summary?.totals ?? null;
+  const rate = totals?.successRate ?? null;
   const loading = timeseriesQuery.isPending;
   const rangeStale = timeseriesQuery.isPlaceholderData;
 

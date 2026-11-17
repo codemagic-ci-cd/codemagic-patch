@@ -35,6 +35,7 @@ import { buildOAuthEnv, type OAuthCredentials } from "../selfhostInstall";
 import { selfhostMappingKey, withSelfhostMapping } from "../selfhostTarget";
 import {
   capture,
+  chooseServerSource,
   cloneServerTag,
   createFlyContext,
   ensureTool,
@@ -42,10 +43,9 @@ import {
   flyLoginFirst,
   flyProgress,
   flyServerUrl,
-  latestServerTag,
-  listRemoteTags,
   readFlyOrg,
   redactSecrets,
+  refuseImageWithBuild,
   resolveFlyOrgSlug,
   run,
   runInteractive,
@@ -53,6 +53,7 @@ import {
   waitUntilReady,
   type Billing,
   type FlyContext,
+  type FlyServerSource,
 } from "./flyProcess";
 import {
   canAsk,
@@ -81,6 +82,7 @@ import {
   saveConfig,
   shouldAdoptServerUrl,
 } from "./selfhostInstall";
+import { askInstallSurvey } from "./selfhostInstall/installSurvey";
 import { askAdminEmail, checkAdminEmail, collectOAuth } from "./selfhostInstall/wizard";
 import { UsageError, type CommandDeps } from "./shared";
 
@@ -109,6 +111,7 @@ class RenameCompany extends Error {
 }
 
 const FLAGS = {
+  "--build-from-source": "boolean",
   "--company": "value",
   "--create-database": "boolean",
   "--database-app": "value",
@@ -118,6 +121,7 @@ const FLAGS = {
   "--fly": "boolean",
   "--fly-org": "value",
   "--fly-region": "value",
+  "--image": "value",
   "--install-flyctl": "boolean",
   "--install-tigris": "boolean",
   "--no-telemetry": "boolean",
@@ -153,6 +157,7 @@ export async function runFlyInstall(
       "--database-app and --external-database go with --register. An install records the database it creates by itself.",
     );
   }
+  refuseImageWithBuild(readStringFlag(parsed, "--image"), readBooleanFlag(parsed, "--build-from-source"));
 
   // Only the flag decides, as on the ssh path: the server runs on Fly, where
   // this machine's SERVER_TELEMETRY and DO_NOT_TRACK never reach it.
@@ -178,6 +183,13 @@ export async function runFlyInstall(
   });
 
   try {
+    // Before anything is created: a release that cannot be resolved must not
+    // leave buckets and a database behind.
+    fly.progress.write("Looking up the server release");
+    const source = await chooseServerSource(fly, {
+      buildFromSource: readBooleanFlag(parsed, "--build-from-source"),
+      image: readStringFlag(parsed, "--image"),
+    });
     let storage: Storage | undefined;
     for (;;) {
       const names = flyNames(stem);
@@ -217,6 +229,7 @@ export async function runFlyInstall(
       region,
       s3Region: storage.s3Region,
       secretAccessKey: storage.secretAccessKey,
+      source,
       stem,
       usageReport,
     }, left);
@@ -242,6 +255,12 @@ export async function runFlyInstall(
         region,
       },
       serverUrl,
+    });
+
+    await askInstallSurvey(deps, {
+      install: "fly",
+      interactive,
+      noTelemetry: usageReport === "off",
     });
 
     fly.progress.stop();
@@ -1129,22 +1148,34 @@ async function deployPatch(
     region: string;
     s3Region: string;
     secretAccessKey: string;
+    source: FlyServerSource;
     stem: string;
     usageReport: "off" | "on";
   },
   left: Leftovers,
 ): Promise<void> {
   const names = flyNames(input.stem);
-  const tag = latestServerTag(await listRemoteTags(fly));
+  const { source } = input;
+  const tag = source.tag;
 
   // A failed or interrupted clone leaves this empty: git removes what it cloned.
   const parent = await mkdtemp(join(tmpdir(), "cmpatch-fly-"));
-  const checkout = await cloneServerTag(fly, tag, parent);
-  left.directories.push({
-    path: parent,
-    text: `The checkout is still at ${checkout}; fly deploy --ha=false there deploys ${names.app}.`,
-  });
-  await writeFile(join(checkout, "fly.toml"), patchFlyToml({
+  // An image deploy needs only the generated fly.toml (`--image` overrides
+  // its [build] section), so it clones nothing.
+  let directory = parent;
+  if (source.kind === "build") {
+    directory = await cloneServerTag(fly, tag, parent);
+    left.directories.push({
+      path: parent,
+      text: `The checkout is still at ${directory}; fly deploy --ha=false there deploys ${names.app}.`,
+    });
+  } else {
+    left.directories.push({
+      path: parent,
+      text: `The app config is still at ${join(parent, "fly.toml")}; fly deploy --ha=false --image ${source.imageRef} in ${parent} deploys ${names.app}.`,
+    });
+  }
+  await writeFile(join(directory, "fly.toml"), patchFlyToml({
     email: input.email,
     endpoint: input.endpoint,
     publicBaseUrl: input.publicBaseUrl,
@@ -1166,8 +1197,13 @@ async function deployPatch(
       WORKER_SHARED_SECRET: hexSecret(fly.deps),
     }),
   });
-  fly.progress.write("Building the server image on Fly. The first build takes several minutes.");
-  await run(fly, "fly", ["deploy", "--ha=false", "--app", names.app], { cwd: checkout, show: true });
+  if (source.kind === "build") {
+    fly.progress.write("Building the server image on Fly. The first build takes several minutes.");
+    await run(fly, "fly", ["deploy", "--ha=false", "--app", names.app], { cwd: directory, show: true });
+    return;
+  }
+  fly.progress.write(`Deploying ${tag} from ${source.imageRef}`);
+  await run(fly, "fly", ["deploy", "--ha=false", "--app", names.app, "--image", source.imageRef], { cwd: directory, show: true });
 }
 
 function hexSecret(deps: CommandDeps): string {

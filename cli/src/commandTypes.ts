@@ -388,6 +388,18 @@ export type MemberProvisionCommand = {
   tokenDisplayName?: string;
 };
 
+export type MemberRotateTokenCommand = {
+  email: string;
+  expiresInDays?: number;
+  kind: "member-rotate-token";
+  nonInteractive?: true;
+  serverUrl: string;
+  team: TeamSelector;
+  token?: string;
+  tokenDisplayName?: string;
+  yes?: true;
+};
+
 export type MemberInviteListCommand = {
   format?: OutputFormat;
   kind: "member-invite-list";
@@ -812,6 +824,7 @@ export type CliCommand =
   | MemberListCommand
   | MemberProvisionCommand
   | MemberRemoveCommand
+  | MemberRotateTokenCommand
   | MemberUpdateCommand
   | ReleaseCreateCommand
   | ReleaseInspectCommand

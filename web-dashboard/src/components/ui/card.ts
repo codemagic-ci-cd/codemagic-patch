@@ -1,10 +1,10 @@
-// Card / panel literals (legacy `.card` family), shared by ErrorBoundary,
-// MetricsPage and ReleaseDetailPage. 1:1 port of the legacy
-// `.card` / `.card-pad` / `.card-head` rules. The `.card-head h3` rule was a
-// descendant selector (font size + weight on a class-less <h3>), so it stays a
-// `[&_h3]` descendant here rather than a co-applied class — exactly the legacy
-// rendering, and never colliding with another class under the no-merge
-// contract (see Button.tsx).
+// Card / panel literals (legacy `.card` family), shared by ErrorBoundary and
+// ReleaseDetailPage. 1:1 port of the legacy `.card` / `.card-pad` /
+// `.card-head` rules. The `.card-head h3` rule was a descendant selector
+// (font size + weight on a class-less <h3>), so it stays a `[&_h3]` descendant
+// here rather than a co-applied class — exactly the legacy rendering, and
+// never colliding with another class under the no-merge contract (see
+// Button.tsx).
 export const CARD =
   "rounded-lg border border-border bg-surface shadow-sm";
 

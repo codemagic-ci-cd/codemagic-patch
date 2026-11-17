@@ -105,7 +105,9 @@ project should use `init --skip-wire` to keep connection-only behavior.
 To apply wiring non-interactively, pass `--yes`; a dirty working tree also
 requires `--allow-dirty`. If CocoaPods installation is needed, request it with
 `--pod-install` on macOS. On Linux that step remains incomplete (exit `2`),
-even with the flag, until completed on macOS.
+even with the flag, until completed on macOS. A project in React Native's
+SwiftPM mode has no CocoaPods step: wire never runs `pod install` there and
+ignores `--pod-install`.
 
 ## Configuration
 

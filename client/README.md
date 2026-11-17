@@ -27,11 +27,9 @@ From this SDK:
 - React Native `0.73+` — New Architecture support starts at RN 0.76; RN 0.73–0.75 are supported on the Old (Paper) Architecture only
 - Android `minSdkVersion` 23+ (the library follows the host's `rootProject.ext.minSdkVersion`; without one it builds at 23)
 - Android native build with CMake/JNI support
-- iOS native build with CocoaPods and mixed Swift/ObjC++ compilation
+- iOS native build with CocoaPods and mixed Swift/ObjC++ compilation, or React Native's SwiftPM mode on RN 0.88+ with the New Architecture (see [React Native SwiftPM mode](https://patch.codemagic.io/docs/setup/native-setup#ios-swiftpm))
 - Expo SDK 52+ (via the bundled config plugin — see [Expo apps](#expo-apps))
 - **Expo Go is not supported** — the native module is not part of the Expo Go runtime
-
-Reference fixture apps, including the Expo SDK 58 / RN 0.88.0 host, are listed in the [E2E fixture workspace](e2e/fixture-app/README.md).
 
 ## Installation
 
@@ -41,11 +39,13 @@ npm install @codemagic/react-native-patch
 yarn add @codemagic/react-native-patch
 ```
 
-`react` (`>=18`) and `react-native` (`>=0.73`) are peer dependencies. On iOS, install the native pod:
+`react` (`>=18`) and `react-native` (`>=0.73`) are peer dependencies. On iOS with CocoaPods, install the native pod:
 
 ```sh
 cd ios && pod install
 ```
+
+In React Native's SwiftPM mode, skip `pod install` and run `npx react-native spm` instead; see [React Native SwiftPM mode](https://patch.codemagic.io/docs/setup/native-setup#ios-swiftpm).
 ## Quick start
 
 Configuration lives in **native resources** (deployment key, API URL, download base URL, optional public key), not in a JS config object. The Expo plugin writes those for you; bare apps set them in `Info.plist` / `strings.xml` and wire bundle selection.

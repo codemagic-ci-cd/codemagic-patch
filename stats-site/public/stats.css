@@ -668,6 +668,10 @@ main > .container:has(.banner:not([hidden])) {
   stroke-dasharray: 3 3;
 }
 
+.chart-bar--applied.chart-bar--partial {
+  stroke: var(--series-applied);
+}
+
 .chart-bar--releases.chart-bar--partial {
   stroke: var(--series-releases);
 }
@@ -765,6 +769,10 @@ main > .container:has(.banner:not([hidden])) {
   width: 12px;
   height: 12px;
   border-radius: 3px;
+}
+
+.legend-swatch--applied {
+  background: var(--series-applied);
 }
 
 .legend-swatch--releases {

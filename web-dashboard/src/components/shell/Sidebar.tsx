@@ -198,7 +198,7 @@ function TeamNav({
   const appsQuery = useApps(teamId);
   const appsPath = `/teams/${teamId}/apps`;
   // Nested deployments only for the app currently in the apps tree, not for
-  // leftover :appId params on other sections (metrics bookmarks, etc.).
+  // leftover :appId params on other sections.
   const inAppsTree =
     appId !== undefined &&
     (pathname === `${appsPath}/${appId}` ||

@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
-import { PRODUCT_NAME, SOURCE_REPO_URL } from "../../branding";
+import { PRODUCT_NAME } from "../../branding";
 import {
   assembleScpArgs,
   captureRemoteShell,
@@ -16,11 +16,17 @@ import {
   pairedSshInvocation,
 } from "../../remoteExec";
 import {
+  BUILD_MEMORY_FLOOR_BYTES,
   checkHostMemory,
   probePublicPorts,
   renderFirewallHint,
   renderMemoryRejection,
 } from "../../selfhostInstall";
+import {
+  resolveLatestServerImageRelease,
+  resolveLatestServerTagForImage,
+  serverSourceRepo,
+} from "../../serverRelease";
 import {
   probeRemotePublicAddress,
   type RemoteInstallFacts,
@@ -28,6 +34,7 @@ import {
 import {
   canAsk,
   readBooleanFlag,
+  readStringFlag,
   RemoteScriptFailure,
   type ParsedArgs,
   type SelfhostSession,
@@ -66,13 +73,119 @@ export const DOCKER_BOOTSTRAP_DISTROS = new Set([
  *
  * Amazon Linux 2023 packages Docker Engine itself but neither Compose v2
  * (amazon-linux-2023#186) nor a usable buildx — its RPM bundles buildx 0.12.1,
- * and `docker compose build`, which install.sh runs, needs 0.17 or newer
+ * and `docker compose build`, which `install.sh --build-from-source` and
+ * `upgrade.sh --build-from-source` run, needs 0.17 or newer
  * (amazon-linux-2023#1032). So the amzn bootstrap downloads both CLI plugins
  * from their GitHub releases at these exact versions and verifies each against
  * the checksums those releases publish.
  */
 const AMAZON_LINUX_COMPOSE_VERSION = "v5.5.0";
 const AMAZON_LINUX_BUILDX_VERSION = "v0.36.1";
+
+// ---------------------------------------------------------------------------
+// Which source and which server image
+// ---------------------------------------------------------------------------
+
+/**
+ * What an install checks out and how install.sh gets the server image.
+ *
+ * | Situation                                     | Checkout                  | Image  |
+ * |-----------------------------------------------|---------------------------|--------|
+ * | no flag                                       | latest release with image | pull   |
+ * | `--build-from-source`, an eligible tag exists | that tag                  | build  |
+ * | `--build-from-source`, none yet (first cycle) | the default branch        | build  |
+ * | `--image <ref>`                               | latest eligible tag, else the default branch | pull |
+ * | a source bundle (internal test builds)        | none: the bundle is the source | build, unless `--image` |
+ * | a checkout already there (a rerun)            | left as it is             | the flag, else install.sh reads the tag at HEAD |
+ *
+ * "Eligible" is a server tag at or above the minimum image-install tag.
+ */
+export type ServerSourcePlan = {
+  /** Builds the image on the host, which is what the memory floor and buildx are for. */
+  build: boolean;
+  /** The tag to check out right after the clone; null keeps the clone's default branch. */
+  checkoutTag: string | null;
+  /** install.sh's image flags. Empty only on a rerun without a flag. */
+  installArgs: string[];
+};
+
+export async function planServerSource(
+  deps: Pick<CommandDeps, "env" | "fetch" | "runProcess">,
+  input: {
+    buildFromSource: boolean;
+    /** Whether this run clones the source, as opposed to reusing a checkout. */
+    freshClone: boolean;
+    image: string | undefined;
+    sourceBundle: boolean;
+  },
+): Promise<ServerSourcePlan> {
+  const { buildFromSource, freshClone, image, sourceBundle } = input;
+  if (buildFromSource && image !== undefined) {
+    throw new UsageError(
+      "--image and --build-from-source cannot be combined: one runs an image built elsewhere, the other builds it on the server. Pick one.",
+    );
+  }
+
+  const pull = (ref: string, checkoutTag: string | null): ServerSourcePlan => ({
+    build: false,
+    checkoutTag,
+    installArgs: ["--image", ref],
+  });
+  const source = (checkoutTag: string | null): ServerSourcePlan => ({
+    build: true,
+    checkoutTag,
+    installArgs: ["--build-from-source"],
+  });
+
+  if (sourceBundle || !freshClone) {
+    if (image !== undefined) {
+      return pull(image, null);
+    }
+    if (buildFromSource || sourceBundle) {
+      return source(null);
+    }
+    return { build: false, checkoutTag: null, installArgs: [] };
+  }
+
+  if (buildFromSource || image !== undefined) {
+    const tag = await resolveLatestServerTagForImage({
+      env: deps.env,
+      runProcess: deps.runProcess,
+    });
+    return image === undefined ? source(tag) : pull(image, tag);
+  }
+
+  const release = await resolveLatestServerImageRelease({
+    env: deps.env,
+    fetch: deps.fetch,
+  });
+  return pull(release.imageRef, release.tag);
+}
+
+/**
+ * The scripts' environment for the test-only source repo override: the
+ * shell reads the same variable, so the asset it validates and the image it
+ * expects follow the repository the CLI resolved against.
+ */
+export function sourceRepoScriptEnv(
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const override = env.CMPATCH_TEST_SOURCE_REPO;
+  return override === undefined || override === ""
+    ? {}
+    : { CMPATCH_TEST_SOURCE_REPO: override };
+}
+
+/** The install flags that choose the image, read once for planServerSource. */
+export function readImageFlags(parsed: ParsedArgs): {
+  buildFromSource: boolean;
+  image: string | undefined;
+} {
+  return {
+    buildFromSource: readBooleanFlag(parsed, "--build-from-source"),
+    image: readStringFlag(parsed, "--image"),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Host preflight
@@ -82,6 +195,7 @@ export async function runHostPreflight(
   deps: CommandDeps,
   session: SelfhostSession,
   parsed: ParsedArgs,
+  plan: Pick<ServerSourcePlan, "build">,
 ): Promise<void> {
   const facts = session.facts.install;
   if (facts === undefined) {
@@ -90,8 +204,13 @@ export async function runHostPreflight(
     );
   }
 
-  if (!readBooleanFlag(parsed, "--skip-memory-check")) {
-    const memory = checkHostMemory(facts.memoryTotalBytes);
+  // Memory is gated only where the image is built on the host; a pulled
+  // image runs on the smallest instances.
+  if (plan.build && !readBooleanFlag(parsed, "--skip-memory-check")) {
+    const memory = checkHostMemory(
+      facts.memoryTotalBytes,
+      BUILD_MEMORY_FLOOR_BYTES,
+    );
     if (memory.kind === "too-small") {
       throw new UsageError(
         renderMemoryRejection(memory.reportedBytes, facts.cloudProvider).join(
@@ -109,7 +228,7 @@ export async function runHostPreflight(
     await refreshPublicAddress(deps, session, facts);
   }
 
-  await ensureDocker(deps, session, parsed, facts);
+  await ensureDocker(deps, session, parsed, facts, plan.build);
 
   if (!facts.hasGit) {
     await ensurePackage(deps, session, parsed, GIT_PACKAGE);
@@ -184,6 +303,7 @@ async function ensureDocker(
   session: SelfhostSession,
   parsed: ParsedArgs,
   facts: RemoteInstallFacts,
+  build: boolean,
 ): Promise<void> {
   if (facts.dockerState === "ok" && facts.dockerComposeVersion !== null) {
     return;
@@ -264,9 +384,10 @@ async function ensureDocker(
     body: [
       "docker info >/dev/null",
       "docker compose version >/dev/null",
-      // The amzn bootstrap installed buildx itself, so it is verified too —
-      // install.sh's image build is what needs it.
-      ...(bootstrap.kind === "amazon-linux"
+      // The amzn bootstrap installed buildx itself. Only a source build
+      // (install.sh --build-from-source) needs it, so only then is it a
+      // requirement; a pulled image never touches it.
+      ...(build && bootstrap.kind === "amazon-linux"
         ? ["docker buildx version >/dev/null"]
         : []),
       'printf "docker_ready=1\\n"',
@@ -810,9 +931,15 @@ async function uploadSourceBundle(
   return remoteBundle;
 }
 
+/**
+ * Clones the source when the host has no checkout yet, then checks out
+ * `checkoutTag` (the release planServerSource chose) so the scripts that run
+ * are that release's. An existing checkout is left exactly as it is.
+ */
 export async function ensureCheckout(
   deps: CommandDeps,
   session: SelfhostSession,
+  checkoutTag: string | null,
 ): Promise<void> {
   if (session.facts.checkoutPath !== null) {
     return;
@@ -834,10 +961,21 @@ export async function ensureCheckout(
     body: [
       "command -v git >/dev/null 2>&1 || { printf \"clone_error=no-git\\n\"; exit 3; }",
       'if [ -e "$CMPATCH_REMOTE_PATH" ]; then printf "clone_error=exists\\n"; exit 3; fi',
-      // A full clone, not --depth 1: `selfhost upgrade` fast-forwards this
-      // same checkout, and a shallow one turns that into a special case.
+      // A full clone, not --depth 1: `selfhost upgrade` moves this same
+      // checkout to later release tags and checks ancestry against them,
+      // and a shallow one turns that into a special case.
       ...(remoteBundle === null
-        ? ['git clone --quiet "$CMPATCH_REPO_URL" "$CMPATCH_REMOTE_PATH"']
+        ? [
+            'git clone --quiet "$CMPATCH_REPO_URL" "$CMPATCH_REMOTE_PATH"',
+            ...(checkoutTag === null
+              ? []
+              : [
+                  // Detached at the release: the checkout `selfhost upgrade`
+                  // later recognises by its server tag. The clone this run
+                  // just made goes again on failure, so a rerun can retry.
+                  'git -C "$CMPATCH_REMOTE_PATH" -c advice.detachedHead=false checkout --quiet "refs/tags/$CMPATCH_CHECKOUT_TAG" || { rm -rf -- "$CMPATCH_REMOTE_PATH"; printf "clone_error=checkout\\n"; exit 3; }',
+                ]),
+          ]
         : [
             'git clone --quiet "$CMPATCH_SOURCE_BUNDLE" "$CMPATCH_REMOTE_PATH"',
             // Aimed back at the public repo so the checkout is
@@ -852,10 +990,13 @@ export async function ensureCheckout(
     connection: pairedSshInvocation(session.sshTarget, session.identityFile),
     env: {
       CMPATCH_REMOTE_PATH: session.remotePath,
-      CMPATCH_REPO_URL: SOURCE_REPO_URL,
+      CMPATCH_REPO_URL: serverSourceRepo(deps.env).url,
       ...(remoteBundle === null
         ? {}
         : { CMPATCH_SOURCE_BUNDLE: remoteBundle }),
+      ...(remoteBundle === null && checkoutTag !== null
+        ? { CMPATCH_CHECKOUT_TAG: checkoutTag }
+        : {}),
     },
     runProcess: deps.runProcess,
   });

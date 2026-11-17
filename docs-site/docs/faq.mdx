@@ -1,9 +1,9 @@
 ---
 title: FAQs
 description: >-
-  Answers to common questions about Patch, licensing, Expo, CodePush, and
-  self-hosting.
-llmsDescription: 'FAQ — licensing, Expo, CodePush, self-host, what can ship OTA, where to debug.'
+  Answers to common questions about Patch, licensing, Expo, CodePush,
+  self-hosting, and Codemagic-hosted Patch.
+llmsDescription: 'FAQ — licensing, Expo, CodePush, self-host, hosted Patch, what can ship OTA, where to debug.'
 ---
 
 import SdkTabs from '@site/src/components/SdkTabs';
@@ -18,12 +18,12 @@ Short answers to common questions. For setup steps and deeper topics, follow the
 <SdkTabs>
   <TabItem value="react-native" label="React Native">
 
-Self-hosted over-the-air (OTA) updates for React Native. You run the server, publish JS bundle updates with the CLI or dashboard, and installed apps pull those updates through the Patch SDK. See [How it works](/docs/introduction/how-it-works).
+Self-hosted over-the-air (OTA) updates for React Native. You run the server, publish JS bundle updates with the CLI or dashboard, and installed apps pull those updates through the Patch SDK. Codemagic can also host the server for you. See [How it works](/docs/introduction/how-it-works) and [Pricing](/docs/introduction/pricing#hosted-by-codemagic).
 
   </TabItem>
   <TabItem value="capacitor" label="Capacitor">
 
-Self-hosted over-the-air (OTA) updates for Capacitor and Ionic apps. You run the server, publish web asset updates with the CLI or dashboard, and installed apps download them through the Capacitor SDK. See [How it works](/docs/introduction/how-it-works).
+Self-hosted over-the-air (OTA) updates for Capacitor and Ionic apps. You run the server, publish web asset updates with the CLI or dashboard, and installed apps download them through the Capacitor SDK. Codemagic can also host the server for you. See [How it works](/docs/introduction/how-it-works) and [Pricing](/docs/introduction/pricing#hosted-by-codemagic).
 
   </TabItem>
 </SdkTabs>
@@ -34,14 +34,14 @@ No. Patch works with any CI (GitHub Actions, Bitrise, your laptop). Codemagic is
 
 ## Is Patch free?
 
-You can self-host under the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) at no charge while you stay at or below one million monthly active users. Above that, you need a commercial license from Codemagic. See [Pricing](/docs/introduction/pricing).
+You can self-host under the [Codemagic Server License](https://github.com/codemagic-ci-cd/codemagic-patch/blob/main/LICENSE) at no charge while you stay at or below one million monthly active users. Above that, you need a commercial license from Codemagic. Codemagic-hosted Patch has its own free tier and rates; see [Pricing](/docs/introduction/pricing).
 
 ## How is Patch different from CodePush forks?
 
 <SdkTabs>
   <TabItem value="react-native" label="React Native">
 
-CodePush forks keep the familiar apps, deployments, and `release-react`-style flows, as hosted SaaS or a self-hosted CodePush-compatible server. Patch is a separate self-host product with its own API, CDN-oriented manifests, dashboard, and metrics. See [Comparison](/docs/introduction/comparison#vs-codepush-forks) or [Migrating from CodePush](/docs/migration/migrating-from-codepush).
+CodePush forks keep the familiar apps, deployments, and `release-react`-style flows, as hosted SaaS or a self-hosted CodePush-compatible server. Patch is a separate product with its own API, CDN-oriented manifests, dashboard, and metrics. You can self-host it or ask Codemagic to host it. See [Comparison](/docs/introduction/comparison#vs-codepush-forks) or [Migrating from CodePush](/docs/migration/migrating-from-codepush).
 
   </TabItem>
   <TabItem value="capacitor" label="Capacitor">
@@ -98,7 +98,9 @@ Only when the native layer changes. Web fixes and UI updates can ship over the a
 
 ## Do I have to run my own server?
 
-Patch is self-hosted. For a quick try on your laptop, see [Local quickstart](/docs/local-quickstart). For production you need a host with Docker, two hostnames (typically two subdomains of a domain you already own), and a GitHub, Bitbucket Cloud, or GitLab OAuth app. See [Install](/docs/install).
+No. Self-hosting is the primary path in these docs, but Codemagic can host Patch for you. See [Pricing](/docs/introduction/pricing#hosted-by-codemagic) or email [sales@codemagic.io](mailto:sales@codemagic.io).
+
+To self-host: try locally with [Local quickstart](/docs/local-quickstart), or deploy for production with [Install](/docs/install) (a host with Docker, two hostnames, and a GitHub, Bitbucket Cloud, or GitLab OAuth app).
 
 ## Where do bundles get downloaded from?
 

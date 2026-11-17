@@ -10,10 +10,12 @@ import type {
   IamRoleBindingDeleteRouteHandler,
   IamRoleBindingUpdateRouteHandler,
   IamUserProvisionRouteHandler,
+  IamUserTokenRotateRouteHandler,
 } from "../../app/types";
 import { MAX_API_TOKEN_EXPIRATION_DAYS } from "./routeConstants";
 import {
   createAccountDisabledProblem,
+  createSessionRevokedProblem,
   createTeamNotFoundProblem,
   MAX_IAM_INVITATION_EXPIRES_IN_DAYS,
   type PreparedJsonResponse,
@@ -557,6 +559,14 @@ export function prepareIamUserProvisionResponse(
     };
   }
 
+  if (result.outcome === "session_revoked") {
+    const problem = createSessionRevokedProblem();
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
   if (result.outcome === "role_not_supported") {
     const problem = createProblem({
       detail: "role is not supported for user provisioning",
@@ -591,6 +601,142 @@ export function prepareIamUserProvisionResponse(
   };
 }
 
+export function parseIamUserTokenRotateInput(body: unknown):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: {
+        expiresInDays?: number;
+        teamId: string;
+        tokenDisplayName: string | null;
+      };
+    } {
+  if (!isJsonObject(body)) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        "token rotation body must be a JSON object",
+        "body",
+        "invalid_type",
+      ),
+    };
+  }
+
+  const teamId = parseRequiredTrimmedString(body.team_id);
+  if (teamId === null) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        "team_id must be a non-empty string",
+        "team_id",
+        requiredStringReason(body.team_id),
+      ),
+    };
+  }
+
+  const tokenDisplayName = parseOptionalTrimmedString(body.token_display_name);
+  if (tokenDisplayName.kind === "error") {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        "token_display_name must be a non-empty string when provided",
+        "token_display_name",
+        "invalid_type",
+      ),
+    };
+  }
+
+  const expiresInDays = parseOptionalPositiveInteger(
+    body.expires_in_days,
+    "expires_in_days",
+    MAX_API_TOKEN_EXPIRATION_DAYS,
+  );
+  if (expiresInDays.kind === "error") {
+    return {
+      kind: "error",
+      problem: expiresInDays.problem,
+    };
+  }
+
+  return {
+    kind: "success",
+    value: {
+      ...(expiresInDays.value !== null
+        ? { expiresInDays: expiresInDays.value }
+        : {}),
+      teamId,
+      tokenDisplayName: tokenDisplayName.value,
+    },
+  };
+}
+
+export function prepareIamUserTokenRotateResponse(
+  result: Awaited<ReturnType<IamUserTokenRotateRouteHandler>>,
+): PreparedJsonResponse {
+  if (result.outcome === "rotated") {
+    return {
+      body: {
+        api_token: toApiTokenWire(result.apiToken),
+        revoked_api_token_count: result.revokedApiTokenCount,
+        token: result.plaintextToken,
+        user: {
+          email: result.user.email,
+          id: result.user.id,
+          owner_team_id: result.user.ownerTeamId,
+        },
+      },
+      status: 201,
+    };
+  }
+
+  const problem = iamUserTokenRotateProblem(result);
+  return {
+    body: problem,
+    status: problem.status,
+  };
+}
+
+function iamUserTokenRotateProblem(
+  result: Exclude<
+    Awaited<ReturnType<IamUserTokenRotateRouteHandler>>,
+    { outcome: "rotated" }
+  >,
+): ProblemDetails {
+  switch (result.outcome) {
+    case "not_found":
+      // One answer for everything that is not a service account this team
+      // owns, so the route does not confirm what else exists.
+      return createProblem({
+        detail: "no service account owned by this team has that id",
+        extensions: {
+          outcome: result.outcome,
+          reason: result.reason,
+        },
+        status: 404,
+        typeSuffix: "not-found",
+      });
+    case "account_disabled":
+      return createAccountDisabledProblem(result.reason);
+    case "session_revoked":
+      return createSessionRevokedProblem();
+  }
+}
+
+function createServiceAccountOtherTeamProblem(): ProblemDetails {
+  return createProblem({
+    detail:
+      "this account is a service account owned by another team and cannot be added to this one",
+    extensions: {
+      reason: "service_account_other_team",
+    },
+    status: 409,
+    typeSuffix: "service-account-conflict",
+  });
+}
+
 export function prepareIamRoleBindingCreateResponse(
   result: Awaited<ReturnType<IamRoleBindingCreateRouteHandler>>,
 ): PreparedJsonResponse {
@@ -605,6 +751,14 @@ export function prepareIamRoleBindingCreateResponse(
 
   if (result.outcome === "account_disabled") {
     const problem = createAccountDisabledProblem(result.reason);
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
+  if (result.outcome === "service_account_other_team") {
+    const problem = createServiceAccountOtherTeamProblem();
     return {
       body: problem,
       status: problem.status,
@@ -801,6 +955,14 @@ export function prepareIamInvitationCreateResponse(
 
   if (result.outcome === "account_disabled") {
     const problem = createAccountDisabledProblem(result.reason);
+    return {
+      body: problem,
+      status: problem.status,
+    };
+  }
+
+  if (result.outcome === "service_account_other_team") {
+    const problem = createServiceAccountOtherTeamProblem();
     return {
       body: problem,
       status: problem.status,

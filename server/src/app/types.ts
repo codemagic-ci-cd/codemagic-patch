@@ -61,8 +61,8 @@ export type TeamCreateHandlerResult =
       reason: "team_name_exists";
     }
   | {
-      // Never produced by the built-in handler; reserved for embedders that
-      // wrap the handler with their own authorization policy.
+      // A service account cannot create a team. Embedders that wrap the
+      // handler with their own authorization policy return it too.
       outcome: "forbidden";
     }
   | {
@@ -408,14 +408,21 @@ export interface UserProfileRouteHandler {
 export interface ApiTokenCreateHandlerInput {
   displayName: string;
   expiresInDays?: number;
+  /** The session the request authenticated with; re-checked at insert. */
+  issuingSessionId: string;
   userId: string;
 }
 
-export interface ApiTokenCreateHandlerResult {
-  apiToken: ApiTokenMetadata;
-  outcome: "created";
-  plaintextToken: string;
-}
+export type ApiTokenCreateHandlerResult =
+  | {
+      apiToken: ApiTokenMetadata;
+      outcome: "created";
+      plaintextToken: string;
+    }
+  | {
+      /** The issuing session ended after the request authenticated. */
+      outcome: "session_revoked";
+    };
 
 export interface ApiTokenCreateRouteHandler {
   (input: ApiTokenCreateHandlerInput): Promise<ApiTokenCreateHandlerResult>;
@@ -423,6 +430,24 @@ export interface ApiTokenCreateRouteHandler {
 
 export interface ApiTokenListRouteHandler {
   (userId: string): Promise<{ apiTokens: ApiTokenMetadata[] }>;
+}
+
+/**
+ * Ends every session and API token of the caller, including the calling
+ * session, by advancing the caller's credential generation.
+ */
+export interface CredentialsRevokeAllRouteHandler {
+  (input: { sessionId: string; userId: string }): Promise<
+    | {
+        outcome: "revoked";
+        revokedApiTokenCount: number;
+        revokedSessionCount: number;
+      }
+    | {
+        /** The calling session had already ended; nothing changed. */
+        outcome: "session_revoked";
+      }
+  >;
 }
 
 export interface ApiTokenDeleteRouteHandler {
@@ -527,6 +552,8 @@ export interface OAuthCallbackRouteHandler {
 export interface OAuthCliAuthorizationIssueHandlerInput {
   codeChallenge: string;
   port: number;
+  /** The approving session; the exchange refuses the code once it ends. */
+  sessionId: string;
   userId: string;
 }
 
@@ -622,6 +649,8 @@ export interface IamRoleBindingRouteModel {
     id: string;
     email: string;
     displayName: string | null;
+    /** Set on a service account: the team that owns it. */
+    ownerTeamId: string | null;
   };
   role: {
     id: string;
@@ -709,6 +738,10 @@ export type IamRoleBindingCreateHandlerResult =
     }
   | {
       outcome: "role_not_supported";
+    }
+  | {
+      /** The user is a service account owned by another team. */
+      outcome: "service_account_other_team";
     };
 
 export interface IamRoleBindingCreateRouteHandler {
@@ -842,6 +875,10 @@ export type IamInvitationCreateHandlerResult =
     }
   | {
       outcome: "role_not_supported";
+    }
+  | {
+      /** The email belongs to a service account owned by another team. */
+      outcome: "service_account_other_team";
     };
 
 export interface IamInvitationCreateRouteHandler {
@@ -855,6 +892,8 @@ export interface IamUserProvisionHandlerInput {
   displayName: string | null;
   email: string;
   expiresInDays?: number;
+  /** The admin's session; the token is minted only while it is live. */
+  issuingSessionId: string;
   roleId: string;
   teamId: string;
   tokenDisplayName: string;
@@ -887,12 +926,60 @@ export type IamUserProvisionHandlerResult =
     }
   | {
       outcome: "role_not_supported";
+    }
+  | {
+      /** The admin's session ended after it authenticated; nothing was kept. */
+      outcome: "session_revoked";
     };
 
 export interface IamUserProvisionRouteHandler {
   (
     input: IamUserProvisionHandlerInput,
   ): Promise<IamUserProvisionHandlerResult>;
+}
+
+export interface IamUserTokenRotateHandlerInput {
+  expiresInDays?: number;
+  /** The rotating admin. */
+  issuedBy: string;
+  /** The admin's session; the token is minted only while it is live. */
+  issuingSessionId: string;
+  teamId: string;
+  /** Null names the token after the account. */
+  tokenDisplayName: string | null;
+  userId: string;
+}
+
+export type IamUserTokenRotateHandlerResult =
+  | {
+      outcome: "rotated";
+      apiToken: ApiTokenMetadata;
+      plaintextToken: string;
+      revokedApiTokenCount: number;
+      user: {
+        email: string;
+        id: string;
+        ownerTeamId: string | null;
+      };
+    }
+  | {
+      /** Not a service account this team owns; an unknown id answers the same. */
+      outcome: "not_found";
+      reason: "user_not_found";
+    }
+  | {
+      outcome: "account_disabled";
+      reason: "user_disabled";
+    }
+  | {
+      /** The admin's session ended after it authenticated; nothing changed. */
+      outcome: "session_revoked";
+    };
+
+export interface IamUserTokenRotateRouteHandler {
+  (
+    input: IamUserTokenRotateHandlerInput,
+  ): Promise<IamUserTokenRotateHandlerResult>;
 }
 
 export type IamInvitationStatusFilter =
@@ -1196,6 +1283,26 @@ export interface DeploymentTimeseriesRouteHandler {
   (
     input: DeploymentTimeseriesHandlerInput,
   ): Promise<DeploymentTimeseriesHandlerResult>;
+}
+
+export interface MonthlyActiveDevicesMonth {
+  /** Estimated distinct devices that reported Active in the UTC month. */
+  activeDevices: number;
+  /** When counting began in the month across the server, UTC, `YYYY-MM-DD`. */
+  firstDay: string;
+  /** UTC calendar month, `YYYY-MM`. */
+  month: string;
+}
+
+export interface MonthlyActiveDevices {
+  /** Last UTC day the figures can include, `YYYY-MM-DD`; null before the first fold run. */
+  dataThrough: string | null;
+  /** Newest month first. */
+  months: MonthlyActiveDevicesMonth[];
+}
+
+export interface DeploymentMonthlyActiveDevicesRouteHandler {
+  (deploymentId: string): Promise<MonthlyActiveDevices>;
 }
 
 export type ReleaseMetricsReadHandlerResult =
@@ -1656,6 +1763,7 @@ export interface BuildAppOptions {
   apiTokenCreateHandler?: ApiTokenCreateRouteHandler;
   apiTokenDeleteHandler?: ApiTokenDeleteRouteHandler;
   apiTokenListHandler?: ApiTokenListRouteHandler;
+  credentialsRevokeAllHandler?: CredentialsRevokeAllRouteHandler;
   appCreateHandler?: AppCreateRouteHandler;
   appDeleteHandler?: AppDeleteRouteHandler;
   appUpdateHandler?: AppUpdateRouteHandler;
@@ -1667,6 +1775,7 @@ export interface BuildAppOptions {
   deploymentFailureDistributionHandler?: FailureDistributionRouteHandler;
   deploymentFailureEventsHandler?: FailureEventsRouteHandler;
   deploymentMetricsHandler?: DeploymentMetricsRouteHandler;
+  deploymentMonthlyActiveDevicesHandler?: DeploymentMonthlyActiveDevicesRouteHandler;
   deploymentRollbackHandler?: DeploymentRollbackRouteHandler;
   deploymentTimeseriesHandler?: DeploymentTimeseriesRouteHandler;
   deploymentUpdateHandler?: DeploymentUpdateRouteHandler;
@@ -1681,6 +1790,7 @@ export interface BuildAppOptions {
   iamRoleBindingUpdateHandler?: IamRoleBindingUpdateRouteHandler;
   iamRoleListHandler?: IamRoleListRouteHandler;
   iamUserProvisionHandler?: IamUserProvisionRouteHandler;
+  iamUserTokenRotateHandler?: IamUserTokenRotateRouteHandler;
   appDeploymentsListHandler?: AppDeploymentsListRouteHandler;
   appReadHandler?: AppReadRouteHandler;
   auditEventWriteHandler?: AuditEventWriteRouteHandler;

@@ -29,9 +29,8 @@ After sign-in you land in your team's workspace:
 | --- | --- |
 | Apps | Create and rename apps, set each app's framework (React Native or Capacitor), and toggle code-signing requirements |
 | Deployments | Staging and Production channels per app; copy deployment keys and SDK URLs |
-| Deployment detail | Release history (including release notes), New release, deployment-level rollback |
-| Release detail | Per-release metrics, status, and lifecycle actions |
-| Metrics | Drill from apps → deployments → deployment metrics |
+| Deployment detail | Adoption over time, release history (including release notes), New release, deployment-level rollback |
+| Release detail | Per-release counters, failure drill-down, status, and lifecycle actions |
 | Members | Invite teammates and manage roles |
 | API tokens | Create and revoke `cm_pat_…` tokens for CI |
 | Status | Confirm this install is running and up to date |
@@ -137,7 +136,7 @@ Do not change the target binary version of a release published with `cmpatch-cap
 
 ## Metrics
 
-Each deployment page opens with adoption over time and in-range totals. Its **Metrics** button leads to the full breakdown for that deployment: update outcomes by failure reason and the active-version distribution. The command palette (⌘K / Ctrl+K) reaches the same pages by app or deployment name. The deployment detail and release pages also surface status (`uploaded`, `processing`, `published`, `failed`, `disabled`) and SDK-reported counters. For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
+Each deployment page opens with adoption over time and in-range totals for the selected range. Open a release for its lifetime counters, failure-reason breakdown, and downloads. Both pages also show status (`uploaded`, `processing`, `published`, `failed`, `disabled`). For CLI equivalents, see [Analytics and metrics](/docs/using-patch/analytics).
 
 ## API tokens
 

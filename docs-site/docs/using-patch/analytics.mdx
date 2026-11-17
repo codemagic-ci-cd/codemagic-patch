@@ -21,7 +21,7 @@ The client posts events to `{apiUrl}/v1/metrics/events`. Metrics failures never 
 
 The web dashboard is your team's control plane in the browser: apps, deployments, release history, New release (command builder, or `.cmpatch` upload for React Native), promote/rollback/rollout actions, members, and API tokens.
 
-Under **Metrics**, drill from apps to deployments for rollups. See [Web dashboard](/docs/using-patch/dashboard) for a full walkthrough. Open it at your API URL after [install](/docs/install) (e.g. `https://updates.example.com/`).
+Open a deployment for adoption over time and in-range totals, then a release for its counters and failure drill-down. See [Web dashboard](/docs/using-patch/dashboard) for a full walkthrough. Open it at your API URL after [install](/docs/install) (e.g. `https://updates.example.com/`).
 
 ## CLI metrics
 
@@ -124,7 +124,21 @@ OTA JS ships minified, so without a map your crash tool only shows a wall of nam
 <SdkTabs>
   <TabItem value="react-native" label="React Native">
 
-You can still attach a map when you publish (`cmpatch release create --sourcemap …`, or `cmpatch release-react --sourcemap-output …`). Patch stores it privately under `_internal`. Apps never download it for OTA, and Patch does not push it to your crash tool for you.
+Have the bundler write a map when you publish (`--sourcemap-output`), then upload that file with your crash tool in the same CI job. Patch does not push maps to Sentry or Datadog for you. A copy attached to the release is stored privately under `_internal`; apps never download it for OTA.
+
+```bash
+cmpatch release-react \
+  --deployment Staging \
+  --platform ios \
+  --sourcemap-output ./build/main.jsbundle.map \
+  --yes
+
+# Separate step: your crash tool's CLI, not cmpatch
+npx @sentry/cli sourcemaps upload ./build/main.jsbundle.map
+# Add whatever release, dist, and auth flags your Sentry setup uses.
+```
+
+For Datadog, use the same map path with `datadog-ci` instead of the Sentry CLI.
 
   </TabItem>
   <TabItem value="capacitor" label="Capacitor">
@@ -134,7 +148,7 @@ You can still attach a map when you publish (`cmpatch release create --sourcemap
   </TabItem>
 </SdkTabs>
 
-In practice: build the map in the same CI job as the release, then run your tracker’s upload step (for example Datadog’s React Native / `datadog-ci` flow). Use a version tag that matches how you label that OTA release in RUM or errors.
+Use a version tag that matches how you label that OTA release in RUM or errors.
 
 ## Example rollout monitoring workflow
 

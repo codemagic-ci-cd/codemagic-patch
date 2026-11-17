@@ -24,6 +24,7 @@ export interface UserAccountRow {
   status: UserAccount["status"];
   oauth_provider: string | null;
   oauth_subject: string | null;
+  owner_team_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -246,6 +247,7 @@ export function mapUserAccountRow(row: UserAccountRow): UserAccount {
     id: asBrand(row.id),
     oauthProvider: row.oauth_provider,
     oauthSubject: row.oauth_subject,
+    ownerTeamId: nullableBrand(row.owner_team_id),
     status: row.status,
     updatedAt: row.updated_at,
   };

@@ -29,6 +29,21 @@ export function requireControlPlanePrincipal(
   return principal;
 }
 
+// For handlers on session-only routes, which need the session id. The auth
+// hook refuses API tokens on those routes, so the throw is unreachable.
+export function requireSessionPrincipal(
+  request: FastifyRequest,
+): Extract<ControlPlanePrincipal, { kind: "user" }> {
+  const principal = requireControlPlanePrincipal(request);
+  if (principal.kind !== "user") {
+    throw new Error(
+      "session principal required; this route must not set allowApiToken",
+    );
+  }
+
+  return principal;
+}
+
 export async function listVisibleTeamsForPrincipal(
   authorizationService: AuthorizationService | undefined,
   principal: ControlPlanePrincipal | undefined,

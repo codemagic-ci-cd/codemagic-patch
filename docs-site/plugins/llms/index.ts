@@ -34,6 +34,7 @@ import {LLMS_SECTIONS, LLMS_START_HERE} from './sections';
 type Options = {title: string; description: string};
 
 const UI_COMPONENT_LINE = /^\s*<[A-Z][A-Za-z0-9]*\s*\/?>\s*$/;
+const MDX_COMMENT = /\{\/\*[\s\S]*?\*\/\}/g;
 
 const AI_ADMONITION_BLOCK =
   /:::info Using these docs with AI\nUse this button to send your AI assistant to the full markdown index\.\n\n:::\n\n?/;
@@ -60,7 +61,10 @@ async function renderTwin(
     true,
   );
 
+  // MDX comments are authoring notes; they never render, so they never ship.
   const lines = cleaned
+    .replace(MDX_COMMENT, '')
+    .trimStart()
     .split('\n')
     .filter((line) => !UI_COMPONENT_LINE.test(line));
   // The title heading is written below; drop the page's own copy of it.
@@ -101,7 +105,7 @@ function renderLlmsTxt(
     '',
     `> ${options.description}`,
     '',
-    'Codemagic Patch is self-hosted over-the-air (OTA) updates for React Native — server, `cmpatch` CLI, and `@codemagic/react-native-patch` SDK.',
+    'Codemagic Patch is self-hosted over-the-air (OTA) updates for React Native (server, `cmpatch` CLI, and `@codemagic/react-native-patch` SDK). Codemagic can also host Patch on request.',
     '',
     '**Where to start**',
     ...LLMS_START_HERE.map(({label, docId}) => `- [${label}](${twinUrl(docId)})`),

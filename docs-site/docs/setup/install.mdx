@@ -17,6 +17,11 @@ To deploy Patch for production, you can either use a server and domain you own, 
 
 For either route, you will need a GitHub, Bitbucket Cloud, or GitLab account for sign-in (the installer walks you through creating its OAuth app).
 
+:::note
+If you would prefer a hosted service, then Codemagic can run the server for you. Email [sales@codemagic.io](mailto:sales@codemagic.io) to discuss your requirements.
+:::
+
+
 ## Installing on a server
 
 To deploy with your own domains you will need:
@@ -65,7 +70,7 @@ When running the wizard, it will:
 3. Ask for DNS. On Cloudflare it can add the records for you.
 4. Walk you through creating the OAuth app, then ask for the administrator email.
 5. Ask whether downloads should go through a CDN. You can skip this.
-6. Build the images, start the stack, and get the HTTPS certificates. The first build takes about 5-10 minutes.
+6. Download the release's server image, start the stack, and get the HTTPS certificates.
 7. Finish the CDN once the server is up.
 
 On a free Cloudflare plan, a name two levels under the domain (`storage.updates.example.com`) needs an extra certificate. [CDN settings](/docs/reference/cdn#free-cloudflare-plans) has the detail.
@@ -106,7 +111,7 @@ When running the wizard, it will:
 3. Create a public bucket and a private bucket, then sign you in to Tigris. Choose **Sign in with Fly.io**.
 4. Walk you through creating the OAuth app, then ask for the administrator email.
 5. Create a Postgres machine on Fly if you chose a new database. The first build takes several minutes.
-6. Build the Patch app on Fly and wait until the server answers. The machines suspend when idle.
+6. Deploy the release's server image on Fly and wait until the server answers. The machines suspend when idle.
 
 When it finishes you'll have:
 

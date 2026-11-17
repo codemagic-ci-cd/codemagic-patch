@@ -41,6 +41,7 @@ The server refuses to boot while `WORKER_SHARED_SECRET` or the CLI OAuth signing
 | `MODE` | `all` | `all` · `api` · `worker`. Self-host Compose hardcodes `MODE=all`; changing `.env.selfhost` alone does not split API/worker |
 | `GITLAB_OAUTH_BASE_URL` | `https://gitlab.com` | GitLab origin; set for self-hosted GitLab |
 | `REGISTRATION_MODE` | `invite_only` | `invite_only` or `open` |
+| `OAUTH_SESSION_MAX_AGE_DAYS` | `90` | The longest a browser or CLI sign-in lasts, in days, before the user signs in with the provider again. It cannot be lower than the refresh token lifetime (30 days): the server refuses to start with a lower value |
 | `STORAGE_ADAPTER` | `s3` (self-host) | `s3` · `gcs` · `memory`. When to leave the bundled store is in [Infrastructure](/docs/setup/infrastructure) |
 | `DELIVERY_ADAPTER` | `base-url` | `base-url`, `cloudflare`, or `cloudfront`. See [Infrastructure](/docs/setup/infrastructure) |
 | `MANIFEST_CACHE_CONTROL` | derived from `DELIVERY_ADAPTER` | Cache-Control for `meta.json` and manifest JSON. `base-url` gets `no-cache, must-revalidate` because its purge is a no-op; `cloudflare` and `cloudfront` get `public, max-age=0, s-maxage=300, must-revalidate`, so clients still revalidate while a failed purge is bounded to five minutes. Set it explicitly only to override. Applied when each object is next written, so a deployment that has not published since the change still serves its old header |

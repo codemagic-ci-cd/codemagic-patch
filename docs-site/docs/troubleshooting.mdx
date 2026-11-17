@@ -201,6 +201,24 @@ Fix:
 
 See [Core concepts. SDK prerequisite](/docs/introduction/core-concepts#prerequisite-a-native-build-with-the-sdk).
 
+### `npx react-native spm add` reports mixed Swift and Objective-C sources
+
+React Native's SwiftPM mode needs SDK 0.7.0 or later, the first version that ships a `Package.swift`. With an older SDK, `npx react-native spm add` stops with:
+
+```text
+error: "@codemagic/react-native-patch" has mixed Swift + Objective-C/C++ sources, which Swift Package Manager cannot compile in a single target
+```
+
+Upgrade the SDK with your package manager, then run `npx react-native spm add` again:
+
+```bash
+yarn add @codemagic/react-native-patch@^0.7.0
+```
+
+`cmpatch wire` does not do this upgrade for you. Until `spm add` succeeds, the app is still a CocoaPods project, and wire leaves an installed SDK 0.5.0 or later as it is.
+
+Do not follow the error's suggestion to set `platforms: { ios: null }` for the SDK in `react-native.config.js`: the iOS app then builds without Patch and never applies an update. See [React Native SwiftPM mode](/docs/setup/native-setup#ios-swiftpm).
+
 ### Wrong binary version targeting
 
 Updates only install when the device's native version matches the release's target binary version.

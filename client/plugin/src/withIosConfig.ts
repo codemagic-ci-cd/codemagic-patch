@@ -4,7 +4,7 @@ import type { CodemagicPatchPlatformConfig } from './types';
 /**
  * Writes the iOS CodemagicPatch configuration into Info.plist. These are the exact
  * keys the native SDK reads via `Bundle.main.object(forInfoDictionaryKey:)`
- * (see `client/ios/CodemagicPatchModule.swift` `config(_:)`), so no native change is
+ * (see `client/ios/CodemagicPatchClient/CodemagicPatchModule.swift` `config(_:)`), so no native change is
  * required — the plugin only supplies the values.
  */
 export function applyIosInfoPlist(

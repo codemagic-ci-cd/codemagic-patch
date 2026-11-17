@@ -92,11 +92,23 @@ For Expo apps, keep your existing AppDelegate superclass, factory, and Metro con
 
 ### iOS
 
-Install the native pod:
+In a CocoaPods project, install the native pod:
 
 ```bash
 cd ios && pod install && cd ..
 ```
+
+#### React Native SwiftPM mode {#ios-swiftpm}
+
+If you converted the app to React Native's Swift Package Manager mode with `npx react-native spm add`, skip `pod install`, and do not run it in the converted project. SwiftPM mode needs React Native 0.88 or later, the New Architecture, and SDK 0.7.0 or later, the first version that ships a `Package.swift`.
+
+After installing or upgrading the SDK, and on every fresh clone or CI checkout before you build, regenerate React Native's Swift packages:
+
+```bash
+npx react-native spm
+```
+
+The `Info.plist` and AppDelegate steps below are the same in both modes. Do not opt the SDK out of iOS autolinking with `platforms: { ios: null }` to get past `spm add`; upgrade the SDK instead. Any other native library without a `Package.swift` also stops `npx react-native spm add`, independent of Patch.
 
 Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, and `CodemagicPatchApiUrl` to `ios/<YourApp>/Info.plist`:
 
@@ -306,6 +318,8 @@ Then regenerate native projects:
 npx expo prebuild
 cd ios && pod install && cd ..
 ```
+
+Expo's experimental Swift Package Manager support (`"experiments": { "swiftPackageManager": true }` in app config) works with SDK 0.7.0 or later and needs no extra Patch configuration; prebuild sets up the Swift packages, so skip `pod install`. It needs `expo` 58.0.17 or later with the React Native version `npx expo install --fix` picks. With npm, install `expo-constants` as a direct dependency.
 
 The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) and wires native bundle selection for you, with the same wiring shown in Option A:
 

@@ -75,6 +75,18 @@ cmpatch-capacitor token create --name ci --expires-in-days 365
 - Supply via `CODEMAGIC_PATCH_TOKEN` or `--token`
 - Revoke with `token revoke` (or from the dashboard) when compromised
 
+An API token can manage apps, deployments, and releases, but it cannot create credentials, grant access, or move an app. These need a browser sign-in (the dashboard, or `login` without `--token`): `token create`, `member add`, `member invite`, `member update`, `member provision`, `member rotate-token`, and `app transfer`. A token can still remove members, invitations, and tokens. The server logs each refused token request with the token's ID, so a leaked token trying these commands shows up in the server log.
+
+Revoking a token ends the access the token itself had. Roles and invitations it granted to other accounts earlier stay until you remove them.
+
+An account created with `cmpatch member provision` is a service account that belongs to the team that created it. An admin of that team replaces its token from a browser sign-in with `cmpatch member rotate-token --email <email>`; the old token stops working at once, so update the CI secret that held it.
+
+### Sessions and signing out everywhere
+
+A browser or CLI sign-in lasts at most 90 days (`OAUTH_SESSION_MAX_AGE_DAYS`), however often it refreshes. A CLI sign-in approved from the dashboard shares the deadline of that dashboard sign-in; signing out of the dashboard does not end it. After the deadline, sign in again.
+
+If a token or device may be compromised, use **Sign out everywhere** on the dashboard's API tokens page. It ends every session on your account, this browser and every CLI included, and deletes all your API tokens. Sign in again, then create new tokens and update your CI secrets.
+
 :::warning
 Treat `cm_pat_…` tokens like production credentials. Scope pipeline access and rotate on schedule.
 :::

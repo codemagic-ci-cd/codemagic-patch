@@ -20,6 +20,17 @@ import { canonicalizeEmail } from "../app/email";
 import type { OAuthProviderIdentity } from "../app/authNAdapter";
 import type { DatabasePool } from "../db";
 import { withTransaction } from "../db";
+import { isHonoredInTeam } from "../app/serviceAccount";
+import {
+  advanceGenerationFromSession,
+  insertApiTokenFromSession,
+  insertCliSessionFromApproval,
+  insertProviderSignInSession,
+  onCurrentGeneration,
+  revokeUserCredentials,
+  type IssuingSession,
+  type RevokedCredentialCounts,
+} from "./credentialGeneration";
 import {
   mapApiTokenRow,
   mapOAuthAccessTokenRow,
@@ -29,7 +40,6 @@ import {
   mapUserAccountRow,
   type ApiTokenRow,
   type OAuthAccessTokenRow,
-  type OAuthSessionRow,
   type RefreshTokenRow,
   type TeamRow,
   type UserAccountRow,
@@ -60,9 +70,10 @@ export interface CreateApiTokenInput {
   displayName: string;
   expiresAt: Date | null;
   id: ApiTokenId;
+  /** The session the request authenticated with; re-checked at insert. */
+  issuingSession: IssuingSession;
   maskedPrefix: string;
   tokenHash: string;
-  userId: UserId;
 }
 
 export interface ResolveOAuthIdentityInput {
@@ -75,19 +86,29 @@ export interface ResolveOAuthIdentityInput {
   initialAdminEmails?: string[];
   newUserId: UserId;
   registrationMode: "invite_only" | "open";
+  /**
+   * The login session to create for the resolved user, in the same
+   * transaction. Skipped for a disabled user.
+   */
+  session?: NewOAuthSessionCredentials;
 }
 
 export type ResolveOAuthIdentityResult =
   | {
       outcome: "found";
+      session?: CreateOAuthSessionResult;
       user: UserAccount;
     }
   | {
       outcome: "linked";
+      /** Credentials the account held before the link, now revoked. */
+      revoked: RevokedCredentialCounts;
+      session?: CreateOAuthSessionResult;
       user: UserAccount;
     }
   | {
       outcome: "created";
+      session?: CreateOAuthSessionResult;
       user: UserAccount;
     }
   | {
@@ -104,7 +125,7 @@ export type ResolveOAuthIdentityResult =
       reason: "unverified_email";
     };
 
-export interface CreateOAuthSessionInput {
+export interface NewOAuthSessionCredentials {
   accessToken: {
     expiresAt: Date;
     id: OAuthAccessTokenId;
@@ -119,8 +140,39 @@ export interface CreateOAuthSessionInput {
   };
   sessionId: OAuthSessionId;
   subject: string;
+}
+
+export interface CreateOAuthSessionInput extends NewOAuthSessionCredentials {
   userId: UserId;
 }
+
+export interface CreateCliOAuthSessionInput {
+  accessToken: NewOAuthSessionCredentials["accessToken"];
+  approvingSession: IssuingSession;
+  now: Date;
+  /** Capped at the approving session's `created_at` plus the maximum age. */
+  refreshToken: NewOAuthSessionCredentials["refreshToken"];
+  sessionId: OAuthSessionId;
+  sessionMaxAgeDays: number;
+}
+
+export type CreateCliOAuthSessionResult =
+  | ({ outcome: "created" } & CreateOAuthSessionResult)
+  | {
+      /** The approving session ended, or reached its maximum age. */
+      outcome: "refused";
+    };
+
+export interface RevokeAllCredentialsInput {
+  callingSession: IssuingSession;
+  revokedAt: Date;
+}
+
+export type RevokeAllCredentialsResult =
+  | ({ outcome: "revoked" } & RevokedCredentialCounts)
+  | {
+      outcome: "session_revoked";
+    };
 
 export interface CreateOAuthSessionResult {
   accessToken: OAuthAccessTokenMetadata;
@@ -179,12 +231,14 @@ export interface RotateOAuthRefreshTokenInput {
     tokenHash: string;
   };
   now: Date;
+  /** Capped at the session's `created_at` plus the maximum age. */
   refreshToken: {
     expiresAt: Date;
     id: RefreshTokenId;
     tokenHash: string;
   };
   refreshTokenHash: string;
+  sessionMaxAgeDays: number;
 }
 
 export type RotateOAuthRefreshTokenResult =
@@ -273,6 +327,10 @@ export type CreateTeamForUserResult =
   | {
       outcome: "account_disabled";
       reason: "user_disabled";
+    }
+  | {
+      /** A service account is honored in its owner team only; a team of its own would be unreachable. */
+      outcome: "forbidden";
     };
 
 export interface GrantTeamOwnerByEmailInput {
@@ -298,10 +356,18 @@ export type GrantTeamOwnerByEmailResult =
   | {
       outcome: "account_disabled";
       reason: "team_disabled" | "user_disabled";
+    }
+  | {
+      /** The grant would give no access; see app/serviceAccount.ts. */
+      outcome: "service_account_other_team";
     };
 
 export interface AuthRepository {
-  createApiToken(input: CreateApiTokenInput): Promise<ApiTokenMetadata>;
+  /** Null when the issuing session is no longer live. */
+  createApiToken(input: CreateApiTokenInput): Promise<ApiTokenMetadata | null>;
+  createCliOAuthSession(
+    input: CreateCliOAuthSessionInput,
+  ): Promise<CreateCliOAuthSessionResult>;
   createMembership(input: CreateMembershipInput): Promise<void>;
   createOAuthSession(
     input: CreateOAuthSessionInput,
@@ -329,6 +395,9 @@ export interface AuthRepository {
     tokenHash: string,
     now: Date,
   ): Promise<ResolveOAuthAccessTokenResult>;
+  revokeAllCredentials(
+    input: RevokeAllCredentialsInput,
+  ): Promise<RevokeAllCredentialsResult>;
   revokeOAuthSessionByRefreshTokenHash(
     input: RevokeOAuthSessionByRefreshTokenHashInput,
   ): Promise<RevokeOAuthSessionByRefreshTokenHashResult>;
@@ -353,6 +422,7 @@ interface TokenWithUserRow extends ApiTokenRow {
   user_id_value: string;
   user_oauth_provider: string | null;
   user_oauth_subject: string | null;
+  user_owner_team_id: string | null;
   user_status: UserAccount["status"];
   user_updated_at: Date;
 }
@@ -370,6 +440,7 @@ interface OAuthAccessTokenWithSessionAndUserRow extends OAuthAccessTokenRow {
   user_id_value: string;
   user_oauth_provider: string | null;
   user_oauth_subject: string | null;
+  user_owner_team_id: string | null;
   user_status: UserAccount["status"];
   user_updated_at: Date;
 }
@@ -387,6 +458,7 @@ interface RefreshTokenWithSessionAndUserRow extends RefreshTokenRow {
   user_id_value: string;
   user_oauth_provider: string | null;
   user_oauth_subject: string | null;
+  user_owner_team_id: string | null;
   user_status: UserAccount["status"];
   user_updated_at: Date;
 }
@@ -431,6 +503,12 @@ export function createPostgresAuthRepository(
           };
         }
 
+        if (!isHonoredInTeam(user, team.id)) {
+          return {
+            outcome: "service_account_other_team",
+          };
+        }
+
         const membershipCreated = await insertMembershipIfMissing(client, {
           createdAt: input.createdAt,
           id: input.membershipId,
@@ -460,31 +538,48 @@ export function createPostgresAuthRepository(
     },
 
     async createApiToken(input) {
-      const result = await pool.query<ApiTokenRow>(
-        `
-          INSERT INTO api_token (
-            id,
-            user_id,
-            display_name,
-            token_hash,
-            masked_prefix,
-            expires_at,
-            created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING *
-        `,
-        [
-          input.id,
-          input.userId,
-          input.displayName,
-          input.tokenHash,
-          input.maskedPrefix,
-          input.expiresAt,
-          input.createdAt,
-        ],
-      );
+      const row = await insertApiTokenFromSession(pool, {
+        ...input,
+        ownerId: input.issuingSession.userId,
+      });
 
-      return mapApiTokenRow(requireRow(result.rows[0], "api_token"));
+      return row ? mapApiTokenRow(row) : null;
+    },
+
+    async createCliOAuthSession(input) {
+      return withTransaction(pool, async (client) => {
+        const sessionRow = await insertCliSessionFromApproval(client, {
+          approvingSession: input.approvingSession,
+          id: input.sessionId,
+          maxAgeDays: input.sessionMaxAgeDays,
+          now: input.now,
+        });
+        if (!sessionRow) {
+          return {
+            outcome: "refused",
+          };
+        }
+
+        const session = mapOAuthSessionRow(sessionRow);
+        const tokens = await insertSessionTokens(client, session, {
+          accessToken: input.accessToken,
+          createdAt: input.now,
+          refreshToken: {
+            ...input.refreshToken,
+            expiresAt: capAtSessionDeadline(
+              input.refreshToken.expiresAt,
+              session,
+              input.sessionMaxAgeDays,
+            ),
+          },
+        });
+
+        return {
+          outcome: "created",
+          session,
+          ...tokens,
+        };
+      });
     },
 
     async createMembership(input) {
@@ -492,81 +587,9 @@ export function createPostgresAuthRepository(
     },
 
     async createOAuthSession(input) {
-      return withTransaction(pool, async (client) => {
-        const sessionResult = await client.query<OAuthSessionRow>(
-          `
-            INSERT INTO oauth_session (
-              id,
-              user_id,
-              provider,
-              subject,
-              created_at
-            ) VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
-          `,
-          [
-            input.sessionId,
-            input.userId,
-            input.provider,
-            input.subject,
-            input.createdAt,
-          ],
-        );
-        const accessTokenResult = await client.query<OAuthAccessTokenRow>(
-          `
-            INSERT INTO oauth_access_token (
-              id,
-              session_id,
-              user_id,
-              token_hash,
-              expires_at,
-              created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING *
-          `,
-          [
-            input.accessToken.id,
-            input.sessionId,
-            input.userId,
-            input.accessToken.tokenHash,
-            input.accessToken.expiresAt,
-            input.createdAt,
-          ],
-        );
-        const refreshTokenResult = await client.query<RefreshTokenRow>(
-          `
-            INSERT INTO refresh_token (
-              id,
-              session_id,
-              user_id,
-              token_hash,
-              expires_at,
-              created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING *
-          `,
-          [
-            input.refreshToken.id,
-            input.sessionId,
-            input.userId,
-            input.refreshToken.tokenHash,
-            input.refreshToken.expiresAt,
-            input.createdAt,
-          ],
-        );
-
-        return {
-          accessToken: mapOAuthAccessTokenRow(
-            requireRow(accessTokenResult.rows[0], "oauth_access_token"),
-          ),
-          refreshToken: mapRefreshTokenRow(
-            requireRow(refreshTokenResult.rows[0], "refresh_token"),
-          ),
-          session: mapOAuthSessionRow(
-            requireRow(sessionResult.rows[0], "oauth_session"),
-          ),
-        };
-      });
+      return withTransaction(pool, (client) =>
+        createProviderSignInSession(client, input),
+      );
     },
 
     async createTeamForUser(input) {
@@ -583,6 +606,12 @@ export function createPostgresAuthRepository(
           return {
             outcome: "account_disabled",
             reason: "user_disabled",
+          };
+        }
+
+        if (user.ownerTeamId !== null) {
+          return {
+            outcome: "forbidden",
           };
         }
 
@@ -715,11 +744,13 @@ export function createPostgresAuthRepository(
             u.status AS user_status,
             u.oauth_provider AS user_oauth_provider,
             u.oauth_subject AS user_oauth_subject,
+            u.owner_team_id AS user_owner_team_id,
             u.created_at AS user_created_at,
             u.updated_at AS user_updated_at
           FROM api_token t
           JOIN user_account u ON u.id = t.user_id
           WHERE t.token_hash = $1
+            AND ${onCurrentGeneration("t")}
         `,
         [tokenHash],
       );
@@ -739,6 +770,7 @@ export function createPostgresAuthRepository(
         id: row.user_id_value,
         oauth_provider: row.user_oauth_provider,
         oauth_subject: row.user_oauth_subject,
+        owner_team_id: row.user_owner_team_id,
         status: row.user_status,
         updated_at: row.user_updated_at,
       });
@@ -773,6 +805,17 @@ export function createPostgresAuthRepository(
           };
         }
 
+        const withSession = async (user: UserAccount) => ({
+          session:
+            input.session && user.status === "active"
+              ? await createProviderSignInSession(client, {
+                  ...input.session,
+                  userId: user.id,
+                })
+              : undefined,
+          user,
+        });
+
         const identityUser = await getUserByOAuthIdentity(
           client,
           input.identity.provider,
@@ -781,7 +824,7 @@ export function createPostgresAuthRepository(
         if (identityUser) {
           return {
             outcome: "found",
-            user: identityUser,
+            ...(await withSession(identityUser)),
           };
         }
 
@@ -799,6 +842,10 @@ export function createPostgresAuthRepository(
             };
           }
 
+          // The account existed before anyone signed in as it (provisioned,
+          // or created by an admin), so whoever held its credentials until
+          // now is not necessarily this person. The link starts a new
+          // generation and ends everything issued before it.
           const linked = await linkUserOAuthIdentity(client, {
             displayName: input.identity.displayName,
             provider: input.identity.provider,
@@ -806,10 +853,16 @@ export function createPostgresAuthRepository(
             updatedAt: input.createdAt,
             userId: emailUser.id,
           });
+          const revoked = await revokeUserCredentials(
+            client,
+            linked.id,
+            input.createdAt,
+          );
 
           return {
             outcome: "linked",
-            user: linked,
+            revoked,
+            ...(await withSession(linked)),
           };
         }
 
@@ -844,7 +897,7 @@ export function createPostgresAuthRepository(
 
         return {
           outcome: "created",
-          user: created,
+          ...(await withSession(created)),
         };
       });
     },
@@ -866,12 +919,14 @@ export function createPostgresAuthRepository(
             u.status AS user_status,
             u.oauth_provider AS user_oauth_provider,
             u.oauth_subject AS user_oauth_subject,
+            u.owner_team_id AS user_owner_team_id,
             u.created_at AS user_created_at,
             u.updated_at AS user_updated_at
           FROM oauth_access_token t
           JOIN oauth_session s ON s.id = t.session_id
           JOIN user_account u ON u.id = t.user_id
           WHERE t.token_hash = $1
+            AND ${onCurrentGeneration("s")}
         `,
         [tokenHash],
       );
@@ -899,6 +954,7 @@ export function createPostgresAuthRepository(
         id: row.user_id_value,
         oauth_provider: row.user_oauth_provider,
         oauth_subject: row.user_oauth_subject,
+        owner_team_id: row.user_owner_team_id,
         status: row.user_status,
         updated_at: row.user_updated_at,
       });
@@ -936,6 +992,25 @@ export function createPostgresAuthRepository(
         token,
         user,
       };
+    },
+
+    async revokeAllCredentials(input) {
+      return withTransaction(pool, async (client) => {
+        if (!(await advanceGenerationFromSession(client, input.callingSession))) {
+          return {
+            outcome: "session_revoked",
+          };
+        }
+
+        return {
+          outcome: "revoked",
+          ...(await revokeUserCredentials(
+            client,
+            input.callingSession.userId,
+            input.revokedAt,
+          )),
+        };
+      });
     },
 
     async revokeOAuthSessionByRefreshTokenHash(input) {
@@ -993,12 +1068,14 @@ export function createPostgresAuthRepository(
               u.status AS user_status,
               u.oauth_provider AS user_oauth_provider,
               u.oauth_subject AS user_oauth_subject,
+              u.owner_team_id AS user_owner_team_id,
               u.created_at AS user_created_at,
               u.updated_at AS user_updated_at
             FROM refresh_token rt
             JOIN oauth_session s ON s.id = rt.session_id
             JOIN user_account u ON u.id = rt.user_id
             WHERE rt.token_hash = $1
+              AND ${onCurrentGeneration("s")}
             FOR UPDATE OF rt
           `,
           [input.refreshTokenHash],
@@ -1027,6 +1104,7 @@ export function createPostgresAuthRepository(
           id: row.user_id_value,
           oauth_provider: row.user_oauth_provider,
           oauth_subject: row.user_oauth_subject,
+          owner_team_id: row.user_owner_team_id,
           status: row.user_status,
           updated_at: row.user_updated_at,
         });
@@ -1047,7 +1125,10 @@ export function createPostgresAuthRepository(
           };
         }
 
-        if (token.expiresAt <= input.now) {
+        if (
+          token.expiresAt <= input.now ||
+          sessionDeadline(session, input.sessionMaxAgeDays) <= input.now
+        ) {
           return {
             outcome: "expired",
           };
@@ -1119,7 +1200,11 @@ export function createPostgresAuthRepository(
             session.id,
             user.id,
             input.refreshToken.tokenHash,
-            input.refreshToken.expiresAt,
+            capAtSessionDeadline(
+              input.refreshToken.expiresAt,
+              session,
+              input.sessionMaxAgeDays,
+            ),
             input.now,
           ],
         );
@@ -1268,6 +1353,8 @@ async function linkUserOAuthIdentity(
         display_name = COALESCE(display_name, $2),
         oauth_provider = $3,
         oauth_subject = $4,
+        owner_team_id = NULL,
+        credential_generation = credential_generation + 1,
         updated_at = $5
       WHERE id = $1
         AND oauth_provider IS NULL
@@ -1419,20 +1506,19 @@ async function insertTeamRoleBindingIfMissing(
   return result.rows[0] !== undefined;
 }
 
+/**
+ * Ends one session: logout, and refresh-token reuse. Rows go in the order
+ * `refresh_token`, `oauth_access_token`, `oauth_session`, the same order
+ * revoke-all uses for the whole account (`revokeUserCredentials`), so the two
+ * wait for each other instead of deadlocking. Reuse in particular arrives
+ * holding an already-revoked refresh token, which revoke-all skips, so the
+ * shared order is the only thing keeping them from meeting in a cycle.
+ */
 async function revokeOAuthSessionFamily(
   pool: Queryable,
   sessionId: OAuthSessionId | string,
   revokedAt: Date,
 ): Promise<void> {
-  await pool.query(
-    `
-      UPDATE oauth_session
-      SET revoked_at = $2
-      WHERE id = $1
-        AND revoked_at IS NULL
-    `,
-    [sessionId, revokedAt],
-  );
   await pool.query(
     `
       UPDATE refresh_token
@@ -1451,6 +1537,113 @@ async function revokeOAuthSessionFamily(
     `,
     [sessionId, revokedAt],
   );
+  await pool.query(
+    `
+      UPDATE oauth_session
+      SET revoked_at = $2
+      WHERE id = $1
+        AND revoked_at IS NULL
+    `,
+    [sessionId, revokedAt],
+  );
+}
+
+async function createProviderSignInSession(
+  client: Queryable,
+  input: CreateOAuthSessionInput,
+): Promise<CreateOAuthSessionResult> {
+  const session = mapOAuthSessionRow(
+    requireRow(
+      (await insertProviderSignInSession(client, {
+        createdAt: input.createdAt,
+        id: input.sessionId,
+        provider: input.provider,
+        subject: input.subject,
+        userId: input.userId,
+      })) ?? undefined,
+      "oauth_session",
+    ),
+  );
+
+  return {
+    session,
+    ...(await insertSessionTokens(client, session, input)),
+  };
+}
+
+async function insertSessionTokens(
+  client: Queryable,
+  session: OAuthSession,
+  input: Pick<
+    NewOAuthSessionCredentials,
+    "accessToken" | "createdAt" | "refreshToken"
+  >,
+): Promise<Omit<CreateOAuthSessionResult, "session">> {
+  const accessTokenResult = await client.query<OAuthAccessTokenRow>(
+    `
+      INSERT INTO oauth_access_token (
+        id,
+        session_id,
+        user_id,
+        token_hash,
+        expires_at,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `,
+    [
+      input.accessToken.id,
+      session.id,
+      session.userId,
+      input.accessToken.tokenHash,
+      input.accessToken.expiresAt,
+      input.createdAt,
+    ],
+  );
+  const refreshTokenResult = await client.query<RefreshTokenRow>(
+    `
+      INSERT INTO refresh_token (
+        id,
+        session_id,
+        user_id,
+        token_hash,
+        expires_at,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `,
+    [
+      input.refreshToken.id,
+      session.id,
+      session.userId,
+      input.refreshToken.tokenHash,
+      input.refreshToken.expiresAt,
+      input.createdAt,
+    ],
+  );
+
+  return {
+    accessToken: mapOAuthAccessTokenRow(
+      requireRow(accessTokenResult.rows[0], "oauth_access_token"),
+    ),
+    refreshToken: mapRefreshTokenRow(
+      requireRow(refreshTokenResult.rows[0], "refresh_token"),
+    ),
+  };
+}
+
+/** A session cannot be refreshed past its sign-in time plus the maximum age. */
+function sessionDeadline(session: OAuthSession, maxAgeDays: number): Date {
+  return new Date(session.createdAt.getTime() + maxAgeDays * 86_400_000);
+}
+
+function capAtSessionDeadline(
+  expiresAt: Date,
+  session: OAuthSession,
+  maxAgeDays: number,
+): Date {
+  const deadline = sessionDeadline(session, maxAgeDays);
+  return expiresAt < deadline ? expiresAt : deadline;
 }
 
 function requireRow<T>(row: T | undefined, tableName: string): T {

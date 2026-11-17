@@ -1,8 +1,8 @@
 // Rollout percentage bar (release rows). Visual contract: the `.rollout`
 // markup — track + fill (solid blue, solid green at 100%) + the mono numeric
 // label, ported to utility literals. The literals are exported because
-// MetricsPage, ReleaseDetailPage and RolloutModal render bespoke track/fill
-// geometry (custom height, slider echo) that a fixed component can't carry.
+// ReleaseDetailPage and RolloutModal render bespoke track/fill geometry
+// (custom height, slider echo) that a fixed component can't carry.
 // A11y: the track is a `role="progressbar"` carrying aria-valuenow; the
 // visible `%` label is aria-hidden so the value is announced exactly once.
 

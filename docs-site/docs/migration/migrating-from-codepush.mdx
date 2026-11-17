@@ -1,9 +1,10 @@
 ---
 title: Migrating from CodePush
 description: >-
-  Move from a CodePush-compatible fork or hosted successor to self-hosted Patch.
+  Move from a CodePush-compatible fork or hosted successor to Codemagic Patch.
 llmsDescription: >-
   CodePush forks to Patch: SDK swap, deployment keys, server URL, CLI mapping.
+  Self-host by default; Codemagic can host.
 sidebar_custom_props:
   sdk: react-native
 ---
@@ -13,7 +14,15 @@ import TabItem from '@theme/TabItem';
 
 # Migrating from CodePush
 
-This guide covers moving from any CodePush-compatible client and server (community forks, hosted successors, or a self-hosted CodePush-compatible API) to self-hosted Codemagic Patch. The wire protocol and package names differ by fork; the apps / deployments / `sync()` mental model usually transfers. For trade-offs, see [How Patch compares](/docs/introduction/comparison#vs-codepush-forks).
+Patch keeps the familiar apps / deployments / `sync()` model of CodePush, but adds extra capabilities, including:
+
+- Fingerprinting that ensures releases are compatible with the native binary
+- A dashboard for release management and adoption metrics
+- Update checks that go to the CDN instead of the server
+
+Not all CodePush forks are the same, but the steps below map the usual concepts and walk the cutover. For the full trade-off table, see [How Patch compares](/docs/introduction/comparison#vs-codepush-forks).
+
+Patch is designed to be simple to self-host, but if you would prefer us to host it then email [sales@codemagic.io](mailto:sales@codemagic.io).
 
 <SdkTabs>
   <TabItem value="react-native" label="React Native">
@@ -39,7 +48,7 @@ The Patch SDK ships in the native binary. Plan a store release (or internal dist
 
 | CodePush fork (typical) | Codemagic Patch |
 | --- | --- |
-| Hosted or self-hosted CodePush-compatible server | [Self-hosted](/docs/install) Patch stack on your domains |
+| Hosted or self-hosted CodePush-compatible server | Your Patch stack ([self-host](/docs/install) or [Codemagic-hosted](/docs/introduction/pricing#hosted-by-codemagic)) |
 | App access key / service token | OAuth sign-in (CLI/dashboard) + `cm_pat_…` API tokens (CI/automation) |
 | Deployment key in native config | `CodemagicPatchDeploymentKey` ([same idea](/docs/setup/native-setup#create-apps-and-deployments)) |
 | `Staging` / `Production` deployments | Same channel names by default |
@@ -55,7 +64,7 @@ Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, etc.) and `mandatoryInstallMode` 
 
 | CodePush fork (typical) | Codemagic Patch (Capacitor) |
 | --- | --- |
-| Hosted or self-hosted CodePush-compatible server | [Self-hosted](/docs/install) Patch stack on your domains |
+| Hosted or self-hosted CodePush-compatible server | Your Patch stack ([self-host](/docs/install) or [Codemagic-hosted](/docs/introduction/pricing#hosted-by-codemagic)) |
 | App access key / service token | GitHub OAuth (dashboard) + `cm_pat_…` API tokens (CLI/CI) |
 | Deployment key in native config | `deploymentKey` in `capacitor.config.ts` (`plugins.CodemagicPatch.{ios,android}`) |
 | `Staging` / `Production` deployments | Same channel names by default |
@@ -72,7 +81,7 @@ Install modes (`ON_NEXT_RESTART`, `IMMEDIATE`, `ON_NEXT_RESUME`, `ON_NEXT_SUSPEN
 
 ## 1. Stand up Patch
 
-Follow [Install](/docs/install) (or the [Local quickstart](/docs/local-quickstart) to try the stack locally first). You need:
+Follow [Install](/docs/install) (or the [Local quickstart](/docs/local-quickstart) to try the stack locally first). If Codemagic hosts your instance, skip Install and use the URLs you were given. You need:
 
 <SdkTabs>
   <TabItem value="react-native" label="React Native">
@@ -131,7 +140,7 @@ Remove your CodePush client package and native wiring (package name varies by fo
 yarn remove @code-push-next/react-native-code-push   # or your fork's package
 ```
 
-While CodePush is still referenced from the native hosts, the wiring `cmpatch init` runs reports it as a conflict and leaves the native and JavaScript steps for later; once it is gone, run `cmpatch wire` to install the SDK, run `pod install`, and apply the native changes described in [Native setup](/docs/setup/native-setup).
+While CodePush is still referenced from the native hosts, the wiring `cmpatch init` runs reports it as a conflict and leaves the native and JavaScript steps for later; once it is gone, run `cmpatch wire` to install the SDK, run `pod install` (CocoaPods projects; in [React Native SwiftPM mode](/docs/setup/native-setup#ios-swiftpm), `npx react-native spm` instead), and apply the native changes described in [Native setup](/docs/setup/native-setup).
 
 Replace CodePush calls in JS (example uses `@code-push-next`; adjust the import for your fork):
 

@@ -7,9 +7,8 @@ toc_max_heading_level: 2
 
 # React Native SDK release notes
 
-Release notes for `@codemagic/react-native-patch`. The server version each SDK
-version requires, and the notes for the other surfaces, are on the
-[Release Notes](/docs/releases) page.
+Release notes for `@codemagic/react-native-patch`. The other surfaces'
+releases are on the [Release Notes](/docs/releases) page.
 
 ```bash
 npm install @codemagic/react-native-patch@latest
@@ -17,6 +16,37 @@ npm install @codemagic/react-native-patch@latest
 
 Reference: [SDK reference](/docs/reference/sdk-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=react-native-patch)
+
+## 0.7.0 {#v0-7-0}
+
+*17th November 2026*
+
+### React Native SwiftPM mode
+
+The package ships a `Package.swift`, so an app converted with
+`npx react-native spm add` can link the SDK. Before, `spm add` stopped on the
+SDK with a mixed Swift and Objective-C sources error.
+
+- **Requirements:** React Native 0.88 or later and the New Architecture.
+  Expo's experimental Swift Package Manager support needs `expo` 58.0.17 or
+  later.
+- **Regenerate the packages:** Run `npx react-native spm` after installing or
+  upgrading the SDK, and on every fresh clone before a build.
+- **CocoaPods:** Apps on React Native 0.73 or later build as before.
+
+[`cmpatch wire`](/docs/releases/cli#v0-10-0) handles both modes. See
+[React Native SwiftPM mode](/docs/setup/native-setup#ios-swiftpm).
+
+### Fixes
+
+- **Android restart crash on Expo SDK 58:** Restarting the app to apply an
+  update could create the new React instance before the old one had shut
+  down. On Expo SDK 58 that left native modules attached to the old runtime,
+  and the app crashed with a missing `ExpoApplication` error. The SDK now
+  waits for the old instance to be destroyed before it recreates the
+  Activity.
+
+See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.7.0).
 
 ## 0.6.0 {#v0-6-0}
 

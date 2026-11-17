@@ -64,6 +64,8 @@ yarn add @codemagic/react-native-patch
 cd ios && pod install
 ```
 
+`pod install` is the CocoaPods step. In React Native's SwiftPM mode, run `npx react-native spm` instead; see [React Native SwiftPM mode](https://patch.codemagic.io/docs/setup/native-setup#ios-swiftpm).
+
 Also remove CodePush-specific build wiring that has no Patch equivalent:
 
 - Android: delete the

@@ -1,5 +1,6 @@
 package io.codemagic.patch
 
+import android.app.Activity
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -14,6 +15,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import okhttp3.Call
@@ -272,9 +274,9 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
         return@runOnUiQueueThread
       }
 
-      // Legacy/bridge or hybrid host (RN <= 0.81, both architectures). The host
-      // rebuilds its ReactHost from `ReactNativeHost.getJSBundleFile()` once the
-      // cached instances are dropped, so an in-process activity recreate suffices.
+      // Legacy/bridge or hybrid host. Apps may keep this integration after an
+      // RN upgrade. Its getter rebuilds the host from getJSBundleFile() once
+      // the previous runtime is destroyed and the cached host is dropped.
       if (!legacyHost.hasInstance() && reactHost == null) {
         promise.reject("INTEGRITY_ERROR", "Host application does not expose a ReactHost")
         return@runOnUiQueueThread
@@ -294,20 +296,17 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
 
       val activity = reactContext.currentActivity
       if (activity != null) {
-        // Recreate the foreground activity so a fresh React instance is
-        // built against the new disk state. Two caches must be dropped
-        // independently:
-        //   • DefaultReactHost.reactHost (new architecture singleton) is
-        //     reset via reflection so the next `getDefaultReactHost()` call
-        //     builds a fresh ReactHost from `ReactNativeHost.getJSBundleFile()`.
-        //   • ReactNativeHost.reactInstanceManager (legacy/paper architecture)
-        //     is dropped via `host.clear()` — `ReactInstanceManager` captures
-        //     its `JSBundleLoader` once at construction, so the next
-        //     `reactInstanceManager` access must build a fresh one. Apps
-        //     that ship both surfaces (e.g. `DefaultReactNativeHost` that
-        //     overrides `getReactHost()` and falls back to ReactInstanceManager
-        //     under `newArchEnabled=false`) need both resets so neither
-        //     stale cache wins on `activity.recreate()`.
+        // Recreate against the new disk state, including embedded fallback.
+        // The active context determines which owner must release its runtime;
+        // exposing a ReactNativeHost does not mean its legacy bridge is active.
+        if (reactContext.isBridgeless && reactHost != null) {
+          // Activity destruction only sends onHostDestroy(activity); it does not
+          // invalidate the ReactInstance or its native modules. Wait for the
+          // owning host to finish teardown before another host can be created.
+          promise.resolve(null)
+          recreateAfterReactHostDestroy(reactHost, activity)
+          return@runOnUiQueueThread
+        }
         resetDefaultReactHostSingleton()
         if (legacyHost.hasInstance()) {
           legacyHost.clear()
@@ -329,6 +328,38 @@ class CodemagicPatchModule(private val reactContext: ReactApplicationContext) :
         legacyHost.clear()
       }
       promise.resolve(null)
+    }
+  }
+
+  private fun recreateAfterReactHostDestroy(reactHost: ReactHost, activity: Activity) {
+    try {
+      val destruction = reactHost.destroy("CodemagicPatch reload", null)
+      // TaskInterface on supported older RN versions has no continuation API.
+      // Never wait on the UI or SDK storage queue: teardown needs both alive.
+      Thread({
+        try {
+          destruction.waitForCompletion()
+          if (destruction.isCancelled() || destruction.isFaulted()) {
+            Log.w(TAG, "reloadBundle: ReactHost teardown failed", destruction.getError())
+            return@Thread
+          }
+          UiThreadUtil.runOnUiThread {
+            resetDefaultReactHostSingleton()
+            // A host activity may have been closed while teardown was running.
+            // Its next launch will obtain a fresh host from the cleared cache.
+            if (!activity.isFinishing && !activity.isDestroyed) {
+              activity.recreate()
+            }
+          }
+        } catch (e: InterruptedException) {
+          Thread.currentThread().interrupt()
+          Log.w(TAG, "reloadBundle: ReactHost teardown interrupted", e)
+        } catch (e: Exception) {
+          Log.w(TAG, "reloadBundle: ReactHost teardown failed", e)
+        }
+      }, "CodemagicPatchReload").apply { isDaemon = true }.start()
+    } catch (e: Exception) {
+      Log.w(TAG, "reloadBundle: could not destroy ReactHost", e)
     }
   }
 

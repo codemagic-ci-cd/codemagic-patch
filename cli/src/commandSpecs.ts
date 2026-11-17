@@ -41,6 +41,7 @@ import {
   parseMemberList,
   parseMemberProvision,
   parseMemberRemove,
+  parseMemberRotateToken,
   parseMemberUpdate,
   parseRawArgvCommand,
   parseReleaseCreate,
@@ -112,6 +113,7 @@ import {
   executeMemberList,
   executeMemberProvision,
   executeMemberRemove,
+  executeMemberRotateToken,
   executeMemberUpdate,
 } from "./commands/member";
 import { executeReleaseCreate } from "./commands/releaseCreate";
@@ -732,7 +734,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               { flag: "--dry-run", summary: "Plan and preview only; change nothing" },
               { flag: "--diff", summary: "Show the file diffs the plan would apply" },
               { flag: "--skip-js", summary: "Leave the JavaScript root alone (custom bootstrap)" },
-              { flag: "--pod-install", summary: "Run pod install after the iOS changes" },
+              { flag: "--pod-install", summary: "Run pod install after the iOS changes (CocoaPods projects)" },
               { flag: "--no-pod-install", summary: "Do not run pod install, and do not ask" },
               {
                 flag: "--replace-destination",
@@ -853,6 +855,15 @@ const commandSpecs: RunnableCommandSpec[] = [
                 summary: "Install curl on the server without asking",
               },
               {
+                flag: "--image <ref>",
+                summary: "Run this server image instead of the latest release's published one",
+              },
+              {
+                flag: "--build-from-source",
+                summary:
+                  "Build the server image on the server instead of pulling it (needs about 2 GB of memory and 20 minutes)",
+              },
+              {
                 flag: "--resume",
                 summary: "Continue an install that was interrupted",
               },
@@ -877,7 +888,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               {
                 flag: "--no-telemetry",
                 summary:
-                  "Do not send the daily anonymous usage report (aggregate counts only); writes SERVER_TELEMETRY=false on a first install, with --ngrok or --fly too, and with --repair",
+                  "Do not send the daily anonymous usage report (aggregate counts only); writes SERVER_TELEMETRY=false on a first install, with --ngrok or --fly too, and with --repair. Also skips the optional \"How did you hear about us?\" question after a first install",
               },
               flagHelp.sshKey,
               flagHelp.nonInteractive,
@@ -897,6 +908,8 @@ const commandSpecs: RunnableCommandSpec[] = [
               { flag: "--external-database", summary: "With --register: Patch uses a database cmpatch did not create" },
               { flag: "--install-flyctl", summary: "Install flyctl on this machine without asking (needed by a scripted run when it is missing)" },
               { flag: "--install-tigris", summary: "Install the Tigris CLI on this machine without asking (needed by a scripted run when it is missing)" },
+              { flag: "--image <ref>", summary: "With --fly: deploy this server image instead of the newest release's published one" },
+              { flag: "--build-from-source", summary: "With --fly: build the newest release on Fly's remote builder instead of deploying its published image" },
             ],
           },
           {
@@ -1007,7 +1020,7 @@ const commandSpecs: RunnableCommandSpec[] = [
       },
       {
         description:
-          "Upgrade the server to the latest release. Updates the server's copy of the source first (fast-forward only), then rebuilds and restarts. On a Fly install recorded on this machine it snapshots the database when cmpatch created it, writes a ROLLBACK.md under codemagic-patch-backups/ and deploys the release; --tag and --redeploy are Fly-only, and --image, --local-image, --skip-smoke, --i-have-a-backup and --ssh-key do not apply there.",
+          "Upgrade the server to the latest release. Shows the plan and asks before it changes anything (--yes skips the question; a run that cannot ask needs it). Moves the server's copy of the source to the newest server release tag (refusing a move backwards, and a database that already has migrations the release does not know), backs up, then pulls that release's published image and restarts; a failure before the restart puts the source and image settings back. An install still on the default branch (every install from before published images) is moved onto the release tag and its published image the same way, and refused when the branch is newer than the release; --build-from-source keeps fast-forwarding and rebuilding it instead. On a Fly install recorded on this machine it snapshots the database when cmpatch created it, writes a ROLLBACK.md under codemagic-patch-backups/ and deploys the release; --tag and --redeploy are Fly-only, and --local-image, --skip-smoke, --skip-schema-check, --i-have-a-backup and --ssh-key do not apply there.",
         examples: [
           "cmpatch selfhost upgrade ubuntu@203.0.113.7",
           "cmpatch selfhost upgrade --tag codemagic-patch-server-v0.8.0",
@@ -1025,7 +1038,11 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               {
                 flag: "--image <ref>",
-                summary: "Run a prebuilt server image instead of rebuilding",
+                summary: "Run this server image instead of the release's published one",
+              },
+              {
+                flag: "--build-from-source",
+                summary: "Build the server image on the server from the release's source instead of pulling it",
               },
               {
                 flag: "--local-image",
@@ -1036,6 +1053,16 @@ const commandSpecs: RunnableCommandSpec[] = [
                 summary: "Skip the automatic pre-upgrade backup",
               },
               { flag: "--skip-smoke", summary: "Skip the post-upgrade check" },
+              {
+                flag: "--skip-schema-check",
+                summary:
+                  "Upgrade without the target image's check of the server's database for migrations it does not know (unsafe; for a database the check cannot read, or an image from before the check)",
+              },
+              {
+                flag: "--yes",
+                summary:
+                  "Skip the confirmation before the upgrade changes anything; required when the run cannot ask",
+              },
               flagHelp.sshKey,
               flagHelp.nonInteractive,
             ],
@@ -1970,7 +1997,7 @@ const commandSpecs: RunnableCommandSpec[] = [
     help: [
       {
         description:
-          "Provision a teammate account and personal access token, then add them to a team. Prints a one-time token to hand off (token-mode self-host).",
+          "Provision an account for CI or another non-interactive user, with a personal access token, and add it to a team. Prints a one-time token to hand off. Needs a browser login (not --token).",
         flags: [
           {
             flags: [
@@ -1989,7 +2016,7 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
               {
                 flag: "--expires-in-days <days>",
-                summary: "Token validity (default: 90)",
+                summary: "Token validity (default: no expiry)",
               },
               ...teamSelectorFlagHelp,
               ...serverFlagHelp,
@@ -2002,6 +2029,41 @@ const commandSpecs: RunnableCommandSpec[] = [
     ],
     parse: parseMemberProvision,
     routes: [{ path: ["member", "provision"] }],
+  }),
+  commandSpec({
+    commandName: "member rotate-token",
+    defaults: { prompt: ["email"], serverUrl: true, team: "member" },
+    execute: executeMemberRotateToken,
+    kind: "member-rotate-token",
+    help: [
+      {
+        description:
+          "Replace the token of a service account this team provisioned (confirms unless --yes). Its current token stops working; prints the new one-time token to hand off. Needs a browser login (not --token).",
+        flags: [
+          {
+            flags: [
+              { flag: "--email <email>", summary: "Service account email" },
+              {
+                flag: "--token-display-name <name>",
+                summary: "Display name for the new token",
+              },
+              {
+                flag: "--expires-in-days <days>",
+                summary: "Token validity (default: no expiry)",
+              },
+              ...teamSelectorFlagHelp,
+              flagHelp.yes,
+              flagHelp.nonInteractive,
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "auth",
+        usage: "cmpatch member rotate-token --email <email> [flags]",
+      }
+    ],
+    parse: parseMemberRotateToken,
+    routes: [{ path: ["member", "rotate-token"] }],
   }),
   commandSpec({
     commandName: "member invite-list",
@@ -2101,7 +2163,7 @@ const commandSpecs: RunnableCommandSpec[] = [
         result,
         "role_bindings",
         "No members found. Add one with `cmpatch member add --email <email>`.",
-        ["ID", "USER", "EMAIL", "ROLE"],
+        ["ID", "USER", "EMAIL", "ROLE", "SERVICE ACCOUNT"],
         (binding) => {
           const user = readRecord(binding, "user");
           const role = readRecord(binding, "role");
@@ -2110,6 +2172,7 @@ const commandSpecs: RunnableCommandSpec[] = [
             readCell(user, "id", ""),
             readCell(user, "email", ""),
             readCell(role, "key", ""),
+            typeof user.owner_team_id === "string" ? "yes" : "",
           ];
         },
       ),
@@ -2896,7 +2959,8 @@ const commandSpecs: RunnableCommandSpec[] = [
     kind: "token-create",
     help: [
       {
-        description: "Create a personal access token.",
+        description:
+          "Create a personal access token. Needs a browser login (not --token).",
         flags: [
           {
             flags: [

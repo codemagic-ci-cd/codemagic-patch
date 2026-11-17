@@ -30,7 +30,10 @@ import {
   binaryVersionFilterValue,
   type BinaryVersionFilter,
 } from "../../model/binaryVersionFilter";
-import { isTerminalJobStatus } from "../../model/release";
+import {
+  isTerminalJobStatus,
+  releaseStatusNeedsHistoryPoll,
+} from "../../model/release";
 import {
   authenticatedMultipartRequest,
   authenticatedRequest,
@@ -56,8 +59,13 @@ import {
 
 /** Server default page size (`limit` accepts 1–100). */
 export const RELEASE_LIST_PAGE_SIZE = 50;
-/** Job-panel poll cadence (a few seconds). */
+/** Job-panel / history-table poll cadence (a few seconds). */
 export const RELEASE_POLL_INTERVAL_MS = 3_000;
+/**
+ * Only the newest few history rows decide whether the list keeps polling —
+ * older releases are unlikely to leave `uploaded` / `processing`.
+ */
+export const RELEASE_HISTORY_POLL_HEAD = 6;
 
 export interface ReleaseListParams {
   /** `binaryVersionFilterValue` of the filter, or null for every release. */
@@ -86,6 +94,12 @@ export interface UseReleasesOptions {
   includeMetrics?: boolean;
   /** Only releases whose explicit or resolved targets match (default: all). */
   binaryVersion?: BinaryVersionFilter | null;
+  /**
+   * Auto-poll (~3s) while any of the newest
+   * {@link RELEASE_HISTORY_POLL_HEAD} rows is still `uploaded` /
+   * `processing` (deployment history waiting for Published).
+   */
+  poll?: boolean;
 }
 
 /**
@@ -104,6 +118,7 @@ export function useReleases(
     limit = RELEASE_LIST_PAGE_SIZE,
     includeMetrics = true,
     binaryVersion = null,
+    poll = false,
   }: UseReleasesOptions = {},
 ) {
   return useInfiniteQuery({
@@ -128,7 +143,44 @@ export function useReleases(
       }).then(fromReleasesListWireResponse),
     initialPageParam: 0,
     getNextPageParam: nextOffset,
+    refetchInterval: poll
+      ? (query) => {
+          // Stop on error so a persistent 403/5xx does not bypass the
+          // queryClient retry budget; Retry restarts the fetch.
+          if (query.state.error != null) {
+            return false;
+          }
+          const pages = query.state.data?.pages;
+          if (pages === undefined) {
+            return RELEASE_POLL_INTERVAL_MS;
+          }
+          return releaseHistoryNeedsPoll(pages)
+            ? RELEASE_POLL_INTERVAL_MS
+            : false;
+        }
+      : false,
   });
+}
+
+/** True when the newest history head still has an unsettled release status. */
+export function releaseHistoryNeedsPoll(
+  pages: readonly ReleasesListResponse[],
+): boolean {
+  const head: ReleasesListResponse["releases"] = [];
+  for (const page of pages) {
+    for (const entry of page.releases) {
+      head.push(entry);
+      if (head.length >= RELEASE_HISTORY_POLL_HEAD) {
+        break;
+      }
+    }
+    if (head.length >= RELEASE_HISTORY_POLL_HEAD) {
+      break;
+    }
+  }
+  return head.some((entry) =>
+    releaseStatusNeedsHistoryPoll(entry.release.status),
+  );
 }
 
 /** Next offset = rows loaded so far; undefined (no further page) once `total` is reached. */
@@ -163,6 +215,9 @@ export function useRelease(
       }).then(fromReleaseReadWireResponse),
     refetchInterval: poll
       ? (query) => {
+          if (query.state.error != null) {
+            return false;
+          }
           const data = query.state.data;
           if (data === undefined) {
             return RELEASE_POLL_INTERVAL_MS;

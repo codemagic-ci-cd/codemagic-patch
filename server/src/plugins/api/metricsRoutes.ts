@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 
 import { createProblem, sendProblem } from "../../app/problemDetails";
+import { summarizeDeploymentTimeseries } from "../../app/metricsTimeseries";
+import { summarizeDeploymentMetrics } from "../../app/releaseMetricsSummary";
 import {
   extractAcknowledgeableEventId,
   parseDeploymentTimeseriesInput,
@@ -34,10 +36,12 @@ import type {
   TimeseriesRangeQuery,
 } from "./routeTypes";
 import {
+  toDeploymentMetricsSummaryWire,
   toDeploymentTimeseriesWire,
   toFailureCodesWire,
   toFailureDistributionWire,
   toFailureEventsWire,
+  toMonthlyActiveDevicesWire,
   toReleaseBinaryVersionMetricsWire,
   toReleaseMetricsRowWire,
 } from "./wireSerializers";
@@ -192,6 +196,9 @@ export function registerMetricsQueryRoutes(
       return {
         pagination: result.pagination,
         releases: result.releases.map(toReleaseMetricsRowWire),
+        summary: toDeploymentMetricsSummaryWire(
+          summarizeDeploymentMetrics(result),
+        ),
       };
     },
   );
@@ -199,9 +206,12 @@ export function registerMetricsQueryRoutes(
   app.get<{ Params: DeploymentParams; Querystring: TimeseriesRangeQuery }>(
     "/metrics/deployments/:deploymentId/timeseries",
     async (request, reply) => {
+      // One request time for the default `to` and the last complete day.
+      const now = new Date();
       const input = parseDeploymentTimeseriesInput(
         request.params.deploymentId,
         request.query,
+        now,
       );
       if (input.kind === "error") {
         return sendProblem(reply, input.problem);
@@ -237,7 +247,46 @@ export function registerMetricsQueryRoutes(
         return sendProblem(reply, createDeploymentNotFoundProblem());
       }
 
-      return toDeploymentTimeseriesWire(input.value, result);
+      return toDeploymentTimeseriesWire(
+        input.value,
+        result,
+        summarizeDeploymentTimeseries(input.value, result.totals, now),
+      );
+    },
+  );
+
+  app.get<{ Params: DeploymentParams }>(
+    "/metrics/deployments/:deploymentId/monthly-active-devices",
+    async (request, reply) => {
+      const authorization = await authorizeResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "release.view",
+        () =>
+          options.authorizationService!.resolveDeploymentScope(
+            request.params.deploymentId,
+          ),
+        createDeploymentNotFoundProblem(),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      if (!options.deploymentMonthlyActiveDevicesHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "deployment monthly active devices is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      return toMonthlyActiveDevicesWire(
+        await options.deploymentMonthlyActiveDevicesHandler(
+          request.params.deploymentId,
+        ),
+      );
     },
   );
 

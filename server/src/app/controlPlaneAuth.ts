@@ -6,7 +6,10 @@ import type { AuthRepository } from "../repositories";
 
 export type ControlPlanePrincipal =
   | {
+      // A browser or CLI sign-in. Credentials it issues are checked against
+      // this session at insert time.
       kind: "user";
+      sessionId: string;
       userId: string;
     }
   | {
@@ -115,6 +118,7 @@ export function createDbApiTokenControlPlaneAuth(
       outcome: "authenticated",
       principal: {
         kind: "user",
+        sessionId: oauthResolved.session.id,
         userId: oauthResolved.user.id,
       },
     };

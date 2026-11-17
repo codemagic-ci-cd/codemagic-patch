@@ -426,6 +426,18 @@ const memberProvisionSchema: Record<string, FlagSchema> = {
   tokenDisplayName: STRING_FLAG,
 };
 
+const memberRotateTokenSchema: Record<string, FlagSchema> = {
+  email: STRING_FLAG,
+  expiresInDays: INTEGER_FLAG,
+  nonInteractive: BOOLEAN_FLAG,
+  serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
+  token: STRING_FLAG,
+  tokenDisplayName: STRING_FLAG,
+  yes: BOOLEAN_FLAG,
+};
+
 const memberInviteListSchema: Record<string, FlagSchema> = {
   format: STRING_FLAG,
   serverUrl: STRING_FLAG,
@@ -4507,6 +4519,60 @@ export function parseMemberProvision(
       ...(typeof parsedFlags.flags.tokenDisplayName === "string"
         ? { tokenDisplayName: parsedFlags.flags.tokenDisplayName }
         : {}),
+    },
+    ok: true,
+  };
+}
+
+export function parseMemberRotateToken(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, memberRotateTokenSchema, defaults);
+
+  if (!parsedFlags.ok) {
+    return {
+      error: parsedFlags.error,
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const team = parseTeamSelector(parsedFlags.flags);
+  const email = ensureNonBlankString(parsedFlags.flags, "email", "email");
+
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+
+  if (isParseError(team)) {
+    return team;
+  }
+
+  if (isParseError(email)) {
+    return email;
+  }
+
+  return {
+    command: {
+      email,
+      kind: "member-rotate-token",
+      ...(parsedFlags.flags.nonInteractive === true
+        ? { nonInteractive: true }
+        : {}),
+      serverUrl,
+      team,
+      ...(typeof parsedFlags.flags.expiresInDays === "number"
+        ? { expiresInDays: parsedFlags.flags.expiresInDays }
+        : {}),
+      ...(typeof parsedFlags.flags.token === "string"
+        ? { token: parsedFlags.flags.token }
+        : {}),
+      ...(typeof parsedFlags.flags.tokenDisplayName === "string"
+        ? { tokenDisplayName: parsedFlags.flags.tokenDisplayName }
+        : {}),
+      ...(parsedFlags.flags.yes === true ? { yes: true } : {}),
     },
     ok: true,
   };

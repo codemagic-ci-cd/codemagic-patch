@@ -36,12 +36,11 @@ import {
   sdkConfigKeyNames,
 } from "../model/framework";
 import type { App } from "../model/app";
-import { initialsFor } from "../lib/appTile";
 import type { Deployment } from "../model/deployment";
 import type { FormEvent } from "react";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
-import { APP_ICO, CELL_APP, CELL_MAIN, CELL_SUB } from "../components/ui/cell";
+import { CELL_MAIN, CELL_SUB } from "../components/ui/cell";
 import { CHIP } from "../components/ui/chip";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import {
@@ -209,21 +208,11 @@ function AppTable({ teamId, apps }: { teamId: string; apps: App[] }) {
                 })}
               >
                 <td className={TBL_TD}>
-                  <div className={CELL_APP}>
-                    <span
-                      className={APP_ICO}
-                      aria-hidden="true"
-                    >
-                      {initialsFor(app.name)}
-                    </span>
-                    <div>
-                      <div className={CELL_MAIN}>
-                        <Link to={detailPath}>{app.name}</Link>
-                      </div>
-                      <div className={CELL_SUB}>
-                        {frameworkLabel(app.framework)}
-                      </div>
-                    </div>
+                  <div className={CELL_MAIN}>
+                    <Link to={detailPath}>{app.name}</Link>
+                  </div>
+                  <div className={CELL_SUB}>
+                    {frameworkLabel(app.framework)}
                   </div>
                 </td>
                 <td className={TBL_TD}>
@@ -266,9 +255,9 @@ function AppTableSkeleton() {
           {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
             <tr key={index} className={TBL_TR}>
               <td className={TBL_TD}>
-                <div className={CELL_APP}>
-                  <Skeleton width={34} height={34} />
-                  <Skeleton width={150} height={13} />
+                <Skeleton width={150} height={13} />
+                <div className="mt-0.5">
+                  <Skeleton width={90} height={12} />
                 </div>
               </td>
               <td className={TBL_TD}>

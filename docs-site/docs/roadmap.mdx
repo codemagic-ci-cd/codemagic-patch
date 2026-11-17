@@ -1,0 +1,60 @@
+---
+title: Roadmap
+description: >-
+  Work in progress, planned features, and recent releases for Patch.
+llmsDescription: >-
+  Patch roadmap with work in progress, planned work, and recent releases.
+  Post feature ideas in GitHub Discussions.
+hide_send_to_ai: true
+---
+
+{/*
+  How to maintain this page (internal note, not rendered):
+
+  - Section order is priority order. No dates anywhere; the release notes own
+    the dates.
+  - One line per item: bold name, one sentence, and the public GitHub issue in
+    parentheses when one exists, e.g. ([#123](https://github.com/codemagic-ci-cd/codemagic-patch/issues/123)).
+  - Shipped recently lists version tags that link to the release notes. Do not
+    restate what shipped; the notes do that.
+  - At every release (release runbook, docs-site step), move released items
+    from Building now to Shipped recently, and drop Shipped recently entries
+    older than the last two release waves. A stale roadmap is worse than none.
+*/}
+
+# Roadmap
+
+This page shows where Patch is heading.
+
+Patch ships JavaScript and web updates to React Native and Capacitor apps without a store release. Most of the work below makes the server easier to run and removes manual steps between a build and a release, for people and for AI agents. Patch will stay focused on the JavaScript and web layer, with a server you can read and run yourself.
+
+To suggest a feature or comment on an item, post in the
+[Ideas category](https://github.com/codemagic-ci-cd/codemagic-patch/discussions/categories/ideas)
+of GitHub Discussions.
+
+## Building now
+
+{/* Work that has started. Keep to a handful of items. */}
+
+- **Automatic app binary registration.** Your app build records the details Patch uses to match updates to the right binary, so you no longer register each binary by hand. React Native comes first, then Capacitor.
+- **Active device counts.** See how many devices used your app each week and each month, on the dashboard and in the CLI.
+
+## Planned
+
+{/* Decided, not started. Priority order. */}
+
+- **Webhooks for releases and rollouts.** Patch sends a message to your systems when a release is published, a rollout changes, or a rollback happens.
+- **Large uploads behind a proxy.** Upload large releases even when a proxy such as Cloudflare limits requests to about 100 MB. The CLI sends bundles straight to storage instead of through the server.
+- **Smaller first update after install.** A newly installed app downloads only the changes since the bundle shipped inside the app, not the whole bundle. React Native comes first, then Capacitor.
+- **Re.Pack support.** Ship updates for apps that use Re.Pack instead of Metro to bundle their JavaScript.
+- **React Native inside native apps.** Ship updates to React Native screens that live inside an existing native iOS or Android app.
+- **Self-host on Cloudflare Containers.** Run the Patch server on Cloudflare Containers with R2 storage, without managing a VM.
+
+## Shipped recently
+
+{/* Version tags only, newest first, linking to the release notes. */}
+
+- Server [0.10.0](/docs/releases/server#v0-10-0), CLI [0.10.0](/docs/releases/cli#v0-10-0), React Native SDK [0.7.0](/docs/releases/react-native#v0-7-0), and CLI for Capacitor [0.3.1](/docs/releases/capacitor-cli#v0-3-1)
+- Server [0.9.0](/docs/releases/server#v0-9-0) and CLI [0.9.0](/docs/releases/cli#v0-9-0)
+
+For older releases and their dates, see the [release notes](/docs/releases).

@@ -1,7 +1,8 @@
-# Local evaluation dashboard — plain HTTP on :8080, no ACME/TLS. Reuses the
-# self-host Caddy image unchanged (deploy/selfhost/Dockerfile.caddy); only
-# this Caddyfile differs, so the evaluation stack serves the same shippable
-# dashboard artifact as production and the two cannot drift silently.
+# Local evaluation dashboard — plain HTTP on :8080, no ACME/TLS. Runs the same
+# stock Caddy image as the self-host stack and, like it, proxies everything to
+# the server, which serves the dashboard SPA from its own image. The
+# evaluation stack therefore serves the same shippable dashboard artifact as
+# production, and the two cannot drift silently.
 
 {
 	auto_https off
@@ -10,32 +11,23 @@
 :8080 {
 	encode zstd gzip
 
-	# Same-origin API: the SPA's empty VITE_API_BASE_URL default resolves to
-	# window.location.origin, so proxying /v1/* here needs no CORS work.
-	handle /v1/* {
-		reverse_proxy server:3000
-	}
-
-	# /health* (both /health and /health/ready) is proxied EXPLICITLY: the
-	# server's health routes live outside /v1, and without this block the SPA
-	# fallback would answer 200 with index.html — a false-positive for any
-	# reachability check pointed at the proxy.
-	handle /health* {
-		reverse_proxy server:3000
-	}
+	# Caddy names itself in a Server header on every response, its own
+	# /worker/* 404 included; drop it site-wide.
+	header -Server
 
 	# /worker/* is intentionally not proxied — same reasoning as the
 	# self-host Caddyfile: MODE=all reconciles in-process.
+	handle /worker/* {
+		respond 404
+	}
 
+	# Same-origin API and dashboard: the SPA's empty VITE_API_BASE_URL default
+	# resolves to window.location.origin, so /v1/* needs no CORS work. The
+	# server sets the dashboard's CSP itself.
 	handle {
-		root * /srv/dashboard
-		try_files {path} /index.html
-		file_server
-		header {
-			# Kept in lockstep with deploy/selfhost/Caddyfile — see the
-			# rationale there for style-src/img-src.
-			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-			-Server
-		}
+		reverse_proxy server:3000
+		# The server sends HSTS unconditionally; this site is plain HTTP
+		# only, where RFC 6797 forbids it.
+		header -Strict-Transport-Security
 	}
 }

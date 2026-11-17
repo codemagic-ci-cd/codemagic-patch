@@ -70,6 +70,15 @@ COPY --from=builder --chown=codemagic-patch:codemagic-patch /workspace/web-dashb
 # Serve the bundled dashboard by default; unset to run API-only.
 ENV DASHBOARD_STATIC_DIR=/app/dashboard
 
+# OCI labels. Declared after the COPY layers so a changing VERSION/REVISION
+# never invalidates them. Both args are optional: a host source build leaves
+# them empty, the publish workflow passes the release version and commit.
+ARG VERSION=""
+ARG REVISION=""
+LABEL org.opencontainers.image.source="https://github.com/codemagic-ci-cd/codemagic-patch" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
+
 USER codemagic-patch
 
 EXPOSE 3000

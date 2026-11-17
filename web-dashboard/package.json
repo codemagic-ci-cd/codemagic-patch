@@ -8,8 +8,7 @@
     "build": "yarn workspace @codemagic/patch-shared build && vite build",
     "clean": "rimraf dist node_modules/.cache",
     "dev": "vite",
-    "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx}\" \"test/**/*.{ts,tsx}\"",
-    "test": "yarn workspace @codemagic/patch-shared build && vitest run",
+    "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.{ts,tsx}\"",
     "typecheck": "yarn workspace @codemagic/patch-shared build && tsc --noEmit"
   },
   "dependencies": {

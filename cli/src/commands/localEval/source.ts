@@ -162,16 +162,18 @@ export async function ensureCheckout(
 
 /**
  * Clones the repository — from the source snapshot an internal test build
- * carries, or from the public repo — into `path`. `what` names the copy in
- * the step and the failure ("the evaluation stack's source").
+ * carries, or from `repoUrl` (the public repo by default) — into `path`.
+ * `what` names the copy in the step and the failure ("the evaluation stack's
+ * source").
  */
 export async function cloneSource(
   deps: SourceDeps,
   progress: Progress,
   path: string,
   what: string,
+  repoUrl: string = SOURCE_REPO_URL,
 ): Promise<void> {
-  const source = sourceBundlePath(deps) ?? SOURCE_REPO_URL;
+  const source = sourceBundlePath(deps) ?? repoUrl;
   progress.write(`downloading ${what}`);
 
   const chunks: string[] = [];

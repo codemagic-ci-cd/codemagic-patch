@@ -29,7 +29,7 @@ The hash covers the native side of your project, not your JavaScript. For a bare
 
 Three consequences are worth knowing before wiring a release into CI.
 
-**Committed lockfiles count; generated output usually does not.** `ios/Podfile.lock` is an input, so it is part of the hash. `ios/Pods/` is not, because `@expo/fingerprint` ignores `**/ios/Pods/**/*` by default, so running `pod install` does not move the fingerprint. Commit `Podfile.lock` and have CI install from it. If CI regenerates the lockfile instead, the fingerprint changes and the next release is blocked as a disagreement.
+**Committed lockfiles count; generated output usually does not.** `ios/Podfile.lock` is an input, so it is part of the hash. `ios/Pods/` is not, because `@expo/fingerprint` ignores `**/ios/Pods/**/*` by default, so running `pod install` in a CocoaPods project does not move the fingerprint. Commit `Podfile.lock` and have CI install from it. If CI regenerates the lockfile instead, the fingerprint changes and the next release is blocked as a disagreement.
 
 **Editing `.gitignore` changes the fingerprint**, even when no native code changed, because the file itself is hashed.
 
@@ -46,6 +46,8 @@ ios/Pods/ present                   1c7f0558ebe8a7ad903b5de34b2faf49b10dab3b   u
 ```
 
 The last pair is the one to notice: adding `ios/ScratchDir/` to `.gitignore` changed the hash, and then creating `ios/ScratchDir/file.txt` changed it again. Being ignored by git did not keep the file out of the fingerprint.
+
+**React Native's SwiftPM mode leaves Xcode's local files out.** In a project converted with `npx react-native spm add`, the CLI leaves `ios/**/xcshareddata/swiftpm/Package.resolved` and Xcode's per-user `xcuserdata` folders out of the iOS fingerprint. Xcode writes them on your machine when it resolves the Swift packages or opens the project, and a CI checkout never has them. To hash `Package.resolved` anyway, add `!ios/**/xcshareddata/swiftpm/Package.resolved` to `.fingerprintignore`. A CocoaPods project gets no such ignores: if its pods pull in Swift packages and Xcode writes a `Package.resolved`, commit the file or list it in `.fingerprintignore`, so a local build and CI compute the same fingerprint.
 
 ## How it helps
 

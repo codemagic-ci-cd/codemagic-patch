@@ -31,9 +31,6 @@ import { DeploymentDetailPage } from "./pages/DeploymentDetailPage";
 import { LocalConsentPage } from "./pages/LocalConsentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MembersPage } from "./pages/MembersPage";
-import { MetricsAppsPage } from "./pages/metrics/MetricsAppsPage";
-import { MetricsAppDeploymentsPage } from "./pages/metrics/MetricsAppDeploymentsPage";
-import { MetricsDeploymentDetailPage } from "./pages/metrics/MetricsDeploymentDetailPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ReleaseDetailPage } from "./pages/ReleaseDetailPage";
@@ -120,22 +117,6 @@ export const router = createBrowserRouter([
               { path: "apps/:appId/deployments/:depId", element: <DeploymentDetailPage /> },
               { path: "apps/:appId/deployments/:depId/releases/:releaseId", element: <ReleaseDetailPage /> },
               { path: "members", element: <MembersPage /> },
-              {
-                path: "metrics",
-                children: [
-                  { index: true, element: <MetricsAppsPage /> },
-                  {
-                    path: "apps/:appId",
-                    children: [
-                      { index: true, element: <MetricsAppDeploymentsPage /> },
-                      {
-                        path: "deployments/:depId",
-                        element: <MetricsDeploymentDetailPage />,
-                      },
-                    ],
-                  },
-                ],
-              },
             ],
           },
           { path: "account/tokens", element: <TokensPage /> },

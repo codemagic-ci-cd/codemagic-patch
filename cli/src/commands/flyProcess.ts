@@ -7,18 +7,26 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { SOURCE_REPO_URL } from "../branding";
 import {
   chooseServerTag,
+  compareServerTags,
   FLY_INSTALL_SCRIPT,
   FLYCTL_MIN_VERSION,
   isBelowMinimum,
+  listServerTags,
   parseToolVersion,
   TIGRIS_INSTALL_SCRIPT,
   TIGRIS_MIN_VERSION,
 } from "../flySetup";
 import { createProgress, NO_OP_PROGRESS, type Progress } from "../progress";
 import type { ProcessRunResult } from "../remoteExec";
+import {
+  resolveLatestServerImageRelease,
+  resolveLatestServerTagForImage,
+  ServerImageReleaseError,
+  serverSourceRepo,
+  type ServerImageRelease,
+} from "../serverRelease";
 import { askSelect, notice } from "./selfhostInstall/ask";
 import { UsageError, type CommandDeps } from "./shared";
 
@@ -371,9 +379,14 @@ export async function run(
   return result.output;
 }
 
+/** The repository the server comes from: the public repo, unless a test points the CLI at a scratch one. */
+export function serverRepoUrl(fly: FlyContext): string {
+  return serverSourceRepo(fly.deps.env).url;
+}
+
 /** `git ls-remote --tags` of the public repo, which lists the server releases. */
 export function listRemoteTags(fly: FlyContext): Promise<string> {
-  return run(fly, "git", ["ls-remote", "--tags", SOURCE_REPO_URL]);
+  return run(fly, "git", ["ls-remote", "--tags", serverRepoUrl(fly)]);
 }
 
 /** The newest server release tag in `git ls-remote --tags` output. */
@@ -389,8 +402,125 @@ export function latestServerTag(lsRemote: string): string {
 export async function cloneServerTag(fly: FlyContext, tag: string, parent: string): Promise<string> {
   const checkout = join(parent, "codemagic-patch");
   fly.progress.write(`Cloning ${tag}`);
-  await run(fly, "git", ["clone", "--depth", "1", "--branch", tag, SOURCE_REPO_URL, checkout]);
+  await run(fly, "git", ["clone", "--depth", "1", "--branch", tag, serverRepoUrl(fly), checkout]);
   return checkout;
+}
+
+/**
+ * What a Patch deploy runs: a published image (`fly deploy --image`, no
+ * builder and no checkout), or `server/Dockerfile` at the tag, built on Fly's
+ * remote builder from a clone. `tag` is the `PATCH_SERVER_TAG` the release
+ * carries either way.
+ */
+export type FlyServerSource =
+  | { imageRef: string; kind: "image"; tag: string }
+  | { kind: "build"; tag: string };
+
+/**
+ * The newest server release with a published image, or null before the first
+ * one exists. Every other resolver failure (GitHub unreachable, an asset that
+ * does not match its release) is thrown for the caller to report.
+ */
+export async function latestImageRelease(fly: FlyContext): Promise<ServerImageRelease | null> {
+  try {
+    return await resolveLatestServerImageRelease({ env: fly.deps.env, fetch: fly.deps.fetch });
+  } catch (error) {
+    if (error instanceof ServerImageReleaseError && error.kind === "no-image-release") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The tag an operator's own `--image` is recorded under: the newest server
+ * tag at or above the minimum image-install tag in `git ls-remote`, or null
+ * before the first such release.
+ */
+export function latestTagForImage(fly: FlyContext): Promise<string | null> {
+  return resolveLatestServerTagForImage({ env: fly.deps.env, runProcess: fly.deps.runProcess });
+}
+
+/** What a deploy says when it falls back to a remote build because no release has a published image yet. */
+export function noPublishedImageNotice(tag: string): string {
+  return `No published server image yet; building on Fly's remote builder from ${tag}.`;
+}
+
+/**
+ * What a deploy runs, never under a tag older than the live marker (an
+ * upgrade's; an install has none).
+ *
+ * - `--image`: that image, under `--tag`, else the newest image-install tag
+ *   from `git ls-remote`, else the live tag; matching the two is the
+ *   operator's call.
+ * - `--build-from-source`: a remote build of `--tag` or the newest tag.
+ * - Otherwise the newest release's published image. `--tag` naming another
+ *   release builds that tag remotely, since only the newest release's image
+ *   is resolved; so does the first cycle, before any release has an image.
+ */
+export async function chooseServerSource(
+  fly: FlyContext,
+  input: {
+    buildFromSource: boolean;
+    image: string | undefined;
+    live?: { app: string; marker: string | null };
+    requested?: string;
+  },
+): Promise<FlyServerSource> {
+  const { live, requested } = input;
+  const tagFromRepo = async () => checkNotOlder(chooseTag(fly, await listRemoteTags(fly), requested), live);
+
+  if (input.image !== undefined) {
+    const tag = requested !== undefined
+      ? await tagFromRepo()
+      : checkNotOlder((await latestTagForImage(fly)) ?? live?.marker ?? latestServerTag(await listRemoteTags(fly)), live);
+    return { imageRef: input.image, kind: "image", tag };
+  }
+  if (input.buildFromSource) {
+    return { kind: "build", tag: await tagFromRepo() };
+  }
+
+  const release = await latestImageRelease(fly);
+  if (release !== null && (requested === undefined || requested === release.tag)) {
+    return { imageRef: release.imageRef, kind: "image", tag: checkNotOlder(release.tag, live) };
+  }
+  const tag = await tagFromRepo();
+  fly.progress.settle();
+  notice(fly.deps, release === null
+    ? noPublishedImageNotice(tag)
+    : `Only the newest release, ${release.tag}, has an image cmpatch deploys; building on Fly's remote builder from ${tag}.`);
+  return { kind: "build", tag };
+}
+
+/** `--tag`, which must be a release in the repository, or the newest release. */
+function chooseTag(fly: FlyContext, lsRemote: string, requested: string | undefined): string {
+  if (requested === undefined) {
+    return latestServerTag(lsRemote);
+  }
+  if (!listServerTags(lsRemote).includes(requested)) {
+    const repo = serverRepoUrl(fly);
+    throw new UsageError(`${requested} is not a release in ${repo}. git ls-remote --tags ${repo} lists them.`);
+  }
+  return requested;
+}
+
+/** The target tag, unless it is older than the live marker: that server may already have migrated the database. */
+function checkNotOlder(tag: string, live: { app: string; marker: string | null } | undefined): string {
+  const marker = live?.marker ?? null;
+  if (marker !== null && (compareServerTags(tag, marker) ?? 0) < 0) {
+    throw new UsageError([
+      `${tag} is older than ${marker}, which ${live?.app} runs. An upgrade does not go back: ${marker} may already have migrated the database.`,
+      `To go back, follow the ROLLBACK.md of the upgrade that deployed ${marker}.`,
+    ].join("\n"));
+  }
+  return tag;
+}
+
+/** `--image` and `--build-from-source` each choose what is deployed, so they cannot go together. */
+export function refuseImageWithBuild(image: string | undefined, buildFromSource: boolean): void {
+  if (image !== undefined && buildFromSource) {
+    throw new UsageError("Pass --image or --build-from-source, not both: each chooses what is deployed.");
+  }
 }
 
 export function missingBinary(command: string): string {

@@ -7,10 +7,12 @@
 // (`useDeploymentTimeseries` with a shared range — in-range totals plus the
 // adoption chart; a failure degrades to this card's retry without touching
 // the table), and the release history table
-// (`useReleases` infinite query, newest-first offset pages; "Load more" =
+// (`useReleases` infinite query with poll while a newest-head row is still
+// uploaded/processing, newest-first offset pages; "Load more" =
 // fetchNextPage, exhaustion computed from `pagination.total` by the hook's
 // getNextPageParam → hasNextPage). One page-level Binary version filter
-// narrows both the overview card and the history table. Actions are gated by
+// narrows both the overview card and the history table; the monthly active
+// devices card between them runs its own query and ignores it. Actions are gated by
 // role (`useTeamRole.can("release.deploy")`; denied → disabled + "Requires
 // developer" tip per the RBAC matrix) × release status via model/release.ts
 // (canDisable/canEnable/canPatchRollout; promote = any published; the header
@@ -63,8 +65,8 @@ import {
   sdkConfigKeyNames,
 } from "../model/framework";
 import { useTeamRole } from "../rbac/useTeamRole";
+import { MonthlyActiveDevicesCard } from "./deployment/MonthlyActiveDevicesCard";
 import { OverviewCard } from "./deployment/OverviewCard";
-import { metricsDeploymentPath } from "./metrics/metricsPaths";
 import { NewReleaseModal } from "./release/modals/NewReleaseModal";
 import {
   ReleaseHistoryTableHead,
@@ -209,9 +211,14 @@ function DeploymentDetail({
   const binaryVersionFilter = useBinaryVersionFilter(deployment.id);
   const { filter, setFilter } = binaryVersionFilter;
   const timeseriesRange = useTimeseriesRange(deployment.id, binaryVersionFilter);
+  // Poll the visible history while a newest-row status is still
+  // uploaded/processing so Processing → Published does not need a manual
+  // refresh. The unfiltered twin below stays poll-off (same cache when the
+  // filter is clear; TanStack keeps the shortest observer interval).
   const releasesQuery = useReleases(deployment.id, {
     binaryVersion: filter,
     includeMetrics: true,
+    poll: true,
   });
   // Rollback gating and the New release suggestion are deployment-wide, so
   // they read the unfiltered history (the same query while no filter is set).
@@ -392,12 +399,6 @@ function DeploymentDetail({
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2.5">
           {newReleaseButton}
-          <Link
-            className={buttonVariants({ intent: "ghost" })}
-            to={metricsDeploymentPath(teamId, appId, deployment.id)}
-          >
-            Metrics
-          </Link>
           <span className="tip" data-tip={deployTip}>
             <button
               type="button"
@@ -427,6 +428,11 @@ function DeploymentDetail({
       ) : null}
 
       <OverviewCard range={timeseriesRange} />
+
+      {/* Counts the whole deployment: the Binary version menu above does not
+          filter it. Renders nothing on a server that does not offer the
+          figure, and the history then follows the overview card directly. */}
+      <MonthlyActiveDevicesCard deploymentId={deployment.id} />
 
       {historyCard}
 

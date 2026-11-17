@@ -13,8 +13,7 @@ Release notes for `cmpatch-capacitor`, published as
 that use the [Capacitor SDK](/docs/releases/capacitor-sdk). Self-host operator
 commands (`selfhost install`, `upgrade`, `backup`) are in
 [`cmpatch`](/docs/releases/cli) for all frameworks. The other surfaces'
-releases and the compatibility table are on the
-[Release Notes](/docs/releases) page.
+releases are on the [Release Notes](/docs/releases) page.
 
 ```bash
 npm install -g @codemagic/capacitor-patch-cli@latest
@@ -23,6 +22,23 @@ npm install -g @codemagic/capacitor-patch-cli@latest
 Reference: [CLI reference](/docs/reference/cli-reference) ·
 [Binary versions for Capacitor](/docs/using-patch/binary-version-capacitor) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=capacitor-patch-cli)
+
+## 0.3.1 {#v0-3-1}
+
+*17th November 2026*
+
+- **Range totals under `deployment timeseries`:** The command prints the
+  range totals, the success rate, and the active devices of the last
+  complete day under its table. Requires
+  [server 0.10.0](/docs/releases/server#v0-10-0); output is unchanged against
+  an older server.
+- **`token create` needs a browser login:** Server 0.10.0 refuses
+  `token create` from a `--token` login or `CODEMAGIC_PATCH_TOKEN`. The CLI
+  says to remove the token and run `cmpatch-capacitor login`. See the
+  [server notes](/docs/releases/server#v0-10-0-api-tokens).
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch-cli%400.3.1).
 
 ## 0.3.0 {#v0-3-0}
 

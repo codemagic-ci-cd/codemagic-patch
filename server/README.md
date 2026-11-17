@@ -164,64 +164,6 @@ DB-backed personal API tokens and OAuth session access tokens. The built-in
 provider paths are GitHub, Bitbucket, and GitLab browser sign-in (shared by the
 dashboard and `cmpatch login`); full user administration remains deferred.
 
-## Run Tests
-
-### Fast Path
-
-Run the full server test suite:
-
-```bash
-yarn workspace @codemagic/patch-server test
-```
-
-Run only the database-focused test slice when `TEST_DATABASE_URL` is already set:
-
-```bash
-yarn workspace @codemagic/patch-server test:db
-```
-
-### Local Environment For All Server Tests
-
-Some server tests use PostgreSQL. The repository includes a dedicated local test
-database compose file at [`server/docker-compose.test.yml`](docker-compose.test.yml).
-
-Default local test database settings:
-
-- host: `127.0.0.1`
-- port: `55432`
-- database: `codemagic_patch_test`
-- user: `codemagic_patch`
-- password: `codemagic_patch`
-
-Connection string:
-
-```text
-postgresql://codemagic_patch:codemagic_patch@127.0.0.1:55432/codemagic_patch_test
-```
-
-Recommended workflow:
-
-```bash
-yarn workspace @codemagic/patch-server db:test:up
-yarn workspace @codemagic/patch-server s3:test:up
-yarn workspace @codemagic/patch-server test:db:local
-yarn workspace @codemagic/patch-server test:artifact-gate:local
-yarn workspace @codemagic/patch-server test:full:local
-```
-
-Helpful companion commands:
-
-```bash
-yarn workspace @codemagic/patch-server db:test:logs
-yarn workspace @codemagic/patch-server db:test:down
-```
-
-Notes:
-
-- `test:db:local` hardcodes the local Docker Compose connection string above.
-- `test:local` runs the full server suite with that same local Postgres connection string.
-- The test helper creates a unique schema per run, so the same local database can be reused across repeated test executions.
-
 ## Storage Adapters
 
 The server selects an object storage backend at boot via the `STORAGE_ADAPTER` environment variable.
@@ -338,45 +280,6 @@ delivery adapter is configured to cut that window short. Override
 `MANIFEST_CACHE_CONTROL` only when a deployment has a deliberate, verified
 cache/purge policy.
 
-### Running The Adapter Test Slice
-
-The fake-backed GCS adapter tests require no live credentials:
-
-```bash
-yarn workspace @codemagic/patch-server test test/adapters/gcs-storage.test.ts
-```
-
-The S3 adapter tests are skipped when no S3 credentials are exported:
-
-```bash
-TEST_S3_ENDPOINT=http://localhost:9000 \
-TEST_S3_BUCKET=codemagic-patch-test \
-TEST_S3_ACCESS_KEY_ID=minio \
-TEST_S3_SECRET_ACCESS_KEY=minio12345 \
-yarn workspace @codemagic/patch-server test test/adapters/s3-storage.test.ts
-```
-
-A throwaway S3-compatible container suitable for local runs (the same PGSTY
-Silo image the dev stack bundles; it reads the same `MINIO_*` variables):
-
-```bash
-docker run --rm -d --name s3-test -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minio \
-  -e MINIO_ROOT_PASSWORD=minio12345 \
-  pgsty/silo:RELEASE.2026-09-16T00-00-00Z server /data --console-address ":9001"
-
-docker exec s3-test mc alias set local http://localhost:9000 minio minio12345
-docker exec s3-test mc mb --ignore-existing local/codemagic-patch-test
-```
-
-The server image ships `mc`, so no host-side client install is needed.
-
-To run the artifact correctness gate without DB/S3 skips, including
-`test/delivery/public-path.e2e.test.ts`, run
-`yarn workspace @codemagic/patch-server test:artifact-gate:local`. To run the broader
-server suite with DB/S3-backed tests enabled, run
-`yarn workspace @codemagic/patch-server test:full:local`.
-
 ## Common Commands
 
 From the repository root:
@@ -385,7 +288,4 @@ From the repository root:
 yarn workspace @codemagic/patch-server build
 yarn workspace @codemagic/patch-server lint
 yarn workspace @codemagic/patch-server typecheck
-yarn workspace @codemagic/patch-server test
-yarn workspace @codemagic/patch-server test:artifact-gate:local
-yarn workspace @codemagic/patch-server test:full:local
 ```

@@ -180,13 +180,14 @@ services:
       retries: 30
 
   dashboard:
-    # Same image as the self-host stack (the SPA is built with default VITE_*
-    # values — empty API base = same-origin), so the evaluation stack serves
-    # the real shippable dashboard artifact. Only the Caddyfile differs:
-    # plain HTTP :8080, /v1/* and /health* proxied to the server.
-    build:
-      context: .
-      dockerfile: deploy/selfhost/Dockerfile.caddy
+    # Same stock Caddy image as the self-host stack
+    # (docker-compose.selfhost.yml's caddy default; keep the two pins in
+    # step). The server image serves the dashboard SPA (built with default
+    # VITE_* values — empty API base = same-origin), so the evaluation stack
+    # serves the real shippable dashboard artifact. Only the Caddyfile
+    # differs: plain HTTP :8080, everything but /worker/* proxied to the
+    # server.
+    image: caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
     depends_on:
       server:
         condition: service_healthy
@@ -195,9 +196,9 @@ services:
     volumes:
       - ./deploy/local-dev/Caddyfile:/etc/caddy/Caddyfile:ro
     healthcheck:
-      # Through the proxy on purpose: /health* has an explicit handle block,
-      # so this fails loudly if the proxy config regresses (the SPA fallback
-      # would otherwise answer any path with index.html).
+      # Through the proxy on purpose, so this fails loudly if the proxy config
+      # regresses. The server keeps /health an API path, so a misrouted
+      # request cannot pass on the dashboard's index.html fallback.
       test:
         [
           "CMD-SHELL",

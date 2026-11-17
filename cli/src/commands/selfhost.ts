@@ -36,6 +36,11 @@ import {
   renderRestoreScope,
 } from "../selfhostCopy";
 import {
+  resolveLatestServerImageRelease,
+  resolveLatestServerTagForImage,
+  serverSourceRepo,
+} from "../serverRelease";
+import {
   listRemoteBackups,
   localBackupRoot,
   utcStamp,
@@ -46,6 +51,8 @@ import { runFlyInstall } from "./flyInstall";
 import { runFlyUpgrade } from "./flyMaintenance";
 import { runLocalEval } from "./localEval";
 import { runInstall } from "./selfhostInstall";
+import { confirmUpgradePlan, shortImageRef } from "./selfhostInstall/ask";
+import { sourceRepoScriptEnv } from "./selfhostInstall/hostBootstrap";
 import {
   canAsk,
   COMMON_FLAGS,
@@ -59,6 +66,7 @@ import {
   resolveCommandTarget,
   runSelfhostScript,
   takeSingleTarget,
+  upgradeAsksFirst,
   writeNotice,
   type FlagShape,
   type ParsedArgs,
@@ -114,24 +122,82 @@ export async function executeSelfhostCommand(
 
 const UPGRADE_FLAGS = {
   ...COMMON_FLAGS,
+  "--build-from-source": "boolean",
   "--i-have-a-backup": "boolean",
   "--image": "value",
   "--local-image": "boolean",
   // Fly only: deploy the live tag again, and pick the release to deploy.
   "--redeploy": "boolean",
+  "--skip-schema-check": "boolean",
   "--skip-smoke": "boolean",
   "--tag": "value",
+  "--yes": "boolean",
 } as const satisfies FlagShape;
 
-type SourceSync = {
+/**
+ * What the server's checkout is before an upgrade, read without changing it.
+ *
+ * - `branch`: on the default branch, the shape every install made before
+ *   published images (and still the shape `--build-from-source` installs
+ *   from before the first image release).
+ * - `tag`: detached at a server release tag, the shape an image install
+ *   leaves.
+ */
+type RemoteCheckout = {
+  /** The branch HEAD is on, when it is on one. */
+  branch: string | null;
+  head: string;
+  /** The server release tag HEAD is at, when it is at one. */
+  headTag: string | null;
+  kind: "branch" | "tag";
+  /** CODEMAGIC_PATCH_SERVER_IMAGE from the deployment's env file, if any. */
+  serverImage: string | null;
+};
+
+/** The server image value a source build pins: a local tag no registry has. */
+const LOCAL_SERVER_IMAGE = "codemagic-patch-server:selfhost";
+
+/** How the checkout was moved before upgrade.sh ran. */
+type SourceMove = {
   newRevision: string;
   oldRevision: string;
+  /** What upgrade.sh goes back to on an early failure: a branch name, else the exact commit. */
+  previousRef: string;
+  /** Where the checkout now is, for the summary: a tag, or the branch. */
+  target: string;
 };
+
+/**
+ * The image upgrade.sh will run, when it is known before the upgrade (the
+ * release's or `--image`), and whether it is a local tag (`--local-image`,
+ * never pulled). Null when upgrade.sh builds the image on the host.
+ */
+type UpgradeImage = { local: boolean; ref: string } | null;
+
+/**
+ * What the upgrade is going to do, settled by reads alone so the operator can
+ * approve it before anything on the server moves.
+ *
+ * - `tag`: check out a release tag, from a tag or (a migration) from `main`.
+ * - `fast-forward`: `main` stays `main` and is fast-forwarded:
+ *   `--build-from-source`, or `--image` before any release tag is eligible.
+ */
+type UpgradePlan =
+  | { image: UpgradeImage; kind: "fast-forward" }
+  | { image: UpgradeImage; kind: "tag"; tag: string };
+
+/** The server image the plan and the summary name. */
+function upgradeImageLabel(checkout: RemoteCheckout, plan: UpgradePlan): string {
+  if (plan.image !== null) {
+    return plan.image.ref;
+  }
+  return `built from source on the host (${plan.kind === "tag" ? plan.tag : (checkout.branch ?? "main")})`;
+}
 
 async function runUpgrade(
   deps: CommandDeps,
   argv: readonly string[],
-): Promise<string> {
+): Promise<string | null> {
   const parsed = parseArgs(argv, UPGRADE_FLAGS);
   const sshTarget = takeSingleTarget(parsed, "upgrade");
 
@@ -144,10 +210,25 @@ async function runUpgrade(
   for (const flag of ["--redeploy", "--tag"] as const) {
     if (parsed.flags[flag] !== undefined) {
       throw new UsageError(
-        `${flag} applies to a Fly install only. An ssh server upgrades to the newest source on its default branch.`,
+        `${flag} applies to a Fly install only. An ssh server upgrades to the newest server release.`,
       );
     }
   }
+  const image = readStringFlag(parsed, "--image");
+  const buildFromSource = readBooleanFlag(parsed, "--build-from-source");
+  const localImage = readBooleanFlag(parsed, "--local-image");
+  const skipSchemaCheck = readBooleanFlag(parsed, "--skip-schema-check");
+  if (image !== undefined && buildFromSource) {
+    throw new UsageError(
+      "--image and --build-from-source cannot be combined: one runs an image built elsewhere, the other builds it on the server. Pick one.",
+    );
+  }
+  if (localImage && image === undefined) {
+    throw new UsageError("--local-image says how to use --image; pass --image <local tag> with it.");
+  }
+  // Before the session opens: a run that cannot ask and was not given --yes
+  // must not pair with the host first.
+  const asksFirst = upgradeAsksFirst(deps, parsed);
 
   const session = await openSession(deps, {
     label: "cmpatch selfhost upgrade",
@@ -157,41 +238,82 @@ async function runUpgrade(
   });
 
   try {
-    const sync = await syncRemoteSource(deps, session);
+    // Reads only, up to the confirmation: the inspection, the release lookup,
+    // the ancestor check and the target image's schema check (which fetch and
+    // pull, and move nothing).
+    const checkout = await inspectRemoteCheckout(deps, session);
+    const plan = await planUpgrade(deps, checkout, { buildFromSource, image, localImage });
+    if (plan.kind === "tag") {
+      await checkRemoteTagIsAhead(deps, session, checkout, plan.tag);
+    }
+    const pulled = !skipSchemaCheck && (await checkRemoteSchema(deps, session, plan, image === undefined));
+    session.progress.settle();
+    const approved = await confirmUpgradePlan(deps, {
+      ask: asksFirst,
+      ...renderUpgradePlan(session, checkout, plan, pulled),
+    });
+    if (!approved) {
+      session.progress.stop("Nothing was changed.");
+      return null;
+    }
 
-    const args: string[] = [];
-    const image = readStringFlag(parsed, "--image");
-    if (image !== undefined) {
-      args.push("--image", image);
-    }
-    if (readBooleanFlag(parsed, "--local-image")) {
-      args.push("--local-image");
-    }
+    const move =
+      plan.kind === "tag"
+        ? await checkOutRemoteTag(deps, session, checkout, plan.tag)
+        : await fastForwardRemoteSource(deps, session, checkout);
+    const args = [
+      "--previous-ref",
+      move.previousRef,
+      ...(plan.image === null
+        ? ["--build-from-source"]
+        : ["--image", plan.image.ref, ...(plan.image.local ? ["--local-image"] : [])]),
+    ];
     if (readBooleanFlag(parsed, "--i-have-a-backup")) {
       args.push("--i-have-a-backup");
     }
     if (readBooleanFlag(parsed, "--skip-smoke")) {
       args.push("--skip-smoke");
     }
+    if (skipSchemaCheck) {
+      args.push("--skip-schema-check");
+    }
 
-    await runSelfhostScript(deps, session, {
-      args,
-      // Pre-upgrade backups land under the CLI-managed root, so they show up
-      // (labelled) in `restore`'s listing instead of under <repo>/backups
-      // where nothing the user runs would ever find them.
-      env: { SELFHOST_BACKUP_ROOT: session.facts.backupRoot },
-      milestones: UPGRADE_MILESTONES,
-      name: "upgrade",
-      script: "upgrade.sh",
-    });
+    // Set by upgrade.sh's first line. Until then the moved checkout is the
+    // CLI's to report: upgrade.sh puts it back on an early failure, but only
+    // once it is running.
+    let scriptStarted = false;
+    const putBack = renderPutBack(session, move);
+    try {
+      await runSelfhostScript(deps, session, {
+        args,
+        // Pre-upgrade backups land under the CLI-managed root, so they show up
+        // (labelled) in `restore`'s listing instead of under <repo>/backups
+        // where nothing the user runs would ever find them.
+        env: {
+          SELFHOST_BACKUP_ROOT: session.facts.backupRoot,
+          ...sourceRepoScriptEnv(deps.env),
+        },
+        ...(putBack === null ? {} : { interruptNotes: [putBack] }),
+        milestones: UPGRADE_MILESTONES,
+        name: "upgrade",
+        onOutput: (chunk) => {
+          if (chunk.includes("[selfhost] previous ref:")) {
+            scriptStarted = true;
+          }
+        },
+        script: "upgrade.sh",
+      });
+    } catch (error) {
+      if (!scriptStarted && putBack !== null && error instanceof Error) {
+        error.message = `${error.message}\n\n${putBack}`;
+      }
+      throw error;
+    }
 
     const summary = [
       `Upgrade complete on ${session.sshTarget}.`,
-      `  Source: ${shortRevision(sync.oldRevision)} → ${shortRevision(sync.newRevision)}`,
-      // Reported independently, because on --image they are no longer two
-      // views of the same thing: the server image is pinned while the
-      // dashboard is still built from the checkout.
-      `  Server image: ${image ?? "rebuilt from the source above"}`,
+      `  Source: ${shortRevision(move.oldRevision)} → ${shortRevision(move.newRevision)} (${move.target})`,
+      `  Server image: ${upgradeImageLabel(checkout, plan)}`,
     ].join("\n");
     session.progress.stop("Upgrade complete.");
     return summary;
@@ -202,68 +324,207 @@ async function runUpgrade(
 }
 
 /**
- * Fast-forward the remote checkout before running the upgrade — on **every**
- * path, `--image` included.
- *
- * `--image` pins only the *server* image: on that branch `upgrade.sh` still
- * runs `compose build --pull caddy`, rebuilding the dashboard image from this
- * same checkout. Skipping the sync there would not avoid using the checkout —
- * it would only turn off the dirty/detached/diverged guard while continuing to
- * build from it, so a pinned server image could ship beside a dashboard built
- * from a stale or hand-edited tree, silently.
+ * Settles what the upgrade does, by reads alone. Without a flag: the newest
+ * release's published image, under its tag (on `main`, the migration onto
+ * it). `--image` and `--build-from-source` move to the newest image-install
+ * tag, else a tag checkout stays at its own tag and `main` is fast-forwarded;
+ * `--build-from-source` on `main` always fast-forwards and rebuilds (the
+ * escape hatch the downgrade refusal names). A release tag that happens to
+ * sit at a branch's HEAD is not a target: detaching there would run that
+ * release's older upgrade.sh.
  */
-async function syncRemoteSource(
+async function planUpgrade(
+  deps: CommandDeps,
+  checkout: RemoteCheckout,
+  flags: { buildFromSource: boolean; image: string | undefined; localImage: boolean },
+): Promise<UpgradePlan> {
+  if (!flags.buildFromSource && flags.image === undefined) {
+    const release = await resolveLatestServerImageRelease({ env: deps.env, fetch: deps.fetch });
+    return { image: { local: false, ref: release.imageRef }, kind: "tag", tag: release.tag };
+  }
+
+  const image = flags.image === undefined ? null : { local: flags.localImage, ref: flags.image };
+  // A tag checkout with no eligible tag stays where it is; `main` whose HEAD
+  // happens to carry a tag is still a branch and is fast-forwarded.
+  const tag =
+    checkout.kind === "branch" && flags.buildFromSource
+      ? null
+      : ((await resolveLatestServerTagForImage({ env: deps.env, runProcess: deps.runProcess })) ??
+        (checkout.kind === "tag" ? checkout.headTag : null));
+  return tag === null ? { image, kind: "fast-forward" } : { image, kind: "tag", tag };
+}
+
+/**
+ * What the upgrade is about to do, shown before anything on the server
+ * changes: where the checkout and image are, where they go, and what stays
+ * the rollback ref.
+ */
+function renderUpgradePlan(
+  session: SelfhostSession,
+  checkout: RemoteCheckout,
+  plan: UpgradePlan,
+  pulled: boolean,
+): { lines: string[]; question: string; warning?: string[] } {
+  const where =
+    checkout.kind === "tag" ? (checkout.headTag ?? "a release tag") : (checkout.branch ?? "main");
+  const head = shortRevision(checkout.head);
+  const lines = [
+    `Server: ${session.sshTarget}`,
+    `Current: ${where} (${head})`,
+    `Current image: ${checkout.serverImage === null ? "not set in .env.selfhost" : shortImageRef(checkout.serverImage)}`,
+  ];
+  // The schema check pulled the target already, so the upgrade's own pull
+  // finds it there.
+  const targetImage = `Target image: ${shortImageRef(upgradeImageLabel(checkout, plan))}${pulled ? " (pulled for the schema check)" : ""}`;
+
+  if (plan.kind === "fast-forward") {
+    lines.push(
+      `Target: ${where}, fast-forwarded from origin`,
+      targetImage,
+      `Checkout: ${where} moves forward in place`,
+    );
+    return { lines, question: `Upgrade ${session.sshTarget}?` };
+  }
+
+  lines.push(`Target: ${plan.tag}`, targetImage);
+  if (plan.tag === checkout.headTag) {
+    lines.push(`Checkout: stays at ${plan.tag}`);
+  } else {
+    // upgrade.sh goes back to a branch by name, and to a tag by its exact commit.
+    lines.push(
+      `Checkout: ${where} → ${plan.tag}`,
+      `Rollback ref: ${checkout.kind === "branch" ? where : head}`,
+    );
+  }
+  return {
+    lines,
+    question: `Upgrade ${session.sshTarget} to ${plan.tag}?`,
+    // Every installer before published images left a host-built image; a
+    // migration off it needs the old local images to roll back.
+    ...(checkout.kind === "branch" && checkout.serverImage === LOCAL_SERVER_IMAGE
+      ? {
+          warning: [
+            `The current image, ${LOCAL_SERVER_IMAGE}, was built on this host.`,
+            "Keep the old local images until the upgrade is confirmed: rolling back runs them.",
+          ],
+        }
+      : {}),
+  };
+}
+
+/**
+ * The line that puts a moved checkout back, for a run that ends before
+ * upgrade.sh could do it itself (a dropped connection, Ctrl+C). Null when the
+ * checkout did not move.
+ */
+function renderPutBack(session: SelfhostSession, move: SourceMove): string | null {
+  if (move.oldRevision === move.newRevision || move.previousRef === move.target) {
+    return null;
+  }
+  return [
+    `The checkout in ${session.remotePath} was moved from ${move.previousRef} to ${move.target} before upgrade.sh started.`,
+    "If upgrade.sh never ran, put it back on the server with:",
+    `  git -C ${session.remotePath} checkout ${move.previousRef}`,
+  ].join("\n");
+}
+
+/**
+ * The same line for a run that ended while the checkout was being moved, so
+ * this side never heard whether it moved.
+ */
+function renderPossibleMove(session: SelfhostSession, previousRef: string, tag: string): string {
+  return [
+    `The run ended before the server reported the move to ${tag}, so the checkout in ${session.remotePath} may have moved; previous ref is ${previousRef}.`,
+    "upgrade.sh did not run. To put the checkout back, run on the server:",
+    `  git -C ${session.remotePath} checkout ${previousRef}`,
+  ].join("\n");
+}
+
+/**
+ * Reads the checkout without touching it: a git checkout of the public repo
+ * (or a fork of it, or the repository the CLI is configured to install
+ * from), clean, and either on the default branch or detached at a server
+ * release tag. Anything else is refused with what to fix.
+ */
+async function inspectRemoteCheckout(
   deps: CommandDeps,
   session: SelfhostSession,
-): Promise<SourceSync> {
-  session.progress.write("updating the server's copy of the source");
+): Promise<RemoteCheckout> {
+  session.progress.write("checking the server's copy of the source");
+  const sourceRepoUrl = serverSourceRepo(deps.env).url;
 
-  const result = await captureRemoteShell({
-    body: [
+  const values = await runSourceScript(
+    deps,
+    session,
+    [
       'cd "$CMPATCH_REMOTE_PATH"',
       'if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then',
       '  printf "sync_error=not-a-checkout\\n"; exit 3',
       "fi",
-      'remote_url="$(git config --get remote.origin.url || true)"',
-      'case "$remote_url" in',
-      "  *codemagic-patch*) ;;",
-      '  *) printf "sync_error=unexpected-remote\\nremote=%s\\n" "$remote_url"; exit 3 ;;',
-      "esac",
-      'branch="$(git symbolic-ref --quiet --short HEAD || true)"',
-      'if [ -z "$branch" ]; then printf "sync_error=detached\\n"; exit 3; fi',
+      // Judged on this side (isSourceRepoOrigin), ahead of any other refusal.
+      'printf "remote=%s\\n" "$(git config --get remote.origin.url || true)"',
       'if [ -n "$(git status --porcelain)" ]; then printf "sync_error=dirty\\n"; exit 3; fi',
-      'old="$(git rev-parse HEAD)"',
-      'default_branch="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed "s#^origin/##" || true)"',
-      'default_branch="${default_branch:-main}"',
-      'if [ "$branch" != "$default_branch" ]; then',
-      '  printf "sync_error=not-default-branch\\nbranch=%s\\ndefault_branch=%s\\n" "$branch" "$default_branch"; exit 3',
+      'branch="$(git symbolic-ref --quiet --short HEAD || true)"',
+      // One release commit carries every component's tag, so the server one is
+      // picked out of `--points-at`; `describe --exact-match` could name another.
+      'head_tag="$(git tag --points-at HEAD | grep "^codemagic-patch-server-v" | head -n 1 || true)"',
+      'server_image="$(sed -n "s/^CODEMAGIC_PATCH_SERVER_IMAGE=//p" .env.selfhost 2>/dev/null | tail -n 1 || true)"',
+      'if [ -n "$branch" ]; then',
+      '  default_branch="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed "s#^origin/##" || true)"',
+      '  default_branch="${default_branch:-main}"',
+      '  if [ "$branch" != "$default_branch" ]; then',
+      '    printf "sync_error=not-default-branch\\nbranch=%s\\ndefault_branch=%s\\n" "$branch" "$default_branch"; exit 3',
+      "  fi",
+      '  kind=branch',
+      'elif [ -n "$head_tag" ]; then',
+      '  kind=tag',
+      "else",
+      '  printf "sync_error=detached\\n"; exit 3',
       "fi",
-      'git fetch --quiet origin "$default_branch"',
+      'printf "kind=%s\\nbranch=%s\\nhead=%s\\nhead_tag=%s\\nserver_image=%s\\n" "$kind" "$branch" "$(git rev-parse HEAD)" "$head_tag" "$server_image"',
+    ],
+    {
+      refuse: (reported) =>
+        reported.remote === undefined || isSourceRepoOrigin(reported.remote, sourceRepoUrl)
+          ? undefined
+          : `${session.remotePath} on the server tracks ${reported.remote || "no origin"}, not ${sourceRepoUrl}. Fix it on the server (in ${session.remotePath}), then run the upgrade again.`,
+    },
+  );
+
+  return {
+    branch: values.branch || null,
+    head: values.head ?? "",
+    headTag: values.head_tag || null,
+    kind: values.kind === "tag" ? "tag" : "branch",
+    serverImage: values.server_image || null,
+  };
+}
+
+/** The default branch, fast-forwarded: what every upgrade did before release tags. */
+async function fastForwardRemoteSource(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  checkout: RemoteCheckout,
+): Promise<SourceMove> {
+  session.progress.write("updating the server's copy of the source");
+  const branch = checkout.branch ?? "main";
+
+  const values = await runSourceScript(
+    deps,
+    session,
+    [
+      'cd "$CMPATCH_REMOTE_PATH"',
+      'old="$(git rev-parse HEAD)"',
+      'git fetch --quiet origin "$CMPATCH_BRANCH"',
       '# --ff-only is the guard: a diverged checkout fails here rather than',
       '# being merged into something nobody reviewed.',
-      'if ! git merge --ff-only "origin/${default_branch}" >/dev/null 2>&1; then',
-      '  printf "sync_error=diverged\\nbranch=%s\\n" "$branch"; exit 3',
+      'if ! git merge --ff-only "origin/${CMPATCH_BRANCH}" >/dev/null 2>&1; then',
+      '  printf "sync_error=diverged\\nbranch=%s\\n" "$CMPATCH_BRANCH"; exit 3',
       "fi",
       'printf "old_revision=%s\\nnew_revision=%s\\n" "$old" "$(git rev-parse HEAD)"',
-    ].join("\n"),
-    connection: pairedSshInvocation(session.sshTarget, session.identityFile),
-    env: { CMPATCH_REMOTE_PATH: session.remotePath },
-    runProcess: deps.runProcess,
-  });
-
-  const values: Record<string, string> = {};
-  for (const line of result.output.split("\n")) {
-    const separator = line.indexOf("=");
-    if (separator > 0) {
-      values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-    }
-  }
-
-  if (result.exitCode !== 0) {
-    throw new UsageError(
-      describeSyncFailure(values, session.remotePath, result.output),
-    );
-  }
+    ],
+    { env: { CMPATCH_BRANCH: branch } },
+  );
 
   const oldRevision = values.old_revision ?? "";
   const newRevision = values.new_revision ?? "";
@@ -273,32 +534,336 @@ async function syncRemoteSource(
       : `updated the source (${shortRevision(oldRevision)} → ${shortRevision(newRevision)})`,
   );
 
-  return { newRevision, oldRevision };
+  // The branch itself: upgrade.sh then sees nothing to put back, which is
+  // what this path always did — the fast-forward is not rolled back.
+  return { newRevision, oldRevision, previousRef: branch, target: branch };
+}
+
+/**
+ * Moves a tag checkout, or a `main` checkout being migrated, to `tag`: fetch
+ * tags, refuse a target that is not a descendant of HEAD (that would run a
+ * server older than its database), note the previous ref, check the tag out. The checkout moves before upgrade.sh runs, so the script
+ * that runs is the target release's own.
+ */
+async function checkOutRemoteTag(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  checkout: RemoteCheckout,
+  tag: string,
+): Promise<SourceMove> {
+  session.progress.write(`moving the server's copy of the source to ${tag}`);
+
+  const values = await runSourceScript(
+    deps,
+    session,
+    [
+      'cd "$CMPATCH_REMOTE_PATH"',
+      'git fetch --quiet --tags origin || { printf "sync_error=fetch\\n"; exit 3; }',
+      'target="$(git rev-parse --verify --quiet "refs/tags/${CMPATCH_TAG}^{commit}" || true)"',
+      'if [ -z "$target" ]; then printf "sync_error=unknown-tag\\ntag=%s\\n" "$CMPATCH_TAG"; exit 3; fi',
+      'if ! git merge-base --is-ancestor HEAD "$target"; then',
+      '  printf "sync_error=not-ancestor\\ntag=%s\\n" "$CMPATCH_TAG"; exit 3',
+      "fi",
+      'old="$(git rev-parse HEAD)"',
+      'previous="$(git symbolic-ref --quiet --short HEAD || printf "%s" "$old")"',
+      'git -c advice.detachedHead=false checkout --quiet "refs/tags/${CMPATCH_TAG}" || { printf "sync_error=checkout\\ntag=%s\\n" "$CMPATCH_TAG"; exit 3; }',
+      'printf "previous_ref=%s\\nold_revision=%s\\nnew_revision=%s\\n" "$previous" "$old" "$(git rev-parse HEAD)"',
+    ],
+    {
+      checkoutKind: checkout.kind,
+      env: { CMPATCH_TAG: tag },
+      // Settled before the move, the way the script settles `previous`: a run
+      // that ends without an answer still says where the checkout was.
+      ...(checkout.headTag === tag
+        ? {}
+        : { unknownOutcomeNote: renderPossibleMove(session, checkout.branch ?? checkout.head, tag) }),
+    },
+  );
+
+  const oldRevision = values.old_revision ?? checkout.head;
+  const newRevision = values.new_revision ?? "";
+  session.progress.write(
+    oldRevision === newRevision
+      ? `the server's source is already at ${tag}`
+      : `moved the source to ${tag} (${shortRevision(oldRevision)} → ${shortRevision(newRevision)})`,
+  );
+
+  return {
+    newRevision,
+    oldRevision,
+    previousRef: values.previous_ref ?? oldRevision,
+    target: tag,
+  };
+}
+
+/**
+ * The read-only half of a move to a release tag, run before the confirmation
+ * so a move that would be refused is never asked about: fetch tags, and refuse
+ * a target that is not a descendant of HEAD. On `main` that is a branch with
+ * commits of its own (diverged) or one ahead of the latest tag, whose database
+ * may already carry migrations the release does not know. The database itself
+ * is checked after this, by `checkRemoteSchema`.
+ * `checkOutRemoteTag` checks the ancestry again as it moves.
+ */
+async function checkRemoteTagIsAhead(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  checkout: RemoteCheckout,
+  tag: string,
+): Promise<void> {
+  session.progress.write(`checking that ${tag} is newer than the server's source`);
+
+  await runSourceScript(
+    deps,
+    session,
+    [
+      'cd "$CMPATCH_REMOTE_PATH"',
+      'git fetch --quiet --tags origin || { printf "sync_error=fetch\\n"; exit 3; }',
+      'target="$(git rev-parse --verify --quiet "refs/tags/${CMPATCH_TAG}^{commit}" || true)"',
+      'if [ -z "$target" ]; then printf "sync_error=unknown-tag\\ntag=%s\\n" "$CMPATCH_TAG"; exit 3; fi',
+      'if [ -n "$CMPATCH_BRANCH" ]; then',
+      '  upstream="$(git rev-parse --verify --quiet "refs/remotes/origin/${CMPATCH_BRANCH}^{commit}" || true)"',
+      '  if [ -n "$upstream" ] && ! git merge-base --is-ancestor HEAD "$upstream"; then',
+      '    printf "sync_error=diverged\\nbranch=%s\\n" "$CMPATCH_BRANCH"; exit 3',
+      "  fi",
+      "fi",
+      'if ! git merge-base --is-ancestor HEAD "$target"; then',
+      '  if [ -n "$CMPATCH_BRANCH" ]; then',
+      '    printf "sync_error=ahead-of-release\\nbranch=%s\\nhead=%s\\ntag=%s\\n" "$CMPATCH_BRANCH" "$(git rev-parse HEAD)" "$CMPATCH_TAG"',
+      "  else",
+      '    printf "sync_error=not-ancestor\\ntag=%s\\n" "$CMPATCH_TAG"',
+      "  fi",
+      "  exit 3",
+      "fi",
+    ],
+    {
+      checkoutKind: checkout.kind,
+      env: {
+        CMPATCH_BRANCH: checkout.kind === "branch" ? (checkout.branch ?? "main") : "",
+        CMPATCH_TAG: tag,
+      },
+    },
+  );
+}
+
+/**
+ * The database half of the read-only checks, before the confirmation: the
+ * server's `schema-check.sh` (run from the current checkout, which stays
+ * put) pulls the image the upgrade would run and runs that image's own
+ * schema check against the deployment's database. An applied migration the
+ * image does not know means the database is newer than the server the
+ * upgrade would start, so it is refused. A source build has no image before
+ * the build: upgrade.sh checks it after the build, before the restart. A
+ * checkout from before `schema-check.sh` has none to run; the target's
+ * `upgrade.sh` runs the same check before it changes anything. Returns
+ * whether the check pulled the target image.
+ */
+async function checkRemoteSchema(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  plan: UpgradePlan,
+  releaseImage: boolean,
+): Promise<boolean> {
+  const image = plan.image;
+  if (image === null) {
+    session.progress.write(
+      "the server checks its database with the built image's schema check after the build, before restarting anything",
+    );
+    return false;
+  }
+  // How the target is named in a refusal: the release, or the image itself.
+  const target = releaseImage && plan.kind === "tag" ? plan.tag : shortImageRef(image.ref);
+  session.progress.write(
+    image.local
+      ? `checking the server's database with the schema check of ${target}`
+      : `pulling ${target} on the server and checking its database with that image's schema check`,
+  );
+
+  const values = await runSourceScript(
+    deps,
+    session,
+    [
+      'cd "$CMPATCH_REMOTE_PATH"',
+      'if [ ! -x scripts/selfhost/schema-check.sh ]; then printf "schema_check=unavailable\\n"; exit 0; fi',
+      'set -- --image "$CMPATCH_IMAGE"',
+      'if [ -n "$CMPATCH_LOCAL_IMAGE" ]; then set -- "$@" --local-image; fi',
+      'schema_err="$(mktemp)"',
+      "schema_status=0",
+      'scripts/selfhost/schema-check.sh "$@" 2>"$schema_err" || schema_status=$?',
+      // The script's own last line, for a failure that is not one of its
+      // reported states (no env file, no docker).
+      'printf "schema_detail=%s\\n" "$(sed -n "s/^\\[selfhost\\] FAIL: //p" "$schema_err" | tail -n 1)"',
+      'rm -f "$schema_err"',
+      'exit "$schema_status"',
+    ],
+    {
+      env: { CMPATCH_IMAGE: image.ref, CMPATCH_LOCAL_IMAGE: image.local ? "1" : "" },
+      refuse: (reported) => describeSchemaRefusal(reported, target, shortImageRef(image.ref)),
+    },
+  );
+
+  if (values.schema_check === "unavailable") {
+    session.progress.write(
+      "the server's scripts predate the schema check; the target's upgrade.sh runs it before changing anything",
+    );
+    return false;
+  }
+  session.progress.write(`the server's database has no migration ${target} does not know`);
+  return !image.local;
+}
+
+/** The schema check's refusal, mirroring upgrade.sh's; undefined when it passed. */
+function describeSchemaRefusal(
+  values: Record<string, string>,
+  target: string,
+  imageRef: string,
+): string | undefined {
+  const skip =
+    "pass --skip-schema-check to upgrade without this check (unsafe: nothing then stops an older server from starting on a newer schema)";
+  switch (values.schema_check) {
+    case "ok":
+    case "unavailable":
+      return undefined;
+    case "unknown": {
+      const names = (values.unknown_migrations ?? "").split(" ").filter(Boolean).join(", ");
+      return `The server's database has migrations ${target} does not know (${names}); running it would run an older server on a newer schema. Nothing was changed. Wait for a release that includes them, or restore the database from the backup taken before they were applied (cmpatch selfhost restore --restore-env).`;
+    }
+    case "unreachable":
+      return `Could not read the server's database migration state (${values.schema_error || "no detail"}). Nothing was changed. Start the stack on the server and run the upgrade again, or ${skip}.`;
+    case "unsupported":
+      return `The server image ${imageRef} predates the schema check (it needs 0.10.0 or newer). Nothing was changed. To upgrade to it anyway, ${skip}.`;
+    case "error":
+      return `Could not run the schema check of ${target} on the server (${values.schema_error || values.schema_detail || "no detail"}). Nothing was changed. Fix it on the server and run the upgrade again, or ${skip}.`;
+    default:
+      // The script stopped before reporting a state.
+      if (values.schema_detail === undefined) {
+        return undefined;
+      }
+      return `Could not check the server's database against ${target}${values.schema_detail ? ` (${values.schema_detail})` : ""}. Nothing was changed. Fix it on the server and run the upgrade again, or ${skip}.`;
+  }
+}
+
+/**
+ * Runs one of the checkout scripts and returns its key=value lines, or throws
+ * its refusal. `unknownOutcomeNote` is added to a failure the script did not
+ * name (a dropped connection, ssh failing to start): the script may have got
+ * further than anything this side saw. `checkoutKind` picks the way forward a
+ * refusal offers, where that depends on the checkout.
+ */
+async function runSourceScript(
+  deps: CommandDeps,
+  session: SelfhostSession,
+  body: readonly string[],
+  options: {
+    checkoutKind?: RemoteCheckout["kind"];
+    env?: Record<string, string>;
+    /** A refusal judged from the reported values, ahead of the script's own. */
+    refuse?: (values: Record<string, string>) => string | undefined;
+    unknownOutcomeNote?: string;
+  } = {},
+): Promise<Record<string, string>> {
+  const withNote = (message: string): string =>
+    options.unknownOutcomeNote === undefined ? message : `${message}\n\n${options.unknownOutcomeNote}`;
+
+  let result: Awaited<ReturnType<typeof captureRemoteShell>>;
+  try {
+    result = await captureRemoteShell({
+      body: body.join("\n"),
+      connection: pairedSshInvocation(session.sshTarget, session.identityFile),
+      env: { CMPATCH_REMOTE_PATH: session.remotePath, ...options.env },
+      runProcess: deps.runProcess,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      error.message = withNote(error.message);
+    }
+    throw error;
+  }
+
+  const values: Record<string, string> = {};
+  for (const line of result.output.split("\n")) {
+    const separator = line.indexOf("=");
+    if (separator > 0) {
+      values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+    }
+  }
+
+  const refusal = options.refuse?.(values);
+  if (refusal !== undefined) {
+    throw new UsageError(refusal);
+  }
+  if (result.exitCode !== 0) {
+    const message = describeSyncFailure(values, session.remotePath, result.output, options.checkoutKind);
+    throw new UsageError(values.sync_error === undefined ? withNote(message) : message);
+  }
+  return values;
 }
 
 function describeSyncFailure(
   values: Record<string, string>,
   remotePath: string,
   rawOutput: string,
+  checkoutKind?: RemoteCheckout["kind"],
 ): string {
   const fixByHand = `Fix it on the server (in ${remotePath}), then run the upgrade again.`;
 
   switch (values.sync_error) {
     case "not-a-checkout":
-      return `${remotePath} on the server is not a git checkout, so the upgrade cannot tell which version it would build. Reinstall from a clone of ${SOURCE_REPO_URL}.`;
-    case "unexpected-remote":
-      return `${remotePath} on the server tracks ${values.remote ?? "an unknown repository"}, not ${SOURCE_REPO_URL}. ${fixByHand}`;
+      return `${remotePath} on the server is not a git checkout, so the upgrade cannot tell which version it runs. Reinstall from a clone of ${SOURCE_REPO_URL}.`;
     case "detached":
-      return `${remotePath} on the server is not on a branch (detached HEAD), so there is nothing to fast-forward. ${fixByHand}`;
+      return `${remotePath} on the server is neither on a branch nor at a codemagic-patch-server-v* release tag (detached HEAD), so the upgrade cannot tell which release it runs. ${fixByHand}`;
     case "dirty":
-      return `${remotePath} on the server has uncommitted changes. The upgrade builds the dashboard from this checkout, so it will not update a tree with edits it cannot account for. ${fixByHand}`;
+      return `${remotePath} on the server has uncommitted changes. The upgrade runs the compose files and scripts from this checkout, so it will not move a tree with edits it cannot account for. ${fixByHand}`;
     case "not-default-branch":
-      return `${remotePath} on the server is on ${values.branch ?? "another branch"}, not ${values.default_branch ?? "the default branch"}. Upgrades only fast-forward the default branch. ${fixByHand}`;
+      return `${remotePath} on the server is on ${values.branch ?? "another branch"}, not ${values.default_branch ?? "the default branch"}. Upgrades move the default branch or a release tag only. ${fixByHand}`;
     case "diverged":
       return `${remotePath} on the server has commits that are not in ${SOURCE_REPO_URL}, so it cannot be fast-forwarded. ${fixByHand}`;
+    case "fetch":
+      return `could not fetch the release tags into ${remotePath} on the server. Check that the server can reach ${SOURCE_REPO_URL}, then run the upgrade again.`;
+    case "unknown-tag":
+      return `${values.tag ?? "The release tag"} is not in ${remotePath} on the server even after fetching tags. Run the upgrade again; if it persists, check the checkout's origin.`;
+    case "not-ancestor": {
+      const refusal = `The server's checkout in ${remotePath} is not an ancestor of ${values.tag ?? "the latest release"}, so moving to it would run a server older than the one the database was migrated by. Nothing was changed.`;
+      // On a tag checkout the CLI's --build-from-source still targets the
+      // latest release and is refused the same way; upgrade.sh run on the
+      // server keeps the checkout it has.
+      return checkoutKind === "tag"
+        ? `${refusal} Wait for the next release, or upgrade the checkout you have from the server itself: cd ${remotePath} && scripts/selfhost/upgrade.sh --build-from-source (or --image <ref> to run an image built elsewhere).`
+        : `${refusal} Wait for the next release, or rerun with --build-from-source to build the checkout you have.`;
+    }
+    case "ahead-of-release":
+      return `This install runs ${shortRevision(values.head ?? "")} on ${values.branch ?? "main"}, which is newer than the latest release ${values.tag ?? ""}; upgrading would downgrade the server under a newer database. Nothing was changed. Wait for the next release, or rerun with --build-from-source to rebuild from ${values.branch ?? "main"}.`;
+    case "checkout":
+      return `could not check out ${values.tag ?? "the release tag"} in ${remotePath} on the server. ${fixByHand}`;
     default:
       return `could not update the server's copy of the source in ${remotePath}.\n\n${rawOutput.trim()}`;
   }
+}
+
+/**
+ * Whether a checkout's origin is a repository the upgrade may move: anything
+ * named like the product (the public repo or a fork of it), or the
+ * repository the CLI installs from (`CMPATCH_TEST_SOURCE_REPO` points it at a
+ * scratch repo of any name), in its https or ssh form, with or without `.git`.
+ */
+function isSourceRepoOrigin(remoteUrl: string, sourceRepoUrl: string): boolean {
+  if (remoteUrl.includes("codemagic-patch")) {
+    return true;
+  }
+  const remote = gitRepositoryPath(remoteUrl);
+  return remote !== null && remote === gitRepositoryPath(sourceRepoUrl);
+}
+
+/** `host/owner/name`, lowercased, for a git URL in scheme or scp-like form. */
+function gitRepositoryPath(url: string): string | null {
+  const trimmed = url.trim().toLowerCase().replace(/\/+$/, "").replace(/\.git$/, "");
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+)$/.exec(trimmed);
+  const scpLike = withScheme === null ? /^(?:[^@/]*@)?([^/:]+):(.+)$/.exec(trimmed) : null;
+  const match = withScheme ?? scpLike;
+  if (match === null) {
+    return null;
+  }
+  return `${match[1] ?? ""}/${(match[2] ?? "").replace(/^\/+/, "")}`;
 }
 
 function shortRevision(revision: string): string {

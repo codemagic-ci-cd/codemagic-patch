@@ -49,6 +49,13 @@ function findHint(problem: ProblemDetails): string | undefined {
     return `Run \`${CLI_NAME} login\` again.`;
   }
 
+  // A write an API token may not make (`token create` in this CLI). Requests send
+  // `--token` first, then CODEMAGIC_PATCH_TOKEN, then the stored sign-in, so a browser
+  // sign-in alone would not be used while either is set.
+  if (problem.reason === "session_required") {
+    return `This command needs a browser sign-in. Remove --token and unset CODEMAGIC_PATCH_TOKEN, then run \`${CLI_NAME} login\` (without --token).`;
+  }
+
   if (problem.reason === "signature_required") {
     return missingSignatureHint(problem);
   }

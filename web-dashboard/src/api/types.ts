@@ -141,6 +141,17 @@ export interface IamUserProvisionBody {
   expiresInDays?: number;
 }
 
+/**
+ * `POST /v1/iam/users/:userId/rotate-token` hook input — replaces the token of
+ * a service account `teamId` owns. No `expiresInDays` → the token never expires.
+ */
+export interface IamUserTokenRotateBody {
+  teamId: string;
+  userId: string;
+  tokenDisplayName?: string;
+  expiresInDays?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Response envelopes — management (managementRoutes.ts)
 // ---------------------------------------------------------------------------
@@ -272,6 +283,8 @@ export interface ReleaseBinaryVersionMetrics {
   failed: number;
   installed: number;
   success: number;
+  /** Server-computed success / (success + failed); null when both are 0. */
+  successRate: number | null;
 }
 
 /** `GET /v1/metrics/releases/:releaseId` */
@@ -343,6 +356,21 @@ export interface IamUserProvisionResponse {
   roleBinding: RoleBinding;
   token: string;
   user: IamProvisionedUser;
+}
+
+/**
+ * `POST /v1/iam/users/:userId/rotate-token` (201) — `token` is the show-once
+ * plaintext PAT; every earlier token of the account has stopped working.
+ */
+export interface IamUserTokenRotateResponse {
+  apiToken: ApiTokenMetadata;
+  revokedApiTokenCount: number;
+  token: string;
+  user: {
+    email: string;
+    id: string;
+    ownerTeamId: string | null;
+  };
 }
 
 // ---------------------------------------------------------------------------

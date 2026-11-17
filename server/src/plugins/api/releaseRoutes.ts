@@ -55,7 +55,7 @@ export function registerReleaseRoutes(
   controlPlane.post<{
     Body: DeploymentRollbackBody;
     Params: DeploymentParams;
-  }>("/deployments/:deploymentId/rollback", async (request, reply) => {
+  }>("/deployments/:deploymentId/rollback", { config: { allowApiToken: true } }, async (request, reply) => {
     if (!options.deploymentRollbackHandler) {
       return sendProblem(
         reply,
@@ -127,6 +127,7 @@ export function registerReleaseRoutes(
 
   controlPlane.post<{ Params: ReleaseCreationParams }>(
     "/deployments/:deploymentId/releases",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       const authorization = await authorizeResourceAccess(
         options.authorizationService,
@@ -386,7 +387,7 @@ export function registerReleaseRoutes(
   controlPlane.post<{
     Body: ReleasePromoteBody;
     Params: ReleaseReadParams;
-  }>("/releases/:releaseId/promote", async (request, reply) => {
+  }>("/releases/:releaseId/promote", { config: { allowApiToken: true } }, async (request, reply) => {
     if (!options.releasePromoteHandler) {
       return sendProblem(
         reply,
@@ -473,7 +474,7 @@ export function registerReleaseRoutes(
   controlPlane.patch<{
     Body: ReleasePatchBody;
     Params: ReleaseReadParams;
-  }>("/releases/:releaseId", async (request, reply) => {
+  }>("/releases/:releaseId", { config: { allowApiToken: true } }, async (request, reply) => {
     const authorization = await authorizeResourceAccess(
       options.authorizationService,
       request.controlPlanePrincipal,

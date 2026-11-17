@@ -10,17 +10,20 @@ import {
   parseIamRoleBindingListInput,
   parseIamRoleBindingUpdateInput,
   parseIamUserProvisionInput,
+  parseIamUserTokenRotateInput,
   prepareIamInvitationCreateResponse,
   prepareIamInvitationRevokeResponse,
   prepareIamRoleBindingCreateResponse,
   prepareIamRoleBindingDeleteResponse,
   prepareIamRoleBindingUpdateResponse,
   prepareIamUserProvisionResponse,
+  prepareIamUserTokenRotateResponse,
 } from "./iamSupport";
 import {
   authorizeVisibleResourceAccess,
   createTeamNotFoundProblem,
   requireControlPlanePrincipal,
+  requireSessionPrincipal,
   sendPreparedJsonResponse,
   writeAuditEventIfConfigured,
 } from "./routeSupport";
@@ -33,7 +36,9 @@ import type {
   IamRoleBindingListQuery,
   IamRoleBindingParams,
   IamRoleBindingUpdateBody,
+  IamUserParams,
   IamUserProvisionBody,
+  IamUserTokenRotateBody,
 } from "./routeTypes";
 import {
   toInvitationWire,
@@ -181,7 +186,7 @@ export function registerIamRoutes(
   controlPlane.post<{ Body: IamUserProvisionBody }>(
     "/iam/users",
     async (request, reply) => {
-      const principal = requireControlPlanePrincipal(request);
+      const principal = requireSessionPrincipal(request);
 
       if (!options.iamUserProvisionHandler) {
         return sendProblem(
@@ -213,7 +218,10 @@ export function registerIamRoutes(
         return sendProblem(reply, authorization.problem);
       }
 
-      const result = await options.iamUserProvisionHandler(input.value);
+      const result = await options.iamUserProvisionHandler({
+        ...input.value,
+        issuingSessionId: principal.sessionId,
+      });
       if (result.outcome === "provisioned") {
         await writeAuditEventIfConfigured(
           options.auditEventWriteHandler,
@@ -238,6 +246,74 @@ export function registerIamRoutes(
       return sendPreparedJsonResponse(
         reply,
         prepareIamUserProvisionResponse(result),
+      );
+    },
+  );
+
+  controlPlane.post<{ Body: IamUserTokenRotateBody; Params: IamUserParams }>(
+    "/iam/users/:userId/rotate-token",
+    async (request, reply) => {
+      const principal = requireSessionPrincipal(request);
+
+      if (!options.iamUserTokenRotateHandler) {
+        return sendProblem(
+          reply,
+          createProblem({
+            detail: "service account token rotation is not implemented",
+            status: 501,
+          }),
+        );
+      }
+
+      const input = parseIamUserTokenRotateInput(request.body);
+      if (input.kind === "error") {
+        return sendProblem(reply, input.problem);
+      }
+
+      const authorization = await authorizeVisibleResourceAccess(
+        options.authorizationService,
+        request.controlPlanePrincipal,
+        "iam.manage",
+        () =>
+          options.authorizationService!.resolveTeamScope(input.value.teamId),
+        createTeamNotFoundProblem({
+          outcome: "not_found",
+          reason: "team_not_found",
+        }),
+      );
+      if (authorization.kind === "error") {
+        return sendProblem(reply, authorization.problem);
+      }
+
+      const result = await options.iamUserTokenRotateHandler({
+        ...input.value,
+        issuedBy: principal.userId,
+        issuingSessionId: principal.sessionId,
+        userId: request.params.userId,
+      });
+      if (result.outcome === "rotated") {
+        await writeAuditEventIfConfigured(
+          options.auditEventWriteHandler,
+          request,
+          {
+            action: "iam.user.token_rotated",
+            afterState: {
+              apiTokenId: result.apiToken.id,
+              revokedApiTokenCount: result.revokedApiTokenCount,
+              userId: result.user.id,
+            },
+            beforeState: null,
+            resourceId: result.user.id,
+            resourceType: "user",
+            result: "success",
+            teamId: input.value.teamId,
+          },
+        );
+      }
+
+      return sendPreparedJsonResponse(
+        reply,
+        prepareIamUserTokenRotateResponse(result),
       );
     },
   );
@@ -434,6 +510,7 @@ export function registerIamRoutes(
 
   controlPlane.delete<{ Params: IamRoleBindingParams }>(
     "/iam/role-bindings/:bindingId",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       if (
         !options.iamRoleBindingReadHandler ||
@@ -501,6 +578,7 @@ export function registerIamRoutes(
 
   controlPlane.delete<{ Params: IamInvitationParams }>(
     "/iam/invitations/:invitationId",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       const principal = requireControlPlanePrincipal(request);
 

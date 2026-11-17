@@ -84,9 +84,11 @@ export function readBucketDay(bucket: Record<string, unknown>): string {
 }
 
 /**
- * The lines under the daily table: how many per-release series the JSON
- * output carries (they have no table of their own), and the binary versions
- * that reported in the range, which are the values the filter flags take.
+ * The lines under the daily table: the server's range summary, how many
+ * per-release series the JSON output carries (they have no table of their
+ * own), and the binary versions that reported in the range, which are the
+ * values the filter flags take. A server without `summary` gets no summary
+ * lines rather than locally computed ones.
  */
 export function renderDeploymentTimeseriesNote(
   result: unknown,
@@ -97,10 +99,34 @@ export function renderDeploymentTimeseriesNote(
   }
 
   const lines: string[] = [];
+
+  if (isRecord(result.summary)) {
+    const { last_complete_day: lastDay, totals } = result.summary;
+    if (isRecord(totals)) {
+      const rate =
+        typeof totals.success_rate === "number"
+          ? `${(totals.success_rate * 100).toFixed(1)}%`
+          : "n/a";
+      lines.push(
+        `Range totals: ${String(totals.downloaded)} downloaded, ${String(totals.installed)} ready, ${String(totals.failed)} failed, ${String(totals.success)} applied; success rate ${rate}.`,
+      );
+    }
+    lines.push(
+      isRecord(lastDay)
+        ? `Last complete day: ${readBucketDay(lastDay)}, ${String(lastDay.active_devices)} active devices.`
+        : "Last complete day: none in this range.",
+    );
+  }
+
   const series = Array.isArray(result.series) ? result.series : [];
 
   if (series.length > 0 || result.series_truncated === true) {
-    const truncated = result.series_truncated === true ? " (truncated)" : "";
+    const truncated =
+      result.unlisted_series === "unavailable"
+        ? " (truncated; packages not listed are unavailable, not zero)"
+        : result.series_truncated === true
+          ? " (truncated)"
+          : "";
     lines.push(
       `Per-release series: ${series.length}${truncated}. Read them with --format json.`,
     );

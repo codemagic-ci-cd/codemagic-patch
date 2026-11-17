@@ -1,8 +1,11 @@
 import type { Pool } from "pg";
 
 import type {
+  ApiTokenId,
+  ApiTokenMetadata,
   ControlPlaneAction,
   MembershipId,
+  OAuthSessionId,
   RoleBindingId,
   RoleDefinition,
   RoleDefinitionId,
@@ -14,6 +17,12 @@ import type { DatabasePool } from "../db";
 import { canonicalizeEmail } from "../app/email";
 import { withTransaction } from "../db";
 import {
+  insertApiTokenFromSession,
+  revokeUserCredentials,
+} from "./credentialGeneration";
+import { isHonoredInTeam } from "../app/serviceAccount";
+import {
+  mapApiTokenRow,
   mapRoleBindingRow,
   mapRoleDefinitionRow,
   mapUserAccountRow,
@@ -32,7 +41,7 @@ export interface IamRoleWithPermissions {
 export interface IamRoleBinding {
   id: RoleBindingId;
   principalType: "user";
-  user: Pick<UserAccount, "displayName" | "email" | "id">;
+  user: Pick<UserAccount, "displayName" | "email" | "id" | "ownerTeamId">;
   role: Pick<RoleDefinition, "displayName" | "id" | "key">;
   scope: {
     type: "team";
@@ -76,7 +85,103 @@ export type GrantTeamRoleBindingResult =
     }
   | {
       outcome: "role_not_supported";
+    }
+  | {
+      /** A service account owned by another team; see app/serviceAccount.ts. */
+      outcome: "service_account_other_team";
     };
+
+export interface ProvisionUserInput {
+  bindingId: RoleBindingId;
+  createdAt: Date;
+  /** The provisioning admin, who is also the token's issuer. */
+  createdBy: UserId;
+  displayName: string | null;
+  email: string;
+  /** The admin's session; the token is minted only while it is live. */
+  issuingSessionId: OAuthSessionId;
+  membershipId: MembershipId;
+  roleId: RoleDefinitionId;
+  teamId: TeamId;
+  token: {
+    displayName: string;
+    expiresAt: Date | null;
+    id: ApiTokenId;
+    maskedPrefix: string;
+    tokenHash: string;
+  };
+  userId: UserId;
+}
+
+export type ProvisionUserResult =
+  | {
+      apiToken: ApiTokenMetadata;
+      membershipCreated: boolean;
+      outcome: "provisioned";
+      roleBinding: IamRoleBinding;
+      user: UserAccount;
+    }
+  | {
+      outcome: "user_exists";
+    }
+  | Exclude<TeamRoleRejection, null>
+  | {
+      /** The admin's session ended after it authenticated; nothing was kept. */
+      outcome: "session_revoked";
+    };
+
+export interface RotateServiceAccountTokenInput {
+  createdAt: Date;
+  /** The rotating admin, who is also the token's issuer. */
+  issuedBy: UserId;
+  /** The admin's session; the token is minted only while it is live. */
+  issuingSessionId: OAuthSessionId;
+  teamId: TeamId;
+  token: {
+    /** Null names the token after the account. */
+    displayName: string | null;
+    expiresAt: Date | null;
+    id: ApiTokenId;
+    maskedPrefix: string;
+    tokenHash: string;
+  };
+  userId: UserId;
+}
+
+export type RotateServiceAccountTokenResult =
+  | {
+      apiToken: ApiTokenMetadata;
+      outcome: "rotated";
+      revokedApiTokenCount: number;
+      user: UserAccount;
+    }
+  | {
+      /** Not a service account this team owns; an unknown id answers the same. */
+      outcome: "not_found";
+      reason: "user_not_found";
+    }
+  | {
+      outcome: "account_disabled";
+      reason: "user_disabled";
+    }
+  | {
+      /** The admin's session ended after it authenticated; nothing changed. */
+      outcome: "session_revoked";
+    };
+
+type TeamRoleRejection =
+  | {
+      outcome: "not_found";
+      reason: "role_not_found" | "team_not_found";
+    }
+  | {
+      outcome: "account_disabled";
+      reason: "team_disabled";
+    }
+  | {
+      outcome: "role_not_supported";
+    }
+  | null;
 
 export type DeleteTeamRoleBindingResult =
   | {
@@ -152,6 +257,19 @@ export interface IamRepository {
   ): Promise<GrantTeamRoleBindingResult>;
   listSystemRoles(): Promise<IamRoleWithPermissions[]>;
   listTeamRoleBindings(teamId: TeamId): Promise<ListTeamRoleBindingsResult>;
+  /**
+   * Creates a brand-new account, grants it the team role and mints its first
+   * API token, in one transaction: any refusal leaves nothing behind.
+   */
+  provisionUser(input: ProvisionUserInput): Promise<ProvisionUserResult>;
+  /**
+   * Replaces a service account's token: every earlier credential of the
+   * account ends and one new token is issued, in one transaction. A refusal
+   * leaves the account exactly as it was.
+   */
+  rotateServiceAccountToken(
+    input: RotateServiceAccountTokenInput,
+  ): Promise<RotateServiceAccountTokenResult>;
   updateTeamRoleBinding(
     input: UpdateTeamRoleBindingInput,
   ): Promise<UpdateTeamRoleBindingResult>;
@@ -170,6 +288,7 @@ interface RoleBindingDetailsRow extends RoleBindingRow {
   role_key: string;
   user_display_name: string | null;
   user_email: string;
+  user_owner_team_id: string | null;
 }
 
 export function createPostgresIamRepository(
@@ -189,7 +308,11 @@ export function createPostgresIamRepository(
 
         if (
           existing.role_definition_id === OWNER_ROLE_DEFINITION_ID &&
-          existing.user_status === "active"
+          existing.user_status === "active" &&
+          isHonoredInTeam(
+            { ownerTeamId: existing.user_owner_team_id as TeamId | null },
+            existing.scope_id,
+          )
         ) {
           const activeOwnerBindings = await lockActiveOwnerBindings(
             client,
@@ -277,67 +400,27 @@ export function createPostgresIamRepository(
           };
         }
 
-        const team = await client.query<{ id: string; status: string }>(
-          "SELECT id, status FROM team WHERE id = $1",
-          [input.teamId],
-        );
-        const teamRow = team.rows[0];
+        const rejected = await checkTeamRole(client, input.teamId, input.roleId);
+        if (rejected) {
+          return rejected;
+        }
 
-        if (!teamRow) {
+        // Refused for the admin's sake: the binding would grant nothing.
+        if (!isHonoredInTeam(user, input.teamId)) {
           return {
-            outcome: "not_found",
-            reason: "team_not_found",
+            outcome: "service_account_other_team",
           };
         }
 
-        if (teamRow.status === "disabled") {
-          return {
-            outcome: "account_disabled",
-            reason: "team_disabled",
-          };
-        }
-
-        const role = await getRoleDefinition(client, input.roleId);
-
-        if (!role) {
-          return {
-            outcome: "not_found",
-            reason: "role_not_found",
-          };
-        }
-
-        if (!role.isSystem || role.teamId !== null) {
-          return {
-            outcome: "role_not_supported",
-          };
-        }
-
-        const membershipCreated = await insertMembershipIfMissing(client, {
-          createdAt: input.createdAt,
-          id: input.membershipId,
-          teamId: input.teamId,
-          userId: user.id,
-        });
-        const bindingInserted = await insertRoleBindingIfMissing(client, {
-          bindingId: input.bindingId,
-          createdAt: input.createdAt,
-          createdBy: input.createdBy,
-          roleId: input.roleId,
-          teamId: input.teamId,
-          userId: user.id,
-        });
-        const roleBinding = await getTeamRoleBindingByUnique(client, {
-          roleId: input.roleId,
-          teamId: input.teamId,
+        const granted = await grantCheckedTeamRole(client, {
+          ...input,
           userId: user.id,
         });
 
         return {
-          membershipCreated,
-          outcome: bindingInserted ? "created" : "already_exists",
-          roleBinding: toIamRoleBinding(
-            requireValue(roleBinding, "role_binding"),
-          ),
+          membershipCreated: granted.membershipCreated,
+          outcome: granted.bindingInserted ? "created" : "already_exists",
+          roleBinding: granted.roleBinding,
         };
       });
     },
@@ -387,7 +470,8 @@ export function createPostgresIamRepository(
             rd.key AS role_key,
             rd.display_name AS role_display_name,
             u.email AS user_email,
-            u.display_name AS user_display_name
+            u.display_name AS user_display_name,
+            u.owner_team_id AS user_owner_team_id
           FROM role_binding rb
           JOIN role_definition rd ON rd.id = rb.role_definition_id
           JOIN user_account u ON u.id = rb.principal_id
@@ -403,6 +487,162 @@ export function createPostgresIamRepository(
         outcome: "found",
         roleBindings: result.rows.map(toIamRoleBinding),
       };
+    },
+
+    async provisionUser(input) {
+      try {
+        return await withTransaction(pool, async (client) => {
+          const rejected = await checkTeamRole(
+            client,
+            input.teamId,
+            input.roleId,
+          );
+          if (rejected) {
+            return rejected;
+          }
+
+          // Provisioning mints a usable credential, so it is limited to
+          // brand-new accounts: minting one for an existing user would let a
+          // team admin impersonate them across every team they belong to.
+          const userRow = await client.query<UserAccountRow>(
+            `
+              INSERT INTO user_account (
+                id,
+                email,
+                display_name,
+                owner_team_id,
+                created_at,
+                updated_at
+              ) VALUES ($1, $2, $3, $5, $4, $4)
+              ON CONFLICT (email) DO NOTHING
+              RETURNING *
+            `,
+            [
+              input.userId,
+              canonicalizeEmail(input.email),
+              input.displayName,
+              input.createdAt,
+              input.teamId,
+            ],
+          );
+          if (!userRow.rows[0]) {
+            return {
+              outcome: "user_exists",
+            };
+          }
+
+          const user = mapUserAccountRow(userRow.rows[0]);
+          const granted = await grantCheckedTeamRole(client, {
+            ...input,
+            userId: user.id,
+          });
+          const token = await insertApiTokenFromSession(client, {
+            ...input.token,
+            createdAt: input.createdAt,
+            issuingSession: {
+              id: input.issuingSessionId,
+              userId: input.createdBy,
+            },
+            ownerId: user.id,
+          });
+          if (!token) {
+            throw new IssueRefused();
+          }
+
+          return {
+            apiToken: mapApiTokenRow(token),
+            membershipCreated: granted.membershipCreated,
+            outcome: "provisioned",
+            roleBinding: granted.roleBinding,
+            user,
+          };
+        });
+      } catch (error) {
+        if (error instanceof IssueRefused) {
+          return {
+            outcome: "session_revoked",
+          };
+        }
+
+        throw error;
+      }
+    },
+
+    async rotateServiceAccountToken(input) {
+      try {
+        return await withTransaction(pool, async (client) => {
+          // The row lock orders this against identity linking, which clears
+          // the ownership, and against a second rotation. Eligibility is
+          // decided under it, before anything is changed.
+          const target = await client.query<UserAccountRow>(
+            `
+              SELECT *
+              FROM user_account
+              WHERE id = $1
+                AND owner_team_id = $2
+              FOR NO KEY UPDATE
+            `,
+            [input.userId, input.teamId],
+          );
+          const row = target.rows[0];
+          if (!row) {
+            return {
+              outcome: "not_found",
+              reason: "user_not_found",
+            };
+          }
+
+          if (row.status === "disabled") {
+            return {
+              outcome: "account_disabled",
+              reason: "user_disabled",
+            };
+          }
+
+          await client.query(
+            `
+              UPDATE user_account
+              SET credential_generation = credential_generation + 1,
+                  updated_at = $2
+              WHERE id = $1
+            `,
+            [input.userId, input.createdAt],
+          );
+          const revoked = await revokeUserCredentials(
+            client,
+            input.userId,
+            input.createdAt,
+          );
+          const token = await insertApiTokenFromSession(client, {
+            ...input.token,
+            createdAt: input.createdAt,
+            displayName: input.token.displayName ?? `${row.email} (rotated)`,
+            issuingSession: {
+              id: input.issuingSessionId,
+              userId: input.issuedBy,
+            },
+            ownerId: input.userId,
+          });
+          if (!token) {
+            throw new IssueRefused();
+          }
+
+          return {
+            apiToken: mapApiTokenRow(token),
+            outcome: "rotated",
+            revokedApiTokenCount: revoked.apiTokenCount,
+            user: mapUserAccountRow(row),
+          };
+        });
+      } catch (error) {
+        if (error instanceof IssueRefused) {
+          return {
+            outcome: "session_revoked",
+          };
+        }
+
+        throw error;
+      }
     },
 
     async updateTeamRoleBinding(input) {
@@ -445,7 +685,11 @@ export function createPostgresIamRepository(
 
         if (
           existing.role_definition_id === OWNER_ROLE_DEFINITION_ID &&
-          existing.user_status === "active"
+          existing.user_status === "active" &&
+          isHonoredInTeam(
+            { ownerTeamId: existing.user_owner_team_id as TeamId | null },
+            existing.scope_id,
+          )
         ) {
           const activeOwnerBindings = await lockActiveOwnerBindings(
             client,
@@ -491,6 +735,88 @@ export function createPostgresIamRepository(
   };
 }
 
+/**
+ * Thrown to roll back a transaction whose token the guard refused. Returning
+ * a refusal instead would commit what the transaction had already written.
+ */
+class IssueRefused extends Error {}
+
+async function checkTeamRole(
+  client: Queryable,
+  teamId: TeamId,
+  roleId: RoleDefinitionId,
+): Promise<TeamRoleRejection> {
+  const team = await client.query<{ id: string; status: string }>(
+    "SELECT id, status FROM team WHERE id = $1",
+    [teamId],
+  );
+  const teamRow = team.rows[0];
+
+  if (!teamRow) {
+    return {
+      outcome: "not_found",
+      reason: "team_not_found",
+    };
+  }
+
+  if (teamRow.status === "disabled") {
+    return {
+      outcome: "account_disabled",
+      reason: "team_disabled",
+    };
+  }
+
+  const role = await getRoleDefinition(client, roleId);
+
+  if (!role) {
+    return {
+      outcome: "not_found",
+      reason: "role_not_found",
+    };
+  }
+
+  if (!role.isSystem || role.teamId !== null) {
+    return {
+      outcome: "role_not_supported",
+    };
+  }
+
+  return null;
+}
+
+/** After checkTeamRole accepted the team and role. */
+async function grantCheckedTeamRole(
+  client: Queryable,
+  input: {
+    bindingId: RoleBindingId;
+    createdAt: Date;
+    createdBy: UserId;
+    membershipId: MembershipId;
+    roleId: RoleDefinitionId;
+    teamId: TeamId;
+    userId: UserId;
+  },
+): Promise<{
+  bindingInserted: boolean;
+  membershipCreated: boolean;
+  roleBinding: IamRoleBinding;
+}> {
+  const membershipCreated = await insertMembershipIfMissing(client, {
+    createdAt: input.createdAt,
+    id: input.membershipId,
+    teamId: input.teamId,
+    userId: input.userId,
+  });
+  const bindingInserted = await insertRoleBindingIfMissing(client, input);
+  const roleBinding = await getTeamRoleBindingByUnique(client, input);
+
+  return {
+    bindingInserted,
+    membershipCreated,
+    roleBinding: toIamRoleBinding(requireValue(roleBinding, "role_binding")),
+  };
+}
+
 async function getTeamRoleBindingById(
   pool: Queryable,
   bindingId: RoleBindingId,
@@ -502,7 +828,8 @@ async function getTeamRoleBindingById(
         rd.key AS role_key,
         rd.display_name AS role_display_name,
         u.email AS user_email,
-        u.display_name AS user_display_name
+        u.display_name AS user_display_name,
+        u.owner_team_id AS user_owner_team_id
       FROM role_binding rb
       JOIN role_definition rd ON rd.id = rb.role_definition_id
       JOIN user_account u ON u.id = rb.principal_id
@@ -532,6 +859,7 @@ async function getTeamRoleBindingForUpdate(
         rd.display_name AS role_display_name,
         u.email AS user_email,
         u.display_name AS user_display_name,
+        u.owner_team_id AS user_owner_team_id,
         u.status AS user_status
       FROM role_binding rb
       JOIN role_definition rd ON rd.id = rb.role_definition_id
@@ -562,7 +890,8 @@ async function getTeamRoleBindingByUnique(
         rd.key AS role_key,
         rd.display_name AS role_display_name,
         u.email AS user_email,
-        u.display_name AS user_display_name
+        u.display_name AS user_display_name,
+        u.owner_team_id AS user_owner_team_id
       FROM role_binding rb
       JOIN role_definition rd ON rd.id = rb.role_definition_id
       JOIN user_account u ON u.id = rb.principal_id
@@ -675,6 +1004,11 @@ async function insertRoleBindingIfMissing(
   return result.rows[0] !== undefined;
 }
 
+/**
+ * The owners the last-owner guard counts: active, and honored in this team.
+ * An owner binding held by another team's service account grants nothing
+ * (see app/serviceAccount.ts), so it is not an owner to be left with.
+ */
 async function lockActiveOwnerBindings(
   pool: Queryable,
   teamId: TeamId,
@@ -689,6 +1023,7 @@ async function lockActiveOwnerBindings(
         AND rb.scope_type = 'team'
         AND rb.scope_id = $2
         AND u.status = 'active'
+        AND (u.owner_team_id IS NULL OR u.owner_team_id = rb.scope_id)
       FOR UPDATE OF rb
     `,
     [OWNER_ROLE_DEFINITION_ID, teamId],
@@ -718,6 +1053,7 @@ function toIamRoleBinding(row: RoleBindingDetailsRow): IamRoleBinding {
       displayName: row.user_display_name,
       email: row.user_email,
       id: binding.principalId,
+      ownerTeamId: row.user_owner_team_id as TeamId | null,
     },
   };
 }

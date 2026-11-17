@@ -10,6 +10,7 @@ import { useMemo } from "react";
 
 import {
   dayBucketStarts,
+  dayChartBuckets,
   timeseriesSeriesLabel,
   zeroFillPoints,
 } from "../../model/timeseries";
@@ -36,6 +37,10 @@ export function AdoptionChart({
 }) {
   const buckets = useMemo(
     () => dayBucketStarts(timeseries.from, timeseries.to),
+    [timeseries.from, timeseries.to],
+  );
+  const chartBuckets = useMemo(
+    () => dayChartBuckets(timeseries.from, timeseries.to),
     [timeseries.from, timeseries.to],
   );
 
@@ -69,6 +74,8 @@ export function AdoptionChart({
   return (
     <TimeseriesChart
       ariaLabel="Active devices per day, per release"
+      bucketHeading="Day"
+      buckets={chartBuckets}
       emptyMessage="No active-device reports in this range yet. The chart fills in once devices run releases from this deployment."
       fill={fill}
       legendExtra={
@@ -84,7 +91,6 @@ export function AdoptionChart({
         </>
       }
       rows={rows}
-      timeseries={timeseries}
     />
   );
 }

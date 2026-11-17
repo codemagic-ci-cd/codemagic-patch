@@ -1,10 +1,10 @@
 // Route-derived breadcrumbs for app hierarchy screens ("Apps › App ›
 // Deployment › Release; IDs resolve to names (skeleton text while resolving)").
 // In single-team OSS mode team-level leaf routes (overview, apps list,
-// members, metrics) omit breadcrumbs — the page <h1> already carries the
-// title. In multi-team mode every team-scoped trail is prefixed with the
-// team-name crumb (link to the team overview) since it disambiguates, and
-// team-level leaves keep a static label after it. Entity ids come
+// members) omit breadcrumbs — the page <h1> already carries the title. In
+// multi-team mode every team-scoped trail is prefixed with the team-name
+// crumb (link to the team overview) since it disambiguates, and team-level
+// leaves keep a static label after it. Entity ids come
 // from the route params (teamId/appId/depId/releaseId) and resolve through
 // the existing query hooks, cache-first — a navigation from a list that
 // already populated the cache paints names instantly, otherwise a small inline
@@ -77,7 +77,6 @@ export function Breadcrumbs() {
 const TEAM_LEAF_LABELS = new Map<string, string>([
   ["apps", "Apps"],
   ["members", "Members"],
-  ["metrics", "Metrics"],
 ]);
 
 function buildCrumbs(
@@ -100,33 +99,6 @@ function buildCrumbs(
           },
         ]
       : [];
-
-    // Metrics drill-down (`metrics/apps/:appId[/deployments/:depId]`).
-    // Position-anchored on segments[2] — the section slug always sits right
-    // after `/teams/:teamId` — so a team named "metrics" can't hijack the
-    // trail. The bare `/metrics` index has no appId param and falls through
-    // to the static leaf-label handling below.
-    if (segments[2] === "metrics" && appId !== undefined) {
-      crumbs.push(
-        {
-          key: "metrics",
-          to: `/teams/${teamId}/metrics`,
-          node: "Metrics",
-        },
-        {
-          key: "app",
-          to: `/teams/${teamId}/metrics/apps/${appId}`,
-          node: <AppName appId={appId} />,
-        },
-      );
-      if (depId !== undefined) {
-        crumbs.push({
-          key: "deployment",
-          node: <DeploymentName appId={appId} deploymentId={depId} />,
-        });
-      }
-      return crumbs;
-    }
 
     if (appId !== undefined) {
       crumbs.push(

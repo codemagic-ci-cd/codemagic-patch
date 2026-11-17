@@ -202,6 +202,7 @@ export interface RoleBindingWire {
     display_name: string | null;
     email: string;
     id: string;
+    owner_team_id: string | null;
   };
 }
 
@@ -232,6 +233,19 @@ export interface ReleaseMetricsWire {
   failure_reason_detail_counts: Record<string, number>;
   installed: number;
   success: number;
+  /** success / (success + failed); null when both are 0. */
+  success_rate: number | null;
+}
+
+/**
+ * Sum of the rows on one page of deployment metrics, each package hash
+ * counted once. `coverage` is "deployment" only when that page holds every
+ * release; a "page" summary is not a deployment total and cannot be added to
+ * another page's, since hashes recur across pages.
+ */
+export interface DeploymentMetricsSummaryWire {
+  coverage: "deployment" | "page";
+  metrics: ReleaseMetricsWire;
 }
 
 export interface ReleaseDeliveryLaneWire {
@@ -300,6 +314,7 @@ export interface ReleaseBinaryVersionMetricsWire {
   failed: number;
   installed: number;
   success: number;
+  success_rate: number | null;
 }
 
 export interface TimeseriesBucketWire {
@@ -312,6 +327,8 @@ export interface TimeseriesBucketWire {
 }
 
 export interface TimeseriesSeriesWire {
+  /** Running `success` per UTC day of the range; null for the null hash. */
+  cumulative_success: number[] | null;
   points: TimeseriesBucketWire[];
   release_id: string | null;
   release_label: string | null;
@@ -325,8 +342,37 @@ export interface DeploymentTimeseriesWire {
   from: string;
   series: TimeseriesSeriesWire[];
   series_truncated: boolean;
+  summary: DeploymentTimeseriesSummaryWire;
   to: string;
   totals: TimeseriesBucketWire[];
+  /**
+   * What a package hash missing from `series` means: "no_events" when every
+   * hash with events is listed, "unavailable" when `series` was cut at
+   * `series_limit` and the missing hash's values are unknown, not zero.
+   */
+  unlisted_series: "no_events" | "unavailable";
+}
+
+export interface DeploymentTimeseriesSummaryWire {
+  last_complete_day: { active_devices: number; bucket_start: string } | null;
+  totals: {
+    downloaded: number;
+    failed: number;
+    installed: number;
+    success: number;
+    success_rate: number | null;
+  };
+}
+
+export interface MonthlyActiveDevicesMonthWire {
+  active_devices: number;
+  first_day: string;
+  month: string;
+}
+
+export interface MonthlyActiveDevicesWire {
+  data_through: string | null;
+  months: MonthlyActiveDevicesMonthWire[];
 }
 
 /** Public client download origin (`CodemagicPatchDownloadBaseUrl`). */

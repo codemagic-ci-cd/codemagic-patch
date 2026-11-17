@@ -9,8 +9,19 @@ import {
   registerMetricsRoutes,
 } from "./metricsRoutes";
 import { registerReleaseRoutes } from "./releaseRoutes";
+import { createSessionRequiredProblem } from "./routeProblems";
 import type { ApiRoutesOptions } from "./routeTypes";
 import { registerServerRoutes } from "./serverRoutes";
+
+const WRITE_METHODS = new Set(["DELETE", "PATCH", "POST", "PUT"]);
+
+declare module "fastify" {
+  interface FastifyContextConfig {
+    // Lets an API-token principal call this write route. Without it, the
+    // control-plane auth hook answers 403 session_required.
+    allowApiToken?: true;
+  }
+}
 
 export const apiRoutes: FastifyPluginAsync<ApiRoutesOptions> = async (
   app,
@@ -77,6 +88,29 @@ export const apiRoutes: FastifyPluginAsync<ApiRoutesOptions> = async (
         }
 
         request.controlPlanePrincipal = result.principal;
+
+        // Write routes are session-only unless they opt in, so a route that
+        // forgets to decide fails closed. Setting allowApiToken is a security
+        // decision for review.
+        const principal = result.principal;
+        if (
+          principal.kind === "api-token" &&
+          WRITE_METHODS.has(request.method) &&
+          !request.is404 &&
+          request.routeOptions.config.allowApiToken !== true
+        ) {
+          request.log.warn(
+            {
+              method: request.method,
+              reason: "session_required",
+              route: request.routeOptions.url,
+              tokenId: principal.tokenId,
+              userId: principal.userId,
+            },
+            "api token refused on a session-only route",
+          );
+          return reply.send(sendProblem(reply, createSessionRequiredProblem()));
+        }
       });
 
       registerManagementRoutes(controlPlane, options);

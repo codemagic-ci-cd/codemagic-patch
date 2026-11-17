@@ -1,9 +1,10 @@
-// Wire-shape DTOs and derivation for GET /v1/metrics/deployments/:id/timeseries.
+// Wire-shape DTOs and chart helpers for GET /v1/metrics/deployments/:id/timeseries.
 // Server contract (CMP-17 design v2): UTC day buckets, sparse points (missing
 // bucket = zero events), `from` bucket-aligned, the bucket containing `to`
 // partial by definition. `totals` counts each device once per bucket, so it is
 // NOT the sum of `series` — a device spanning two releases in one bucket
-// appears once per series but once in totals.
+// appears once per series but once in totals. Range totals, the success rate
+// and cumulative Applied come from the server, not from these helpers.
 
 export interface TimeseriesPoint {
   activeDevices: number;
@@ -16,6 +17,11 @@ export interface TimeseriesPoint {
 }
 
 export interface TimeseriesSeriesEntry {
+  /**
+   * Running Applied total per UTC day of the range, from the server. Null for
+   * the null-hash series and from servers older than the field.
+   */
+  cumulativeSuccess: number[] | null;
   points: TimeseriesPoint[];
   releaseId: string | null;
   releaseLabel: string | null;
@@ -30,8 +36,23 @@ export interface DeploymentTimeseries {
   /** Volume-ranked by the server; capped at its 50 busiest hashes. */
   series: TimeseriesSeriesEntry[];
   seriesTruncated: boolean;
+  /** The server's range totals; null from servers older than the summary. */
+  summary: {
+    totals: {
+      downloaded: number;
+      failed: number;
+      installed: number;
+      success: number;
+      successRate: number | null;
+    };
+  } | null;
   to: string;
   totals: TimeseriesPoint[];
+  /**
+   * What a package hash missing from `series` means: no events in range, or
+   * unknown because the list was truncated. Null from older servers.
+   */
+  unlistedSeries: "no_events" | "unavailable" | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,29 +95,25 @@ export function isPartialBucket(bucketStart: string, to: string): boolean {
   return Date.parse(bucketStart) + DAY_MS > Date.parse(to);
 }
 
-/**
- * Totals of the last complete UTC day in range — the honest "Active devices"
- * card value. A missing bucket on that day means zero devices (sparse
- * contract), not unknown. Null only when the range holds no complete day.
- */
-export function latestCompleteDayActive(
-  timeseries: DeploymentTimeseries,
-): { activeDevices: number; bucketStart: string } | null {
-  const buckets = dayBucketStarts(timeseries.from, timeseries.to);
-  const complete = buckets.filter(
-    (bucketStart) => !isPartialBucket(bucketStart, timeseries.to),
-  );
-  const last = complete[complete.length - 1];
+/** One x position of a line chart. */
+export interface ChartBucket {
+  key: string;
+  label: string;
+  /** Set when the bucket covers only part of its period, saying which part. */
+  partialNote?: string;
+}
 
-  if (last === undefined) {
-    return null;
-  }
-
-  const bucket = timeseries.totals.find((point) => point.bucketStart === last);
-  return {
-    activeDevices: bucket?.activeDevices ?? 0,
-    bucketStart: last,
-  };
+/** The chart buckets for [from, to); the one holding `to` is a partial day. */
+export function dayChartBuckets(from: string, to: string): ChartBucket[] {
+  return dayBucketStarts(from, to).map((bucketStart) => ({
+    key: bucketStart,
+    label: new Date(bucketStart).toLocaleDateString("en-US", {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }),
+    ...(isPartialBucket(bucketStart, to) ? { partialNote: "partial day" } : {}),
+  }));
 }
 
 /**
@@ -114,50 +131,4 @@ export function timeseriesSeriesLabel(entry: TimeseriesSeriesEntry): string {
   }
 
   return "No patch (binary)";
-}
-
-/** Event counts in range, summed from the deployment-wide totals series. */
-export function sumTimeseriesTotals(totals: readonly TimeseriesPoint[]): {
-  downloaded: number;
-  failed: number;
-  installed: number;
-  success: number;
-} {
-  let downloaded = 0;
-  let failed = 0;
-  let installed = 0;
-  let success = 0;
-  for (const point of totals) {
-    downloaded += point.downloaded;
-    failed += point.failed;
-    installed += point.installed;
-    success += point.success;
-  }
-  return { downloaded, failed, installed, success };
-}
-
-/**
- * Running Applied total for one package hash across the timeseries window.
- * Starts at 0 on `from`; events before the window are not in the payload.
- * Null when that hash is not in the returned series (including when the
- * volume ranking truncated it out).
- */
-export function cumulativeAppliedCountsForHash(
-  timeseries: DeploymentTimeseries,
-  targetPackageHash: string,
-): number[] | null {
-  const entry = timeseries.series.find(
-    (series) => series.targetPackageHash === targetPackageHash,
-  );
-  if (entry === undefined) {
-    return null;
-  }
-  let running = 0;
-  return zeroFillPoints(
-    dayBucketStarts(timeseries.from, timeseries.to),
-    entry.points,
-  ).map((point) => {
-    running += point.success;
-    return running;
-  });
 }

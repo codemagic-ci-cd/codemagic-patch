@@ -11,15 +11,19 @@
 // auto-focused element (Modal initialFocusRef). Revoke is tier-2
 // type-to-confirm per the ConfirmDialog contract ("irreversible: … revoke
 // token"); a 404 means the token is already gone → toast + refetch
-// ("Revoke 404 if not found").
+// ("Revoke 404 if not found"). "Sign out everywhere" (revoke-all) is tier-2
+// too; it signs this browser out as well, so RequireAuth ends it on the
+// sign-in screen.
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { FormEvent, ReactNode } from "react";
 
 import {
+  isSessionEnded,
   useApiTokens,
   useCreateApiToken,
+  useRevokeAllCredentials,
   useRevokeApiToken,
 } from "../api/hooks/tokens";
 import { HttpProblemError } from "../api/problem";
@@ -53,11 +57,31 @@ import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
 import { TBL, TBL_TD, TBL_TH, TBL_TR, TBL_WRAP } from "../components/ui/table";
 
 const EXPIRES_IN_DAYS_MAX = 3650;
+const REVOKE_ALL_CONFIRMATION = "revoke all";
+const REVOKED_EVERYWHERE_DESCRIPTION =
+  "Every session and API token on your account was revoked. Sign in again here and in the CLI, and replace the API tokens your CI uses.";
+const SESSION_ENDED_DESCRIPTION =
+  "This sign-in had already ended before the request could be made, so nothing is known to have been revoked. Sign in again, then use Sign out everywhere if you still need it.";
 
 export function TokensPage() {
   const toast = useToast();
   const tokensQuery = useApiTokens();
   const revoke = useRevokeApiToken();
+  // Clearing the session makes RequireAuth route to sign-in, so the toasts
+  // come from the hook's own callbacks, which run after this page is gone.
+  // Only a confirmed response proves the revocation; a 401 proves the
+  // opposite, that this sign-in was gone before the request went out.
+  const revokeAll = useRevokeAllCredentials({
+    onRevoked: () =>
+      toast.success("Signed out everywhere", {
+        description: REVOKED_EVERYWHERE_DESCRIPTION,
+      }),
+    onSessionEnded: () =>
+      toast.warning("Sign in again", {
+        description: SESSION_ENDED_DESCRIPTION,
+      }),
+  });
+  const [revokeAllOpen, setRevokeAllOpen] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -113,6 +137,9 @@ export function TokensPage() {
       },
     });
   };
+
+  // Any other error stays inline in the dialog's error slot.
+  const handleRevokeAll = () => revokeAll.mutate();
 
   return (
     <>
@@ -256,6 +283,24 @@ export function TokensPage() {
         </div>
       )}
 
+      <div className="mt-[18px] flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-[22px] shadow-sm">
+        <div>
+          <div className="font-semibold">Sign out everywhere</div>
+          <div className="text-fg-3 text-[13px]">
+            Revoke every session (browsers and CLIs, including this one) and
+            delete every API token on your account. Use it if a token or a
+            device may be compromised.
+          </div>
+        </div>
+        <button
+          type="button"
+          className={buttonVariants({ intent: "dangerGhost" })}
+          onClick={() => setRevokeAllOpen(true)}
+        >
+          Revoke all
+        </button>
+      </div>
+
       {/* Conditional mount resets the form state on every open. */}
       {createModalOpen ? (
         <CreateTokenModal
@@ -297,6 +342,35 @@ export function TokensPage() {
             This action is <b>immediate and irreversible</b>. Pipelines that
             depend on this token will start failing. Make sure to rotate to a
             new token before revoking.
+          </div>
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={revokeAllOpen}
+        variant="typeToConfirm"
+        confirmationText={REVOKE_ALL_CONFIRMATION}
+        title="Sign out everywhere"
+        description="You will be signed out here too. Other browsers and CLIs are signed out at their next request."
+        confirmLabel="Revoke all"
+        busy={revokeAll.isPending}
+        error={
+          revokeAll.isError && !isSessionEnded(revokeAll.error)
+            ? problemMessage(revokeAll.error)
+            : undefined
+        }
+        onCancel={() => {
+          setRevokeAllOpen(false);
+          revokeAll.reset();
+        }}
+        onConfirm={handleRevokeAll}
+      >
+        <div className={`${CALLOUT} ${CALLOUT_TONE.danger} mb-3.5`}>
+          <AlertIcon />
+          <div>
+            This is <b>immediate and irreversible</b>. Every API token is
+            deleted, so CI pipelines stop working until you create new tokens
+            and update their secrets.
           </div>
         </div>
       </ConfirmDialog>

@@ -83,6 +83,7 @@ export const LLMS_SECTIONS: LlmsSection[] = [
       'releases/capacitor-sdk',
       'releases/capacitor-cli',
       'releases/server',
+      'roadmap',
     ],
   },
 ];

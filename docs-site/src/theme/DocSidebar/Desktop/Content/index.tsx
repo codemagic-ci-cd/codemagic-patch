@@ -38,6 +38,8 @@ export default function DocSidebarDesktopContent({
   className,
 }: Props): ReactNode {
   const showAnnouncementBar = useShowAnnouncementBar();
+  // Roadmap uses the sidebar column for layout only; no page list.
+  const emptyMenu = /(?:^|\/)roadmap\/?$/.test(path);
 
   return (
     <nav
@@ -52,22 +54,26 @@ export default function DocSidebarDesktopContent({
         showAnnouncementBar && styles.menuWithAnnouncementBar,
         className,
       )}>
-      <ul className={clsx(ThemeClassNames.docs.docSidebarMenu, 'menu__list')}>
-        <DocSidebarItems items={sidebar} activePath={path} level={1} />
-      </ul>
-      <div className={styles.sidebarFooterLinks}>
-        {sidebarFooterLinks.map(({label, href}) => (
-          <a
-            key={href}
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.sidebarFooterLink}>
-            {label}
-            <IconExternalLink width={10} height={10} />
-          </a>
-        ))}
-      </div>
+      {!emptyMenu && (
+        <>
+          <ul className={clsx(ThemeClassNames.docs.docSidebarMenu, 'menu__list')}>
+            <DocSidebarItems items={sidebar} activePath={path} level={1} />
+          </ul>
+          <div className={styles.sidebarFooterLinks}>
+            {sidebarFooterLinks.map(({label, href}) => (
+              <a
+                key={href}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.sidebarFooterLink}>
+                {label}
+                <IconExternalLink width={10} height={10} />
+              </a>
+            ))}
+          </div>
+        </>
+      )}
     </nav>
   );
 }

@@ -1,0 +1,151 @@
+---
+title: Self-hosting cost at scale
+sidebar_label: Cost at scale
+description: >-
+  Worked infrastructure and license costs for self-hosting Patch at
+  10 thousand, 1 million, and 100 million monthly users.
+llmsDescription: >-
+  Patch self-host cost model: CDN serves checks and bundles, server takes
+  metrics; DigitalOcean sizing and totals at 10k, 1M, and 100M MAU.
+slug: /cost
+toc_max_heading_level: 3
+---
+
+# Self-hosting cost at scale
+
+This page sizes a Codemagic Patch install at three monthly active user (MAU)
+levels: 10 thousand, 1 million, and 100 million. 
+
+It uses DigitalOcean list
+prices as a concrete example. You can run the same shape on any Linux host
+(AWS, GCP, Fly.io, and so on). 
+
+## What the install needs
+
+You run three pieces. A small install can keep all three on one machine.
+
+- A server for metrics, the dashboard, and publishing
+- Object storage for manifests and bundles
+- Postgres for metric rows and release records
+
+For a larger user base, you will likely move object storage and Postgres off
+the machine for advantages such as automatic backups or avoiding egress fees.
+
+A CDN in front of the storage hostname is the fourth piece. Update checks and
+bundle downloads go through it when present, so download volume does not drive
+API size.
+
+## Traffic model
+
+![Codemagic Patch infrastructure: devices fetch manifests and bundles from the CDN and object storage; the API server handles publishing and metric posts into Postgres](https://blog.codemagic.io/uploads/2026/10/codemagic-patch-infrastructure.png)
+
+#### Requests go to the CDN
+
+Devices ask whether an update is available by fetching `meta.json` and
+`manifest.json` from object storage (usually through the CDN). When an update
+is available, the bundle comes from the same path. Checks and downloads do not
+land on the API host.
+
+#### Posts go to the server
+
+Phones report back to the API. Receiving and installing an update posts
+`Downloaded`, then `Ready` and `Applied`. The phone also posts `Active` (what
+it is running) at most once per day.
+
+Raw events stay as individual rows for eight days, then roll into daily
+totals.
+
+## Load estimates
+
+Assumptions used below:
+
+- One quarter of MAU open the app on a given day
+- One OTA release per week (three extra post events per device on ship day)
+
+| | 10 thousand | 1 million | 100 million |
+| --- | --- | --- | --- |
+| Opens per day | 2,500 | 250,000 | 25 million |
+| `Active` posts (24h average) | under 1/s | about 3/s | about 300/s |
+| `Active` posts (8h busy window) | under 1/s | about 10/s | about 1,000/s |
+
+Size the API host from `Active` throughput, then add headroom for ship-day
+posts. Do not size it from download traffic.
+
+## Sizing the infrastructure
+
+Shared rules across the three sizes:
+
+- Size the API from posts, not from downloads
+- Serve manifests and bundles from object storage behind a CDN
+- Plan on roughly 4 GiB of Postgres storage per 1 million MAU
+
+Infra and license are separate lines in the totals below.
+
+| | 10 thousand | 1 million | 100 million |
+| --- | --- | --- | --- |
+| API host | One-host Compose (about 2 GB RAM) | One basic droplet, 4 GB RAM ($24/month) | Two dedicated 2 vCPU / 8 GiB droplets + load balancer |
+| Postgres | On the same host | Basic managed Postgres ($15/month) | Managed Postgres about 800 GiB + standby |
+| Object storage | Silo on the host | Silo on host | Cloudflare R2 |
+| CDN | Cloudflare ($0/month) | Cloudflare ($0/month) | Cloudflare ($0/month) |
+| Infra / month | $12 | $39 | about $843 |
+| License / month | $0 | $0 | $7,250 |
+| Total / month | $12 | $39 | about $8,093 |
+
+Monthly figures follow DigitalOcean and Cloudflare list rates as of late 2026.
+The 100 million license figure is the published commercial band total for that
+size.
+
+The 10 thousand column is the default [Install](/docs/install) shape; at 1
+million, managed Postgres sits beside the 4 GB droplet for automated backup
+and recovery. At 100 million, the second droplet, load balancer, and database
+standby are for redundancy if a machine fails, and the 800 GiB database size
+is about double the expected working set.
+
+### No data transfer cost
+
+With Cloudflare in front of R2, CDN bandwidth and R2 egress stay $0 for any
+amount of users, including petabyte-scale usage at 100 million MAU. 
+
+This is only true for Cloudflare, as CloudFront and similar can charge for
+transfer.
+
+### What you don't need for hosting Patch
+
+Because update checks and bundles never hit the API, the same list applies at
+every size in the table:
+
+- No queue for downloads, as the post is stored before the server acknowledges
+- No HTTP cache in front of the API for update checks
+- No Redis for cached checks or counters
+- No Kubernetes or API gateway to spread phone download load
+- No autoscaling tied to download traffic
+- No multi-region Postgres for the update-check path
+- No separate timeseries database, unless you want fine analysis
+
+### License fee over 1 million MAU
+
+Through 1 million MAU, Patch does not need a license. Above that, there is a
+cost per million monthly active users. At 100 million MAU that license line is
+$7,250/month in the table above; the exact bands and yearly rates are on
+[Pricing](/docs/introduction/pricing).
+
+## Work required
+
+Production setup is a short guided run of
+[`cmpatch selfhost install`](/docs/install). You supply a server, DNS, and
+sign-in to pages the wizard opens. The installer puts Docker, TLS, and the
+stack in place.
+
+After that, light ongoing work is required. Schedule
+[`cmpatch selfhost backup`](/docs/setup/ongoing-maintenance) (and keep a copy
+off the host). Run
+[`cmpatch selfhost upgrade`](/docs/setup/ongoing-maintenance) when you want a
+newer server release.
+
+## Next steps
+
+- [Local quickstart](/docs/local-quickstart): run the stack on your machine
+- [Install](/docs/install): production install with one command
+
+For more than 1 million MAU, or for Codemagic-hosted Patch, email
+[sales@codemagic.io](mailto:sales@codemagic.io).

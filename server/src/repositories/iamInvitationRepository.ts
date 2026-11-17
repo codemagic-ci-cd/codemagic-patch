@@ -26,6 +26,7 @@ import {
   type TeamInvitationWithRoleRow,
   type UserAccountRow,
 } from "./rowMappers";
+import { isHonoredInTeam } from "../app/serviceAccount";
 
 export type TeamInvitationStatusFilter = TeamInvitationStatus | "all";
 
@@ -88,6 +89,10 @@ export type CreateTeamInvitationResult =
     }
   | {
       outcome: "role_not_supported";
+    }
+  | {
+      /** A service account owned by another team; see app/serviceAccount.ts. */
+      outcome: "service_account_other_team";
     };
 
 export interface ListTeamInvitationsInput {
@@ -198,6 +203,7 @@ interface RoleBindingDetailsRow extends RoleBindingRow {
   role_display_name: string;
   role_key: string;
   user_display_name: string | null;
+  user_owner_team_id: string | null;
   user_email: string;
 }
 
@@ -355,6 +361,13 @@ export function createPostgresIamInvitationRepository(
           return {
             outcome: "account_disabled",
             reason: "user_disabled",
+          };
+        }
+
+        // Refused for the admin's sake: the binding would grant nothing.
+        if (user && !isHonoredInTeam(user, input.teamId)) {
+          return {
+            outcome: "service_account_other_team",
           };
         }
 
@@ -1210,7 +1223,8 @@ async function getTeamRoleBindingByUnique(
         rd.key AS role_key,
         rd.display_name AS role_display_name,
         u.email AS user_email,
-        u.display_name AS user_display_name
+        u.display_name AS user_display_name,
+        u.owner_team_id AS user_owner_team_id
       FROM role_binding rb
       JOIN role_definition rd ON rd.id = rb.role_definition_id
       JOIN user_account u ON u.id = rb.principal_id
@@ -1247,6 +1261,7 @@ function toIamRoleBinding(row: RoleBindingDetailsRow): IamRoleBinding {
       displayName: row.user_display_name,
       email: row.user_email,
       id: binding.principalId,
+      ownerTeamId: row.user_owner_team_id as TeamId | null,
     },
   };
 }

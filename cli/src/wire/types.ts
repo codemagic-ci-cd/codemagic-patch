@@ -2,6 +2,7 @@
 // and `cmpatch init`.
 
 import type { NativePlatform } from "../projectAnalysis";
+import type { IosDependencyManager } from "../nativeProjectPaths";
 import type { PackageManagerKind, SdkDependency } from "./project";
 
 export type WireOutcome = "complete" | "incomplete" | "failed";
@@ -98,6 +99,8 @@ export type WireProjectSummary = {
   expoVersion?: string;
   platforms: NativePlatform[];
   sdk: SdkDependency;
+  /** How the iOS project gets its dependencies; absent when wire does not decide it (no iOS selected or project, or Expo prebuild). */
+  iosDependencyManager?: IosDependencyManager;
 };
 
 export type WireResult = {

@@ -2,6 +2,8 @@ import { Pool, type PoolConfig } from "pg";
 
 export interface DatabasePoolOptions {
   connectionString: string;
+  /** Give up on a connection that does not come up within this many ms. */
+  connectionTimeoutMillis?: number;
   max?: number;
   searchPath?: string[];
 }
@@ -11,6 +13,7 @@ export type DatabasePool = Pool;
 export function createDatabasePool(options: DatabasePoolOptions): DatabasePool {
   const config: PoolConfig = {
     connectionString: options.connectionString,
+    connectionTimeoutMillis: options.connectionTimeoutMillis,
     max: options.max,
   };
 

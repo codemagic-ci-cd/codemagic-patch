@@ -2,181 +2,245 @@
 title: Release Notes
 sidebar_label: All releases
 description: >-
-  What shipped in Patch, newest first, and what each version needs from the
-  other surfaces.
+  What shipped in Patch, newest first, with links to the full notes per
+  surface.
 llmsDescription: >-
-  Patch release notes index: latest version per surface, upgrade order,
-  compatibility requirements, and a dated list of releases linking to the
+  Patch release notes index: latest version per surface, a short
+  compatibility policy, and a dated list of releases linking to the
   per-surface notes.
 toc_max_heading_level: 3
+hide_send_to_ai: true
 ---
 
 # Release Notes
 
 Patch has five surfaces, each released as its own package with its own version
 and tag. Each surface has a page with its full notes. This page lists releases
-across all surfaces, newest first, and the version requirements between them.
-Shorter summaries and install links are on [GitHub Releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases).
+across all surfaces, newest first. Shorter summaries and install links are on
+[GitHub Releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases).
+For planned work, see the [Roadmap](/docs/roadmap).
 
 | Surface | Notes | Latest | Upgrade |
 | --- | --- | --- | --- |
-| React Native SDK | [React Native](/docs/releases/react-native) | 0.6.0 | `npm install @codemagic/react-native-patch@latest` |
-| CLI (`cmpatch`) | [CLI](/docs/releases/cli) | 0.9.0 | `npm install -g @codemagic/patch-cli@latest` |
-| Server and dashboard | [Server](/docs/releases/server) | 0.9.0 | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
+| React Native SDK | [React Native](/docs/releases/react-native) | 0.7.0 | `npm install @codemagic/react-native-patch@latest` |
+| CLI (`cmpatch`) | [CLI](/docs/releases/cli) | 0.10.0 | `npm install -g @codemagic/patch-cli@latest` |
+| Server and dashboard | [Server](/docs/releases/server) | 0.10.0 | [`cmpatch selfhost upgrade`](/docs/reference/cli-reference#self-hosting) |
 | Capacitor SDK | [Capacitor SDK](/docs/releases/capacitor-sdk) | 0.1.2 | `npm install @codemagic/capacitor-patch@latest` |
-| CLI for Capacitor (`cmpatch-capacitor`) | [CLI for Capacitor](/docs/releases/capacitor-cli) | 0.3.0 | `npm install -g @codemagic/capacitor-patch-cli@latest` |
+| CLI for Capacitor (`cmpatch-capacitor`) | [CLI for Capacitor](/docs/releases/capacitor-cli) | 0.3.1 | `npm install -g @codemagic/capacitor-patch-cli@latest` |
 
-## Upgrade order and compatibility
+## Compatibility {#upgrade-order-and-compatibility}
 
-Surfaces are versioned independently. A newer server accepts requests from
-older SDKs and CLIs, so upgrading the server does not break apps already in the
-field. An older server is not guaranteed to work with a newer SDK or CLI. If an
-SDK or CLI version needs a newer server, its entry says so at the top, and the
-table below lists those requirements.
-
-Upgrade the server first, then the CLI, then ship app builds with the new SDK.
-Each server entry starts with an upgrade impact section that lists migrations,
-configuration changes, and service restarts.
-
-| Version | Needs | Why |
-| --- | --- | --- |
-| React Native SDK [0.5.0](/docs/releases/react-native#v0-5-0) | Server 0.5.0 or newer | Reports update lifecycle as `Ready` and `Applied`; older servers drop those events. |
-| CLI for Capacitor [0.1.0](/docs/releases/capacitor-cli#v0-1-0) | Server 0.6.0 or newer | Sets the app framework, which older servers do not store; the dashboard then treats the app as a React Native app. |
+A newer server works with older SDKs and CLIs, so apps on an older SDK keep
+working after you upgrade the server. The reverse is not guaranteed.
 
 ## What shipped
 
+### 17th November 2026
+
+- **Server [0.10.0](/docs/releases/server#v0-10-0)**
+  - **API tokens can no longer grant access:** Creating tokens, adding or
+    inviting members, changing roles, and transferring apps need a browser
+    sign-in, so a leaked token cannot leave access behind (breaking for
+    CI that does these with a token)
+  - **Install without building:** `selfhost install` and `upgrade` pull a
+    published x86 and ARM server image instead of building on your
+    server. Update `cmpatch` before you upgrade
+  - **Sign out everywhere:** End every session and delete every API token
+    on your account from the dashboard. Sign-ins last at most 90 days
+  - **Rotate a service account's token:** From the Members page or with
+    `cmpatch member rotate-token`
+- **CLI [0.10.0](/docs/releases/cli#v0-10-0)**
+  - **Upgrade asks first:** `selfhost upgrade` shows its plan and asks
+    before it runs. Scripts need `--yes` (breaking for scripts). A
+    database newer than the release is refused before anything changes
+- **React Native SDK [0.7.0](/docs/releases/react-native#v0-7-0)**
+  - **React Native SwiftPM mode:** The package ships a `Package.swift`,
+    so apps on React Native 0.88 or later can link the SDK as a Swift
+    package instead of a pod. `cmpatch wire` in CLI 0.10.0 sets them up
+    without `pod install`
+  - **Android restart crash on Expo SDK 58 fixed:** Applying an update no
+    longer crashes with a missing `ExpoApplication` error
+- **CLI for Capacitor [0.3.1](/docs/releases/capacitor-cli#v0-3-1)**
+  - **Range totals in the CLI:** `deployment timeseries` prints the
+    range's totals and success rate. Requires server 0.10.0
+
 ### 3rd November 2026
 
-- **Server [0.9.0](/docs/releases/server#v0-9-0):** Daily anonymous usage
-  report of aggregate counts, on by default, used only for public statistics
-  and never for the licence's MAU limit (`SERVER_TELEMETRY=false` turns it
-  off); migration `0020` adds the empty `server_instance` table; Compose now
-  honours `SERVER_UPDATE_CHECK`. Dashboard charts use muted colours, and the
-  Status page names the bundled object store Silo.
-- **CLI [0.9.0](/docs/releases/cli#v0-9-0):** `selfhost install` can use a
-  Postgres database you already run (`--database-url`), checked from the
-  server before anything is written; `release promote` picks deployments
-  from a list, and both it and `release-react` ask for the rollout
-  percentage; `selfhost install --no-telemetry` turns the usage report off;
-  `init` no longer rejects valid servers over the shape of `/health/ready`.
+- **Server [0.9.0](/docs/releases/server#v0-9-0)**
+  - **Usage report, opt-out available:** Daily anonymous aggregate counts
+    go to Codemagic for public statistics only, never the licence MAU
+    limit. On by default; `SERVER_TELEMETRY=false` turns it off
+  - **Update-check config fixed:** `SERVER_UPDATE_CHECK=false`
+    in `.env.selfhost` now disables the GitHub release lookup; Compose
+    used to ignore it
+- **CLI [0.9.0](/docs/releases/cli#v0-9-0)**
+  - **Install with your own Postgres:** Point `selfhost install` at a
+    database you already run (`--database-url`) for backups and
+    point-in-time recovery; it checks connectivity from the server
+    before writing anything
+  - **Promotion and rollout in CLI:** `release promote` picks deployments
+    from a list, and both it and `release-react` ask for the rollout
+    percentage instead of silently using 100%
 
 ### 28th October 2026
 
-- **Server [0.8.0](/docs/releases/server#v0-8-0):** Raw metric events are
-  kept 8 days and folded into daily totals that are kept indefinitely;
-  migration `0019` adds the aggregate tables and an index on `metric_event`,
-  and ingest waits for the index build. Self-host scripts gain the ngrok
-  scheme.
-- **CLI [0.8.0](/docs/releases/cli#v0-8-0):** `selfhost install --fly`
-  deploys Patch onto Fly.io with Tigris storage, with `upgrade`, `backup`, and
-  `restore` on that install; `selfhost install --ngrok` installs the stack on
-  this machine behind an ngrok address for device testing; overlapping runs no
-  longer sign each other out; flag errors point at the command's help.
-- **React Native SDK [0.6.0](/docs/releases/react-native#v0-6-0):** Jest and
-  Vitest test fake (`/jest`, `/vitest` entry points) so suites run without a
-  native binary; Android background boots no longer spend a launch attempt;
-  default launch attempts lowered from 3 to 2; resource shrinking keeps the `CodemagicPatch*`
-  strings.
-- **Capacitor SDK [0.1.2](/docs/releases/capacitor-sdk#v0-1-2):** Default
-  launch attempts lowered from 3 to 2; resource shrinking keeps the `CodemagicPatch*`
-  overrides.
-- **CLI for Capacitor [0.3.0](/docs/releases/capacitor-cli#v0-3-0):**
-  `token revoke` confirms unless `--yes` (breaking for scripts) and takes
-  `--name`; deployment timeseries and failure drill-down; `team list` / `show`;
-  binary version filters on `release list`; `app setting` without a flag shows
-  the settings; overlapping runs no longer sign each other out; flag errors
-  point at the command's help.
+- **Server [0.8.0](/docs/releases/server#v0-8-0)**
+  - **Slower Postgres growth:** Raw events stay 8 days, then fold into
+    daily totals kept indefinitely, so charts stay accurate. The upgrade
+    builds a metrics index first; ingest waits for it
+- **CLI [0.8.0](/docs/releases/cli#v0-8-0)**
+  - **Install on Fly.io:** `selfhost install --fly` deploys Patch with
+    Tigris storage, without a VPS, DNS, or certificates; `upgrade`,
+    `backup`, and `restore` work on that install
+  - **Try on a real device without a domain:** `selfhost install --ngrok`
+    runs the stack on this machine behind an ngrok address
+- **React Native SDK [0.6.0](/docs/releases/react-native#v0-6-0)**
+  - **Test without a native binary:** Jest and Vitest fakes (`/jest`,
+    `/vitest`) so suites can run in CI
+  - **Background boots no longer burn a launch:** Android background
+    boots no longer count toward crash rollback
+  - **Fewer launch attempts before rollback:** Default lowered from 3 to
+    2
+- **Capacitor SDK [0.1.2](/docs/releases/capacitor-sdk#v0-1-2)**
+  - **Fewer launch attempts before rollback:** Default lowered from 3 to
+    2
+- **CLI for Capacitor [0.3.0](/docs/releases/capacitor-cli#v0-3-0)**
+  - **Token revoke confirms:** Confirms before it runs, unless `--yes`
+    (breaking for scripts)
+  - **Metrics from the CLI:** Deployment timeseries and failure
+    drill-down, matching the dashboard
 
 ### 19th October 2026
 
-- **Server [0.7.0](/docs/releases/server#v0-7-0):** Deployment and release
-  pages fetch only the selected chart range; backups restart the exact
-  container they stopped; migration `0018` drops an unused column from
-  `metric_event`, so rolling back to an older image breaks metrics ingest.
-- **CLI [0.7.0](/docs/releases/cli#v0-7-0):** `member remove`, `member update`,
-  `member invite-revoke`, and `token revoke` confirm unless `--yes` (breaking
-  for scripts); `server status`, `team list` / `show`, and `app transfer`;
-  deployment timeseries and failure drill-down from the CLI; binary version
-  filters on `release list`.
-- **React Native SDK [0.5.1](/docs/releases/react-native#v0-5-1):** React
-  Native 0.88 and Expo SDK 58; stalled metrics uploads no longer block update
-  checks, downloads, or other SDK calls.
-- **Capacitor SDK [0.1.1](/docs/releases/capacitor-sdk#v0-1-1):** Stalled
-  metrics uploads no longer block plugin calls or update downloads.
-- **CLI for Capacitor [0.2.0](/docs/releases/capacitor-cli#v0-2-0):** JSON
-  output when stdout is piped (breaking for scripts that read text); new
-  `cmpatch-capacitor doctor`.
+- **Server [0.7.0](/docs/releases/server#v0-7-0)**
+  - **Charts fetch one range:** Deployment and release pages fetch only
+    the selected range instead of all four
+  - **Do not roll back the image alone:** Migration `0018` drops an
+    unused column; an older image after upgrade breaks metrics ingest.
+    Restore the pre-upgrade backup instead
+- **CLI [0.7.0](/docs/releases/cli#v0-7-0)**
+  - **Destructive member and token commands confirm:** `member remove`,
+    `member update`, `member invite-revoke`, and `token revoke` ask
+    before changing access, unless `--yes` (breaking for scripts)
+  - **Manage teams and the host from the CLI:** `server status`,
+    `team list` / `show`, and `app transfer`
+  - **Metrics from the CLI:** Deployment timeseries and failure
+    drill-down
+- **React Native SDK [0.5.1](/docs/releases/react-native#v0-5-1)**
+  - **Newer React Native and Expo:** React Native 0.88 and Expo SDK 58
+  - **Stalled metrics no longer block updates:** Uploads that hang no
+    longer block update checks, downloads, or other SDK calls
+- **Capacitor SDK [0.1.1](/docs/releases/capacitor-sdk#v0-1-1)**
+  - **Stalled metrics no longer block updates:** Uploads that hang no
+    longer block plugin calls or update downloads
+- **CLI for Capacitor [0.2.0](/docs/releases/capacitor-cli#v0-2-0)**
+  - **JSON when piped:** Stdout is JSON when piped (breaking for scripts
+    that read text)
+  - **Doctor for Capacitor:** `cmpatch-capacitor doctor` checks the SDK
+    setup
 
 ### 6th October 2026
 
-- **Capacitor SDK [0.1.0](/docs/releases/capacitor-sdk#v0-1-0):** First
-  published version. OTA updates for the web assets of Capacitor and Ionic
-  apps, using the same protocol and server as the React Native SDK.
-- **CLI for Capacitor [0.1.0](/docs/releases/capacitor-cli#v0-1-0):** First
-  published version. `cmpatch-capacitor` publishes and manages releases for
-  Capacitor apps. Requires server 0.6.0.
-- **Server [0.6.0](/docs/releases/server#v0-6-0):** Stores each app's
-  framework and shows framework-specific commands in the dashboard; binary
-  version filter for deployment adoption and release history; full bundle and
-  diff download sizes on release detail; migration `0017` adds a column to
-  `app`.
-- **CLI [0.6.0](/docs/releases/cli#v0-6-0):** App lists, pickers, `init`, and
-  `doctor` show React Native apps only; Capacitor apps are managed with
-  `cmpatch-capacitor`.
+- **Capacitor SDK [0.1.0](/docs/releases/capacitor-sdk#v0-1-0)**
+  - **OTA for Capacitor and Ionic:** First published version. Web-asset
+    updates on the same protocol and server as the React Native SDK
+- **CLI for Capacitor [0.1.0](/docs/releases/capacitor-cli#v0-1-0)**
+  - **Publish Capacitor releases:** First published version.
+    `cmpatch-capacitor` manages Capacitor releases. Requires server
+    0.6.0
+- **Server [0.6.0](/docs/releases/server#v0-6-0)**
+  - **Framework-aware apps:** Stores each app's framework and shows the
+    matching release commands, so Capacitor and React Native get the
+    right flow
+  - **Filter adoption by binary version:** Focus charts and release
+    history on one version or group
+- **CLI [0.6.0](/docs/releases/cli#v0-6-0)**
+  - **React Native only in `cmpatch`:** App lists, pickers, `init`, and
+    `doctor` hide Capacitor apps; manage those with `cmpatch-capacitor`
 
 ### 2nd October 2026
 
-- **Server [0.5.1](/docs/releases/server#v0-5-1):** The bundled MinIO images
-  are no longer available to pull, so the stack now uses PGSTY Silo images.
-  Backups restart only the server service.
+- **Server [0.5.1](/docs/releases/server#v0-5-1)**
+  - **Silo replaces MinIO images:** Bundled object storage switches to
+    PGSTY Silo, because the old MinIO images are gone
 
 {/* Preserve links to headings on the former single-page release notes. */}
 
 ### 23rd September 2026 {#version-050}
 
-- <span id="cli-050" /><span id="wire-the-sdk-with-one-command" /><span id="gitlab-and-bitbucket-in-the-self-host-wizard" />**CLI [0.5.0](/docs/releases/cli#v0-5-0):** `cmpatch wire` installs and
-  configures the SDK; GitLab and Bitbucket sign-in in the self-host wizard;
-  React Native 0.87 support in `release-react`.
-- <span id="react-native-sdk-050" /><span id="integrate-with-patchwrap" /><span id="configure-the-rollback-launch-budget" />**React Native SDK [0.5.0](/docs/releases/react-native#v0-5-0):**
-  `Patch.wrap(App)`; configurable launch attempts before rollback; lifecycle
-  events renamed to `Ready` and `Applied`. Requires server 0.5.0; upgrade the
-  server before shipping an app build with this SDK.
-- <span id="server-and-dashboard-050" /><span id="gitlab-sign-in" /><span id="find-your-way-around-the-dashboard" />**Server [0.5.0](/docs/releases/server#v0-5-0):** GitLab sign-in; command
-  palette and adoption charts in the dashboard; migration `0016` rebuilds a
-  metrics index and can take a while on a large history.
+- <span id="cli-050" /><span id="wire-the-sdk-with-one-command" /><span id="gitlab-and-bitbucket-in-the-self-host-wizard" />**CLI [0.5.0](/docs/releases/cli#v0-5-0)**
+  - **Wire the SDK in one command:** `cmpatch wire` installs and
+    configures the SDK
+  - **GitLab and Bitbucket sign-in:** Available in the self-host wizard,
+    alongside GitHub
+  - **React Native 0.87:** Supported in `release-react`
+- <span id="react-native-sdk-050" /><span id="integrate-with-patchwrap" /><span id="configure-the-rollback-launch-budget" />**React Native SDK [0.5.0](/docs/releases/react-native#v0-5-0)**
+  - **`Patch.wrap(App)`:** Integration entry point
+  - **Tune crash rollback:** Configurable launch attempts before
+    rollback
+  - **Lifecycle rename, needs a newer server:** Events are now `Ready`
+    and `Applied`. Requires server 0.5.0; upgrade the server before
+    shipping an app build with this SDK
+- <span id="server-and-dashboard-050" /><span id="gitlab-sign-in" /><span id="find-your-way-around-the-dashboard" />**Server [0.5.0](/docs/releases/server#v0-5-0)**
+  - **GitLab sign-in:** Operators can sign in with GitLab
+  - **Adoption charts:** See how releases spread across devices
+  - **Longer upgrade on a large history:** Migration `0016` rebuilds a
+    metrics index and can take a while
 
 ### 14th September 2026 {#version-040}
 
-- <span id="cli-040" /><span id="try-an-ota-update-with-a-guided-demo" /><span id="diagnose-setup-before-your-first-release" /><span id="configure-external-storage-and-dns-from-the-wizard" />**CLI [0.4.0](/docs/releases/cli#v0-4-0):** `cmpatch demo` runs an OTA
-  update on a simulator; `cmpatch doctor` checks the SDK integration; R2, S3,
-  GCS, and DNS setup in the install wizard.
-- <span id="react-native-sdk-040" /><span id="know-when-an-update-is-ready-to-activate" />**React Native SDK [0.4.0](/docs/releases/react-native#v0-4-0):**
-  `isNextVersionReady()`; embedded revert honors the install mode.
-- <span id="server-and-dashboard-040" />**Server [0.4.0](/docs/releases/server#v0-4-0):** Private internal bucket
-  with `S3_INTERNAL_BUCKET`; dashboard themes; delivery metrics cleanup;
-  localhost HTTP install for testing.
+- <span id="cli-040" /><span id="try-an-ota-update-with-a-guided-demo" /><span id="diagnose-setup-before-your-first-release" /><span id="configure-external-storage-and-dns-from-the-wizard" />**CLI [0.4.0](/docs/releases/cli#v0-4-0)**
+  - **Try OTA on a simulator:** `cmpatch demo` runs an update before you
+    wire your own app
+  - **Check setup before the first release:** `cmpatch doctor` validates
+    the SDK integration
+  - **Storage and DNS in the wizard:** R2, S3, GCS, and DNS setup during
+    install
+- <span id="react-native-sdk-040" /><span id="know-when-an-update-is-ready-to-activate" />**React Native SDK [0.4.0](/docs/releases/react-native#v0-4-0)**
+  - **Know when an update is ready:** `isNextVersionReady()` reports
+    whether the next version can activate
+  - **Embedded revert matches install mode:** Revert honors the mode you
+    configured
+- <span id="server-and-dashboard-040" />**Server [0.4.0](/docs/releases/server#v0-4-0)**
+  - **Private upload bucket:** `S3_INTERNAL_BUCKET` keeps uploads in a
+    bucket the public never sees
+  - **Localhost HTTP for testing:** Install without TLS for local trials
 
 ### 7th September 2026 {#version-030}
 
-- <span id="self-host-install-wizard" /><span id="improved-cli-setup-for-local-eval" />**CLI [0.3.0](/docs/releases/cli#v0-3-0):** `cmpatch selfhost install`
-  wizard; `cmpatch selfhost local-eval` without cloning the repo.
-- **React Native SDK [0.3.0](/docs/releases/react-native#v0-3-0):** Failed
-  installs include diagnostic details; three launches before a crash rollback.
-- <span id="cloudfront-in-front-of-storage" /><span id="drill-into-why-installs-failed" /><span id="successful-installs-stop-counting-as-failures" /><span id="server-status-in-the-dashboard" />**Server [0.3.0](/docs/releases/server#v0-3-0):** CloudFront delivery;
-  failure details in the dashboard; installs that later succeed no longer
-  count as failures; Status page. If you use Cloudflare, remove the old `.json`
-  Cache Rule after upgrading; see the [server notes](/docs/releases/server#v0-3-0).
+- <span id="self-host-install-wizard" /><span id="improved-cli-setup-for-local-eval" />**CLI [0.3.0](/docs/releases/cli#v0-3-0)**
+  - **Guided production install:** `cmpatch selfhost install` wizard
+  - **Local eval without cloning:** `cmpatch selfhost local-eval` starts
+    the stack from the CLI alone
+- **React Native SDK [0.3.0](/docs/releases/react-native#v0-3-0)**
+  - **Crash rollback after three launches:** A bad update rolls back
+    after three failed launches
+  - **Install failure diagnostics:** Diagnostic details on install
+    failures
+- <span id="cloudfront-in-front-of-storage" /><span id="drill-into-why-installs-failed" /><span id="successful-installs-stop-counting-as-failures" /><span id="server-status-in-the-dashboard" />**Server [0.3.0](/docs/releases/server#v0-3-0)**
+  - **CloudFront delivery:** Put CloudFront in front of object storage
+  - **See why installs failed:** Failure details in the dashboard
+  - **Success clears failure counts:** A later success clears the
+    failure count
+  - **Cloudflare upgrade step:** Remove the old `.json` Cache Rule after
+    upgrading; see the [server notes](/docs/releases/server#v0-3-0)
 
 ### 25th August 2026 {#version-020}
 
-- <span id="interactive-cli" /><span id="fingerprint-mismatch-blocks-the-release" />**CLI [0.2.0](/docs/releases/cli#v0-2-0):** Prompts for missing flags;
-  fingerprint mismatch asks before publishing; `release metrics` shows failure
-  reasons.
-- <span id="failure-reasons-on-each-release" /><span id="external-postgres-and-object-storage" />**Server [0.2.0](/docs/releases/server#v0-2-0):**
-  `block_on_fingerprint_mismatch` on uploads; `failure_reasons` in the metrics
-  API; external Postgres and object storage in Compose.
+- <span id="interactive-cli" /><span id="fingerprint-mismatch-blocks-the-release" />**CLI [0.2.0](/docs/releases/cli#v0-2-0)**
+  - **Prompts for missing flags:** Asks instead of failing immediately
+  - **Fingerprint mismatch asks first:** Confirms before publishing when
+    the binary target looks wrong
+- <span id="failure-reasons-on-each-release" /><span id="external-postgres-and-object-storage" />**Server [0.2.0](/docs/releases/server#v0-2-0)**
+  - **Refuse mismatched binaries at publish:**
+    `block_on_fingerprint_mismatch` on uploads
+  - **Failure reasons per release:** `failure_reasons` in the metrics
+    API
+  - **External Postgres and storage:** Run the database and bucket
+    outside Compose
 
 ### 22nd August 2026
 
-- <span id="see-which-ota-bundle-is-running" />**React Native SDK [0.2.0](/docs/releases/react-native#v0-2-0):**
-  `getRunningBundleUpdateMetadata()` reports the running OTA bundle.
+- <span id="see-which-ota-bundle-is-running" />**React Native SDK [0.2.0](/docs/releases/react-native#v0-2-0)**
+  - **See which OTA bundle is running:**
+    `getRunningBundleUpdateMetadata()` reports the active bundle

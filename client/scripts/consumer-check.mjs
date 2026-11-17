@@ -17,7 +17,10 @@
  *
  * This checks JS packaging and loading of the test fake (`./jest`,
  * `./jest-setup`, `./vitest`, `./vitest-setup`, `./vitest-plugin`), not native
- * behavior.
+ * behavior. Before any target runs, it also checks that the tarball carries
+ * the Swift Package Manager manifest and every path it references (the
+ * `swiftpm-manifest` row; it runs with `--only` too). That check reads the
+ * manifest as text, so it needs no Swift toolchain.
  *
  *   yarn consumer-check                    all targets
  *   yarn consumer-check --only rn-0.73     one target (comma-separated ids)
@@ -27,9 +30,9 @@
  * Exits non-zero if any target fails. The work directory is kept on failure.
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const clientDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -187,6 +190,149 @@ function pack(workDir) {
   return join(packDir, tarball);
 }
 
+// --- Swift Package Manager manifest in the tarball ------------------------------
+
+/** Strips `//` and `/* *\/` comments, leaving string literals intact. */
+function stripSwiftComments(text) {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      const end = text.indexOf('"', i + 1);
+      out += text.slice(i, end + 1);
+      i = end;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      i = text.indexOf("*/", i + 2) + 1;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+/** The argument text of every `.target(` call, matched by parentheses. */
+function targetBlocks(manifest) {
+  const blocks = [];
+  let from = 0;
+  for (;;) {
+    const start = manifest.indexOf(".target(", from);
+    if (start === -1) return blocks;
+    let depth = 0;
+    let i = start + ".target".length;
+    for (; i < manifest.length; i++) {
+      if (manifest[i] === '"') i = manifest.indexOf('"', i + 1);
+      else if (manifest[i] === "(") depth++;
+      else if (manifest[i] === ")" && --depth === 0) break;
+    }
+    blocks.push(manifest.slice(start, i + 1));
+    from = i + 1;
+  }
+}
+
+const quoted = (text) => [...text.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+const stringArgument = (block, label) => block.match(new RegExp(`${label}:\\s*"([^"]*)"`))?.[1];
+const arrayArgument = (block, label) => {
+  const match = block.match(new RegExp(`${label}:\\s*\\[([^\\]]*)\\]`));
+  return match ? quoted(match[1]) : [];
+};
+
+/** Expands `{a,b}` in a podspec glob into one pattern per alternative. */
+function expandBraces(pattern) {
+  const match = pattern.match(/\{([^}]*)\}/);
+  if (!match) return [pattern];
+  return match[1]
+    .split(",")
+    .flatMap((alt) => expandBraces(pattern.replace(match[0], alt)));
+}
+
+/** Files a single-directory podspec glob (`dir/*.c`, `dir/name.c`) matches. */
+function globOneDirectory(root, pattern) {
+  if (pattern.includes("**")) throw new Error(`unsupported podspec glob under libs/: ${pattern}`);
+  const dir = dirname(pattern);
+  const name = new RegExp(`^${pattern.slice(dir.length + 1).replace(/\./g, "\\.").replace(/\*/g, "[^/]*")}$`);
+  const absolute = join(root, dir);
+  if (!existsSync(absolute)) return [];
+  return readdirSync(absolute)
+    .filter((entry) => name.test(entry))
+    .map((entry) => `${dir}/${entry}`);
+}
+
+/** The `.c` files the podspec compiles under libs/, relative to libs/. */
+function podspecLibsCSources(packageRoot) {
+  const podspec = readFileSync(join(packageRoot, "CodemagicPatchClient.podspec"), "utf8");
+  const sourceFiles = podspec.match(/s\.source_files\s*=\s*\[([\s\S]*?)\]/);
+  if (!sourceFiles) throw new Error("podspec has no s.source_files array");
+  const patterns = quoted(sourceFiles[1].replace(/#.*$/gm, ""))
+    .filter((entry) => entry.startsWith("libs/"))
+    .flatMap(expandBraces)
+    .filter((entry) => entry.endsWith(".c"));
+  return new Set(patterns.flatMap((pattern) => globOneDirectory(packageRoot, pattern)).map((file) => file.slice("libs/".length)));
+}
+
+/**
+ * Checks the manifest the tarball ships: it exists, every path a `.target(`
+ * names (target path, sources, public headers, header search paths) exists in
+ * the tarball and stays inside it, the zstd prefix header (built from
+ * #filePath, so not a literal) exists, and CodemagicPatchNativeLibs compiles
+ * the same C files as the podspec. `.package(path:)` entries point into the
+ * app's autolinking tree by design and are not checked.
+ */
+function checkSwiftPackageManifest(tarball, workDir) {
+  const extracted = join(workDir, "extracted");
+  rmSync(extracted, { recursive: true, force: true });
+  mkdirSync(extracted, { recursive: true });
+  if (!run("tar", ["-xzf", tarball, "-C", extracted], workDir)) return "could not extract the tarball";
+  const packageRoot = join(extracted, "package");
+  const manifestPath = join(packageRoot, "Package.swift");
+  if (!existsSync(manifestPath)) return "Package.swift is missing from the tarball (package.json files)";
+
+  const problems = [];
+  const inPackage = (absolute) => !relative(packageRoot, absolute).startsWith("..");
+  const requirePath = (absolute, what, directory) => {
+    const shown = relative(packageRoot, absolute);
+    if (!inPackage(absolute)) problems.push(`${what} ${shown} is outside the package`);
+    else if (!existsSync(absolute)) problems.push(`${what} ${shown} is missing from the tarball`);
+    else if (directory && !statSync(absolute).isDirectory()) problems.push(`${what} ${shown} is not a directory`);
+  };
+
+  let nativeLibsSources = null;
+  for (const block of targetBlocks(stripSwiftComments(readFileSync(manifestPath, "utf8")))) {
+    const name = stringArgument(block, "name") ?? "(unnamed target)";
+    const targetPath = stringArgument(block, "path");
+    if (targetPath === undefined) {
+      problems.push(`target ${name} has no explicit path`);
+      continue;
+    }
+    const base = resolve(packageRoot, targetPath);
+    requirePath(base, `target ${name} path`, true);
+    const sources = arrayArgument(block, "sources");
+    for (const source of sources) requirePath(resolve(base, source), `target ${name} source`, false);
+    const publicHeaders = stringArgument(block, "publicHeadersPath");
+    if (publicHeaders !== undefined) requirePath(resolve(base, publicHeaders), `target ${name} publicHeadersPath`, true);
+    for (const match of block.matchAll(/\.headerSearchPath\(\s*"([^"]*)"/g)) {
+      requirePath(resolve(base, match[1]), `target ${name} headerSearchPath`, true);
+    }
+    if (name === "CodemagicPatchNativeLibs") nativeLibsSources = new Set(sources);
+  }
+  requirePath(join(packageRoot, "libs/zstd/codemagic_patch_zstd_prefix.h"), "zstd prefix header", false);
+
+  if (nativeLibsSources === null) {
+    problems.push("Package.swift has no CodemagicPatchNativeLibs target");
+  } else {
+    const podspec = podspecLibsCSources(packageRoot);
+    const onlyManifest = [...nativeLibsSources].filter((file) => !podspec.has(file)).sort();
+    const onlyPodspec = [...podspec].filter((file) => !nativeLibsSources.has(file)).sort();
+    if (onlyManifest.length > 0) problems.push(`compiled by Package.swift but not the podspec: ${onlyManifest.join(", ")}`);
+    if (onlyPodspec.length > 0) problems.push(`compiled by the podspec but not Package.swift: ${onlyPodspec.join(", ")}`);
+  }
+
+  for (const problem of problems) console.error(`swiftpm-manifest: ${problem}`);
+  return problems.length === 0 ? null : `${problems.length} problem(s): ${problems.join("; ")}`;
+}
+
 function checkTarget(target, tarball, workDir) {
   const dir = join(workDir, target.id);
   rmSync(dir, { recursive: true, force: true });
@@ -243,6 +389,7 @@ console.log(`consumer check work directory: ${workDir}`);
 const results = [];
 try {
   const tarball = pack(workDir);
+  results.push({ id: "swiftpm-manifest", failure: checkSwiftPackageManifest(tarball, workDir) });
   for (const target of targets) {
     results.push({ id: target.id, failure: checkTarget(target, tarball, workDir) });
   }

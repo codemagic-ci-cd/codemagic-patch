@@ -1,7 +1,7 @@
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
 const sidebars: SidebarsConfig = {
-  docsSidebar: [
+  guidesSidebar: [
     'intro',
     'local-quickstart',
     {
@@ -15,6 +15,7 @@ const sidebars: SidebarsConfig = {
         'introduction/comparison',
         'introduction/comparison-capacitor',
         'introduction/pricing',
+        'introduction/cost-at-scale',
         'introduction/support',
       ],
     },
@@ -109,21 +110,18 @@ const sidebars: SidebarsConfig = {
     },
     'troubleshooting',
     'faq',
-    {
-      type: 'category',
-      label: 'Release Notes',
-      collapsible: false,
-      collapsed: false,
-      items: [
-        'releases/index',
-        'releases/react-native',
-        'releases/cli',
-        'releases/capacitor-sdk',
-        'releases/capacitor-cli',
-        'releases/server',
-      ],
-    },
   ],
+  releasesSidebar: [
+    'releases/index',
+    'releases/react-native',
+    'releases/cli',
+    'releases/capacitor-sdk',
+    'releases/capacitor-cli',
+    'releases/server',
+  ],
+  // Keeps the docs layout (sidebar column) without listing pages; the
+  // theme renders this sidebar's menu as empty.
+  roadmapSidebar: ['roadmap'],
 };
 
 export default sidebars;

@@ -25,8 +25,7 @@
   "scripts": {
     "build": "yarn exec tsc -p tsconfig.build.json",
     "clean": "yarn exec rimraf dist node_modules/.cache",
-    "lint": "yarn exec eslint \"src/**/*.ts\" \"test/**/*.ts\"",
-    "test": "yarn exec vitest run",
+    "lint": "yarn exec eslint \"src/**/*.ts\"",
     "typecheck": "yarn exec tsc -p tsconfig.json"
   }
 }

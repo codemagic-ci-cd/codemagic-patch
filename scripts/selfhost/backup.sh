@@ -94,7 +94,7 @@ backup_cleanup() {
     log_selfhost "restarting server after backup"
     # Start the exact container that was stopped. `compose up` would re-resolve
     # the server from the env file and compose files as they are now, and
-    # `cmpatch selfhost upgrade` fast-forwards the checkout before upgrade.sh
+    # an upgrade moves the checkout to the target release before upgrade.sh
     # runs this as its pre-upgrade backup — so `up` would bring back a
     # different server (new image or config) before the backup is confirmed
     # and outside upgrade.sh's rollback path. upgrade.sh recreates the server

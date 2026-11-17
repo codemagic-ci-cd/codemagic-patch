@@ -20,6 +20,7 @@ const DEFAULT_PORT = 3000;
 const DEFAULT_MODE: ServerMode = "all";
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
 const DEFAULT_OAUTH_REFRESH_TOKEN_TTL_DAYS = 30;
+const DEFAULT_OAUTH_SESSION_MAX_AGE_DAYS = 90;
 const DEFAULT_IAM_INVITATION_TTL_DAYS = 14;
 const MAX_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const MAX_OAUTH_REFRESH_TOKEN_TTL_DAYS = 365;
@@ -124,6 +125,11 @@ export interface RuntimeConfig {
    */
   oauthDevicePollTokenSecret?: string;
   oauthRefreshTokenTtlDays: number;
+  /**
+   * Absolute session lifetime in days from the provider sign-in; never below
+   * `oauthRefreshTokenTtlDays`.
+   */
+  oauthSessionMaxAgeDays: number;
   patchWindow: number | null;
   port: number;
   publicBaseUrl: string;
@@ -157,6 +163,12 @@ export function resolveRuntimeConfig(
   const oauthCliAuthSecret = resolveOAuthCliAuthSecret(
     env.OAUTH_CLI_AUTH_SECRET,
     env.OAUTH_DEVICE_POLL_TOKEN_SECRET,
+  );
+  const oauthRefreshTokenTtlDays = resolvePositiveIntegerWithDefaultAndMax(
+    env.OAUTH_REFRESH_TOKEN_TTL_DAYS,
+    "OAUTH_REFRESH_TOKEN_TTL_DAYS",
+    DEFAULT_OAUTH_REFRESH_TOKEN_TTL_DAYS,
+    MAX_OAUTH_REFRESH_TOKEN_TTL_DAYS,
   );
 
   if (webOAuthProviders.length > 0 && !oauthCliAuthSecret) {
@@ -209,11 +221,10 @@ export function resolveRuntimeConfig(
     ),
     oauthCliAuthSecret,
     oauthDevicePollTokenSecret,
-    oauthRefreshTokenTtlDays: resolvePositiveIntegerWithDefaultAndMax(
-      env.OAUTH_REFRESH_TOKEN_TTL_DAYS,
-      "OAUTH_REFRESH_TOKEN_TTL_DAYS",
-      DEFAULT_OAUTH_REFRESH_TOKEN_TTL_DAYS,
-      MAX_OAUTH_REFRESH_TOKEN_TTL_DAYS,
+    oauthRefreshTokenTtlDays,
+    oauthSessionMaxAgeDays: resolveOAuthSessionMaxAgeDays(
+      env.OAUTH_SESSION_MAX_AGE_DAYS,
+      oauthRefreshTokenTtlDays,
     ),
     patchWindow:
       resolveOptionalPositiveInteger(env.PATCH_WINDOW, "PATCH_WINDOW") ?? null,
@@ -474,6 +485,30 @@ function resolveAllowedRedirectUris(
   const entries = parseCsvList(value);
 
   return entries.length > 0 ? entries : undefined;
+}
+
+function resolveOAuthSessionMaxAgeDays(
+  value: string | undefined,
+  refreshTokenTtlDays: number,
+): number {
+  // An empty value counts as unset: the self-host compose file hands the
+  // variable through as "" when .env.selfhost does not set it, and the default
+  // below depends on the refresh token TTL, so compose cannot carry it.
+  const explicit = resolveOptionalPositiveInteger(
+    resolveOptionalString(value),
+    "OAUTH_SESSION_MAX_AGE_DAYS",
+  );
+  if (explicit === undefined) {
+    return Math.max(DEFAULT_OAUTH_SESSION_MAX_AGE_DAYS, refreshTokenTtlDays);
+  }
+
+  if (explicit < refreshTokenTtlDays) {
+    throw new Error(
+      `OAUTH_SESSION_MAX_AGE_DAYS must be at least OAUTH_REFRESH_TOKEN_TTL_DAYS (${refreshTokenTtlDays}). Received: ${explicit}`,
+    );
+  }
+
+  return explicit;
 }
 
 function resolvePositiveIntegerWithDefaultAndMax(

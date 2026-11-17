@@ -15,7 +15,9 @@ import {
 } from "./authSupport";
 import {
   createAccountDisabledProblem,
+  createSessionRevokedProblem,
   requireControlPlanePrincipal,
+  requireSessionPrincipal,
 } from "./routeSupport";
 import type {
   ApiRoutesOptions,
@@ -264,7 +266,7 @@ export function registerControlPlaneAuthRoutes(
   controlPlane.post<{ Body: OAuthCliAuthorizationIssueBody }>(
     "/auth/cli/authorizations",
     async (request, reply) => {
-      const principal = requireControlPlanePrincipal(request);
+      const principal = requireSessionPrincipal(request);
 
       if (!options.oauthCliAuthorizationIssueHandler) {
         return sendProblem(
@@ -281,8 +283,11 @@ export function registerControlPlaneAuthRoutes(
         return sendProblem(reply, input.problem);
       }
 
+      // The session is not re-checked here: the exchange refuses the code
+      // if the approving session has ended by then.
       const result = await options.oauthCliAuthorizationIssueHandler({
         ...input.value,
+        sessionId: principal.sessionId,
         userId: principal.userId,
       });
 
@@ -294,7 +299,7 @@ export function registerControlPlaneAuthRoutes(
   controlPlane.post<{ Body: ApiTokenCreateBody }>(
     "/auth/tokens",
     async (request, reply) => {
-      const principal = requireControlPlanePrincipal(request);
+      const principal = requireSessionPrincipal(request);
 
       if (!options.apiTokenCreateHandler) {
         return sendProblem(
@@ -311,7 +316,13 @@ export function registerControlPlaneAuthRoutes(
         return sendProblem(reply, input.problem);
       }
 
-      const result = await options.apiTokenCreateHandler(input.value);
+      const result = await options.apiTokenCreateHandler({
+        ...input.value,
+        issuingSessionId: principal.sessionId,
+      });
+      if (result.outcome === "session_revoked") {
+        return sendProblem(reply, createSessionRevokedProblem());
+      }
 
       reply.status(201);
       return {
@@ -320,6 +331,33 @@ export function registerControlPlaneAuthRoutes(
       };
     },
   );
+
+  controlPlane.post("/auth/credentials/revoke-all", async (request, reply) => {
+    const principal = requireSessionPrincipal(request);
+
+    if (!options.credentialsRevokeAllHandler) {
+      return sendProblem(
+        reply,
+        createProblem({
+          detail: "credential revocation is not implemented",
+          status: 501,
+        }),
+      );
+    }
+
+    const result = await options.credentialsRevokeAllHandler({
+      sessionId: principal.sessionId,
+      userId: principal.userId,
+    });
+    if (result.outcome === "session_revoked") {
+      return sendProblem(reply, createSessionRevokedProblem());
+    }
+
+    return {
+      revoked_api_token_count: result.revokedApiTokenCount,
+      revoked_session_count: result.revokedSessionCount,
+    };
+  });
 
   controlPlane.get("/auth/tokens", async (request, reply) => {
     const principal = requireControlPlanePrincipal(request);
@@ -342,6 +380,7 @@ export function registerControlPlaneAuthRoutes(
 
   controlPlane.delete<{ Params: ApiTokenParams }>(
     "/auth/tokens/:tokenId",
+    { config: { allowApiToken: true } },
     async (request, reply) => {
       const principal = requireControlPlanePrincipal(request);
 

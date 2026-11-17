@@ -6,7 +6,7 @@
  */
 
 import { openBrowser } from "../../browserOpen";
-import { writeNote } from "../../notice";
+import { writeNote, writeWarning } from "../../notice";
 import { onInterrupt } from "../../progress";
 import {
   type ConfirmRequest,
@@ -235,6 +235,51 @@ export async function confirmFinishStep(
 
     throw error;
   }
+}
+
+/**
+ * An image ref short enough for a note: a `@sha256:` digest cut to its first
+ * 12 hex digits, the length docker itself shows. Display only; the full ref
+ * is what runs, and what the closing summary prints.
+ */
+export function shortImageRef(ref: string): string {
+  return ref.replace(/@sha256:([0-9a-f]{12})[0-9a-f]{52}$/u, "@sha256:$1…");
+}
+
+/**
+ * The go-ahead in front of `cmpatch selfhost upgrade`, on ssh and on Fly.
+ *
+ * The plan is a summary, so it is a plain titled note, printed whether or not
+ * the run asks: `--yes` skips the question, never the record of what ran. A
+ * warning the operator must not read past follows it on the guide line. The
+ * question defaults to No, and Ctrl+C at it means No as well: nothing has
+ * changed yet, so stopping here is a clean exit, not a failure.
+ */
+export async function confirmUpgradePlan(
+  deps: CommandDeps,
+  input: {
+    ask: boolean;
+    lines: readonly string[];
+    question: string;
+    warning?: readonly string[];
+  },
+): Promise<boolean> {
+  if (deps.stderr !== undefined) {
+    writeNote(deps.stderr, "Upgrade plan", [...input.lines]);
+    if (input.warning !== undefined) {
+      writeWarning(deps.stderr, input.warning);
+    }
+  }
+  if (!input.ask) {
+    return true;
+  }
+
+  return confirmFinishStep(deps, {
+    active: "Yes, upgrade",
+    inactive: "No",
+    initial: false,
+    message: input.question,
+  });
 }
 
 /**

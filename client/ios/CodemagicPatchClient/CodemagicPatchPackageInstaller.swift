@@ -1,4 +1,12 @@
 import Foundation
+// Under Swift Package Manager the Objective-C bridge (CodemagicPatchHashing,
+// CodemagicPatchBundleOps) is its own target and has to be imported. Under
+// CocoaPods it is part of this module and reaches Swift through the pod's umbrella
+// header, so there is nothing to import. Xcode defines SWIFT_PACKAGE only for
+// package targets.
+#if SWIFT_PACKAGE
+import CodemagicPatchObjCBridge
+#endif
 
 final class CodemagicPatchPackageInstaller {
   struct InstallContext {

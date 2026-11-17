@@ -6,9 +6,10 @@
 # a second site as in Caddyfile: device downloads are served on the same host
 # under /codemagic-patch, which is the path PUBLIC_BASE_URL already carries.
 #
-# The API, health and dashboard blocks mirror Caddyfile's API site; keep them
-# in step. The storage block is narrower than Caddyfile's storage site, which
-# proxies the whole MinIO API: here only what an app downloads is reachable.
+# The /worker/* block and the server catch-all mirror Caddyfile's API site;
+# keep them in step. The storage block is narrower than Caddyfile's storage
+# site, which proxies the whole MinIO API: here only what an app downloads is
+# reachable.
 
 {
 	auto_https off
@@ -17,16 +18,15 @@
 :80 {
 	encode zstd gzip
 
-	handle /v1/* {
-		reverse_proxy server:3000
-	}
+	# Caddy names itself in a Server header on every response, its own 404s
+	# included; drop it site-wide.
+	header -Server
 
-	# /health* covers both /health and /health/ready
-	handle /health* {
-		reverse_proxy server:3000
+	# /worker/* is intentionally NOT exposed, as in Caddyfile: the catch-all
+	# proxy below would forward it, so it is answered here instead.
+	handle /worker/* {
+		respond 404
 	}
-
-	# /worker/* is intentionally NOT exposed, as in Caddyfile.
 
 	# The bundled MinIO's readiness, the one MinIO path install.sh probes
 	# through the public address.
@@ -40,7 +40,8 @@
 	# Authorization header, so no signed S3 call reaches MinIO; and never the
 	# private _internal/ prefix, which the bucket policy also denies anonymous
 	# reads of. Everything else on the bucket's path is a 404 here, not left to
-	# the dashboard below, which would answer it with index.html and a 200.
+	# the server below, whose dashboard fallback would answer it with
+	# index.html and a 200.
 	@bucket path /codemagic-patch /codemagic-patch/*
 	handle @bucket {
 		@public {
@@ -57,19 +58,12 @@
 		}
 	}
 
+	# The server answers everything else: /v1/*, /health*, and the dashboard
+	# SPA with its CSP and HSTS headers, as in Caddyfile.
 	handle {
-		root * /srv/dashboard
-		try_files {path} /index.html
-		file_server
-		header {
-			# Same policy as Caddyfile; see the rationale there for
-			# style-src/img-src.
-			Content-Security-Policy "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-			-Server
-			# Unconditional, unlike Caddyfile: Caddy itself only ever sees
-			# plain HTTP here, but every browser reaches this site over the
-			# ngrok endpoint's HTTPS.
-			Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		}
+		# The server's HSTS is kept here, unlike Caddyfile's plain-HTTP
+		# scheme: Caddy itself only ever sees plain HTTP, but every browser
+		# reaches this site over the ngrok endpoint's HTTPS.
+		reverse_proxy server:3000
 	}
 }

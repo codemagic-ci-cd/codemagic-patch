@@ -25,10 +25,14 @@
 
 services:
   caddy:
-    image: ${CODEMAGIC_PATCH_CADDY_IMAGE:-codemagic-patch-caddy:selfhost}
-    build:
-      context: .
-      dockerfile: deploy/selfhost/Dockerfile.caddy
+    # Stock Caddy 2.11.7 (alpine), pinned to the multi-arch index digest. The
+    # server image serves the dashboard itself, so nothing is built here; the
+    # Caddyfile is bind-mounted below. scripts/selfhost/common.sh's
+    # SELFHOST_CADDY_IMAGE pins the same reference (install.sh writes it and
+    # upgrade.sh migrates the old locally built value to it), and
+    # scripts/selfhost/test/compose-rendering.test.sh keeps the two in step.
+    # CODEMAGIC_PATCH_CADDY_IMAGE in .env.selfhost overrides it.
+    image: ${CODEMAGIC_PATCH_CADDY_IMAGE:-caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f}
     restart: unless-stopped
     depends_on:
       server:
@@ -98,6 +102,10 @@ services:
       # Legacy name; the server reads it as a permanent fallback for
       # OAUTH_CLI_AUTH_SECRET, so env files from older installs keep working.
       OAUTH_DEVICE_POLL_TOKEN_SECRET: ${OAUTH_DEVICE_POLL_TOKEN_SECRET:-}
+      # The longest a sign-in lasts, in days. Left empty on purpose: the server
+      # reads "" as unset and applies its own default (90, or the refresh token
+      # lifetime when that is longer).
+      OAUTH_SESSION_MAX_AGE_DAYS: ${OAUTH_SESSION_MAX_AGE_DAYS:-}
       GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-read:user user:email}
       # Bitbucket Cloud sign-in (web flow only) — a second provider next to
       # GitHub, or the sole provider when GitHub is not configured.

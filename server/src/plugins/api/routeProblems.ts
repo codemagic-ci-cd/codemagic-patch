@@ -23,6 +23,37 @@ export function createAccountDisabledProblem(
   });
 }
 
+/**
+ * For routes that create or delegate a credential. An API token can act but
+ * cannot issue: a credential it minted would outlive it, so deleting a leaked
+ * token would not end the access it granted.
+ */
+export function createSessionRequiredProblem(): ProblemDetails {
+  return createProblem({
+    detail:
+      "This action needs a browser sign-in or a CLI session approved in the browser; API tokens cannot perform it.",
+    extensions: {
+      outcome: "forbidden",
+      reason: "session_required",
+    },
+    status: 403,
+    typeSuffix: "forbidden",
+  });
+}
+
+/** The calling session ended between authentication and the guarded write. */
+export function createSessionRevokedProblem(): ProblemDetails {
+  return createProblem({
+    detail: "this session has been signed out; sign in again",
+    extensions: {
+      outcome: "unauthenticated",
+      reason: "session_revoked",
+    },
+    status: 401,
+    typeSuffix: "authentication-required",
+  });
+}
+
 export function createTeamNotFoundProblem(result: {
   outcome: "not_found";
   reason: "team_not_found";
