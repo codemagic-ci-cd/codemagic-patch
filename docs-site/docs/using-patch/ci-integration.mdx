@@ -441,6 +441,14 @@ version="$(java -jar "$BUNDLETOOL_JAR" dump manifest \
 
 Set the artifact, tool, and project paths to absolute paths, and use the Patch CI credentials above. Keep the empty-version check and release command from the APK example when using an AAB.
 
+For a React Native app, `cmpatch` can read the version itself from an `.ipa`, `.xcarchive`, `.apk` or `.aab`, with no extra tooling:
+
+```bash
+version="$(cmpatch fingerprint --artifact "$PUBLISHED_AAB_PATH" --format json | jq -r '.binaryVersion')"
+```
+
+It reads a literal `versionName` only and fails when the version is a string resource reference. See [Inspect a binary](/docs/using-patch/fingerprinting#inspect-a-binary) for the rest of what it reports.
+
 ## Sequential release changes
 
 A release is processed by a worker after the upload returns, and a deployment accepts one queued or running release job at a time. A pipeline that changes the same deployment twice in a row (publish, then mark mandatory, promote, or roll back) should wait for the first job before the second command. `--format json` prints the new release's id, so a script can capture it and wait on it:
@@ -477,6 +485,8 @@ Hint: Release rel_01J… still has a running release job on this deployment. Wai
 ```
 
 A partial rollout is a separate limit, one per deployment, and waiting never finishes it: complete or disable the rollout first. See [Rollout constraints](/docs/using-patch/production-control#rollout-constraints).
+
+To have another system told when a release goes live or fails, without a pipeline waiting on it, register a [webhook](/docs/using-patch/webhooks).
 
 ## Release strategies
 

@@ -26,7 +26,7 @@ type AuthenticatedRequestDeps = Pick<CommandDeps, "env" | "fetch"> & {
   sleep?: CommandDeps["sleep"];
 };
 
-type AuthenticatedRequestInit = Omit<RequestInitLike, "headers"> & {
+export type AuthenticatedRequestInit = Omit<RequestInitLike, "headers"> & {
   headers?: Record<string, string>;
 };
 

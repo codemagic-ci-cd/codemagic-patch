@@ -68,6 +68,7 @@ import { CELL_SUB } from "../components/ui/cell";
 import { CHIP, CHIP_TONE } from "../components/ui/chip";
 import { DL, DL_DD, DL_DT } from "../components/ui/dl";
 import { ICON_BTN } from "../components/ui/iconButton";
+import { GroupedCount } from "../components/ui/GroupedCount";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import { PAGE_TITLE, SECTION_TITLE } from "../components/ui/typography";
 import {
@@ -78,6 +79,7 @@ import {
 } from "../model/format";
 import {
   TBL,
+  TBL_NARROW_HIDE,
   TBL_NUM,
   TBL_RIGHT,
   TBL_TD,
@@ -218,8 +220,10 @@ function ReleaseDetail({
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start gap-[18px]">
-        <div className="min-w-0 flex-1">
+      <div className="mb-6 flex flex-wrap items-start gap-[18px] max-shell:flex-col">
+        {/* Floor is the status line, or the full row when that line does not fit,
+            so the actions wrap below instead of crushing the labels. */}
+        <div className="min-w-[min(100%,28rem)] flex-1">
           <h1 className={PAGE_TITLE}>
             {release.releaseLabel}{" "}
             {release.isMandatory ? (
@@ -238,25 +242,27 @@ function ReleaseDetail({
           </h1>
           {/* The two independent state fields, side by side and labeled —
               release `status` is NOT the worker `job.status` (domain model hard rule). */}
-          <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-            <span className="text-fg-3">Release status</span>
-            <StatusChip status={release.status} />
-            <span className="ml-2 text-fg-3">
-              Worker job
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
+              <span className="text-fg-3">Release status</span>
+              <StatusChip status={release.status} />
             </span>
-            {job === null ? (
-              <span className="text-fg-3">—</span>
-            ) : (
-              <JobBadge status={job.status} />
-            )}
+            <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
+              <span className="text-fg-3">Worker job</span>
+              {job === null ? (
+                <span className="text-fg-3">—</span>
+              ) : (
+                <JobBadge status={job.status} />
+              )}
+            </span>
           </div>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex max-w-full flex-wrap items-center gap-2.5 max-shell:w-full max-shell:grid-cols-2 max-shell:gap-2 max-shell:[display:grid]">
           {actions.map((action) => (
-            <span key={action.key} className="tip" data-tip={deployTip}>
+            <span key={action.key} className="tip max-shell:flex" data-tip={deployTip}>
               <button
                 type="button"
-                className={buttonVariants({ intent: "ghost" })}
+                className={`${buttonVariants({ intent: "ghost" })} max-shell:w-full`}
                 disabled={!canDeploy}
                 onClick={() => openAction(action.key, release)}
               >
@@ -681,7 +687,7 @@ function MetricsPanel({
         <EmptyState
           icon={<ChartIcon />}
           title="No metric data yet"
-          description="Counters appear once clients report deployment status for this release."
+          description="No client reports yet."
         />
       );
     } else {
@@ -801,16 +807,24 @@ function BinaryVersionBreakdown({
   rows: readonly ReleaseBinaryVersionMetrics[];
 }) {
   return (
-    <div className={`${TBL_WRAP} rounded-lg border border-border`}>
-      <table className={TBL}>
+    <div className={`${TBL_WRAP} rounded-lg border border-border max-shell:-mx-2`}>
+      <table className={`${TBL} max-shell:[&_td]:px-1 max-shell:[&_th]:px-1 max-shell:[&_td:first-child]:[overflow-wrap:anywhere]`}>
         <thead>
           <tr>
-            <th className={TBL_TH}>Binary version</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloaded</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Ready</th>
+            <th className={`${TBL_TH} max-shell:w-px max-shell:whitespace-normal`}>
+              Binary version
+            </th>
+            <th className={`${TBL_TH} ${TBL_RIGHT} ${TBL_NARROW_HIDE}`}>
+              Downloaded
+            </th>
+            <th className={`${TBL_TH} ${TBL_RIGHT} ${TBL_NARROW_HIDE}`}>
+              Ready
+            </th>
             <th className={`${TBL_TH} ${TBL_RIGHT}`}>Applied</th>
             <th className={`${TBL_TH} ${TBL_RIGHT}`}>Failed</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Success rate</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT} max-shell:whitespace-normal`}>
+              Success rate
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -825,10 +839,14 @@ function BinaryVersionBreakdown({
                     <code className="mono">{row.binaryVersion}</code>
                   )}
                 </td>
-                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.downloaded)}</td>
-                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.installed)}</td>
-                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.success)}</td>
-                <td className={`${TBL_TD} ${TBL_NUM}`}>{formatCount(row.failed)}</td>
+                <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
+                  {formatCount(row.downloaded)}
+                </td>
+                <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
+                  {formatCount(row.installed)}
+                </td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}><GroupedCount value={row.success} /></td>
+                <td className={`${TBL_TD} ${TBL_NUM}`}><GroupedCount value={row.failed} /></td>
                 <td className={`${TBL_TD} ${TBL_NUM}`}>
                   {rate === null ? "—" : `${formatSuccessRate(rate)}%`}
                 </td>

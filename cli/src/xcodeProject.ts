@@ -47,6 +47,7 @@ export function parseXcodeProject(text: string) {
     ).map((id) => record("XCBuildConfiguration", id));
   const parents = configurations(project);
   return {
+    objects,
     record,
     project,
     targets: xcodeRefs(project.targets)

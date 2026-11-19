@@ -20,6 +20,7 @@ import { metricEventDailyAggregatesMigration } from "./0019_metricEventDailyAggr
 import { serverInstanceMigration } from "./0020_serverInstance";
 import { credentialGenerationMigration } from "./0021_credentialGeneration";
 import { serviceAccountOwnerTeamMigration } from "./0022_serviceAccountOwnerTeam";
+import { webhooksMigration } from "./0023_webhooks";
 
 export interface SqlMigration {
   name: string;
@@ -49,4 +50,5 @@ export const dbMigrations: readonly SqlMigration[] = [
   serverInstanceMigration,
   credentialGenerationMigration,
   serviceAccountOwnerTeamMigration,
+  webhooksMigration,
 ];

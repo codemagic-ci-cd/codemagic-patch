@@ -911,11 +911,12 @@ export function createPostgresReleaseRepository(
                 failure_stage,
                 failure_reason,
                 requested_by,
+                patch_changes,
                 created_at,
                 updated_at
               ) VALUES (
                 $1, $2, $3, $4, 'queued', 0, 0, 15,
-                NULL, NULL, NULL, NULL, $5, $6, $6
+                NULL, NULL, NULL, NULL, $5, $7, $6, $6
               )
               RETURNING *
             `,
@@ -926,6 +927,9 @@ export function createPostgresReleaseRepository(
               triggerType,
               input.createdBy,
               input.createdAt,
+              // The release row is about to take the new values, so this is
+              // the only place the old ones survive until the job settles.
+              describePatchChanges(currentRelease, nextReleaseValues),
             ],
           );
         } catch (error) {
@@ -1178,6 +1182,35 @@ export function createPostgresReleaseRepository(
       return result.rows[0] !== undefined;
     },
   };
+}
+
+/**
+ * The fields a PATCH changes, as `{ field: { from, to } }` with wire names,
+ * or null when it changes none of them (a status transition).
+ */
+function describePatchChanges(
+  current: Release,
+  next: {
+    isMandatory: boolean;
+    releaseNotes: string | null;
+    rolloutPercentage: number;
+    targetBinaryVersion: string;
+  },
+): Record<string, { from: unknown; to: unknown }> | null {
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  const pairs: Array<[string, unknown, unknown]> = [
+    ["is_mandatory", current.isMandatory, next.isMandatory],
+    ["release_notes", current.releaseNotes, next.releaseNotes],
+    ["rollout_percentage", current.rolloutPercentage, next.rolloutPercentage],
+    ["target_binary_version", current.targetBinaryVersion, next.targetBinaryVersion],
+  ];
+  for (const [field, from, to] of pairs) {
+    if (from !== to) {
+      changes[field] = { from, to };
+    }
+  }
+
+  return Object.keys(changes).length > 0 ? changes : null;
 }
 
 function derivePatchTriggerType(

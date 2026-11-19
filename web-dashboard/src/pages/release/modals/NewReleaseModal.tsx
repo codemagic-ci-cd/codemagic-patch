@@ -109,7 +109,7 @@ function NewReleaseModalContent({
   };
 
   const builderFramework = cliBuilderFramework(framework);
-  const header = stepMeta(step, deploymentName, builderFramework);
+  const header = stepMeta(step, deploymentName);
   const footer = footerForStep(step, {
     canGoBack: canChoose,
     onClose: handleClose,
@@ -207,19 +207,11 @@ function NewReleaseModalContent({
 function stepMeta(
   step: Step,
   deploymentName: string,
-  builderFramework: CliBuilderFramework | null,
 ): { title: string; description?: string } {
   switch (step) {
     case "cli":
       return {
         title: `Release via CLI to ${deploymentName}`,
-        // No builder, no command to point at: the body says what there is to say.
-        ...(builderFramework === null
-          ? {}
-          : {
-              description:
-                "Copy the command below and run it from your project directory or CI pipeline.",
-            }),
       };
     case "upload":
       return {
@@ -230,8 +222,6 @@ function stepMeta(
     default:
       return {
         title: `New release to ${deploymentName}`,
-        description:
-          "Choose how you want to publish an update to this deployment.",
       };
   }
 }

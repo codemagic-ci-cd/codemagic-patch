@@ -41,6 +41,7 @@ import {
   createPostgresAuditRepository,
   createPostgresIamInvitationRepository,
   createPostgresIamRepository,
+  createPostgresWebhookRepository,
   createPostgresIdempotencyRepository,
   createPostgresAuthRepository,
   createPostgresManagementRepository,
@@ -51,11 +52,13 @@ import {
   createPostgresReleaseFinalizeRepository,
   createPostgresReleaseJobRepository,
   createPostgresReleaseTargetRepository,
+  createPostgresTeamOwnerInvitationRepository,
   ZERO_RELEASE_METRICS,
   type AppDeleteStaticState,
   type AuditRepository,
   type DeploymentClearStaticState,
   type DeploymentDeleteStaticState,
+  type CreateTeamInvitationResult,
   type TeamInvitationTarget,
 } from "../repositories";
 import type {
@@ -86,6 +89,8 @@ import type {
   IamRoleBindingListRouteHandler,
   IamRoleBindingReadRouteHandler,
   IamRoleBindingUpdateRouteHandler,
+  IamInvitationCreateHandlerInput,
+  IamInvitationCreateHandlerResult,
   IamInvitationCreateRouteHandler,
   IamInvitationListRouteHandler,
   IamInvitationReadRouteHandler,
@@ -118,6 +123,9 @@ import type {
   TeamReadRouteHandler,
   UserProfileRouteHandler,
 } from "../app/types";
+import { createWebhookDeliverer } from "../webhooks/deliver";
+import { createWebhookHandlers, type WebhookRouteHandlers } from "../webhooks/handlers";
+import { createReleaseWebhookRecorder } from "../webhooks/recordReleaseEvent";
 import type { AuthNAdapter } from "../app/authNAdapter";
 import {
   createAuthNAdapterRegistry,
@@ -173,11 +181,12 @@ import {
 } from "../worker/index";
 import { sortBinaryVersionsDescending } from "../worker/binaryVersionPrecedence";
 import { createTelemetryReporter } from "../app/telemetryReport";
-import { getServerVersion } from "../version";
+import { getServerVersion, readServerVersion } from "../version";
 import type { RuntimeConfig } from "./config";
 import { createNoopLogger, type RuntimeLogger } from "./logger";
 import { createMetricFoldTimer } from "./metricFoldTimer";
 import { createTelemetryReportTimer } from "./telemetryReportTimer";
+import { createWebhookDeliveryTimer } from "./webhookDeliveryTimer";
 import { createTrackedReconcileExecutor } from "./trackedReconcileExecutor";
 
 // Self-host runs a single fixed team. The name is intentionally hard-coded
@@ -250,6 +259,7 @@ export interface ServerRuntime {
   teamListHandler?: TeamListRouteHandler;
   teamReadHandler?: TeamReadRouteHandler;
   userProfileHandler?: UserProfileRouteHandler;
+  webhookHandlers?: WebhookRouteHandlers;
   workerReconcileHandler?: (jobId: string) => Promise<ReconcileResult>;
 }
 
@@ -305,6 +315,8 @@ export interface ServerRuntimeOptions {
    * since a day only expires at UTC midnight. 0 disables folding.
    */
   metricFoldIntervalMs?: number;
+  /** Webhook delivery tick; `<= 0` turns delivery off. Default 5 seconds. */
+  webhookDeliveryIntervalMs?: number;
   oauthSessionIdGenerator?: OAuthSessionHandlerIdGenerator;
   /**
    * Replaces the post-sign-in grant hook (runs on web OAuth sign-ins).
@@ -545,6 +557,11 @@ export async function createServerRuntime(
           managementIdGenerator,
           options.managementRetryLimit ?? 3,
           authRepository,
+          {
+            githubUserLookupService,
+            invitationTtlDays: config.iamInvitationTtlDays,
+            repository: createPostgresTeamOwnerInvitationRepository(pool),
+          },
           storage && delivery
             ? {
                 clearDeploymentStaticState:
@@ -587,6 +604,55 @@ export async function createServerRuntime(
         )
       : {};
     const iamHandlers = iamRepository ? createIamHandlers(iamRepository) : {};
+    const webhookRepository = createPostgresWebhookRepository(pool);
+    const webhookTargetOptions = {
+      allowPrivateTargets: config.webhookAllowPrivateTargets,
+    };
+    // Delivery runs where the worker runs; the API-only process just queues.
+    const webhookDeliveryTimer =
+      config.mode === "all" || config.mode === "worker"
+        ? createWebhookDeliveryTimer({
+            deleteExpiredEvents: (before) => webhookRepository.deleteExpiredEvents(before),
+            deliverer: createWebhookDeliverer({
+              onAttempt(attempt) {
+                if (attempt.error !== null) {
+                  logger.warn(
+                    { ...attempt, event: "webhook.delivery_failed" },
+                    attempt.willRetry
+                      ? "webhook delivery attempt failed; it will be retried"
+                      : "webhook delivery failed",
+                  );
+                }
+              },
+              repository: webhookRepository,
+              serverVersion: readServerVersion(),
+              targetOptions: webhookTargetOptions,
+            }),
+            intervalMs: options.webhookDeliveryIntervalMs,
+            logger,
+          })
+        : null;
+    const recordReleaseWebhookEvent = createReleaseWebhookRecorder({
+      createDeliveryId: () => createRandomPrefixedId("whd"),
+      createEventId: () => createRandomPrefixedId("whe"),
+      onError(error, context) {
+        logger.error(
+          { ...context, err: error, event: "webhook.record_failed" },
+          "could not record the webhook event for a settled release job; the release is unaffected",
+        );
+      },
+    });
+    const webhookHandlers =
+      config.mode === "all" || config.mode === "api"
+        ? createWebhookHandlers({
+            createDeliveryId: () => createRandomPrefixedId("whd"),
+            createEndpointId: () => createRandomPrefixedId("wh"),
+            createEventId: () => createRandomPrefixedId("whe"),
+            onDeliveryQueued: () => webhookDeliveryTimer?.poke(),
+            repository: webhookRepository,
+            targetOptions: webhookTargetOptions,
+          })
+        : undefined;
     const iamUserProvisionHandlers =
       authRepository && iamRepository
         ? createIamUserProvisionHandler(iamRepository)
@@ -607,8 +673,12 @@ export async function createServerRuntime(
               config.patchWindow,
             ),
             delivery,
-            finalizeRepository: createPostgresReleaseFinalizeRepository(pool),
-            jobRepository: createPostgresReleaseJobRepository(pool),
+            finalizeRepository: createPostgresReleaseFinalizeRepository(pool, {
+              onReleaseSettled: recordReleaseWebhookEvent,
+            }),
+            jobRepository: createPostgresReleaseJobRepository(pool, {
+              onReleaseSettled: recordReleaseWebhookEvent,
+            }),
             logger: {
               warn(message: string, context?: Record<string, unknown>) {
                 logger.warn(context ?? {}, message);
@@ -634,6 +704,9 @@ export async function createServerRuntime(
 
       const result = await reconcileRelease(jobId, dependencies);
       const durationMs = Date.now() - startedAt;
+      // A settled job may have recorded a webhook event; send it now rather
+      // than at the next tick.
+      webhookDeliveryTimer?.poke();
 
       if (result.outcome === "succeeded") {
         logger.info(
@@ -865,6 +938,7 @@ export async function createServerRuntime(
       ...iamHandlers,
       ...iamUserProvisionHandlers,
       ...iamInvitationHandlers,
+      webhookHandlers,
       auditEventWriteHandler: createAuditEventWriteHandler(auditRepository),
       authorizationService,
       controlPlaneAuthHandler,
@@ -970,6 +1044,7 @@ export async function createServerRuntime(
         // Before the pool ends: a report in flight is reading from it.
         await telemetryReportTimer?.stop();
         await metricFoldTimer?.stop();
+        await webhookDeliveryTimer?.stop();
         await queue?.stop();
         await executor?.waitForIdle();
         if (storage instanceof S3StorageAdapter) {
@@ -983,6 +1058,7 @@ export async function createServerRuntime(
         // take a while, and serving traffic does not depend on it.
         metricFoldTimer?.start();
         telemetryReportTimer?.start();
+        webhookDeliveryTimer?.start();
 
         if (queue) {
           await queue.start();
@@ -1454,6 +1530,11 @@ function createManagementHandlers(
   idGenerator: ManagementIdGenerator,
   retryLimit: number,
   authRepository: ReturnType<typeof createPostgresAuthRepository> | null,
+  ownerInvitations: {
+    githubUserLookupService: GitHubUserLookupService | undefined;
+    invitationTtlDays: number;
+    repository: ReturnType<typeof createPostgresTeamOwnerInvitationRepository>;
+  },
   options: {
     clearDeploymentStaticState?: (
       state: DeploymentClearStaticState,
@@ -1649,6 +1730,61 @@ function createManagementHandlers(
     },
 
     async teamCreateHandler(input) {
+      if (input.owner) {
+        const target = await resolveInvitationTarget(
+          ownerInvitations.githubUserLookupService,
+          input.owner.target,
+        );
+        if (target.outcome !== "resolved") {
+          return { outcome: "owner_invitation_refused", ownerInvitation: target };
+        }
+
+        const createdAt = new Date();
+        const teamId = idGenerator.createTeamId() as TeamId;
+        const result =
+          await ownerInvitations.repository.createTeamWithOwnerInvitation({
+            invitation: {
+              createdAt,
+              createdBy: input.owner.createdBy as UserId,
+              expiresAt: addDays(createdAt, ownerInvitations.invitationTtlDays),
+              id: createRandomPrefixedId("inv") as TeamInvitationId,
+              membershipId: createRandomPrefixedId("mem") as MembershipId,
+              roleBindingId: createRandomPrefixedId("rb") as RoleBindingId,
+              target: target.target,
+            },
+            team: input.userId
+              ? {
+                  createdAt,
+                  membershipId: createRandomPrefixedId("mem") as MembershipId,
+                  name: input.name,
+                  roleBindingId: createRandomPrefixedId("rb") as RoleBindingId,
+                  teamId,
+                  userId: input.userId as UserId,
+                }
+              : { createdAt, id: teamId, name: input.name },
+          });
+
+        switch (result.outcome) {
+          case "created":
+            return {
+              outcome: "created",
+              ownerInvitation: toIamInvitationCreateHandlerResult(
+                result.invitation,
+              ),
+              team: result.team,
+            };
+          case "invitation_refused":
+            return {
+              outcome: "owner_invitation_refused",
+              ownerInvitation: toIamInvitationCreateHandlerResult(
+                result.invitation,
+              ),
+            };
+          default:
+            return result;
+        }
+      }
+
       if (input.userId && authRepository) {
         return authRepository.createTeamForUser({
           createdAt: new Date(),
@@ -1855,31 +1991,12 @@ function createIamInvitationHandlers(
 > {
   return {
     async iamInvitationCreateHandler(input) {
-      // Resolve the invitation target. Handle invites hit the GitHub directory
-      // BEFORE opening the repository transaction — never hold a DB transaction
-      // across a network call.
-      let target: TeamInvitationTarget;
-      if (input.target.type === "email") {
-        target = { email: input.target.email, type: "email" };
-      } else {
-        if (!githubUserLookupService) {
-          return { outcome: "handle_lookup_failed" };
-        }
-        const resolved = await githubUserLookupService.resolveHandle(
-          input.target.githubHandle,
-        );
-        if (resolved.outcome === "not_found") {
-          return { outcome: "handle_not_found" };
-        }
-        if (resolved.outcome !== "success") {
-          return { outcome: "handle_lookup_failed" };
-        }
-        target = {
-          handle: input.target.githubHandle,
-          provider: resolved.provider,
-          subject: resolved.subject,
-          type: "oauth",
-        };
+      const target = await resolveInvitationTarget(
+        githubUserLookupService,
+        input.target,
+      );
+      if (target.outcome !== "resolved") {
+        return target;
       }
 
       const createdAt = new Date();
@@ -1893,44 +2010,11 @@ function createIamInvitationHandlers(
         membershipId: createRandomPrefixedId("mem") as MembershipId,
         roleBindingId: createRandomPrefixedId("rb") as RoleBindingId,
         roleId: input.roleId as RoleDefinitionId,
-        target,
+        target: target.target,
         teamId: input.teamId as TeamId,
       });
 
-      switch (result.outcome) {
-        case "created":
-          return {
-            created: true,
-            invitation: toIamInvitationRouteModel(result.invitation),
-            outcome: "pending",
-          };
-        case "already_exists":
-          return {
-            created: false,
-            invitation: toIamInvitationRouteModel(result.invitation),
-            outcome: "pending",
-          };
-        case "accepted_existing_user":
-          return {
-            invitation: toIamInvitationRouteModel(result.invitation),
-            membershipCreated: result.membershipCreated,
-            outcome: result.outcome,
-            roleBinding: result.roleBinding,
-            roleBindingCreated: result.roleBindingCreated,
-          };
-        case "conflict":
-          return {
-            invitation: toIamInvitationRouteModel(result.invitation),
-            outcome: result.outcome,
-            reason: result.reason,
-          };
-        case "already_granted":
-        case "account_disabled":
-        case "not_found":
-        case "role_not_supported":
-        case "service_account_other_team":
-          return result;
-      }
+      return toIamInvitationCreateHandlerResult(result);
     },
 
     async iamInvitationListHandler(teamId, status) {
@@ -2056,6 +2140,85 @@ function createIamInvitationFulfillmentService(
       }
     },
   };
+}
+
+// Handle invites hit the GitHub directory BEFORE the repository transaction
+// opens: never hold a DB transaction across a network call.
+async function resolveInvitationTarget(
+  githubUserLookupService: GitHubUserLookupService | undefined,
+  target: IamInvitationCreateHandlerInput["target"],
+): Promise<
+  | { outcome: "handle_lookup_failed" | "handle_not_found" }
+  | { outcome: "resolved"; target: TeamInvitationTarget }
+> {
+  if (target.type === "email") {
+    return {
+      outcome: "resolved",
+      target: { email: target.email, type: "email" },
+    };
+  }
+
+  if (!githubUserLookupService) {
+    return { outcome: "handle_lookup_failed" };
+  }
+  const resolved = await githubUserLookupService.resolveHandle(
+    target.githubHandle,
+  );
+  if (resolved.outcome === "not_found") {
+    return { outcome: "handle_not_found" };
+  }
+  if (resolved.outcome !== "success") {
+    return { outcome: "handle_lookup_failed" };
+  }
+
+  return {
+    outcome: "resolved",
+    target: {
+      handle: target.githubHandle,
+      provider: resolved.provider,
+      subject: resolved.subject,
+      type: "oauth",
+    },
+  };
+}
+
+function toIamInvitationCreateHandlerResult(
+  result: CreateTeamInvitationResult,
+): IamInvitationCreateHandlerResult {
+  switch (result.outcome) {
+    case "created":
+      return {
+        created: true,
+        invitation: toIamInvitationRouteModel(result.invitation),
+        outcome: "pending",
+      };
+    case "already_exists":
+      return {
+        created: false,
+        invitation: toIamInvitationRouteModel(result.invitation),
+        outcome: "pending",
+      };
+    case "accepted_existing_user":
+      return {
+        invitation: toIamInvitationRouteModel(result.invitation),
+        membershipCreated: result.membershipCreated,
+        outcome: result.outcome,
+        roleBinding: result.roleBinding,
+        roleBindingCreated: result.roleBindingCreated,
+      };
+    case "conflict":
+      return {
+        invitation: toIamInvitationRouteModel(result.invitation),
+        outcome: result.outcome,
+        reason: result.reason,
+      };
+    case "already_granted":
+    case "account_disabled":
+    case "not_found":
+    case "role_not_supported":
+    case "service_account_other_team":
+      return result;
+  }
 }
 
 function toIamInvitationRouteModel(input: {

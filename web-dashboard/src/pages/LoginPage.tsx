@@ -151,11 +151,12 @@ export function LoginPage() {
             />
           ))}
         </div>
-        <p className="mt-4 text-[12px]/[1.6] text-fg-3">
-          {localDev
-            ? "Local evaluation mode replaces provider sign-in — authentication is disabled on this stack. Do not expose it."
-            : "Uses the OAuth 2.0 authorization-code flow with PKCE — no client secret is stored in the browser."}
-        </p>
+        {localDev ? (
+          <p className="mt-4 text-[12px]/[1.6] text-fg-3">
+            Local evaluation mode replaces provider sign-in. Authentication is
+            disabled on this stack. Do not expose it.
+          </p>
+        ) : null}
       </>
     );
   }
@@ -167,9 +168,6 @@ export function LoginPage() {
         <h1 className="text-[23px] font-semibold tracking-[-.02em] text-fg">
           Sign in to {PRODUCT_NAME}
         </h1>
-        <p className="mt-2 text-[14px] text-fg-2">
-          Manage your over-the-air releases.
-        </p>
 
         {body}
 

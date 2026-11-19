@@ -77,6 +77,7 @@ const sidebars: SidebarsConfig = {
           collapsible: false,
           items: [
             'using-patch/ci-integration',
+            'using-patch/webhooks',
             'using-patch/analytics',
             'using-patch/security',
             'using-patch/delivery',

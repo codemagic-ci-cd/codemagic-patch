@@ -172,9 +172,8 @@ export function CliAuthorizePage() {
           </button>
         </div>
         <p className="mt-4 text-[12px]/[1.6] text-fg-3">
-          Approving redirects your browser to the CLI&apos;s local listener at
-          127.0.0.1:{request.port} with a short-lived sign-in code that only
-          the requesting CLI can redeem and that expires in about a minute.
+          Approving sends a short-lived code to the CLI on 127.0.0.1:
+          {request.port}.
         </p>
       </>
     );

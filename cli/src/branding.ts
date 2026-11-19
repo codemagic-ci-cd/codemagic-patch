@@ -49,6 +49,10 @@ export const FIRST_RELEASE_DOCS_URL = `${PATCH_DOCS_SITE_URL}/setup/first-releas
 // server rejects an unsigned release for an app that requires signing.
 export const CODE_SIGNING_DOCS_URL = `${PATCH_DOCS_SITE_URL}/using-patch/security?sdk=react-native#code-signing-update-integrity`;
 
+// The webhooks guide: the payload, the signature check and the retry rules,
+// which are the receiver's side and so nothing a `webhook` command can show.
+export const WEBHOOKS_DOCS_URL = `${PATCH_DOCS_SITE_URL}/using-patch/webhooks`;
+
 // How to see the Cloudflare cache at work. Needs a published release, which
 // the install summary that used to print the check inline never had.
 export const CLOUDFLARE_VERIFY_DOCS_URL = `${PATCH_DOCS_SITE_URL}/reference/cdn#verify`;

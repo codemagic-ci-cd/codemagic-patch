@@ -175,7 +175,7 @@ function RollbackModalContent({
       open
       onClose={requestClose}
       title={`Rollback ${deploymentName ?? "deployment"}`}
-      description="Republishes a previous release as a new release at 100%."
+      description="Creates a new release at 100% from a prior label."
       footer={
         <>
           <button

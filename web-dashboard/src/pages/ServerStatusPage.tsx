@@ -52,7 +52,7 @@ export function ServerStatusPage() {
         description={
           query.data
             ? statusPageDescription(query.data.topology)
-            : "Host health for this Patch install."
+            : "Database, storage, and download connectivity."
         }
       />
 

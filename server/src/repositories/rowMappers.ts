@@ -15,6 +15,8 @@ import type {
   Team,
   TeamInvitation,
   UserAccount,
+  WebhookDelivery,
+  WebhookEndpoint,
 } from "../domain";
 
 export interface UserAccountRow {
@@ -84,6 +86,8 @@ export interface ReleaseRow {
   release_notes: string | null;
   status: Release["status"];
   rollback_of: string | null;
+  /** The release a promote or rollback took its bundle from. */
+  source_bundle_release_id?: string | null;
   signature: string | null;
   signature_hash_algorithm: string | null;
   processing_started_at: Date | null;
@@ -110,6 +114,11 @@ export interface ReleaseJobRow {
   failure_stage: string | null;
   failure_reason: string | null;
   requested_by: string | null;
+  /**
+   * Before/after of the fields a PATCH changed, kept for the webhook payload.
+   * Read straight from the row; it is not part of the `ReleaseJob` domain type.
+   */
+  patch_changes?: Record<string, { from: unknown; to: unknown }> | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -493,6 +502,65 @@ export function mapReleaseTargetRow(row: ReleaseTargetRow): ReleaseTarget {
     reconcileGeneration: row.reconcile_generation,
     releaseId: asBrand(row.release_id),
     resolutionSource: row.resolution_source,
+    status: row.status,
+  };
+}
+
+export interface WebhookEndpointRow {
+  id: string;
+  team_id: string;
+  url: string;
+  description: string | null;
+  event_types: string[];
+  status: WebhookEndpoint["status"];
+  created_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** A `webhook_delivery` row joined with its event's type. */
+export interface WebhookDeliveryRow {
+  id: string;
+  event_id: string;
+  endpoint_id: string;
+  event_type: string;
+  status: WebhookDelivery["status"];
+  attempt_count: number;
+  next_attempt_at: Date | null;
+  last_attempt_at: Date | null;
+  last_response_status: number | null;
+  last_error: string | null;
+  created_at: Date;
+  completed_at: Date | null;
+}
+
+export function mapWebhookEndpointRow(row: WebhookEndpointRow): WebhookEndpoint {
+  return {
+    createdAt: row.created_at,
+    createdBy: nullableBrand(row.created_by),
+    description: row.description,
+    eventTypes: row.event_types as WebhookEndpoint["eventTypes"],
+    id: asBrand(row.id),
+    status: row.status,
+    teamId: asBrand(row.team_id),
+    updatedAt: row.updated_at,
+    url: row.url,
+  };
+}
+
+export function mapWebhookDeliveryRow(row: WebhookDeliveryRow): WebhookDelivery {
+  return {
+    attemptCount: row.attempt_count,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    endpointId: asBrand(row.endpoint_id),
+    eventId: asBrand(row.event_id),
+    eventType: row.event_type as WebhookDelivery["eventType"],
+    id: asBrand(row.id),
+    lastAttemptAt: row.last_attempt_at,
+    lastError: row.last_error as WebhookDelivery["lastError"],
+    lastResponseStatus: row.last_response_status,
+    nextAttemptAt: row.next_attempt_at,
     status: row.status,
   };
 }

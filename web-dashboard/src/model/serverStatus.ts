@@ -165,16 +165,16 @@ export function showVersionCard(topology: ServerStatusTopology): boolean {
 
 export function statusPageDescription(topology: ServerStatusTopology): string {
   if (topology.hosting === "managed") {
-    return "Connectivity of this Patch instance to its database, object storage, and download origin.";
+    return "Database, storage, and download connectivity.";
   }
   const bundled = [
     ...(topology.database === "bundled" ? ["Postgres"] : []),
     ...(topology.storage === "bundled" ? ["Silo"] : []),
   ];
   if (bundled.length === 0) {
-    return "Host health for this Patch install. Database and object storage are external services, so only their connectivity is checked here.";
+    return "Database and object storage connectivity.";
   }
-  return `Host health for this Patch install. Disk free space is measured from the API container, which on a default Compose VM is usually the same disk as ${bundled.join(" and ")}.`;
+  return `Disk free space from the API container (usually same disk as ${bundled.join(" and ")}).`;
 }
 
 const PATCH_SERVER_TAG_PREFIX = "codemagic-patch-server-";

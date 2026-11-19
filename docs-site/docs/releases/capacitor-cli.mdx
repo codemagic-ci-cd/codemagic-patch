@@ -23,18 +23,29 @@ Reference: [CLI reference](/docs/reference/cli-reference) ·
 [Binary versions for Capacitor](/docs/using-patch/binary-version-capacitor) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=capacitor-patch-cli)
 
+## 0.4.0 {#v0-4-0}
+
+*19th November 2026*
+
+- Prints a one-line notice on a terminal when a newer `cmpatch-capacitor` is
+  on npm. The check asks `registry.npmjs.org` for the latest version once a
+  day. It does not run in CI, when output is piped, or with `--format json`.
+  Set `CMPATCH_NO_UPDATE_CHECK=1` to turn it off.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch-cli%400.4.0).
+
 ## 0.3.1 {#v0-3-1}
 
 *17th November 2026*
 
-- **Range totals under `deployment timeseries`:** The command prints the
-  range totals, the success rate, and the active devices of the last
-  complete day under its table. Requires
+- `deployment timeseries` prints the range totals, the success rate, and the
+  active devices of the last complete day under its table. Requires
   [server 0.10.0](/docs/releases/server#v0-10-0); output is unchanged against
   an older server.
-- **`token create` needs a browser login:** Server 0.10.0 refuses
-  `token create` from a `--token` login or `CODEMAGIC_PATCH_TOKEN`. The CLI
-  says to remove the token and run `cmpatch-capacitor login`. See the
+- `token create` needs a browser login on server 0.10.0, which refuses it from
+  a `--token` login or `CODEMAGIC_PATCH_TOKEN`. The CLI says to remove the
+  token and run `cmpatch-capacitor login`. See the
   [server notes](/docs/releases/server#v0-10-0-api-tokens).
 
 See the [CLI reference](/docs/reference/cli-reference) and
@@ -47,52 +58,53 @@ See the [CLI reference](/docs/reference/cli-reference) and
 ### Breaking
 
 `cmpatch-capacitor token revoke` now shows what it is about to revoke and asks
-first, as `app remove` does, because anything still signing in with the token,
-such as a CI pipeline, stops working. Without a terminal (in CI, or with
-`--format json`) it exits `2` instead of running. Add `--yes` to scripts that
-call it.
+first, as `app remove` does. Anything still signing in with the token, such as
+a CI pipeline, stops working once it is revoked. Without a terminal (in CI, or
+with `--format json`) it exits `2` instead of running. Add `--yes` to scripts
+that call it.
 
 ### Failures and daily numbers from the CLI
 
-- **`deployment timeseries`:** Prints a deployment's counters per day, the
-  numbers behind the dashboard's deployment chart. Pick the window with
+- Adds `deployment timeseries`, which prints a deployment's counters per day,
+  the numbers behind the dashboard's deployment chart. Pick the window with
   `--range 7d|30d|90d|1y` or `--from` / `--to`, and narrow it with
   `--binary-version` / `--binary-version-prefix`.
-- **`deployment failures` / `failure-events` and `release failures` /
-  `failure-events`:** Drill into a failure reason from `deployment metrics` or
-  `release metrics`, as the dashboard's failure dialog does. `failures --reason
-  <reason>` lists the codes under it; adding `--code <code>`, or `--no-code` for
-  the failures that reported none, shows that code's top exit reasons and
-  messages. `failure-events` lists the single events, a page at a time with
-  `--limit` and `--cursor`.
+- Adds `deployment failures` / `failure-events` and `release failures` /
+  `failure-events`, which drill into a failure reason from
+  `deployment metrics` or `release metrics` like the dashboard's failure
+  dialog. `failures --reason <reason>` lists the codes under it; adding
+  `--code <code>`, or `--no-code` for the failures that reported none, shows
+  that code's top exit reasons and messages. `failure-events` lists the single
+  events, a page at a time with `--limit` and `--cursor`.
 
 A server that does not publish these numbers answers with one sentence saying
 so, and the command exits `1`.
 
-### Smaller changes
+### Other changes
 
-- **`team list` and `team show`:** List the teams you can see and show one,
-  so you can find the name or ID to pass as `--team`.
-- **`release list --binary-version`:** Lists only the releases that target one
-  binary version (`--binary-version 1.4.0`) or every version under a prefix
+- Adds `team list` and `team show`, which list the teams you can see and show
+  one, with the name and ID that `--team` takes.
+- `release list` takes `--binary-version` to list only the releases that
+  target one binary version (`--binary-version 1.4.0`), or
+  `--binary-version-prefix` for every version under a prefix
   (`--binary-version-prefix 1.4`).
-- **`app setting` without a flag shows the current settings:** Run it without
-  `--require-code-signing` to see whether the app requires code signing.
-- **`token revoke --name <name>`:** Revoke a token by the name you gave it,
-  instead of looking up its ID. A name shared by several tokens is refused
-  with their IDs, so you can pass `--token-id`.
+- `app setting` without `--require-code-signing` shows the current settings,
+  including whether the app requires code signing.
+- `token revoke --name <name>` revokes a token by the name you gave it. A name
+  shared by several tokens is refused, and the error lists their IDs for
+  `--token-id`.
 
 ### Fixes
 
-- **Overlapping runs no longer sign each other out:** Runs that share the
-  stored session (a terminal and a CI step, two jobs on one machine) now
-  refresh an expired access token one at a time under a lock next to the
-  credential store. A run that gets the lock first re-reads the store and, if
-  another run has already refreshed the session, uses that session instead of
-  sending a refresh of its own. A refresh the server refuses still clears the
-  stored credentials and asks you to sign in again.
-- **Flag errors point at the command's help:** An unknown flag, a missing or
-  invalid value, or a stray argument inside a command now ends with
+- Fixes overlapping runs that share the stored session (a terminal and a CI
+  step, two jobs on one machine) signing each other out. They now refresh an
+  expired access token one at a time under a lock next to the credential
+  store. A run that gets the lock first re-reads the store and, if another run
+  has already refreshed the session, uses that session instead of sending a
+  refresh of its own. A refresh the server refuses still clears the stored
+  credentials and asks you to sign in again.
+- Flag errors inside a command (an unknown flag, a missing or invalid value,
+  or a stray argument) now end with
   ``Run `cmpatch-capacitor <command> --help` for usage`` instead of pointing
   at the root listing.
 
@@ -114,8 +126,8 @@ asks before a change when someone is at the terminal, and only an explicit
 
 ### `cmpatch-capacitor doctor`
 
-`doctor` checks why an app may not receive updates, without changing
-anything. Run it from the app's root:
+Adds `doctor`, which checks why an app may not receive updates without
+changing anything. Run it from the app's root:
 
 ```bash
 cmpatch-capacitor doctor
@@ -127,8 +139,8 @@ to, the native project setup, and the download origin. It reports deployment
 keys that are missing or do not match the app's settings. With
 `--verify-delivery` it also checks the published manifest and artifacts for
 the app's exact version. It ends by naming where to watch the SDK's logs on a
-device. It exits `1` when a check fails; `--platform` checks one platform and `--verbose`
-shows every check.
+device. It exits `1` when a check fails. `--platform` checks one platform, and
+`--verbose` shows every check.
 
 See the [CLI reference](/docs/reference/cli-reference) and
 [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch-cli%400.2.0).
@@ -146,20 +158,19 @@ web assets with `release create`, and manages existing releases with
 `release patch`, `disable`, `enable`, `promote`, `rollback`, and adoption
 metrics. CI can sign in with personal access tokens.
 
-- **Web root check:** `release create` checks that the bundle has
-  `index.html` at its top level before uploading. A bundle rooted one folder
-  too high installs but boots to a blank screen.
-- **Binary version targeting:** The CLI does not compute a native
-  fingerprint; `--target-binary-version` ties a release to a native build. See
+- `release create` checks that the bundle has `index.html` at its top level
+  before uploading. A bundle rooted one folder too high installs but boots to
+  a blank screen.
+- The CLI does not compute a native fingerprint. `--target-binary-version`
+  ties a release to a native build. See
   [Binary versions for Capacitor](/docs/using-patch/binary-version-capacitor).
   `release patch` and `promote` refuse a target override that moves a
   Capacitor release to another binary version.
-- **Framework scoping:** `app create` records the app as a Capacitor app, and
-  app lists and pickers show only Capacitor apps. Server 0.6.0 stores the
-  framework, and the dashboard shows the `cmpatch-capacitor` release command
-  for these apps.
-- **Shared default server:** `cmpatch-capacitor` reads the default server from
-  the same `~/.codemagic-patch/config.json` as `cmpatch`, and `config set`
-  writes to it. Sign-ins are stored separately in `credentials-capacitor.json`.
+- `app create` records the app as a Capacitor app, and app lists and pickers
+  show only Capacitor apps. Server 0.6.0 stores the framework, and the
+  dashboard shows the `cmpatch-capacitor` release command for these apps.
+- `cmpatch-capacitor` reads the default server from the same
+  `~/.codemagic-patch/config.json` as `cmpatch`, and `config set` writes to
+  it. Sign-ins are stored separately in `credentials-capacitor.json`.
 
 See the [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch-cli%400.1.0).

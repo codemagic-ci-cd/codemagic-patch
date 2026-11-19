@@ -31,6 +31,7 @@ import { DeploymentDetailPage } from "./pages/DeploymentDetailPage";
 import { LocalConsentPage } from "./pages/LocalConsentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MembersPage } from "./pages/MembersPage";
+import { WebhooksPage } from "./pages/WebhooksPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ReleaseDetailPage } from "./pages/ReleaseDetailPage";
@@ -117,6 +118,7 @@ export const router = createBrowserRouter([
               { path: "apps/:appId/deployments/:depId", element: <DeploymentDetailPage /> },
               { path: "apps/:appId/deployments/:depId/releases/:releaseId", element: <ReleaseDetailPage /> },
               { path: "members", element: <MembersPage /> },
+              { path: "webhooks", element: <WebhooksPage /> },
             ],
           },
           { path: "account/tokens", element: <TokensPage /> },

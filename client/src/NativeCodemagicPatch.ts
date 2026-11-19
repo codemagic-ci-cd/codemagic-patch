@@ -128,10 +128,27 @@ export interface Spec extends TurboModule {
   verifyJwtSignature(request: NativeJwtVerificationRequest): Promise<boolean>;
 }
 
+// react-native-web exports no TurboModuleRegistry. A universal app evaluates
+// the SDK in its web bundle, and so does the native build of an Expo Router
+// app with `web.output: "server"`.
+export const hasNativeModule = TurboModuleRegistry != null;
+
+function unavailableModule(): Spec {
+  const reject = () =>
+    Promise.reject(
+      new Error(
+        "@codemagic/react-native-patch has no native module on this platform; updates apply to iOS and Android builds only.",
+      ),
+    );
+  return new Proxy({} as Spec, { get: () => reject });
+}
+
 // Resolved at module load. If the TurboModule isn't registered (autolinking
 // failed, host app needs a rebuild), getEnforcing throws here and the JS bundle
 // fails to evaluate — surfacing the build error loudly at app boot instead of
 // degrading into recoverable runtime failures at the first SDK call.
-const NativeCodemagicPatch: Spec = TurboModuleRegistry.getEnforcing<Spec>("NativeCodemagicPatch");
+const NativeCodemagicPatch: Spec = hasNativeModule
+  ? TurboModuleRegistry.getEnforcing<Spec>("NativeCodemagicPatch")
+  : unavailableModule();
 
 export default NativeCodemagicPatch;

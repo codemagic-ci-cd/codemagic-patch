@@ -411,6 +411,43 @@ If you install updates via [manual control](/docs/setup/manual-control) without 
 
 GitHub Actions and remote CI runners cannot call `http://127.0.0.1` or `localhost` on your laptop. Set `CODEMAGIC_PATCH_SERVER_URL` to a public Patch URL. See [CI integration](/docs/using-patch/ci-integration).
 
+## Native build fails in the build metadata step
+
+<SdkTabs>
+  <TabItem value="react-native" label="React Native">
+
+When the `Codemagic Patch build metadata` step cannot record a build that embeds its JS bundle, it fails the build instead of shipping an app without a correct record. Xcode lists its `error:` lines as build issues; Gradle prints the same lines, tagged `[codemagic-patch build-tools]`, with a code and the cause:
+
+```text
+error: [codemagic-patch build-tools] (UNSUPPORTED_BUNDLE_NAME): platform=android appRoot=/path/to/app
+error: [codemagic-patch build-tools] cause: bundle name "custom.android.bundle" is not supported on android; only index.android.bundle is. Remove the custom bundleAssetName.
+error: [codemagic-patch build-tools] hint: to build without this step, set CODEMAGIC_PATCH_SKIP_BUILD_FINGERPRINT=1. The app then has no CodemagicPatchBuild.json.
+```
+
+<div>
+
+- **`ENABLE_USER_SCRIPT_SANDBOXING`**: Xcode's User Script Sandboxing keeps the phase from reading the project. Set it to `NO` for the app target.
+- **`UNSUPPORTED_BUNDLE_NAME`**: only the default bundle names `main.jsbundle` and `index.android.bundle` are supported. Remove a custom `BUNDLE_NAME` (iOS) or `bundleAssetName` (Android).
+- **`UNSUPPORTED_NODE`**: the build tools need Node.js 20 or newer on the build machine. On iOS this is the Node.js that `NODE_BINARY` in `ios/.xcode.env` points at.
+- **`INVALID_PROJECT_CONFIG`**: the step cannot use `fingerprint.config.js`, for example because it uses `export default`, which the engine ignores (use `module.exports`), or because the config is a `.ts`, `.mjs` or `.json` file the engine never reads. The cause line says which.
+- **`CALCULATOR_FAILED` mentioning autolinking**: the project's React Native or Expo autolinking command failed. Check its output and installed dependencies; Patch rejects an incomplete fingerprint instead of recording one without native dependencies.
+- **`CALCULATOR_FAILED` mentioning native project sources**: the step computes the fingerprint where `cmpatch release-react` does, in the app's root directory, and expects the native project in `ios/` or `android/` there. A native project outside the React Native app's directory is not supported. On iOS the app root is the `PROJECT_ROOT` build setting when the target sets one, otherwise the parent of the Xcode project's directory; the last `error:` line says which.
+- **`CALCULATOR_FAILED` mentioning the Expo config**: `app.config.js` or `app.json` could not be loaded. The line `Cannot get Expo config from an Expo project` in the build output has the cause. An Expo project with a `.env` file needs Node.js 20.12 or newer for this.
+
+</div>
+
+A development build served by Metro prints these causes as warnings instead and builds without `CodemagicPatchBuild.json`; a build that embeds its bundle still fails on them. The sandbox setting is the exception: it fails every build.
+
+Yarn Plug'n'Play is not supported. To build without the record while you fix the cause, set [`CODEMAGIC_PATCH_SKIP_BUILD_FINGERPRINT=1`](/docs/using-patch/fingerprinting#opt-out) in the build's environment. The iOS phase handles this before looking for Node or the SDK, so it also works when Node cannot be found. After an SDK update, run `cmpatch wire` (Bare) or `npx expo prebuild` (Expo) again to update the phase in your project.
+
+  </TabItem>
+  <TabItem value="capacitor" label="Capacitor">
+
+Capacitor builds do not run the build metadata step.
+
+  </TabItem>
+</SdkTabs>
+
 ## Server issues
 
 ### Server won't boot / OAuth errors

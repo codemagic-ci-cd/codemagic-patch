@@ -1000,7 +1000,7 @@ function renderUnknownUnhealthy(
     "This machine has no record of starting an install here, so this looks like a server that was set up and is currently down — not a half-finished install. Nothing will be changed or deleted.",
     "",
     "What usually helps:",
-    "  cmpatch selfhost upgrade      rebuild and restart the server",
+    "  cmpatch selfhost upgrade      move to the latest release and restart the server",
     `  ${SELFHOST_DOCS_URL}`,
   ].join("\n");
 }

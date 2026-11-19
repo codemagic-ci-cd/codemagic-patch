@@ -7,13 +7,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { realpath } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 import { isRecord } from "../output";
 import type { IosDependencyManager } from "../nativeProjectPaths";
+import { createProjectRequire } from "../projectRequire";
 import type { NativePlatform } from "../projectAnalysis";
 import { compareVersions } from "../semver";
+import { loadBuildIntegration, type BuildIntegrationLookup } from "./buildStep";
 import { isDirectory, isFile, readJsonFile, readTextFile } from "./fs";
 import type { WireProjectSummary } from "./types";
 
@@ -22,12 +23,17 @@ export const SDK_PACKAGE = "@codemagic/react-native-patch";
 export const MIN_WRAP_SDK_VERSION = "0.5.0";
 /** The first SDK release that ships a Package.swift (React Native's SwiftPM mode). */
 export const MIN_SWIFTPM_SDK_VERSION = "0.7.0";
+/** The first SDK release that defines the build metadata step (`build-tools/native/build-integration.json`). */
+export const MIN_BUILD_METADATA_SDK_VERSION = "0.8.0";
 /**
  * What an absent or too-old registry SDK is installed as. A 0.x caret range only
- * spans one minor, so it names the newest minimum: every install gets an SDK
- * that works in both CocoaPods and SwiftPM mode.
+ * spans one minor, so it names the newest of the minimums: `^0.7.0` would get
+ * Package.swift (MIN_SWIFTPM_SDK_VERSION) but never the build metadata step
+ * (MIN_BUILD_METADATA_SDK_VERSION). Every install wire runs therefore has both,
+ * in CocoaPods and in SwiftPM mode. An installed 0.7.x is left alone: it links
+ * in either mode, and the build metadata step is an optional upgrade.
  */
-export const SDK_INSTALL_RANGE = `^${MIN_SWIFTPM_SDK_VERSION}`;
+export const SDK_INSTALL_RANGE = `^${MIN_BUILD_METADATA_SDK_VERSION}`;
 
 /**
  * Packages that ship their own OTA flow. Being declared is not a conflict —
@@ -68,6 +74,12 @@ export type SdkDependency = {
   /** Whether the installed package exports `wrap` (version gate or, for local packages, the source itself). */
   supportsWrap: boolean;
   /**
+   * Whether the installed package defines the build metadata step: a registry
+   * install at MIN_BUILD_METADATA_SDK_VERSION or later, or a local package,
+   * whose definition file this cmpatch can read.
+   */
+  supportsBuildMetadata: boolean;
+  /**
    * Whether the installed package ships a Package.swift, which React Native's
    * SwiftPM mode needs. Decided by the file for every kind of dependency; false
    * when the package root cannot be resolved (Yarn Plug'n'Play).
@@ -101,6 +113,8 @@ export type ProjectShape = {
    */
   expoNative?: "generated" | "maintained" | "unknown";
   sdk: SdkDependency;
+  /** The installed SDK's build metadata step definition, or why there is none to use. */
+  buildIntegration: BuildIntegrationLookup;
   otherOtaPackages: string[];
 };
 
@@ -152,7 +166,7 @@ export async function inspectProject(root: string): Promise<ProjectShape> {
                 : "unknown",
         }
       : {}),
-    sdk: await inspectSdk(root, dependencies, packageManager.pnp),
+    ...(await inspectSdk(root, dependencies, packageManager.pnp)),
     otherOtaPackages: OTHER_OTA_PACKAGES.filter((name) =>
       Object.hasOwn(dependencies, name),
     ),
@@ -197,7 +211,7 @@ async function inspectSdk(
   root: string,
   dependencies: Record<string, string>,
   pnp: boolean,
-): Promise<SdkDependency> {
+): Promise<{ sdk: SdkDependency; buildIntegration: BuildIntegrationLookup }> {
   const declared = dependencies[SDK_PACKAGE];
   const kind: SdkDependency["kind"] =
     declared === undefined
@@ -218,16 +232,30 @@ async function inspectSdk(
           (await isFile(path.join(installedRoot, "dist", "wrap.js")))
         : false;
 
+  // A registry release is judged by its version, a local package by its
+  // definition file. An SDK that predates the step is not upgraded for it.
+  const label = `${SDK_PACKAGE}${version === undefined ? "" : `@${version}`}`;
+  const buildIntegration: BuildIntegrationLookup =
+    installedRoot === undefined
+      ? { kind: "unavailable", reason: `${SDK_PACKAGE} is not installed` }
+      : kind !== "local" && (version === undefined || compareVersions(version, MIN_BUILD_METADATA_SDK_VERSION) < 0)
+        ? { kind: "unavailable", reason: `${label} predates the build metadata step (${MIN_BUILD_METADATA_SDK_VERSION})`, predates: true }
+        : loadBuildIntegration(installedRoot, label);
+
   const supportsSwiftPM =
     installedRoot !== undefined && (await isFile(path.join(installedRoot, "Package.swift")));
 
   return {
-    ...(declared !== undefined ? { declared } : {}),
-    kind,
-    ...(version !== undefined ? { installedVersion: version } : {}),
-    ...(installedRoot !== undefined ? { installedRoot } : {}),
-    supportsWrap,
-    supportsSwiftPM,
+    sdk: {
+      ...(declared !== undefined ? { declared } : {}),
+      kind,
+      ...(version !== undefined ? { installedVersion: version } : {}),
+      ...(installedRoot !== undefined ? { installedRoot } : {}),
+      supportsWrap,
+      supportsBuildMetadata: buildIntegration.kind === "available",
+      supportsSwiftPM,
+    },
+    buildIntegration,
   };
 }
 
@@ -242,9 +270,7 @@ function isRegistrySpec(spec: string): boolean {
 function resolvePackageRoot(root: string, name: string): string | undefined {
   try {
     return path.dirname(
-      createRequire(path.join(root, "package.json")).resolve(
-        `${name}/package.json`,
-      ),
+      createProjectRequire(root).resolve(`${name}/package.json`),
     );
   } catch {
     return undefined;

@@ -50,6 +50,7 @@ The server refuses to boot while `WORKER_SHARED_SECRET` or the CLI OAuth signing
 | `LOGGER` | `true` | Set `false` to silence server logs |
 | `SERVER_TELEMETRY` | `true` | The daily anonymous usage report: aggregate counts only, no identifiers; used only for public statistics, never to enforce the licence's MAU limit. `false` turns it off, as does `DO_NOT_TRACK=1`; `install.sh --no-telemetry` writes `false` |
 | `SERVER_UPDATE_CHECK` | `true` | Ask GitHub for the latest server release, for the version card on the dashboard's Status page. `false` keeps a server without outbound access from calling out |
+| `WEBHOOK_ALLOW_PRIVATE_TARGETS` | `false` | `true` lets [webhooks](/docs/using-patch/webhooks#receivers-on-a-private-network) target private, loopback, and link-local addresses and use `http`. Leave it off unless your receivers are on the server's own network |
 | `SELFHOST_SCHEME` | `https` | Self-host only. `http` serves the API and storage sites over plain HTTP on port 80 with no certificates (written by `install.sh --allow-http`); `SERVER_URL`, `PUBLIC_BASE_URL`, and the OAuth callback then use `http://`. Fixed at install time; not combinable with a CDN adapter |
 | `SELFHOST_HTTP_STORAGE_PORT` | `80` | Self-host, `SELFHOST_SCHEME=http` with bundled storage only. The port of a `host:port` storage domain, published by the plain-HTTP compose overlay; the installer derives it from the domain |
 

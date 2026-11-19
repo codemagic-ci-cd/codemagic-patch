@@ -350,7 +350,7 @@ const UPGRADE = "cmpatch selfhost upgrade";
 /** The ssh upgrade's flags that mean nothing on Fly, each with why. */
 const SSH_ONLY_UPGRADE_FLAGS: Readonly<Record<string, string>> = {
   "--i-have-a-backup": "--i-have-a-backup does not apply to a Fly install: the upgrade always snapshots the database volume first, which takes a minute and costs nothing to keep.",
-  "--local-image": "--local-image does not apply to a Fly install: Fly builds the image itself, so there is no image on a host to reuse.",
+  "--local-image": "--local-image does not apply to a Fly install: Fly pulls the image it deploys from a registry, so there is no image on a host to reuse.",
   "--skip-schema-check": "--skip-schema-check does not apply to a Fly install: the database check it skips is the ssh upgrade's.",
   "--skip-smoke": "--skip-smoke does not apply to a Fly install: the upgrade only waits for /health/ready and runs no smoke test.",
   "--ssh-key": "--ssh-key does not apply to a Fly install: the upgrade reaches Fly through flyctl, not ssh.",

@@ -1,0 +1,183 @@
+---
+title: Webhooks
+description: >-
+  Get a signed HTTP request in your own systems when a release goes live,
+  changes, or fails.
+llmsDescription: 'Webhooks — register a URL per team, event types, payload, verifying the Standard Webhooks signature, retries, delivery history, cmpatch webhook commands.'
+---
+
+# Webhooks
+
+A webhook tells your own systems when a release changes. You register a URL for your team, and Patch sends it a signed `POST` each time a release goes live, changes, or fails. Use it to post to a team channel through your own relay, open a ticket when a release fails, or trigger a follow-up job.
+
+Team admins and owners manage webhooks, from the dashboard (**Webhooks** in the sidebar) or with `cmpatch webhook`.
+
+## Add a webhook
+
+```bash
+cmpatch webhook create --url https://example.com/hooks/patch
+```
+
+The command prints a signing secret that starts with `whsec_`. It is shown once, so store it where your receiver can read it. If you lose it, rotate it (see [Rotate the secret](#rotate-the-secret)).
+
+To receive only some events, repeat `--event`:
+
+```bash
+cmpatch webhook create --url https://example.com/hooks/patch \
+  --event release.published --event release.failed
+```
+
+Without `--event`, the webhook receives every event type, including ones added later.
+
+Then send a test event to check your receiver:
+
+```bash
+cmpatch webhook test --webhook-id <id>
+```
+
+A team can have up to 10 webhooks. Creating one, changing one, and rotating a secret need a browser sign-in (the dashboard, or `cmpatch login` without `--token`); an API token can list, test, redeliver, and remove.
+
+## Events
+
+An event is sent when the server has finished applying the change, or the change has failed for good. Accepting a request sends nothing, so you never get an event for a change that did not happen.
+
+If a CDN sits in front of your updates, devices can keep getting the previous state for a short while after the event, until the CDN's cache is refreshed.
+
+| Event | Sent when |
+| --- | --- |
+| `release.published` | A new release is live |
+| `release.promoted` | A release promoted into a deployment is live |
+| `release.rolled_back` | A rollback is live |
+| `release.updated` | A change to rollout, mandatory flag, release notes, or target binary version is live |
+| `release.disabled` | A release was disabled |
+| `release.enabled` | A release was enabled again |
+| `release.failed` | Publishing or changing a release failed and will not be retried |
+| `ping` | You ran `cmpatch webhook test` or pressed **Send test** |
+
+A release created with `--disabled` sends nothing until you enable it; then it sends `release.enabled`.
+
+## Payload
+
+The body is JSON:
+
+```json
+{
+  "type": "release.updated",
+  "timestamp": "2026-11-18T03:00:00.000Z",
+  "data": {
+    "team": { "id": "tm_…", "name": "Acme" },
+    "app": { "id": "app_…", "name": "MyApp-iOS" },
+    "deployment": { "id": "dpl_…", "name": "Production" },
+    "release": {
+      "id": "rel_…",
+      "release_label": "v42",
+      "status": "published",
+      "target_binary_version": "1.4.0",
+      "rollout_percentage": 50,
+      "is_mandatory": false,
+      "release_notes": "Fixes the checkout crash",
+      "rollback_of": null,
+      "source_release_id": null,
+      "created_at": "2026-11-17T22:10:00.000Z"
+    },
+    "changes": {
+      "rollout_percentage": { "from": 10, "to": 50 }
+    },
+    "requested_by": { "id": "usr_…" }
+  }
+}
+```
+
+- `changes` is present on `release.updated` only, with one entry per field that changed.
+- `release.failed` adds `failure`, with `operation` (`publish`, `promote`, `rollback`, `update`, `disable`, or `enable`), `stage`, and `reason`.
+- `source_release_id` is the release a promote or rollback took its bundle from.
+- `requested_by` is the user who asked for the change, or `null`.
+- `ping` carries only `team` and `webhook`.
+
+New event types and new fields can be added over time. Ignore the ones your receiver does not know.
+
+## Verify the signature
+
+Every request is signed with your webhook's secret, following the [Standard Webhooks](https://www.standardwebhooks.com/) specification. Use one of its libraries; they exist for most languages. Verify against the raw request body, before any JSON parsing.
+
+```js
+import { createServer } from "node:http";
+import { Webhook } from "standardwebhooks";
+
+const webhook = new Webhook(process.env.PATCH_WEBHOOK_SECRET);
+
+createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks).toString("utf8");
+
+    let event;
+    try {
+      event = webhook.verify(body, req.headers);
+    } catch {
+      res.writeHead(400).end("invalid signature");
+      return;
+    }
+
+    if (event.type === "release.failed") {
+      console.log(`Release ${event.data.release.release_label} failed`);
+    }
+    res.writeHead(204).end();
+  });
+}).listen(8080);
+```
+
+The request carries three headers:
+
+| Header | Value |
+| --- | --- |
+| `webhook-id` | The event's ID. It is the same on every retry, so use it to skip an event you already handled |
+| `webhook-timestamp` | When this attempt was sent, in Unix seconds |
+| `webhook-signature` | `v1,` followed by the signature |
+
+## Respond
+
+Answer with any `2xx` status within 10 seconds. Do the slow work after you respond. Anything else counts as a failed attempt: another status (a redirect included, since redirects are not followed), a timeout, or a connection error.
+
+## Retries
+
+A failed delivery is tried again after 30 seconds, 2 minutes, 10 minutes, 1 hour, 3 hours, 8 hours, and 12 hours. That is 8 attempts over about a day. After the last one the delivery is marked failed, and you can send it again yourself.
+
+The Patch server sends the retries itself, so they go out only while it is running. On an install where the server stops when idle, which is the default on Fly, a retry that comes due in that time is sent when the next request wakes the server.
+
+Deliveries can arrive more than once and out of order. Use `webhook-id` to drop repeats and `timestamp` to order events.
+
+## See what was sent
+
+```bash
+cmpatch webhook deliveries --webhook-id <id> --status failed
+cmpatch webhook delivery --webhook-id <id> --delivery-id <id>
+cmpatch webhook redeliver --webhook-id <id> --delivery-id <id>
+```
+
+`deliveries` lists each event with its attempts and latest result. `delivery` shows the exact body that was sent. `redeliver` sends a finished delivery again with the same `webhook-id`. The dashboard shows the same history under **Deliveries**. History is kept for 30 days.
+
+## Change, pause, or remove a webhook
+
+```bash
+cmpatch webhook update --webhook-id <id> --status disabled
+cmpatch webhook update --webhook-id <id> --all-events
+cmpatch webhook remove --webhook-id <id>
+```
+
+A disabled webhook receives nothing. Deliveries that were still waiting to retry are marked failed, and events from while it was disabled are not sent later. Removing a webhook deletes its delivery history.
+
+## Rotate the secret
+
+```bash
+cmpatch webhook rotate-secret --webhook-id <id>
+```
+
+The new secret is printed once. The old one stops verifying at once, for retries of earlier events too, so update your receiver right after rotating.
+
+## Receivers on a private network
+
+Patch sends only to public `https` addresses. A URL that points to a private, loopback, or link-local address is refused when you save it, and again each time an event is sent.
+
+If you host Patch yourself and your receiver is on the same private network, set `WEBHOOK_ALLOW_PRIVATE_TARGETS=true` on the server (in `.env.selfhost` for a Compose install) and restart it. That also allows `http` URLs. If you turn it off again, webhooks with an `http` URL or a private address stop receiving: their deliveries fail as a blocked address.

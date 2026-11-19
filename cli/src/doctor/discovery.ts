@@ -1,6 +1,5 @@
 import { scanAndroid } from "./androidScan";
 import { lstat, open, opendir, realpath } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 import { XMLParser, XMLValidator } from "fast-xml-parser";
@@ -10,6 +9,7 @@ import type { DoctorCommand } from "../commandTypes";
 import type { ProjectConfig } from "../configStore";
 import { isRecord } from "../output";
 import { findIosRoot } from "../nativeProjectPaths";
+import { createProjectRequire } from "../projectRequire";
 import { isServerCredential } from "./credentials";
 import { discoverIosTargets } from "./iosTargets";
 import { inspectJsGraph } from "./jsDiscovery";
@@ -744,7 +744,7 @@ export async function discoverDoctorProject(
     Object.hasOwn(dependencies, SDK);
   let installed = false;
   try {
-    createRequire(path.join(root, "package.json")).resolve(SDK);
+    createProjectRequire(root).resolve(SDK);
     installed = true;
   } catch {
     /* resolution never executes the package */

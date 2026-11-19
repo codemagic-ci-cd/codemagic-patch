@@ -18,6 +18,7 @@ import {
   prepareIamRoleBindingUpdateResponse,
   prepareIamUserProvisionResponse,
   prepareIamUserTokenRotateResponse,
+  writeIamInvitationAuditEvents,
 } from "./iamSupport";
 import {
   authorizeVisibleResourceAccess,
@@ -409,24 +410,11 @@ export function registerIamRoutes(
       }
 
       const result = await options.iamInvitationCreateHandler(input.value);
-      if (result.outcome === "pending" && result.created) {
-        await writeAuditEventIfConfigured(
-          options.auditEventWriteHandler,
-          request,
-          {
-            action: "iam.invitation.created",
-            afterState: result.invitation as unknown as Record<
-              string,
-              unknown
-            >,
-            beforeState: null,
-            resourceId: result.invitation.id,
-            resourceType: "team_invitation",
-            result: "success",
-            teamId: result.invitation.teamId,
-          },
-        );
-      }
+      await writeIamInvitationAuditEvents(
+        options.auditEventWriteHandler,
+        request,
+        result,
+      );
 
       return sendPreparedJsonResponse(
         reply,

@@ -14,9 +14,10 @@ import {
   writeExpoPluginEntry,
   type ExpoPluginUpdates,
 } from "./expoConfig";
+import { BUILD_STEP_EDIT_NOTE, BUILD_STEP_NAME, BUNDLE_PHASE_NAME, describeSandboxedTargets, inspectBuildStep, type BuildIntegration } from "./buildStep";
 import type { DestinationFailure } from "./destination";
 import { readTextFile } from "./fs";
-import { inspectPlanFacts, type PlanFacts, type NativeHookFacts } from "./inspect";
+import { inspectPlanFacts, type BuildStepFacts, type PlanFacts, type NativeHookFacts } from "./inspect";
 import type { JsRegistrationSite } from "./jsRoot";
 import {
   ANDROID_STRINGS_FILE,
@@ -33,6 +34,7 @@ import {
 import type { HookTransform } from "./nativeHooks";
 import type { IosDependencyManager } from "../nativeProjectPaths";
 import {
+  inspectProject,
   MIN_SWIFTPM_SDK_VERSION,
   SDK_INSTALL_RANGE,
   SDK_PACKAGE,
@@ -47,6 +49,12 @@ export type WriteIntent = { file: string; snapshot: string | null } & (
   | { kind: "strings"; values: DestinationValues }
   | { kind: "expo-plugin"; platform: NativePlatform; values: DestinationValues }
   | { kind: "source"; contents: string }
+  /**
+   * The build metadata step, computed from the file as it is when written.
+   * Without `definition` the text is the one the SDK installed by this run
+   * defines, loaded from the project once installed.
+   */
+  | { kind: "build-step"; platform: NativePlatform; root: string; definition?: BuildIntegration }
 );
 
 export type DestinationConflict = {
@@ -69,6 +77,8 @@ export type PlannedStep = {
   action: PlannedAction;
   /** Unresolved until the developer decides or `--replace-destination` does. */
   conflict?: DestinationConflict;
+  /** Completed by the planned SDK install itself; nothing of its own to apply. */
+  afterInstall?: true;
   /**
    * Set when the developer's finished work is invisible to wire itself — a
    * component wrapped where it is registered — so only doctor confirms it.
@@ -83,10 +93,16 @@ export type WirePlan = {
   steps: PlannedStep[];
   /** From the plan facts: set when iOS is selected and wire decides the iOS project's mode. */
   iosDependencyManager?: IosDependencyManager;
+  /**
+   * Set when the installed SDK predates the build metadata step and this run
+   * installs no newer one: the plan has no `build-metadata` step, and the
+   * optional upgrade that adds it is a next step instead.
+   */
+  buildMetadataUpgrade?: true;
 };
 
 export function hasWork(planned: PlannedStep): boolean {
-  return planned.action.kind === "edit" ||
+  return planned.action.kind === "edit" || planned.afterInstall === true ||
     (planned.action.kind === "command" && planned.action.decision === "run");
 }
 
@@ -97,7 +113,7 @@ export function plannedIntents(planned: PlannedStep): WriteIntent[] {
 /** Public dry-run/preview contract; a planned edit is not an execution result. */
 export function previewStep(planned: PlannedStep): WireStep {
   const { step, action } = planned;
-  const state = action.kind === "none" ? action.state : hasWork(planned) ? "changed" : "skipped";
+  const state = hasWork(planned) ? "changed" : action.kind === "none" ? action.state : "skipped";
   return { ...step, state };
 }
 
@@ -130,6 +146,7 @@ export function createPlan(input: PlanInput, facts: PlanFacts): WirePlan {
     return hook?.kind === "source" && hook.result.kind === "manual" && hook.result.otaSymbol !== undefined;
   }));
   const { iosRoot } = facts;
+  let buildMetadataUpgrade = false;
 
   for (const platform of platforms) {
     const destination = input.destinations.find((item) => item.platform === platform);
@@ -167,13 +184,16 @@ export function createPlan(input: PlanInput, facts: PlanFacts): WirePlan {
     // failed destination lookup must not hide another OTA system in the
     // host: that conflict also defers the JavaScript root this platform
     // shares, so its observed hook is considered either way.
-    if (shape.expoNative === "generated") continue;
-    if (!hasNativeDirectory) {
-      steps.push(planStep("native-hook", platform, "manual", `no ${platform} directory in the project`));
-      continue;
+    if (shape.expoNative !== "generated") {
+      steps.push(
+        hasNativeDirectory
+          ? planNativeHook(platform, facts.hooks[platform]!)
+          : planStep("native-hook", platform, "manual", `no ${platform} directory in the project`),
+      );
     }
-    const hook = planNativeHook(platform, facts.hooks[platform]!);
-    steps.push(hook);
+    const buildStep = planBuildStep(shape, platform, facts.buildSteps[platform], hasWork(install.step));
+    if (buildStep !== undefined) steps.push(buildStep);
+    else buildMetadataUpgrade = true;
   }
 
   if (expoUpdatesActive(shape)) {
@@ -206,6 +226,7 @@ export function createPlan(input: PlanInput, facts: PlanFacts): WirePlan {
     platforms,
     destinations: input.destinations,
     steps,
+    ...(buildMetadataUpgrade ? { buildMetadataUpgrade: true as const } : {}),
     ...(facts.iosDependencyManager === undefined ? {} : { iosDependencyManager: facts.iosDependencyManager }),
   };
 }
@@ -244,6 +265,8 @@ export function stepTitle(id: WireStep["id"], platform?: NativePlatform): string
       return `${prefix}Patch.wrap at the JavaScript root`;
     case "pod-install":
       return "CocoaPods";
+    case "build-metadata":
+      return `${prefix}build metadata step`;
   }
 }
 
@@ -284,6 +307,9 @@ function planInstall(shape: ProjectShape, iosDependencyManager?: IosDependencyMa
   // A version that only resolves from a parent directory (a hoisted workspace
   // install) is not the app's own dependency: autolinking reads the app's
   // package.json, so the app must declare the SDK itself.
+  // An SDK that predates the build metadata step is not upgraded for it:
+  // the upgrade changes native code and the project's fingerprint, and the
+  // step is optional (the plan's `buildMetadataUpgrade`).
   if (sdk.kind === "registry" && sdk.installedVersion !== undefined && sdk.supportsWrap && (!swiftPM || sdk.supportsSwiftPM)) {
     return {
       step: planStep("sdk-install", undefined, "already-configured", `${SDK_PACKAGE}@${sdk.installedVersion} is installed`),
@@ -499,7 +525,7 @@ function hookStep(
 }
 
 const IOS_HOOK_MANUAL = [
-  "In the app delegate's release bundle path, prefer the Patch bundle:",
+  "Where the app delegate (the scene delegate from React Native 0.88) returns the release bundle, prefer the Patch bundle:",
   "  Swift:       CodemagicPatch.bundleURL() ?? Bundle.main.url(forResource: \"main\", withExtension: \"jsbundle\")",
   "  Objective-C: [CodemagicPatch bundleURL] ?: [[NSBundle mainBundle] URLForResource:@\"main\" withExtension:@\"jsbundle\"]",
   "and import CodemagicPatchClient (Swift) or forward-declare the class (Objective-C).",
@@ -517,6 +543,103 @@ function planNativeHook(platform: NativePlatform, facts: NativeHookFacts): Plann
     return planStep("native-hook", platform, "manual", facts.reason, manual);
   }
   return hookStep(platform, facts.file, facts.text, facts.result, manual);
+}
+
+// --- Build metadata step ---------------------------------------------------
+
+function planBuildStep(
+  shape: ProjectShape,
+  platform: NativePlatform,
+  facts: BuildStepFacts | undefined,
+  installPlanned: boolean,
+): PlannedStep | undefined {
+  const lookup = shape.buildIntegration;
+  // An SDK without the step gets no row: an optional upgrade is a next step, not work left.
+  if (!installPlanned && lookup.kind === "unavailable" && lookup.predates === true) return undefined;
+  const sdk = `${SDK_PACKAGE}@${shape.sdk.installedVersion ?? shape.sdk.declared ?? "?"}`;
+  // Generated native projects get the step from the SDK's config plugin at prebuild.
+  if (shape.expoNative === "generated") {
+    if (installPlanned) {
+      return {
+        ...planStep("build-metadata", platform, "deferred", `the config plugin of ${SDK_PACKAGE}@${SDK_INSTALL_RANGE}, installed by this run, adds it at the next \`npx expo prebuild\``),
+        afterInstall: true,
+      };
+    }
+    if (lookup.kind !== "available") {
+      return planStep("build-metadata", platform, "manual", lookup.reason, ["Once that is resolved, run `npx expo prebuild` again; the SDK's config plugin adds the step."]);
+    }
+    // Native directories from an earlier prebuild lack the step until the next one.
+    const observed = facts?.kind === "source" ? facts.finding?.kind : undefined;
+    if (facts?.kind === "source" && (observed === "absent" || observed === "outdated")) {
+      const planned = planStep(
+        "build-metadata",
+        platform,
+        "already-configured",
+        `${path.basename(facts.file)} ${observed === "absent" ? "does not run the step yet" : "runs an older step"}; the config plugin of ${sdk} ${observed === "absent" ? "adds" : "updates"} it at the next \`npx expo prebuild\``,
+      );
+      return { ...planned, step: { ...planned.step, observed } };
+    }
+    return planStep("build-metadata", platform, "already-configured", `the config plugin of ${sdk} adds it at \`npx expo prebuild\``);
+  }
+  if (!shape.nativeDirectories[platform]) {
+    return planStep("build-metadata", platform, "manual", `no ${platform} directory in the project`);
+  }
+  if (facts === undefined || facts.kind === "unresolved") {
+    return planStep("build-metadata", platform, "manual", facts?.reason ?? `the ${platform} project could not be inspected`, [
+      platform === "ios"
+        ? `Add the "${BUILD_STEP_NAME}" run-script phase yourself to each app target that has a "${BUNDLE_PHASE_NAME}" phase, directly after that phase.`
+        : "Add the build metadata line to the app module's build script yourself, as its last line.",
+    ]);
+  }
+  const { file, text, sandboxed } = facts;
+  const name = path.basename(file);
+  if (sandboxed.length > 0) {
+    return planStep(
+      "build-metadata",
+      platform,
+      "manual",
+      `ENABLE_USER_SCRIPT_SANDBOXING = YES ${describeSandboxedTargets(sandboxed)} makes the build metadata phase fail${facts.finding?.kind === "current" ? "" : "; wire adds the phase once the setting is NO"}`,
+      [`Set ENABLE_USER_SCRIPT_SANDBOXING (User Script Sandboxing) to NO for ${sandboxed.length === 1 ? "the app target" : "those targets"} in Xcode, then run \`cmpatch wire\` again.`],
+      [file],
+    );
+  }
+  const where = { platform, file };
+  // The text comes from the SDK this run installs, so it is computed from that SDK once installed.
+  if (installPlanned) {
+    return planStep(
+      "build-metadata",
+      platform,
+      { kind: "edit", intents: [{ kind: "build-step", snapshot: text, ...where, root: shape.root }] },
+      `${name} → add or update the build metadata step from ${SDK_PACKAGE}@${SDK_INSTALL_RANGE}, installed by this run`,
+      undefined,
+      [file],
+    );
+  }
+  // Left here: an SDK that is not installed, or whose definition this cmpatch cannot read.
+  if (lookup.kind === "unavailable") {
+    return planStep("build-metadata", platform, "manual", lookup.reason, ["Once that is resolved, run `cmpatch wire` again."], [file]);
+  }
+  const finding = facts.finding!;
+  const step = (...args: Parameters<typeof planStep>): PlannedStep => {
+    const planned = planStep(...args);
+    return { ...planned, step: { ...planned.step, observed: finding.kind } };
+  };
+  switch (finding.kind) {
+    case "conflict":
+      return step("build-metadata", platform, "manual", finding.reason, finding.manual.length > 0 ? finding.manual : undefined, [file]);
+    case "current":
+      return step("build-metadata", platform, "already-configured", `${name} already runs the build metadata step of ${sdk}`, undefined, [file]);
+    case "absent":
+    case "outdated":
+      return step(
+        "build-metadata",
+        platform,
+        { kind: "edit", intents: [{ kind: "build-step", snapshot: text, ...where, root: shape.root, definition: lookup.definition }] },
+        `${name} → ${finding.kind === "outdated" ? "update the build metadata step in place to the text" : "add the build metadata step"} of ${sdk}${(finding.targets?.length ?? 0) > 1 ? ` (targets ${finding.targets!.join(", ")})` : ""}. ${BUILD_STEP_EDIT_NOTE}`,
+        undefined,
+        [file],
+      );
+  }
 }
 
 // --- JavaScript root -------------------------------------------------------
@@ -670,7 +793,13 @@ function planPodInstall(
   os: string,
   { lock, bundler }: NonNullable<PlanFacts["pods"]>,
 ): PlannedStep {
-  if (!installPlanned && lock !== null && lock.includes("CodemagicPatchClient")) {
+  // The lock names the pod's version, and the lock is a fingerprint input: one
+  // left behind by an SDK upgrade builds, and then changes the fingerprint on
+  // whichever machine runs `pod install` next.
+  const locked = lock === null ? undefined : /^\s*- CodemagicPatchClient \(([^)]+)\)/m.exec(lock)?.[1];
+  const installed = shape.sdk.installedVersion;
+  const stale = locked !== undefined && installed !== undefined && locked !== installed;
+  if (!installPlanned && !stale && lock !== null && lock.includes("CodemagicPatchClient")) {
     return planStep("pod-install", "ios", "already-configured", "Podfile.lock already integrates CodemagicPatchClient");
   }
   const command = bundler ? ["bundle", "exec", "pod", "install"] : ["pod", "install"];
@@ -678,7 +807,8 @@ function planPodInstall(
   if (os !== "darwin") {
     return planStep("pod-install", "ios", "skipped", `CocoaPods is not available on ${os}; run it on macOS`, manual);
   }
-  const detail = `\`${command.join(" ")}\` in ${path.relative(shape.root, iosRoot) || "ios"}`;
+  const why = stale && !installPlanned ? ` (Podfile.lock has CodemagicPatchClient ${locked}, the installed SDK is ${installed})` : "";
+  const detail = `\`${command.join(" ")}\` in ${path.relative(shape.root, iosRoot) || "ios"}${why}`;
   return planStep("pod-install", "ios", { kind: "command", command, cwd: iosRoot, decision: "ask", detail }, detail, manual);
 }
 
@@ -705,7 +835,7 @@ export async function materializeWrites(
       const before = existing === undefined ? await readTextFile(intent.file) : existing.before;
       const base = existing === undefined ? before : existing.after;
       try {
-        writes.set(intent.file, { file: intent.file, before, after: applyIntent(intent, base) });
+        writes.set(intent.file, { file: intent.file, before, after: await applyIntent(intent, base) });
       } catch (error) {
         writes.delete(intent.file);
         failures.set(intent.file, error instanceof Error ? error.message : String(error));
@@ -715,7 +845,7 @@ export async function materializeWrites(
   return { writes: [...writes.values()], failures };
 }
 
-function applyIntent(intent: WriteIntent, text: string | null): string {
+async function applyIntent(intent: WriteIntent, text: string | null): Promise<string> {
   switch (intent.kind) {
     case "plist":
       if (text === null) throw new Error(`${intent.file} does not exist`);
@@ -727,5 +857,19 @@ function applyIntent(intent: WriteIntent, text: string | null): string {
       return writeExpoPluginEntry(text, { [intent.platform]: intent.values } as ExpoPluginUpdates);
     case "source":
       return intent.contents;
+    case "build-step": {
+      if (text === null) throw new Error(`${intent.file} does not exist`);
+      const finding = inspectBuildStep(intent, text, await buildStepDefinition(intent));
+      if (finding.kind === "conflict") throw new Error(finding.reason);
+      return finding.kind === "current" ? text : finding.contents;
+    }
   }
+}
+
+/** The definition the intent was planned with, or the one of the SDK this run installed. */
+export async function buildStepDefinition(intent: Extract<WriteIntent, { kind: "build-step" }>): Promise<BuildIntegration> {
+  if (intent.definition !== undefined) return intent.definition;
+  const lookup = (await inspectProject(intent.root)).buildIntegration;
+  if (lookup.kind === "unavailable") throw new Error(`${lookup.reason}; the step's text comes from the SDK this run installs`);
+  return lookup.definition;
 }

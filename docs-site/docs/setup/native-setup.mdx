@@ -60,7 +60,8 @@ cmpatch wire
 It installs the package with your package manager, writes each platform's
 deployment key and URLs (into `Info.plist` and `strings.xml`, or the config
 plugin entry for a project that runs `expo prebuild`), hooks native bundle
-selection, and exports the root component through `Patch.wrap`. The plan is
+selection, adds the [build metadata step](#build-metadata-step) to each native
+build, and exports the root component through `Patch.wrap`. The plan is
 shown before anything changes; whatever it cannot do safely — a dynamic Expo
 config, a second app target, a root wrapped by another library, another OTA
 system still active — it lists with the exact edit for you to make. The rest
@@ -127,7 +128,7 @@ Add `CodemagicPatchDeploymentKey`, `CodemagicPatchDownloadBaseUrl`, and `Codemag
 <integer>2</integer>
 ```
 
-In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working.
+In your AppDelegate, override the bundle URL so the app prefers the OTA bundle and falls back to the embedded bundle. Keep the `DEBUG` branch pointing at Metro so local development keeps working. The React Native 0.88 template keeps `bundleURL()` in `SceneDelegate.swift` instead; make the same change there.
 
 **Expo (Swift AppDelegate):** apply this diff inside your existing `AppDelegate.swift`. Keep the Expo delegate and debug bundle root:
 
@@ -276,6 +277,12 @@ Reference: `client/plugin/src/withAndroidBundleFile.ts`
 Debug builds load JS from Metro, so OTA updates are not picked up there. That is expected, not a wiring problem. To see an update apply, run a release-style build (`npx react-native run-ios --mode Release` / `npx react-native run-android --mode release`).
 :::
 
+### Build metadata step {#build-metadata-step}
+
+With SDK 0.8.0 or later and `cmpatch` 0.11.0 or later, `cmpatch wire` also adds a step that records the project's native fingerprint and the embedded bundle's hash in every build (see [Recorded at build time](/docs/using-patch/fingerprinting#recorded-at-build-time)). Let wire add it rather than writing it by hand: it inserts a run-script phase named `Codemagic Patch build metadata` directly after `Bundle React Native code and images` in every app target that has that phase, and one line at the end of `android/app/build.gradle` (or `build.gradle.kts`). The plan shows `add the build metadata step` for each file it edits, and `cmpatch wire --dry-run` shows whether the step is in place. `cmpatch doctor` warns when the installed SDK has the step and a build file does not run it, which is the state after an SDK upgrade until wire runs again. Running wire again leaves a current step as it is and rewrites an outdated one. The step's text is part of the native fingerprint, so run wire with the SDK upgrade and ship its edit in the next store build.
+
+The build machine needs Node.js 20 or newer. On iOS the step uses the installed React Native environment script, including `.xcode.env`, `.xcode.env.local` and its Node version-manager fallback. The Gradle line runs the Node.js that `nodeExecutableAndArgs` in the `react { }` block names, `node` on `PATH` by default.
+
 ## Option B. Expo (prebuild)
 
 Requires Expo SDK 52+ and a prebuild / development-build workflow. Expo Go is not supported.
@@ -325,6 +332,7 @@ The plugin injects the config keys (iOS `Info.plist`, Android `strings.xml`) and
 
 - iOS AppDelegate → prefers `CodemagicPatch.bundleURL()`, falling back to the embedded bundle. The `DEBUG` / Metro branch is left untouched.
 - Android MainApplication → prefers `CodemagicPatch.getJSBundleFile(applicationContext)` (both the RN ≤ 0.81 `getJSBundleFile()` and RN ≥ 0.82 `jsBundleFilePath` host shapes are handled).
+- With SDK 0.8.0 or later, the [build metadata step](#build-metadata-step) in each application target that has the `Bundle React Native code and images` phase, and in `android/app/build.gradle`. After upgrading the SDK, run `npx expo prebuild` again to add it.
 
 ## Build for different deployments
 

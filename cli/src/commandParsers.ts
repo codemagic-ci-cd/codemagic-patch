@@ -19,6 +19,7 @@ import type {
   TeamSelector,
   TimeseriesRange,
 } from "./commandTypes";
+import { WEBHOOK_EVENT_TYPES } from "./commandTypes";
 import { promptableFlagForLabel } from "./promptableFlags";
 
 /** Build-identity flags that a `.cmpatch` artifact supplies from its descriptor. */
@@ -699,6 +700,7 @@ const TIMESERIES_RANGES = [
 ] as const satisfies readonly TimeseriesRange[];
 
 const fingerprintSchema: Record<string, FlagSchema> = {
+  artifact: STRING_FLAG,
   format: STRING_FLAG,
   platform: STRING_FLAG,
   projectRoot: STRING_FLAG,
@@ -1831,6 +1833,10 @@ export function parseFingerprint(
   args: string[],
   defaults: CommandDefaultFlagValues = {},
 ): ParseCliResult {
+  if (args.some((arg) => arg === "--artifact" || arg.startsWith("--artifact="))) {
+    return parseFingerprintArtifact(args);
+  }
+
   const parsedFlags = parseFlags(args, fingerprintSchema, defaults);
 
   if (!parsedFlags.ok) {
@@ -1882,6 +1888,60 @@ export function parseFingerprint(
       platform,
       projectRoot,
       verbose: parsedFlags.flags.verbose === true,
+    },
+    ok: true,
+  };
+}
+
+/**
+ * Artifact mode reads everything from the artifact, so it is parsed without
+ * configured defaults: a stored platform or project root neither selects
+ * project mode nor overrides what the artifact records.
+ */
+function parseFingerprintArtifact(args: string[]): ParseCliResult {
+  const parsedFlags = parseFlags(args, fingerprintSchema);
+
+  if (!parsedFlags.ok) {
+    return {
+      error: parsedFlags.error,
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  for (const [key, flag] of [
+    ["platform", "--platform"],
+    ["projectRoot", "--project-root"],
+    ["verbose", "--verbose"],
+  ] as const) {
+    if (parsedFlags.flags[key] !== undefined) {
+      return {
+        error: `--artifact cannot be combined with ${flag}; the artifact supplies the platform and the recorded fingerprint`,
+        ok: false,
+        showHelp: true,
+      };
+    }
+  }
+
+  const artifact = ensureNonBlankString(parsedFlags.flags, "artifact", "artifact");
+  if (isParseError(artifact)) {
+    return artifact;
+  }
+
+  const format = parsedFlags.flags.format;
+  if (format !== undefined && format !== "text" && format !== "json" && format !== "table") {
+    return {
+      error: "--format must be either text, json, or table",
+      ok: false,
+      showHelp: true,
+    };
+  }
+
+  return {
+    command: {
+      artifact,
+      ...(format !== undefined ? { format } : {}),
+      kind: "fingerprint",
     },
     ok: true,
   };
@@ -5534,4 +5594,487 @@ function stripGlobalFormatArgs(
   }
 
   return { args: strippedArgs, ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// webhook
+// ---------------------------------------------------------------------------
+
+const webhookListSchema: Record<string, FlagSchema> = {
+  format: STRING_FLAG,
+  serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
+  token: STRING_FLAG,
+};
+
+const webhookCreateSchema: Record<string, FlagSchema> = {
+  description: STRING_FLAG,
+  event: STRING_LIST_FLAG,
+  serverUrl: STRING_FLAG,
+  team: STRING_FLAG,
+  teamId: STRING_FLAG,
+  token: STRING_FLAG,
+  url: STRING_FLAG,
+};
+
+const webhookUpdateSchema: Record<string, FlagSchema> = {
+  allEvents: BOOLEAN_FLAG,
+  description: STRING_FLAG,
+  event: STRING_LIST_FLAG,
+  serverUrl: STRING_FLAG,
+  status: STRING_FLAG,
+  token: STRING_FLAG,
+  url: STRING_FLAG,
+  webhookId: STRING_FLAG,
+};
+
+const webhookIdSchema: Record<string, FlagSchema> = {
+  format: STRING_FLAG,
+  serverUrl: STRING_FLAG,
+  token: STRING_FLAG,
+  webhookId: STRING_FLAG,
+};
+
+const webhookConfirmedSchema: Record<string, FlagSchema> = {
+  nonInteractive: BOOLEAN_FLAG,
+  serverUrl: STRING_FLAG,
+  token: STRING_FLAG,
+  webhookId: STRING_FLAG,
+  yes: BOOLEAN_FLAG,
+};
+
+const webhookDeliveriesSchema: Record<string, FlagSchema> = {
+  format: STRING_FLAG,
+  limit: INTEGER_FLAG,
+  offset: INTEGER_FLAG,
+  serverUrl: STRING_FLAG,
+  status: STRING_FLAG,
+  token: STRING_FLAG,
+  webhookId: STRING_FLAG,
+};
+
+const webhookDeliverySchema: Record<string, FlagSchema> = {
+  deliveryId: STRING_FLAG,
+  format: STRING_FLAG,
+  serverUrl: STRING_FLAG,
+  token: STRING_FLAG,
+  webhookId: STRING_FLAG,
+};
+
+function usageParseError(error: string): ParseCliError {
+  return { error, ok: false, showHelp: true };
+}
+
+function tokenField(flags: Record<string, FlagValue>): { token?: string } {
+  return typeof flags.token === "string" ? { token: flags.token } : {};
+}
+
+/**
+ * `--event` may repeat and may hold a comma-separated list. Which types exist
+ * is the server's to say: a server newer than this CLI may know more, so the
+ * names are passed on as given and an unknown one comes back as the server's
+ * `400` on `event_types`.
+ */
+function parseWebhookEvents(
+  flags: Record<string, FlagValue>,
+): string[] | ParseCliError {
+  const raw = Array.isArray(flags.event) ? flags.event : [];
+  const events = [
+    ...new Set(
+      raw
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  ];
+
+  // Leaving --event out means every event. Passing it empty (an unset
+  // variable in a script, say) must not quietly mean the same thing.
+  if (raw.length > 0 && events.length === 0) {
+    return usageParseError(
+      `--event needs an event type. Known: ${WEBHOOK_EVENT_TYPES.join(", ")}. Leave the flag out to receive every event.`,
+    );
+  }
+
+  return events;
+}
+
+export function parseWebhookList(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookListSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const team = parseTeamSelector(parsedFlags.flags);
+  const format = parseOutputFormat(parsedFlags.flags);
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(team)) {
+    return team;
+  }
+  if (isParseError(format)) {
+    return format;
+  }
+
+  return {
+    command: {
+      ...(format !== undefined ? { format } : {}),
+      kind: "webhook-list",
+      serverUrl,
+      team,
+      ...tokenField(parsedFlags.flags),
+    },
+    ok: true,
+  };
+}
+
+export function parseWebhookShow(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookIdSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const webhookId = ensureNonBlankString(parsedFlags.flags, "webhookId", "webhook-id");
+  const format = parseOutputFormat(parsedFlags.flags);
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(webhookId)) {
+    return webhookId;
+  }
+  if (isParseError(format)) {
+    return format;
+  }
+
+  return {
+    command: {
+      ...(format !== undefined ? { format } : {}),
+      kind: "webhook-show",
+      serverUrl,
+      ...tokenField(parsedFlags.flags),
+      webhookId,
+    },
+    ok: true,
+  };
+}
+
+export function parseWebhookCreate(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookCreateSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const team = parseTeamSelector(parsedFlags.flags);
+  const url = ensureNonBlankString(parsedFlags.flags, "url", "url");
+  const events = parseWebhookEvents(parsedFlags.flags);
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(team)) {
+    return team;
+  }
+  if (isParseError(url)) {
+    return url;
+  }
+  if (isParseError(events)) {
+    return events;
+  }
+
+  const description =
+    typeof parsedFlags.flags.description === "string"
+      ? parsedFlags.flags.description.trim()
+      : "";
+
+  return {
+    command: {
+      ...(description.length > 0 ? { description } : {}),
+      events,
+      kind: "webhook-create",
+      serverUrl,
+      team,
+      ...tokenField(parsedFlags.flags),
+      url: url.trim(),
+    },
+    ok: true,
+  };
+}
+
+export function parseWebhookUpdate(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookUpdateSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const { flags } = parsedFlags;
+  const serverUrl = ensureString(flags, "serverUrl", "server-url");
+  const webhookId = ensureNonBlankString(flags, "webhookId", "webhook-id");
+  const events = parseWebhookEvents(flags);
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(webhookId)) {
+    return webhookId;
+  }
+  if (isParseError(events)) {
+    return events;
+  }
+
+  const allEvents = flags.allEvents === true;
+  if (allEvents && events.length > 0) {
+    return usageParseError("Use either --event or --all-events, not both");
+  }
+
+  const status = typeof flags.status === "string" ? flags.status : undefined;
+  if (status !== undefined && status !== "active" && status !== "disabled") {
+    return usageParseError("--status must be either active or disabled");
+  }
+
+  const url = typeof flags.url === "string" ? flags.url.trim() : undefined;
+  if (url !== undefined && url.length === 0) {
+    return usageParseError("--url must not be empty");
+  }
+
+  // An empty --description clears it; leaving the flag out keeps it.
+  const description =
+    typeof flags.description === "string"
+      ? flags.description.trim().length === 0
+        ? null
+        : flags.description.trim()
+      : undefined;
+
+  const changesEvents = allEvents || events.length > 0;
+  if (
+    url === undefined &&
+    description === undefined &&
+    status === undefined &&
+    !changesEvents
+  ) {
+    return usageParseError(
+      "Nothing to update: pass at least one of --url, --description, --event, --all-events, --status",
+    );
+  }
+
+  return {
+    command: {
+      ...(description !== undefined ? { description } : {}),
+      ...(changesEvents ? { events: allEvents ? [] : events } : {}),
+      kind: "webhook-update",
+      serverUrl,
+      ...(status !== undefined ? { status } : {}),
+      ...tokenField(flags),
+      ...(url !== undefined ? { url } : {}),
+      webhookId,
+    },
+    ok: true,
+  };
+}
+
+function parseWebhookConfirmed<K extends "webhook-remove" | "webhook-rotate-secret">(
+  kind: K,
+  args: string[],
+  defaults: CommandDefaultFlagValues,
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookConfirmedSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const webhookId = ensureNonBlankString(parsedFlags.flags, "webhookId", "webhook-id");
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(webhookId)) {
+    return webhookId;
+  }
+
+  return {
+    command: {
+      kind,
+      ...(parsedFlags.flags.nonInteractive === true ? { nonInteractive: true } : {}),
+      serverUrl,
+      ...tokenField(parsedFlags.flags),
+      webhookId,
+      ...(parsedFlags.flags.yes === true ? { yes: true } : {}),
+    },
+    ok: true,
+  };
+}
+
+export function parseWebhookRemove(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  return parseWebhookConfirmed("webhook-remove", args, defaults);
+}
+
+export function parseWebhookRotateSecret(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  return parseWebhookConfirmed("webhook-rotate-secret", args, defaults);
+}
+
+export function parseWebhookTest(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookIdSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const webhookId = ensureNonBlankString(parsedFlags.flags, "webhookId", "webhook-id");
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(webhookId)) {
+    return webhookId;
+  }
+
+  return {
+    command: {
+      kind: "webhook-test",
+      serverUrl,
+      ...tokenField(parsedFlags.flags),
+      webhookId,
+    },
+    ok: true,
+  };
+}
+
+export function parseWebhookDeliveries(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookDeliveriesSchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const { flags } = parsedFlags;
+  const serverUrl = ensureString(flags, "serverUrl", "server-url");
+  const webhookId = ensureNonBlankString(flags, "webhookId", "webhook-id");
+  const format = parseOutputFormat(flags);
+  const pagination = parsePagination(flags);
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(webhookId)) {
+    return webhookId;
+  }
+  if (isParseError(format)) {
+    return format;
+  }
+  if (isParseError(pagination)) {
+    return pagination;
+  }
+
+  const status = typeof flags.status === "string" ? flags.status : undefined;
+  if (
+    status !== undefined &&
+    status !== "pending" &&
+    status !== "succeeded" &&
+    status !== "failed"
+  ) {
+    return usageParseError("--status must be one of pending, succeeded, failed");
+  }
+
+  return {
+    command: {
+      ...(format !== undefined ? { format } : {}),
+      kind: "webhook-deliveries",
+      ...pagination,
+      serverUrl,
+      ...(status !== undefined ? { status } : {}),
+      ...tokenField(flags),
+      webhookId,
+    },
+    ok: true,
+  };
+}
+
+function parseWebhookDeliveryRef<K extends "webhook-delivery" | "webhook-redeliver">(
+  kind: K,
+  args: string[],
+  defaults: CommandDefaultFlagValues,
+): ParseCliResult {
+  const parsedFlags = parseFlags(args, webhookDeliverySchema, defaults);
+  if (!parsedFlags.ok) {
+    return usageParseError(parsedFlags.error);
+  }
+
+  const serverUrl = ensureString(parsedFlags.flags, "serverUrl", "server-url");
+  const webhookId = ensureNonBlankString(parsedFlags.flags, "webhookId", "webhook-id");
+  const deliveryId = ensureNonBlankString(parsedFlags.flags, "deliveryId", "delivery-id");
+  const format = parseOutputFormat(parsedFlags.flags);
+  if (isParseError(serverUrl)) {
+    return serverUrl;
+  }
+  if (isParseError(webhookId)) {
+    return webhookId;
+  }
+  if (isParseError(deliveryId)) {
+    return deliveryId;
+  }
+  if (isParseError(format)) {
+    return format;
+  }
+
+  if (kind === "webhook-redeliver") {
+    return {
+      command: {
+        deliveryId,
+        kind: "webhook-redeliver",
+        serverUrl,
+        ...tokenField(parsedFlags.flags),
+        webhookId,
+      },
+      ok: true,
+    };
+  }
+
+  return {
+    command: {
+      deliveryId,
+      ...(format !== undefined ? { format } : {}),
+      kind: "webhook-delivery",
+      serverUrl,
+      ...tokenField(parsedFlags.flags),
+      webhookId,
+    },
+    ok: true,
+  };
+}
+
+export function parseWebhookDelivery(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  return parseWebhookDeliveryRef("webhook-delivery", args, defaults);
+}
+
+export function parseWebhookRedeliver(
+  args: string[],
+  defaults: CommandDefaultFlagValues = {},
+): ParseCliResult {
+  return parseWebhookDeliveryRef("webhook-redeliver", args, defaults);
 }

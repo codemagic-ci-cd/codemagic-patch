@@ -16,7 +16,7 @@ import type { ReactNode } from "react";
 
 import { useApps } from "../api/hooks/apps";
 import { useInvitations, useRoleBindings } from "../api/hooks/iam";
-import { useIsMultiTeam, useTeam } from "../api/hooks/teams";
+import { useTeam } from "../api/hooks/teams";
 import { classifyProblem, HttpProblemError } from "../api/problem";
 import { ErrorState } from "../components/ui/ErrorState";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -54,9 +54,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
   // Same query the members tile subscribes to — TanStack dedupes by key;
   // read here to drive the members quick-link visibility.
   const bindingsQuery = useRoleBindings(teamId);
-  // Single-team OSS: the fixed `default-team` name is a machine slug, so only
-  // name the team in the subtitle when there is more than one to disambiguate.
-  const isMultiTeam = useIsMultiTeam();
 
   if (teamQuery.isError) {
     return (
@@ -84,23 +81,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
             ) : null}
           </>
         }
-        description={
-          <>
-            Real-time health of your OTA releases across every app
-            {isMultiTeam ? (
-              <>
-                {" "}
-                in{" "}
-                {team !== undefined ? (
-                  <b>{team.name}</b>
-                ) : (
-                  <Skeleton width={90} variant="text" />
-                )}
-              </>
-            ) : null}
-            .
-          </>
-        }
       />
 
       <div className="mb-[18px] grid-cols-[repeat(3,1fr)] gap-[18px] [display:grid] max-cols:grid-cols-[1fr]">
@@ -118,7 +98,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
             to={`/teams/${teamId}/apps`}
             icon={<AppsIcon />}
             title="Apps"
-            subtitle="Manage apps & deployments"
           />
           {!membersHidden ? (
             <>
@@ -127,7 +106,6 @@ function TeamOverview({ teamId }: { teamId: string }) {
                 to={`/teams/${teamId}/members`}
                 icon={<UsersIcon />}
                 title="Members"
-                subtitle="Roles & access"
               />
             </>
           ) : null}
@@ -257,12 +235,10 @@ function QuickLink({
   to,
   icon,
   title,
-  subtitle,
 }: {
   to: string;
   icon: ReactNode;
   title: string;
-  subtitle: string;
 }) {
   return (
     <Link
@@ -277,7 +253,6 @@ function QuickLink({
       </span>
       <div>
         <div className="font-semibold text-fg">{title}</div>
-        <div className="mt-0.5 text-[12px] text-fg-3">{subtitle}</div>
       </div>
       <span className="text-fg-3 ml-auto" aria-hidden="true">
         <ChevRightIcon />

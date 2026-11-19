@@ -104,7 +104,6 @@ export function AppsPage() {
     <>
       <PageHeader
         title="Apps"
-        description="Over-the-air update targets in this team. Each app auto-creates a Staging and Production deployment."
         actions={
           showDeniedTip ? (
             // RBAC "Disabled" convention: rendered greyed (never hidden) with
@@ -391,7 +390,6 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
     // once the client is wired and reinstalled.
     return (
       <AppCreatedSuccess
-        appName={created.app.name}
         framework={created.app.framework}
         deployments={created.deployments}
         onClose={onClose}
@@ -481,7 +479,7 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
             ))}
           </select>
           <span className={FIELD_HINT}>
-            Decides which commands and guides the dashboard shows for this app.
+            Controls CLI snippets and connect links.
           </span>
         </label>
         <label className={`${TOGGLE} mt-1 mb-1.5`}>
@@ -521,13 +519,11 @@ function CreateAppModal({ teamId, onClose, onForbidden }: CreateAppModalProps) {
 // --- Presentation helpers ----------------------------------------------------
 
 function AppCreatedSuccess({
-  appName,
   framework,
   deployments,
   onClose,
   onGoToApp,
 }: {
-  appName: string;
   framework: string;
   deployments: Deployment[];
   onClose: () => void;
@@ -546,7 +542,7 @@ function AppCreatedSuccess({
       open
       onClose={onClose}
       title="App created"
-      description={`${appName} is ready. Wire these into the SDK, rebuild, then reinstall the app.`}
+      description="Wire these into the SDK, then rebuild and reinstall."
       footer={
         <>
           <button type="button" className={buttonVariants({ intent: "subtle" })} onClick={onClose}>

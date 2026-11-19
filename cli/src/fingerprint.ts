@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
 import { createFingerprintAsync } from "@expo/fingerprint";
@@ -16,6 +18,11 @@ type NativeFingerprint = {
 };
 export type NativeFingerprintDetails = {
   fingerprint: string;
+  /**
+   * What computed `fingerprint`: the SDK calculator's own `engine` string, or
+   * `@expo/fingerprint@<version>` for the CLI's own calculator.
+   */
+  engine: string;
   sources: FingerprintSource[];
 };
 export type ProjectFingerprintComputer = (
@@ -80,8 +87,24 @@ export function createNativeFingerprintComputer(
   };
 }
 
+/**
+ * `@expo/fingerprint@<version>` of the copy this module's
+ * `import { createFingerprintAsync } from "@expo/fingerprint"` loads. The
+ * package.json is resolved from this file as Node resolves that import; the
+ * published bundle keeps the package external, so both resolve from the bundle.
+ */
+export function readCliFingerprintEngine(): string {
+  const packageJsonPath = createRequire(__filename).resolve("@expo/fingerprint/package.json");
+  const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: unknown };
+  if (typeof parsed.version !== "string" || parsed.version.length === 0) {
+    throw new Error(`Missing version in ${packageJsonPath}`);
+  }
+  return `@expo/fingerprint@${parsed.version}`;
+}
+
 export function createNativeFingerprintDetailsComputer(
   createFingerprint: ProjectFingerprintComputer,
+  readEngine: () => string = readCliFingerprintEngine,
 ): (input: {
   platform: FingerprintPlatform;
   projectRoot: string;
@@ -112,6 +135,7 @@ export function createNativeFingerprintDetailsComputer(
 
       return {
         fingerprint: fingerprint.hash,
+        engine: readEngine(),
         sources: fingerprint.sources,
       };
     } catch (error) {

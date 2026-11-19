@@ -1,7 +1,7 @@
 // Wire-shape DTOs derived from server/src/domain/types.ts @ 25b9477
 // Role→permission matrix mirrors the server seeds in
-// server/src/db/migrations/0002_controlPlaneAuth.ts (+0007 adds app.manage to
-// admin/owner) and the RBAC visibility matrix. The server stays the final
+// server/src/db/migrations/0002_controlPlaneAuth.ts (+0007 adds app.manage and
+// 0023 adds webhook.manage to admin/owner) and the RBAC visibility matrix. The server stays the final
 // authority — this matrix only drives UI gating.
 
 export type Role = "viewer" | "developer" | "admin" | "owner";
@@ -13,7 +13,8 @@ export type ControlPlaneAction =
   | "app.manage"
   | "release.view"
   | "release.deploy"
-  | "iam.manage";
+  | "iam.manage"
+  | "webhook.manage";
 
 const VIEWER_ACTIONS: readonly ControlPlaneAction[] = [
   "team.read",
@@ -31,6 +32,7 @@ const ADMIN_ACTIONS: readonly ControlPlaneAction[] = [
   "app.create",
   "app.manage",
   "iam.manage",
+  "webhook.manage",
 ];
 
 const ROLE_ACTIONS: Record<Role, ReadonlySet<ControlPlaneAction>> = {

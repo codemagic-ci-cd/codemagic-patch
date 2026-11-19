@@ -33,6 +33,10 @@ import {
   startIdempotentRequestIfPresent,
   writeAuditEventIfConfigured,
 } from "./routeSupport";
+import {
+  prepareIamInvitationCreateResponse,
+  writeIamInvitationAuditEvents,
+} from "./iamSupport";
 import { singleFieldValidationProblem } from "./routeValidation";
 import type {
   ApiRoutesOptions,
@@ -91,8 +95,20 @@ export function registerManagementRoutes(
         options.authorizationService === undefined
           ? undefined
           : requireControlPlanePrincipal(request).userId;
+      const { name, owner } = input.value;
+
+      // Unlike POST /iam/invitations, an API token may invite here: the
+      // invitation grants access only to the team this request creates.
       const result = await options.teamCreateHandler({
-        ...input.value,
+        name,
+        ...(owner
+          ? {
+              owner: {
+                createdBy: requireControlPlanePrincipal(request).userId,
+                target: owner,
+              },
+            }
+          : {}),
         ...(userId ? { userId } : {}),
       });
 
@@ -110,11 +126,32 @@ export function registerManagementRoutes(
             teamId: result.team.id,
           },
         );
+        if (result.ownerInvitation) {
+          await writeIamInvitationAuditEvents(
+            options.auditEventWriteHandler,
+            request,
+            result.ownerInvitation,
+          );
+        }
 
         reply.status(201);
         return {
           team: toTeamWire(result.team),
+          ...(result.ownerInvitation
+            ? {
+                owner_invitation: prepareIamInvitationCreateResponse(
+                  result.ownerInvitation,
+                ).body,
+              }
+            : {}),
         };
+      }
+
+      if (result.outcome === "owner_invitation_refused") {
+        return sendPreparedJsonResponse(
+          reply,
+          prepareIamInvitationCreateResponse(result.ownerInvitation),
+        );
       }
 
       if (result.outcome === "not_found") {

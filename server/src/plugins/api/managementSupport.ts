@@ -11,7 +11,9 @@ import type {
   DeploymentCreateRouteHandler,
   DeploymentDeleteRouteHandler,
   DeploymentUpdateRouteHandler,
+  IamInvitationCreateHandlerInput,
 } from "../../app/types";
+import { parseIamInvitationTarget } from "./iamSupport";
 import {
   APP_FRAMEWORK_PATTERN,
   DEFAULT_APP_FRAMEWORK,
@@ -44,6 +46,7 @@ export function parseTeamCreateInput(body: unknown):
       kind: "success";
       value: {
         name: string;
+        owner?: IamInvitationCreateHandlerInput["target"];
       };
     } {
   if (!isJsonObject(body)) {
@@ -69,10 +72,36 @@ export function parseTeamCreateInput(body: unknown):
     };
   }
 
+  if (body.owner === undefined) {
+    return {
+      kind: "success",
+      value: {
+        name,
+      },
+    };
+  }
+
+  if (!isJsonObject(body.owner)) {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        "owner must be a JSON object",
+        "owner",
+        "invalid_type",
+      ),
+    };
+  }
+
+  const owner = parseIamInvitationTarget(body.owner, "owner.", "owner");
+  if (owner.kind === "error") {
+    return owner;
+  }
+
   return {
     kind: "success",
     value: {
       name,
+      owner: owner.value,
     },
   };
 }

@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 import type {
   ApiTokenId,
@@ -593,70 +593,9 @@ export function createPostgresAuthRepository(
     },
 
     async createTeamForUser(input) {
-      return withTransaction(pool, async (client) => {
-        const user = await getUserById(client, input.userId);
-        if (!user) {
-          return {
-            outcome: "not_found",
-            reason: "user_not_found",
-          };
-        }
-
-        if (user.status === "disabled") {
-          return {
-            outcome: "account_disabled",
-            reason: "user_disabled",
-          };
-        }
-
-        if (user.ownerTeamId !== null) {
-          return {
-            outcome: "forbidden",
-          };
-        }
-
-        try {
-          const teamResult = await client.query<TeamRow>(
-            `
-              INSERT INTO team (id, name, created_at, updated_at)
-              VALUES ($1, $2, $3, $3)
-              RETURNING *
-            `,
-            [input.teamId, input.name, input.createdAt],
-          );
-
-          await insertMembership(client, {
-            createdAt: input.createdAt,
-            id: input.membershipId,
-            teamId: input.teamId,
-            userId: input.userId,
-          });
-          await insertTeamRoleBinding(client, {
-            createdAt: input.createdAt,
-            createdBy: input.userId,
-            id: input.roleBindingId,
-            roleDefinitionId: OWNER_ROLE_DEFINITION_ID,
-            scopeId: input.teamId,
-            userId: input.userId,
-          });
-
-          return {
-            membershipId: input.membershipId,
-            outcome: "created",
-            roleBindingId: input.roleBindingId,
-            team: mapTeamRow(requireRow(teamResult.rows[0], "team")),
-          };
-        } catch (error) {
-          if (uniqueConstraint(error) === "idx_team_name") {
-            return {
-              outcome: "conflict",
-              reason: "team_name_exists",
-            };
-          }
-
-          throw error;
-        }
-      });
+      return withTransaction(pool, (client) =>
+        createTeamForUserInTransaction(client, input),
+      );
     },
 
     async createUser(input) {
@@ -1263,6 +1202,76 @@ async function getUserByOAuthIdentity(
   );
 
   return result.rows[0] ? mapUserAccountRow(result.rows[0]) : null;
+}
+
+// Same caveat as createTeamInTransaction: a name conflict aborts the
+// surrounding transaction.
+export async function createTeamForUserInTransaction(
+  client: PoolClient,
+  input: CreateTeamForUserInput,
+): Promise<CreateTeamForUserResult> {
+  const user = await getUserById(client, input.userId);
+  if (!user) {
+    return {
+      outcome: "not_found",
+      reason: "user_not_found",
+    };
+  }
+
+  if (user.status === "disabled") {
+    return {
+      outcome: "account_disabled",
+      reason: "user_disabled",
+    };
+  }
+
+  if (user.ownerTeamId !== null) {
+    return {
+      outcome: "forbidden",
+    };
+  }
+
+  try {
+    const teamResult = await client.query<TeamRow>(
+      `
+        INSERT INTO team (id, name, created_at, updated_at)
+        VALUES ($1, $2, $3, $3)
+        RETURNING *
+      `,
+      [input.teamId, input.name, input.createdAt],
+    );
+
+    await insertMembership(client, {
+      createdAt: input.createdAt,
+      id: input.membershipId,
+      teamId: input.teamId,
+      userId: input.userId,
+    });
+    await insertTeamRoleBinding(client, {
+      createdAt: input.createdAt,
+      createdBy: input.userId,
+      id: input.roleBindingId,
+      roleDefinitionId: OWNER_ROLE_DEFINITION_ID,
+      scopeId: input.teamId,
+      userId: input.userId,
+    });
+
+    return {
+      membershipId: input.membershipId,
+      outcome: "created",
+      roleBindingId: input.roleBindingId,
+      team: mapTeamRow(requireRow(teamResult.rows[0], "team")),
+    };
+  } catch (error) {
+    if (uniqueConstraint(error) === "idx_team_name") {
+      return {
+        outcome: "conflict",
+        reason: "team_name_exists",
+      };
+    }
+
+    throw error;
+  }
 }
 
 async function getUserById(

@@ -2,8 +2,11 @@
 // facts without reading files or depending on destination lookup success.
 import path from "node:path";
 
+import { discoverIosTargets } from "../doctor/iosTargets";
+import { readDoctorSource } from "../doctor/discovery";
 import { detectIosDependencyManager, findIosRoot, type IosDependencyManager } from "../nativeProjectPaths";
 import type { NativePlatform } from "../projectAnalysis";
+import { inspectBuildStep, xcodeSandboxedTargets, type BuildStepFinding, type SandboxedTarget } from "./buildStep";
 import { isFile, readTextFile } from "./fs";
 import {
   inspectGraphCalls, resolveJsRoot, transformJsRoot,
@@ -24,6 +27,18 @@ export type NativeHookFacts =
   | { kind: "unresolved"; reason: string }
   | { kind: "source"; file: string; text: string; result: HookTransform };
 
+export type BuildStepFacts =
+  | { kind: "unresolved"; reason: string }
+  | {
+      kind: "source";
+      file: string;
+      text: string;
+      /** iOS: the application targets the phase goes into that set ENABLE_USER_SCRIPT_SANDBOXING = YES. */
+      sandboxed: SandboxedTarget[];
+      /** Only when the installed SDK defines the step: there is nothing to compare against otherwise. */
+      finding?: BuildStepFinding;
+    };
+
 export type JsRootFacts = {
   platforms: NativePlatform[];
   via: string;
@@ -38,6 +53,7 @@ export type PlanFacts = {
   androidDestination?: { overrides: string[]; text: string | null };
   expoConfigText: string | null;
   hooks: Partial<Record<NativePlatform, NativeHookFacts>>;
+  buildSteps: Partial<Record<NativePlatform, BuildStepFacts>>;
   // Unresolved selected platforms must survive even if another root resolves.
   unresolvedJsRoots: Array<{ platform: NativePlatform; resolution: Extract<JsRootResolution, { kind: "unresolved" }> }>;
   jsRoots: Map<string, JsRootFacts>;
@@ -61,6 +77,7 @@ export async function inspectPlanFacts(input: {
     iosRoot,
     expoConfigText: shape.expoConfig === undefined ? null : await readTextFile(shape.expoConfig.file),
     hooks: {},
+    buildSteps: {},
     unresolvedJsRoots: [],
     jsRoots: new Map(),
   };
@@ -101,6 +118,12 @@ export async function inspectPlanFacts(input: {
     }
   }
 
+  // Generated projects too: wire edits nothing there, but says what an existing one still lacks.
+  for (const platform of platforms) {
+    if (!shape.nativeDirectories[platform]) continue;
+    facts.buildSteps[platform] = await inspectBuildStepFacts(shape, platform, iosRoot);
+  }
+
   for (const platform of linkedPlatforms) {
     const resolution = await resolveJsRoot(shape.root, shape.packageJson.main, platform);
     if (resolution.kind === "unresolved") {
@@ -138,4 +161,56 @@ async function inspectHook<Language extends string>(
   return text === null
     ? { kind: "unresolved", reason: `${host.file} could not be read` }
     : { kind: "source", file: host.file, text, result: transform(text, host.language) };
+}
+
+/** The build file that carries the step for `platform`, and what it carries now. `cmpatch doctor` reports from the same facts. */
+export async function inspectBuildStepFacts(
+  shape: Pick<ProjectShape, "root" | "buildIntegration">,
+  platform: NativePlatform,
+  iosRoot: string,
+): Promise<BuildStepFacts> {
+  const located = platform === "ios" ? await locateXcodeStep(iosRoot) : await locateGradleStep(shape.root);
+  if (located.kind === "source" && shape.buildIntegration.kind === "available") {
+    located.finding = inspectBuildStep({ platform, ...located }, located.text, shape.buildIntegration.definition);
+  }
+  return located;
+}
+
+/**
+ * The project file that holds the application targets. Which of them get the
+ * phase is decided from the file itself: every one that has a bundle phase.
+ */
+async function locateXcodeStep(iosRoot: string): Promise<BuildStepFacts> {
+  const targets = await discoverIosTargets(iosRoot, readDoctorSource);
+  if (!targets.present) return { kind: "unresolved", reason: `No .xcodeproj found in ${iosRoot}` };
+  if (targets.limited) return { kind: "unresolved", reason: "The Xcode project could not be read completely" };
+  const files = [...new Set(targets.targets.map((target) => target.project))];
+  if (files.length !== 1) {
+    return {
+      kind: "unresolved",
+      reason: files.length === 0
+        ? "No application target was found in the Xcode project"
+        : `Application targets in several Xcode projects: ${files.map((file) => path.basename(path.dirname(file))).join(", ")}`,
+    };
+  }
+  const file = files[0]!;
+  const text = await readTextFile(file);
+  return text === null
+    ? { kind: "unresolved", reason: `${file} could not be read` }
+    : { kind: "source", file, text, sandboxed: xcodeSandboxedTargets(text) };
+}
+
+async function locateGradleStep(root: string): Promise<BuildStepFacts> {
+  const groovy = path.join(root, "android", "app", "build.gradle");
+  const kotlin = `${groovy}.kts`;
+  const present = [await isFile(groovy), await isFile(kotlin)];
+  if (present[0] && present[1]) {
+    return { kind: "unresolved", reason: "android/app has both build.gradle and build.gradle.kts" };
+  }
+  if (!present[0] && !present[1]) return { kind: "unresolved", reason: "android/app has no build.gradle or build.gradle.kts" };
+  const file = present[0] ? groovy : kotlin;
+  const text = await readTextFile(file);
+  return text === null
+    ? { kind: "unresolved", reason: `${file} could not be read` }
+    : { kind: "source", file, text, sandboxed: [] };
 }

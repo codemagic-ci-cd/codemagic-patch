@@ -117,7 +117,7 @@ function EditMetadataModalContent({
       open
       onClose={requestClose}
       title="Edit metadata"
-      description={`Mandatory, notes, and target binary version for ${release.releaseLabel} — only changed fields are sent.`}
+      description="Only changed fields are sent."
       footer={
         <>
           <button

@@ -42,7 +42,10 @@ export type ProblemTypeSuffix =
   | "team-conflict"
   | "last-owner"
   | "user-exists"
-  | "validation-error";
+  | "validation-error"
+  | "webhook-delivery-pending"
+  | "webhook-disabled"
+  | "webhook-limit-reached";
 
 const PROBLEM_TYPE_BASE = "https://codemagic.io/patch/errors";
 
@@ -193,6 +196,18 @@ function problemTitleForType(
 
   if (typeSuffix === "validation-error") {
     return "Validation error";
+  }
+
+  if (typeSuffix === "webhook-delivery-pending") {
+    return "Webhook delivery is still pending";
+  }
+
+  if (typeSuffix === "webhook-disabled") {
+    return "Webhook is disabled";
+  }
+
+  if (typeSuffix === "webhook-limit-reached") {
+    return "Webhook limit reached";
   }
 
   return defaultProblemTitle(status);

@@ -26,6 +26,15 @@ export type DerivedObjectField = {
 
 export type ObjectField = [label: string, path: string] | DerivedObjectField;
 
+export type ObjectViewOptions = {
+  /**
+   * Paths whose null means "does not apply" and is left out altogether, such
+   * as a release's `rollback_of`. Exact paths only, and only a null: everywhere
+   * else a null still prints `-`, because "not recorded" is an answer.
+   */
+  omitNullPaths?: readonly string[];
+};
+
 /**
  * A labelled record: aligned, unruled, and quiet about the labels so the values
  * are what the eye lands on. `fields` supplies human labels and an order;
@@ -36,6 +45,7 @@ export function renderObjectView(
   value: unknown,
   palette: Palette,
   fields?: readonly ObjectField[],
+  options: ObjectViewOptions = {},
 ): string {
   // A scalar result is its own presentation. Wrapping "fp-abc123" in a labelled
   // field, or in a one-column table, only adds furniture around the answer.
@@ -44,7 +54,9 @@ export function renderObjectView(
   }
 
   const rows =
-    fields === undefined ? flattenRecord(value) : withRemainder(value, fields);
+    fields === undefined
+      ? flattenRecord(value)
+      : withRemainder(value, fields, new Set(options.omitNullPaths));
 
   if (rows.length === 0) {
     return "";
@@ -123,19 +135,28 @@ export function unwrapSingleList(value: unknown): unknown[] | null {
 function withRemainder(
   value: Record<string, unknown>,
   fields: readonly ObjectField[],
+  omitNullPaths: ReadonlySet<string>,
 ): Array<[string, unknown]> {
+  const omitted = (path: string, cell: unknown) =>
+    cell === null && omitNullPaths.has(path);
   const declared = fields
-    .map((field): [string, unknown, readonly string[]] =>
-      Array.isArray(field)
-        ? [field[0], readPath(value, field[1]), [field[1]]]
-        : [field.label, field.cell(value), field.reads],
-    )
+    .map((field): [string, unknown, readonly string[]] => {
+      if (!Array.isArray(field)) {
+        return [field.label, field.cell(value), field.reads];
+      }
+
+      const [label, path] = field;
+      const cell = readPath(value, path);
+      return [label, omitted(path, cell) ? undefined : cell, [path]];
+    })
     .filter(([, cell]) => cell !== undefined);
   const covered = new Set(declared.flatMap(([, , paths]) => paths));
 
   return [
     ...declared.map(([label, cell]): [string, unknown] => [label, cell]),
-    ...flattenRecord(value).filter(([path]) => !covered.has(path)),
+    ...flattenRecord(value).filter(
+      ([path, cell]) => !covered.has(path) && !omitted(path, cell),
+    ),
   ];
 }
 

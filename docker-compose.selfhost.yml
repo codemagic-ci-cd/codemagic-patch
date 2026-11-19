@@ -76,6 +76,9 @@ services:
       # here because compose passes only the variables this block lists: a
       # SERVER_UPDATE_CHECK=false line in .env.selfhost used to be dropped.
       SERVER_UPDATE_CHECK: ${SERVER_UPDATE_CHECK:-true}
+      # true lets webhook endpoints target private, loopback and link-local
+      # addresses and use http. Off unless the receivers sit on a private network.
+      WEBHOOK_ALLOW_PRIVATE_TARGETS: ${WEBHOOK_ALLOW_PRIVATE_TARGETS:-false}
       # DATABASE_URL comes from the database mode overlay
       # (deploy/selfhost/compose.bundled-db.yml or compose.external-db.yml).
       WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET}

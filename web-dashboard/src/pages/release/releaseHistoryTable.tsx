@@ -3,11 +3,12 @@
 // - release / actions: shrink-to-content (w-[1%]). First/last inset matches
 //   CARD_HEAD (22px) so the table chrome can stay full-bleed.
 // - note: single-line truncate (~38ch) on the cell text.
-// - data: shared preset for status, rollout, target, and metric columns.
+// - data: shared preset for rollout, target, and downloads.
+// On phones the browser sizes the visible columns to their labels and badges.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { TBL_TD, TBL_TH } from "../../components/ui/table";
+import { TBL_NARROW_HIDE, TBL_TD, TBL_TH } from "../../components/ui/table";
 
 const FIT = "w-[1%] whitespace-nowrap";
 const DATA_CELL =
@@ -107,16 +108,16 @@ function td(...parts: string[]): string {
 /** th/td class presets — always use the matching pair for a column. */
 export const releaseHistoryCol = {
   th: {
-    release: th(FIT, "!pl-[22px]"),
-    note: TBL_TH,
-    data: th("!px-[10px]", "!text-center"),
-    actions: th(FIT, "!pr-[22px]", "!text-center"),
+    release: th(FIT, "!pl-[22px]", "max-shell:w-auto max-shell:px-0.5!"),
+    note: th(TBL_NARROW_HIDE),
+    data: th("!px-[10px]", "!text-center", "max-shell:px-0.5!"),
+    actions: th(FIT, "!pr-[22px]", "!text-center", "max-shell:px-0!"),
   },
   td: {
-    release: td(FIT, "!pl-[22px]"),
-    note: TBL_TD,
-    data: td("!px-[10px]", DATA_CELL),
-    actions: td(FIT, "!pr-[22px]", "text-center"),
+    release: td(FIT, "!pl-[22px]", "max-shell:w-auto max-shell:px-0.5! max-shell:whitespace-normal max-shell:[overflow-wrap:anywhere]"),
+    note: td(TBL_NARROW_HIDE),
+    data: td("!px-[10px]", DATA_CELL, "max-shell:px-0.5!"),
+    actions: td(FIT, "!pr-[22px]", "text-center", "max-shell:px-0!"),
   },
 } as const;
 
@@ -131,9 +132,15 @@ export function ReleaseHistoryTableHead({
       <th className={releaseHistoryCol.th.release}>Release</th>
       <th className={releaseHistoryCol.th.note}>Note</th>
       <th className={releaseHistoryCol.th.data}>Status</th>
-      <th className={releaseHistoryCol.th.data}>Rollout</th>
-      <th className={releaseHistoryCol.th.data}>Target</th>
-      <th className={releaseHistoryCol.th.data}>Downloads</th>
+      <th className={`${releaseHistoryCol.th.data} ${TBL_NARROW_HIDE}`}>
+        Rollout
+      </th>
+      <th className={`${releaseHistoryCol.th.data} ${TBL_NARROW_HIDE}`}>
+        Target
+      </th>
+      <th className={`${releaseHistoryCol.th.data} ${TBL_NARROW_HIDE}`}>
+        Downloads
+      </th>
       <th className={releaseHistoryCol.th.data}>Applied</th>
       <th className={releaseHistoryCol.th.data}>Failed</th>
       <th

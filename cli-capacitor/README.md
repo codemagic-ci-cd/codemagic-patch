@@ -66,6 +66,9 @@ That puts `cmpatch-capacitor` on your `PATH`; `cmpatch-capacitor --version` conf
 With nvm, a global command belongs to the Node version it was installed under, so use the
 same one in the terminal where you run it.
 
+On a terminal, `cmpatch-capacitor` tells you after a command when a newer version is on
+npm. Set `CMPATCH_NO_UPDATE_CHECK=1` to turn that check off.
+
 ### From source
 
 To run the CLI from a clone of this repository instead — it needs what the repository

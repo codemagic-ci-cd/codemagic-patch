@@ -297,7 +297,6 @@ function MembersScreen({ teamId }: { teamId: string }) {
     <>
       <PageHeader
         title="Members"
-        description="People with access to this team, including pending and expired invitations."
         actions={
           canManage ? (
             <button
@@ -595,7 +594,6 @@ function MemberTable({
         <EmptyState
           icon={<UsersIcon />}
           title="No members yet"
-          description="Add a member to get started — existing accounts get access immediately, everyone else on their first sign-in."
         />
       ) : (
         <div className={TBL_WRAP}>
@@ -962,7 +960,6 @@ function ChangeRoleDialog({
       open
       variant="summary"
       title="Change role"
-      description="The new role takes effect immediately, on their next request."
       summary={[
         { label: "Member", value: binding.user.email },
         {
@@ -1076,6 +1073,9 @@ function AddMemberModalContent({
   const [tokenConflictEmail, setTokenConflictEmail] = useState<string | null>(
     null,
   );
+  // Fresh pending invitation: stay on a second step instead of a toast, so
+  // it is obvious that nothing was emailed and the admin has to tell them.
+  const [tellThem, setTellThem] = useState<TellThemNotice | null>(null);
 
   const idBase = useId();
   const formId = `${idBase}-form`;
@@ -1143,8 +1143,8 @@ function AddMemberModalContent({
 
   /**
    * Invitation leg, shared by the email fallback and the handle path. Nothing
-   * is ever "sent" — the row turns up as pending and access materializes on
-   * the invitee's next sign-in, and the copy promises exactly that.
+   * is ever emailed. A fresh pending row stays on the "tell them to sign in"
+   * step; access materializes on the invitee's next sign-in.
    * `outcome: "pending"` covers both a fresh invitation and an already-pending
    * one (the envelope doesn't distinguish), so fresh-vs-duplicate is decided
    * against the pre-mutation invitation cache — same pattern as the binding
@@ -1188,13 +1188,14 @@ function AddMemberModalContent({
               description: `${subject} already has a pending spot in this team.`,
             });
           } else {
-            const signIn =
-              "githubHandle" in invitationTarget
-                ? "sign in with GitHub"
-                : "sign in";
-            toast.success("Member added", {
-              description: `${subject} doesn't have an account yet — they get access when they next ${signIn}.`,
+            setTellThem({
+              subject,
+              provider:
+                "githubHandle" in invitationTarget
+                  ? "GitHub"
+                  : oauthProviderNames,
             });
+            return;
           }
         } else if (result.outcome === "accepted_existing_user") {
           toast.success("Member added", {
@@ -1328,13 +1329,35 @@ function AddMemberModalContent({
   const submitLabel =
     mintToken && target === "email" ? "Provision member" : "Add member";
 
+  if (tellThem !== null) {
+    return (
+      <Modal
+        open={open}
+        onClose={requestClose}
+        wide
+        title="They can now sign in"
+        footer={
+          <button
+            type="button"
+            className={buttonVariants({ intent: "primary" })}
+            onClick={onClose}
+          >
+            Done
+          </button>
+        }
+      >
+        <TellThemBody notice={tellThem} />
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       open={open}
       onClose={requestClose}
       wide
       title="Add member"
-      description="Existing accounts get access immediately; everyone else shows up as pending and gets access on their first sign-in."
+      description="Existing users get access immediately. New users stay pending until first sign-in."
       footer={
         <>
           <button
@@ -1563,6 +1586,27 @@ function AddMemberModalContent({
   );
 }
 
+interface TellThemNotice {
+  subject: string;
+  /** "GitHub", "GitHub or Bitbucket", or "" when no OAuth provider is configured. */
+  provider: string;
+}
+
+function TellThemBody({ notice }: { notice: TellThemNotice }) {
+  const provider = notice.provider;
+  return (
+    <>
+      <p className="text-[14px] leading-[1.6] text-fg">
+        <span className="font-semibold">{notice.subject}</span> is now
+        authorized to sign in{provider === "" ? "" : ` with ${provider}`}.
+      </p>
+      <p className="mt-3 text-[14px] leading-[1.6] text-fg">
+        Note that no email is sent, you will have to notify them.
+      </p>
+    </>
+  );
+}
+
 /** Role picker fed by `GET /v1/iam/roles`. */
 function RoleField({
   roles,
@@ -1602,7 +1646,7 @@ function RoleField({
         )}
       </select>
       <span className={FIELD_HINT}>
-        Roles are team-wide. Admins and owners can manage members.
+        Roles apply to all apps and deployments.
       </span>
     </label>
   );

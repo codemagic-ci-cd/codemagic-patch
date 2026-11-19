@@ -9,6 +9,7 @@ import path from "node:path";
 
 import type { CommandDeps } from "../commands/shared";
 import type { Progress } from "../progress";
+import { inspectBuildStep } from "./buildStep";
 import { readExpoPluginEntry } from "./expoConfig";
 import { readTextFile } from "./fs";
 import { transformJsRoot } from "./jsRoot";
@@ -21,7 +22,7 @@ import {
   transformAndroidMainApplication,
   transformIosAppDelegate,
 } from "./nativeHooks";
-import { hasWork, materializeWrites, plannedIntents, type PlannedStep, type WirePlan } from "./plan";
+import { buildStepDefinition, hasWork, materializeWrites, plannedIntents, type PlannedStep, type WirePlan } from "./plan";
 import { SDK_INSTALL_FAILED_NOTE, type WireStep } from "./types";
 
 export type ApplyOptions = {
@@ -61,6 +62,11 @@ export async function applyPlan(
     }
   }
 
+  for (const planned of plan.steps.filter((candidate) => candidate.afterInstall === true)) {
+    const step = results.get(planned)!;
+    if (installFailed) step.detail = `${step.detail} (not applied: ${SDK_INSTALL_FAILED_NOTE})`;
+    else step.state = "changed";
+  }
   const edits = plan.steps.filter((planned) => planned.action.kind === "edit");
   if (installFailed) {
     for (const planned of edits) {
@@ -160,9 +166,12 @@ async function run(
   try {
     const result = await deps.runCommand(command[0]!, command.slice(1), { cwd, cleanupOnInterrupt: true });
     const output = `${result.stderr}${result.stdout}`.trim();
+    // A Ruby exception (Bundler, CocoaPods) prints its message first and then
+    // its backtrace, so the last lines alone would be frames without the cause.
+    const lines = output.split("\n").filter((line) => !/^\s+from .+:\d+:in /.test(line));
     return {
       ok: result.exitCode === 0,
-      output: output === "" ? [`exit code ${result.exitCode ?? result.signal}`] : output.split("\n").slice(-8).map((line) => line.trimEnd()),
+      output: output === "" ? [`exit code ${result.exitCode ?? result.signal}`] : lines.slice(-8).map((line) => line.trimEnd()),
     };
   } catch (error) {
     return { ok: false, output: [error instanceof Error ? error.message : String(error)] };
@@ -200,6 +209,10 @@ async function readBack(planned: PlannedStep): Promise<string | null> {
       return block !== undefined && compareDestination(block, intent.values).kind === "complete"
         ? null
         : "the plugin entry does not carry the selected destination";
+    }
+    case "build-step": {
+      const finding = inspectBuildStep(intent, text, await buildStepDefinition(intent));
+      return finding.kind === "current" ? null : `${path.basename(intent.file)} does not read back as running the build metadata step (${finding.kind})`;
     }
     case "source": {
       const result =

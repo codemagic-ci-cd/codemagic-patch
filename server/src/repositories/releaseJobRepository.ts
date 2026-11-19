@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { withTransaction } from "../db";
 import type { Release, ReleaseJob, ReleaseJobId } from "../domain";
 import type { DatabasePool } from "../db";
+import type { ReleaseSettledHook } from "./releaseSettledHook";
 import {
   mapReleaseJobRow,
   mapReleaseRow,
@@ -49,8 +50,14 @@ export interface ReleaseJobRepository {
   ): Promise<ReleaseJob | null>;
 }
 
+export interface ReleaseJobRepositoryOptions {
+  /** Called when a claim dead-letters the job, before that transaction commits. */
+  onReleaseSettled?: ReleaseSettledHook;
+}
+
 export function createPostgresReleaseJobRepository(
   pool: DatabasePool | Pool,
+  repositoryOptions: ReleaseJobRepositoryOptions = {},
 ): ReleaseJobRepository {
   return {
     async claimReleaseJob(jobId, options = {}) {
@@ -101,8 +108,9 @@ export function createPostgresReleaseJobRepository(
             [jobId, now, terminalFailureStage, terminalFailureReason],
           );
 
+          let settledReleaseRow = releaseRow;
           if (releaseRow.status === "uploaded" || releaseRow.status === "processing") {
-            await client.query(
+            const failedRelease = await client.query<ReleaseRow>(
               `
                 UPDATE release
                 SET status = 'failed',
@@ -111,10 +119,20 @@ export function createPostgresReleaseJobRepository(
                     failure_reason = COALESCE(failure_reason, $4),
                     updated_at = $2
                 WHERE id = $1
+                RETURNING *
               `,
               [releaseRow.id, now, terminalFailureStage, terminalFailureReason],
             );
+            settledReleaseRow = failedRelease.rows[0] ?? releaseRow;
           }
+
+          await repositoryOptions.onReleaseSettled?.({
+            client,
+            failure: { reason: terminalFailureReason, stage: terminalFailureStage },
+            jobRow: requireRow(deadLetteredJob.rows[0], "release_job"),
+            now,
+            releaseRow: settledReleaseRow,
+          });
 
           return {
             outcome: "dead_lettered",

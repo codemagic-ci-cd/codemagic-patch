@@ -1,6 +1,7 @@
 import type { StorageAdapter } from "../../adapters";
 import type { AuthorizationService } from "../../app/authorizationService";
 import type { ControlPlaneAuthHandler } from "../../app/controlPlaneAuth";
+import type { WebhookRouteHandlers } from "../../webhooks/handlers";
 import type {
   ApiTokenCreateRouteHandler,
   ApiTokenDeleteRouteHandler,
@@ -116,6 +117,7 @@ export interface ReleaseReadParams {
 
 export interface TeamCreateBody {
   name?: unknown;
+  owner?: unknown;
 }
 
 export interface AppCreateBody {
@@ -326,4 +328,5 @@ export interface ApiRoutesOptions {
   teamListHandler?: TeamListRouteHandler;
   teamReadHandler?: TeamReadRouteHandler;
   userProfileHandler?: UserProfileRouteHandler;
+  webhookHandlers?: WebhookRouteHandlers;
 }

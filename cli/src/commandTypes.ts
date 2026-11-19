@@ -313,6 +313,114 @@ export type TokenRevokeCommand = {
   yes?: true;
 };
 
+/**
+ * The event types this CLI version knows of, for help text only
+ * (`server/specs/webhooks-tech-spec.md`). The server decides which types are
+ * valid, so `--event` values are not checked against this list.
+ */
+export const WEBHOOK_EVENT_TYPES = [
+  "release.published",
+  "release.promoted",
+  "release.rolled_back",
+  "release.updated",
+  "release.disabled",
+  "release.enabled",
+  "release.failed",
+] as const;
+
+export type WebhookListCommand = {
+  format?: OutputFormat;
+  kind: "webhook-list";
+  serverUrl: string;
+  team: TeamSelector;
+  token?: string;
+};
+
+export type WebhookShowCommand = {
+  format?: OutputFormat;
+  kind: "webhook-show";
+  serverUrl: string;
+  token?: string;
+  webhookId: string;
+};
+
+export type WebhookCreateCommand = {
+  description?: string;
+  /** Empty means every event type. */
+  events: string[];
+  kind: "webhook-create";
+  serverUrl: string;
+  team: TeamSelector;
+  token?: string;
+  url: string;
+};
+
+export type WebhookUpdateCommand = {
+  /** `null` clears the description. */
+  description?: string | null;
+  /** An empty list means every event type (`--all-events`). */
+  events?: string[];
+  kind: "webhook-update";
+  serverUrl: string;
+  status?: "active" | "disabled";
+  token?: string;
+  url?: string;
+  webhookId: string;
+};
+
+export type WebhookRemoveCommand = {
+  kind: "webhook-remove";
+  nonInteractive?: true;
+  serverUrl: string;
+  token?: string;
+  webhookId: string;
+  yes?: true;
+};
+
+export type WebhookRotateSecretCommand = {
+  kind: "webhook-rotate-secret";
+  nonInteractive?: true;
+  serverUrl: string;
+  token?: string;
+  webhookId: string;
+  yes?: true;
+};
+
+export type WebhookTestCommand = {
+  kind: "webhook-test";
+  serverUrl: string;
+  token?: string;
+  webhookId: string;
+};
+
+export type WebhookDeliveriesCommand = {
+  format?: OutputFormat;
+  kind: "webhook-deliveries";
+  limit?: number;
+  offset?: number;
+  serverUrl: string;
+  status?: "pending" | "succeeded" | "failed";
+  token?: string;
+  webhookId: string;
+};
+
+export type WebhookDeliveryCommand = {
+  deliveryId: string;
+  format?: OutputFormat;
+  kind: "webhook-delivery";
+  serverUrl: string;
+  token?: string;
+  webhookId: string;
+};
+
+export type WebhookRedeliverCommand = {
+  deliveryId: string;
+  kind: "webhook-redeliver";
+  serverUrl: string;
+  token?: string;
+  webhookId: string;
+};
+
 export type LoginCommand = {
   kind: "login";
   /** Skip the browser-open attempt; print the authorize URL instead. */
@@ -699,12 +807,24 @@ export type ContextCommand = {
   token?: string;
 };
 
-export type FingerprintCommand = {
+export type FingerprintCommand =
+  | FingerprintProjectCommand
+  | FingerprintArtifactCommand;
+
+export type FingerprintProjectCommand = {
   format: "json" | "table" | "text";
   kind: "fingerprint";
   platform: "android" | "ios";
   projectRoot: string;
   verbose: boolean;
+};
+
+/** `fingerprint --artifact`: read the metadata a store artifact carries. */
+export type FingerprintArtifactCommand = {
+  artifact: string;
+  /** Left unset without --format, so the TTY / piped-stdout default applies. */
+  format?: "json" | "table" | "text";
+  kind: "fingerprint";
 };
 
 export type ReleasePatchCommand = {
@@ -840,6 +960,16 @@ export type CliCommand =
   | TokenCreateCommand
   | TokenListCommand
   | TokenRevokeCommand
+  | WebhookCreateCommand
+  | WebhookDeliveriesCommand
+  | WebhookDeliveryCommand
+  | WebhookListCommand
+  | WebhookRedeliverCommand
+  | WebhookRemoveCommand
+  | WebhookRotateSecretCommand
+  | WebhookShowCommand
+  | WebhookTestCommand
+  | WebhookUpdateCommand
   | SelfhostCommand
   | ServerStatusCommand
   | TeamListCommand

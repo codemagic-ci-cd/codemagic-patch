@@ -114,6 +114,17 @@ export function renderReleaseInspectTable(result: unknown): string {
     ["label", readCell(result.release, "release_label")],
     ["releaseStatus", readCell(result.release, "status")],
     ["jobStatus", job === null ? "-" : readCell(job, "status")],
+    ...(job === null
+      ? []
+      : [
+          [
+            "jobAttempts",
+            `${readCell(job, "attempt_count")}/${readCell(job, "max_total_attempts")}`,
+          ],
+          ["jobTrigger", readCell(job, "trigger_type")],
+          ["jobFailureStage", readCell(job, "failure_stage")],
+          ["jobFailureReason", readCell(job, "failure_reason")],
+        ]),
     ["targetBinaryVersion", readCell(result.release, "target_binary_version")],
     ["fingerprint", readCell(result.release, "fingerprint")],
     ["rollout", readCell(result.release, "rollout_percentage")],

@@ -20,6 +20,81 @@ npm install -g @codemagic/patch-cli@latest
 Reference: [CLI reference](/docs/reference/cli-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=patch-cli)
 
+## 0.11.0 {#v0-11-0}
+
+*19th November 2026*
+
+### Webhooks
+
+Adds `cmpatch webhook` for managing a team's webhooks. Requires
+[server 0.11.0](/docs/releases/server#v0-11-0-webhooks).
+
+```bash
+cmpatch webhook create --url https://example.com/hooks/patch
+cmpatch webhook test --webhook-id <id>
+cmpatch webhook deliveries --webhook-id <id> --status failed
+```
+
+`create`, `update`, and `rotate-secret` need a browser login. `remove` and
+`rotate-secret` ask before they act, so pass `--yes` in CI. See
+[Webhooks](/docs/using-patch/webhooks) and the
+[CLI reference](/docs/reference/cli-reference#webhooks).
+
+### Build metadata for React Native
+
+[React Native SDK 0.8.0](/docs/releases/react-native#v0-8-0) records the native
+fingerprint and the embedded bundle's hash inside the app at build time.
+
+```bash
+cmpatch fingerprint --artifact build/MyApp.ipa
+```
+
+- Adds `cmpatch fingerprint --artifact <path>`, which prints the fingerprint,
+  the embedded bundle hash, and the binary version of an `.xcarchive`, `.ipa`,
+  `.apk`, or `.aab`. It needs no checkout, login, or server.
+- `cmpatch wire` adds the build metadata step to a bare project. If you
+  upgrade the SDK in a project that is already wired, run `wire` again. See
+  the [upgrade steps](/docs/releases/react-native#v0-8-0-upgrade).
+- `cmpatch doctor` warns when the installed SDK has the step and the project
+  does not run it.
+- With SDK 0.8.0 installed, `fingerprint`, `release create`, and
+  `release-react` use the SDK's fingerprint engine. `fingerprint --format json`
+  adds `fingerprintEngine`.
+
+See [Recorded at build time](/docs/using-patch/fingerprinting#recorded-at-build-time).
+
+### Other changes
+
+- Table output of `release show`, `release inspect`, `release metrics`,
+  `release list`, `deployment metrics`, `member list`, and
+  `member invite-list` now includes values that were only in `--format json`,
+  such as release notes, download sizes, failure reasons, and a total row.
+  JSON output is unchanged.
+- Prints a one-line notice on a terminal when a newer `cmpatch` is on npm. The
+  check asks `registry.npmjs.org` for the latest version once a day. It does
+  not run in CI, when output is piped, or with `--format json`. Set
+  `CMPATCH_NO_UPDATE_CHECK=1` to turn it off.
+
+### Fixes
+
+- Escapes control characters in table cells, so a failure reason reported by a
+  device cannot send escape sequences to your terminal.
+- Fixes Fly install and upgrade messages that mentioned a build where the
+  server image is pulled.
+- Fixes `cmpatch wire` in a React Native 0.88 project, where the template
+  keeps bundle selection in `SceneDelegate.swift`. Wire edits that file, and
+  no longer reports a project that was edited by hand as incomplete.
+- `cmpatch wire` plans `pod install` when `Podfile.lock` names another
+  version of the SDK's pod than the one installed, as after an SDK upgrade.
+- Shows the message of a failed `pod install` instead of the end of its Ruby
+  backtrace.
+- `cmpatch wire` no longer shows the build metadata step as already set up in
+  an Expo prebuild project whose `ios` and `android` directories do not run
+  it yet. The row says the next prebuild adds it.
+
+See the [CLI reference](/docs/reference/cli-reference) and
+[CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.11.0).
+
 ## 0.10.0 {#v0-10-0}
 
 *17th November 2026*
@@ -37,20 +112,19 @@ server release instead of building it on the server. An install no longer
 waits for a build or needs the 2 GB of memory a build takes. On Fly, the
 image is deployed directly, without the remote builder.
 
-- **Release checkout:** `upgrade` moves the server's checkout to the newest
-  server release and runs that release's upgrade script. An install from
-  before published images runs the default branch and moves the same way.
-  A checkout with local edits or commits, or one newer than the
-  release, is refused.
-- **Schema check:** Before it asks, `upgrade` pulls the target image and runs
-  the image's check against the database. A database that has applied a
-  migration the release does not know is refused. `--skip-schema-check`
-  skips the check and is unsafe.
-- **`--build-from-source`, `--image <ref>`:** Build the image on the server
-  (or on Fly's remote builder), or run an image you name. Both work on
-  `install` and `upgrade`, Fly included.
-- **Rollback steps:** If an upgrade fails after the stack is recreated, the
-  command prints the recovery steps in order, with this server's paths.
+- `upgrade` moves the server's checkout to the newest server release and runs
+  that release's upgrade script. An install from before published images
+  runs the default branch and moves the same way. A checkout with local edits
+  or commits, or one newer than the release, is refused.
+- Before it asks, `upgrade` pulls the target image and runs the image's schema
+  check against the database. It refuses a database that has applied a
+  migration the release does not know. `--skip-schema-check` skips the check
+  and is unsafe.
+- Adds `--build-from-source`, which builds the image on the server (or on
+  Fly's remote builder), and `--image <ref>`, which runs an image you name.
+  Both work on `install` and `upgrade`, Fly included.
+- If an upgrade fails after the stack is recreated, the command prints the
+  rollback steps in order, with this server's paths.
 
 Update the CLI before upgrading a server to
 [0.10.0](/docs/releases/server#v0-10-0). See
@@ -64,51 +138,50 @@ SDK that has no `Package.swift`, and adds `npx react-native spm` to the next
 steps. The plan shows an **iOS packages** row, and `--format json` adds
 `project.iosDependencyManager`.
 
-- **SDK 0.7.0 in every app:** `wire` installs
-  [React Native SDK 0.7.0](/docs/releases/react-native#v0-7-0) or later, so
-  an app that converts from CocoaPods later needs no SDK upgrade.
-- **Fingerprint inputs:** In SwiftPM mode, the iOS fingerprint leaves out
-  `Package.resolved` under `xcshareddata/swiftpm` and Xcode's `xcuserdata`
-  folders, which exist on your machine but not in a CI checkout. CocoaPods
-  and Android fingerprints are unchanged. See
-  [Fingerprinting](/docs/using-patch/fingerprinting).
+- `wire` installs
+  [React Native SDK 0.7.0](/docs/releases/react-native#v0-7-0) or later in
+  every app, so an app that converts from CocoaPods later needs no SDK
+  upgrade.
+- In SwiftPM mode, the iOS fingerprint leaves out `Package.resolved` under
+  `xcshareddata/swiftpm` and Xcode's `xcuserdata` folders, which exist on
+  your machine but not in a CI checkout. CocoaPods and Android fingerprints
+  are unchanged. See [Fingerprinting](/docs/using-patch/fingerprinting).
 
 ### API tokens and service accounts
 
-- **`cmpatch member rotate-token --email <email>`:** Replaces the token of a
-  service account created with `member provision` and prints the new token
-  once. The old token stops working immediately, so update the CI secret
-  that held it. Confirms unless `--yes`, and needs a browser login.
-  `member list` marks service accounts. Requires server 0.10.0.
-- **Commands an API token cannot run:** Server 0.10.0 refuses the commands
-  that create credentials or grant access, such as `token create`,
-  `member invite`, and `app transfer`, from a `--token` login or
-  `CODEMAGIC_PATCH_TOKEN`. The CLI says to remove the token and run
-  `cmpatch login`. Full list in the
+- Adds `cmpatch member rotate-token --email <email>`. It replaces the token of
+  a service account created with `member provision`, prints the new token
+  once, and stops the old token immediately; update the CI secret that held
+  it. It confirms unless `--yes` and needs a browser login. `member list`
+  marks service accounts. Requires server 0.10.0.
+- Server 0.10.0 refuses the commands that create credentials or grant access,
+  such as `token create`, `member invite`, and `app transfer`, from a
+  `--token` login or `CODEMAGIC_PATCH_TOKEN`. The CLI says to remove the token
+  and run `cmpatch login`. Full list in the
   [server notes](/docs/releases/server#v0-10-0-api-tokens).
 
-### Smaller changes
+### Other changes
 
-- **Metrics totals and success rate:** `deployment timeseries` prints the
-  range totals, the success rate, and the active devices of the last
-  complete day under its table. In `--format json`, `deployment metrics`,
-  `release metrics`, and `deployment timeseries` add `success_rate` and a
-  `summary`, and each timeseries series adds its cumulative Applied count.
-  Requires [server 0.10.0](/docs/releases/server#v0-10-0); output is
-  unchanged against an older server.
-- **`error.hint` in JSON errors:** A `--format json` error carries the remedy
-  that text output prints, such as the sign-in command after a `401`.
-- **Install survey:** After a first successful `selfhost install`, the CLI
+- `deployment timeseries` prints the range totals, the success rate, and the
+  active devices of the last complete day under its table. In
+  `--format json`, `deployment metrics`, `release metrics`, and
+  `deployment timeseries` add `success_rate` and a `summary`, and each
+  timeseries series adds its cumulative Applied count. Requires
+  [server 0.10.0](/docs/releases/server#v0-10-0); output is unchanged against
+  an older server.
+- Adds `error.hint` to `--format json` errors. It carries the remedy that text
+  output prints, such as the sign-in command after a `401`.
+- Adds an install survey. After a first successful `selfhost install`, the CLI
   asks once per machine how you heard about Codemagic Patch. Enter skips it
   and sends nothing. An answer sends the choice, the install method, and for
-  Other the text you type. `--no-telemetry` and `DO_NOT_TRACK=1` turn it
-  off, and a run that cannot prompt never asks.
+  Other the text you type. `--no-telemetry` and `DO_NOT_TRACK=1` turn it off,
+  and a run that cannot prompt never asks.
 
 ### Fixes
 
-- **`selfhost install --ngrok` on an ephemeral address:** The install
-  registered its OAuth callback against an address that changes on the next
-  run. It now stops and asks for your account's dev domain with
+- Fixes `selfhost install --ngrok` on an ephemeral address, which registered
+  its OAuth callback against an address that changes on the next run. The
+  install now stops and asks for your account's dev domain with
   `--ngrok-domain`. Free plans have one. Contributed in
   [codemagic-patch#42](https://github.com/codemagic-ci-cd/codemagic-patch/pull/42).
   See [Reach a real phone with ngrok](/docs/local-quickstart#ngrok).
@@ -140,13 +213,12 @@ See [Run the installer](/docs/install#run-the-installer).
 
 ### Promote picks deployments, and both release commands ask for the rollout
 
-`cmpatch release promote` now lists the app's deployments for you to pick
-the source and destination, instead of asking you to type their names.
-`release-react` already did this for its deployment. Both commands now ask
-for a rollout percentage (Enter keeps 100) instead of silently using 100, so
-the confirmation shows a value you chose. Runs that cannot prompt (`--yes`,
-CI, `--format json`, piped output) keep the default, and an explicit
-`--rollout-percentage` is left alone.
+`cmpatch release promote` lists the app's deployments to pick the source and
+destination from, instead of asking you to type their names. `release-react`
+already did this for its deployment. Both commands ask for a rollout
+percentage (Enter keeps 100) instead of using 100 without asking. Runs that
+cannot prompt (`--yes`, CI, `--format json`, piped output) keep the default,
+and an explicit `--rollout-percentage` is left alone.
 
 ### Usage report opt-out
 
@@ -158,14 +230,13 @@ server. The install summary says whether the report is on.
 
 ### Fixes
 
-- **`init` accepts every Patch server:** `cmpatch init` turned down valid
-  servers with "not like a Codemagic Patch server" because its
-  `/health/ready` probe expected `checks` to be a list, while the server
-  sends an object. The probe now matches what the server sends.
-- **Silo, not MinIO:** The storage choice in the install wizard and the
-  local evaluation stack call the bundled object store Silo, which is what
-  runs. The `MINIO_*` variables, the `/minio/health/ready` path, and backup
-  archive names are unchanged.
+- Fixes `cmpatch init` turning down valid servers with "not like a Codemagic
+  Patch server". Its `/health/ready` probe expected `checks` to be a list,
+  while the server sends an object.
+- The storage choice in the install wizard and the local evaluation stack
+  call the bundled object store Silo, which is what runs. The `MINIO_*`
+  variables, the `/minio/health/ready` path, and backup archive names are
+  unchanged.
 
 See the [CLI reference](/docs/reference/cli-reference) and
 [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.9.0).
@@ -181,11 +252,11 @@ with [Tigris](https://www.tigrisdata.com) object storage, from this machine
 and without a VPS, DNS records, or certificates. It can create Postgres or
 use a database you run. Existing Fly installs can also be registered.
 
-`selfhost upgrade`, `backup`, and `restore` work on a recorded Fly install:
-upgrade snapshots the database when cmpatch created it and deploys the newest
-release (or `--tag`), backup saves the database dump on this machine, and
-restore replaces the database from one of those backups while your apps keep
-downloading from storage. See [Install on Fly.io](/docs/install#fly),
+`selfhost upgrade`, `backup`, and `restore` work on a recorded Fly install.
+`upgrade` snapshots the database when cmpatch created it and deploys the
+newest release (or `--tag`). `backup` saves the database dump on this
+machine. `restore` replaces the database from one of those backups while your
+apps keep downloading from storage. See [Install on Fly.io](/docs/install#fly),
 [Fly backup](/docs/reference/operations#fly-backup),
 and [Fly restore](/docs/reference/operations#fly-restore).
 
@@ -194,23 +265,22 @@ and [Fly restore](/docs/reference/operations#fly-restore).
 `cmpatch selfhost install --ngrok` installs the full stack, with OAuth
 sign-in and bundled Postgres and storage, on the machine it runs on, reached
 at your [ngrok](https://ngrok.com) account's `https://` address. It is for
-trying Patch on real devices without a domain, open ports, or a server: the
+trying Patch on real devices without a domain, open ports, or a server. The
 free plan is capped, and apps keep the address they were built with. See
 [Reach a real phone with ngrok](/docs/local-quickstart#ngrok).
 
 ### Fixes
 
-- **Overlapping runs no longer sign each other out:** When two runs that
-  share the stored session (a terminal and a CI step, two jobs on one
-  machine) both needed to refresh an expired access token, the second refresh
-  was refused and that run deleted the stored credentials, including the
-  session the first run had just saved. Runs now refresh one at a time under
-  a lock next to the credential store, and a run that gets the lock first
-  re-reads the store: if another run has already refreshed the session, it
-  uses that session instead of sending a refresh of its own. A refresh the
-  server refuses still clears the stored credentials and asks you to sign in
-  again.
-- **Flag errors point at the command's help:** An unknown flag, a missing or
+- Fixes overlapping runs signing each other out. When two runs that share the
+  stored session (a terminal and a CI step, two jobs on one machine) both
+  needed to refresh an expired access token, the second refresh was refused
+  and that run deleted the stored credentials, including the session the
+  first run had just saved. Runs now refresh one at a time under a lock next
+  to the credential store. A run that gets the lock first re-reads the store
+  and, if another run has already refreshed the session, uses that session
+  instead of sending its own refresh. A refresh the server refuses still
+  clears the stored credentials and asks you to sign in again.
+- Flag errors point at the command's help. An unknown flag, a missing or
   invalid value, or a stray argument inside a command now ends with
   ``Run `cmpatch help <command>` for usage`` instead of pointing at the root
   listing, which does not name the command's flags. Contributed in
@@ -233,55 +303,54 @@ Add `--yes` to scripts that call them.
 
 ### Dashboard parity: server, teams, app transfer
 
-- **`cmpatch server status`:** Prints the server's own view of its database,
-  storage, disk, download URL, and version, the same checks as the
+- Adds `cmpatch server status`, which prints the server's own view of its
+  database, storage, disk, download URL, and version: the same checks as the
   dashboard's Status page. `cmpatch doctor` checks from your machine instead.
-- **`cmpatch team list` and `cmpatch team show`:** List the teams you can
-  see and show one team's details, so you can find the name or ID to pass as
+- Adds `cmpatch team list` and `cmpatch team show`, which list the teams you
+  can see and show one team's details. They give the name or ID to pass as
   `--team` or store with `cmpatch config set team`.
-- **`cmpatch app transfer`:** Moves an app and its deployments to another
-  team, picked with `--dest-team` / `--dest-team-id` or from a list of your
-  other teams, and confirms unless `--yes`. Capacitor apps move the same way:
-  pass the ID that `cmpatch-capacitor app list` shows as `--app-id`.
+- Adds `cmpatch app transfer`, which moves an app and its deployments to
+  another team, picked with `--dest-team` / `--dest-team-id` or from a list of
+  your other teams. It confirms unless `--yes`. Capacitor apps move the same
+  way. Pass the ID that `cmpatch-capacitor app list` shows as `--app-id`.
 
 ### Metrics from the CLI
 
 `cmpatch help metrics` lists these commands alongside `deployment metrics`,
 `deployment history`, and `release metrics`.
 
-- **`cmpatch deployment timeseries`:** Prints a deployment's counters per
-  day, the numbers behind the dashboard's deployment chart. Pick the window
-  with `--range 7d|30d|90d|1y` or `--from` / `--to`, narrow it with
+- Adds `cmpatch deployment timeseries`, which prints a deployment's counters
+  per day, the numbers behind the dashboard's deployment chart. Pick the
+  window with `--range 7d|30d|90d|1y` or `--from` / `--to`, narrow it with
   `--binary-version` / `--binary-version-prefix`, and use `--format json` for
   the per-release series.
-- **`cmpatch deployment failures` / `failure-events` and `cmpatch release
-  failures` / `failure-events`:** Drill into a failure reason from
-  `deployment metrics` or `release metrics`, as the dashboard's failure dialog
-  does. `failures --reason <reason>` lists the codes under it; adding
-  `--code <code>`, or `--no-code` for the failures that reported none, shows
-  that code's top exit reasons and messages. `failure-events` lists the single
-  events of one code, a page at a time with `--limit` and `--cursor`.
-- **`cmpatch release list --binary-version`:** Lists only the releases that
-  target one binary version (`--binary-version 1.2.3`) or every version under
-  a prefix (`--binary-version-prefix 1.2`), like the binary version filter on
-  the dashboard's deployment page.
+- Adds `cmpatch deployment failures` / `failure-events` and
+  `cmpatch release failures` / `failure-events`. They drill into a failure
+  reason from `deployment metrics` or `release metrics`, as the dashboard's
+  failure dialog does. `failures --reason <reason>` lists the codes under it.
+  Adding `--code <code>`, or `--no-code` for the failures that reported none,
+  shows that code's top exit reasons and messages. `failure-events` lists the
+  single events of one code, a page at a time with `--limit` and `--cursor`.
+- `cmpatch release list --binary-version` lists only the releases that target
+  one binary version (`--binary-version 1.2.3`), and `--binary-version-prefix`
+  every version under a prefix (`--binary-version-prefix 1.2`), like the
+  binary version filter on the dashboard's deployment page.
 
-### Smaller changes
+### Other changes
 
-- **`cmpatch app setting` without a flag shows the current settings:** Run
-  without `--require-code-signing` to see whether the app requires code
-  signing, instead of failing on a missing flag or asking for a value. Pass
-  `--require-code-signing=<true|false>` to change it, as before.
-- **`cmpatch release promote`:** Without `--label`, a terminal run lets you
-  pick the release from the source deployment's list, newest first with its
-  status and target binary version, instead of typing a label. Help no longer
-  claims `--rollout-percentage` and `--disabled` default to the source
-  release; they default to 100 and off.
-- **`cmpatch token revoke --name <name>`:** Revoke a token by the name you
-  gave it at creation, instead of looking up its ID. A name shared by several
-  tokens is refused with their IDs, so you can pass `--token-id`.
-- **`cmpatch release inspect --logs` removed:** The hidden flag only ever
-  reported that no log API exists; it now fails as an unknown flag. For
+- `cmpatch app setting` without `--require-code-signing` shows whether the app
+  requires code signing, instead of failing on a missing flag or asking for a
+  value. Pass `--require-code-signing=<true|false>` to change it, as before.
+- `cmpatch release promote` without `--label`, on a terminal, lets you pick
+  the release from the source deployment's list, newest first with its status
+  and target binary version, instead of typing a label. Help no longer claims
+  `--rollout-percentage` and `--disabled` default to the source release; they
+  default to 100 and off.
+- Adds `cmpatch token revoke --name <name>`, which revokes a token by the name
+  you gave it at creation. A name shared by several tokens is refused, and the
+  error lists their IDs to pass as `--token-id`.
+- Removes the hidden `cmpatch release inspect --logs` flag, which only ever
+  reported that no log API exists. It now fails as an unknown flag. For
   failure detail, use `deployment failures` / `failure-events`.
 
 See the [CLI reference](/docs/reference/cli-reference) and
@@ -294,7 +363,7 @@ See the [CLI reference](/docs/reference/cli-reference) and
 ### React Native app filtering
 
 Teams can now include Capacitor apps, which are managed with
-[`cmpatch-capacitor`](/docs/releases/capacitor-cli). `cmpatch` now shows only
+[`cmpatch-capacitor`](/docs/releases/capacitor-cli). `cmpatch` shows only
 React Native apps: `app create` records the app as React Native, and
 `app list`, the interactive pickers, `init`, and `doctor` request only React
 Native apps from the server. Apps selected by id (`--app-id`,
@@ -302,10 +371,9 @@ Native apps from the server. Apps selected by id (`--app-id`,
 server reports one. On servers older than 0.6.0, all apps are listed; every app
 on such a server is a React Native app.
 
-- **Server error hints:** Server 0.6.0 error messages no longer name a
-  `cmpatch` command, so the CLI now prints the remedy itself. For example, an
-  upload rejected for a missing signature still prints the
-  `--private-key-path` commands to run.
+- Server 0.6.0 error messages no longer name a `cmpatch` command, so the CLI
+  prints the remedy itself. For example, an upload rejected for a missing
+  signature still prints the `--private-key-path` commands to run.
 
 See the [CLI reference](/docs/reference/cli-reference) and
 [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.6.0).
@@ -319,40 +387,37 @@ See the [CLI reference](/docs/reference/cli-reference) and
 `cmpatch wire` installs the Patch SDK in a supported React Native or Expo
 project and configures it. It sets the deployment key and server URLs, adds the
 native bundle-loading hooks, and wraps your root component with `Patch.wrap`.
-`cmpatch init` now runs it automatically; pass `--skip-wire` to only connect
-the app. Run `cmpatch wire --dry-run --diff` to preview the changes. If wire
-cannot finish the setup automatically, it prints a `Patch.wrap` snippet to add
-by hand.
+`cmpatch init` runs it; pass `--skip-wire` to only connect the app. Run
+`cmpatch wire --dry-run --diff` to preview the changes. If wire cannot finish
+the setup, it prints a `Patch.wrap` snippet to add by hand.
 
 `init` does not run wiring while CodePush or `expo-updates` is still in the
 project. See [Native setup](/docs/setup/native-setup#install-the-sdk).
 
 ### GitLab and Bitbucket sign-in in the self-host wizard
 
-For operators: `cmpatch selfhost install` now supports Bitbucket Cloud and
-GitLab sign-in, in the wizard and in non-interactive setup. For a self-managed
+For operators: `cmpatch selfhost install` supports Bitbucket Cloud and GitLab
+sign-in, in the wizard and in non-interactive setup. For a self-managed
 GitLab instance, enter its address when asked or pass `--gitlab-oauth-base-url`.
 
-- **Release conflict hints:** When a release change is blocked by a 409
-  conflict, the CLI now names the release to wait for and the
+- When a release change is blocked by a 409 conflict, the CLI names the
+  release to wait for and the
   `cmpatch release inspect --release-id <id> --wait` command to run before
   retrying.
-- **React Native 0.87:** Fixed `cmpatch release-react` on React Native 0.87,
-  which removed `react-native/cli.js` from its package exports. Previously the
-  command failed with "Could not resolve react-native from project root",
-  mostly in npm projects.
-- **Binary version detection:** Improved iOS and Android version detection,
-  so OTA releases target the correct app version. It now handles Android
-  `versionNameSuffix` and asks you to pass the target explicitly when the
-  project is ambiguous.
-- **`cmpatch doctor`:** No longer fails the credential check for logins made
-  with `cmpatch login --token`. Added `--xcode-project-file`,
-  `--xcode-target-name`, and `--build-configuration-name`.
-- **CI logs:** Progress steps now appear in non-interactive output, including
+- Fixes `cmpatch release-react` on React Native 0.87, which removed
+  `react-native/cli.js` from its package exports. The command failed with
+  "Could not resolve react-native from project root", mostly in npm projects.
+- Improves iOS and Android binary version detection, so OTA releases target
+  the correct app version. It handles Android `versionNameSuffix` and asks you
+  to pass the target explicitly when the project is ambiguous.
+- `cmpatch doctor` no longer fails the credential check for logins made with
+  `cmpatch login --token`. Adds `--xcode-project-file`,
+  `--xcode-target-name`, and `--build-configuration-name` to it.
+- Prints progress steps in non-interactive output such as CI logs, including
   during long builds and bundle uploads.
-- **`cmpatch debug`:** Now shows only Patch SDK logs and filters out unrelated
-  system messages.
-- **`cmpatch release metrics`:** Columns are now labeled `ready` and `applied`.
+- `cmpatch debug` shows only Patch SDK logs and filters out unrelated system
+  messages.
+- `cmpatch release metrics` labels its columns `ready` and `applied`.
 
 See the [CLI reference](/docs/reference/cli-reference) and
 [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.5.0).
@@ -380,10 +445,10 @@ server configuration after a readiness check, if you approve it.
 
 ### External storage and DNS in the self-host wizard
 
-For operators: `cmpatch selfhost install` now offers Cloudflare R2, Amazon S3,
+For operators: `cmpatch selfhost install` offers Cloudflare R2, Amazon S3,
 and Google Cloud Storage alongside bundled MinIO. The wizard configures storage
-automatically or prints console instructions, then verifies public downloads
-and private-object protection. DNS setup supports Cloudflare and compatible
+or prints console instructions, then verifies public downloads and
+private-object protection. DNS setup supports Cloudflare and compatible
 Domain Connect providers, with manual instructions as a fallback.
 
 When a setup step fails, the wizard lets you correct it and retry. These
@@ -410,11 +475,11 @@ cmpatch selfhost install
 
 If you have no server URL yet, `cmpatch init` offers to run the install, then
 continues with sign-in and app creation. An interrupted backup restarts the
-server before it exits, so the server is not left stopped. Interrupted restore
-and upgrade runs print the rollback command instead. The wizard sets up the
-bundled Postgres and MinIO stack with GitHub sign-in. Bitbucket, external
-databases, and S3/GCS still require running `install.sh` directly. See
-[Install](/docs/install) and [Operations](/docs/reference/operations).
+server before it exits. Interrupted restore and upgrade runs print the
+rollback command instead. The wizard sets up the bundled Postgres and MinIO
+stack with GitHub sign-in. Bitbucket, external databases, and S3/GCS still
+require running `install.sh` directly. See [Install](/docs/install) and
+[Operations](/docs/reference/operations).
 
 ### `cmpatch selfhost local-eval`
 
@@ -435,7 +500,7 @@ See [Local quickstart](/docs/local-quickstart) and the
 
 ### Interactive prompts
 
-When a flag is missing, `cmpatch` now prompts for it instead of exiting with a
+When a flag is missing, `cmpatch` prompts for it instead of exiting with a
 usage line. It also shows progress and offers sign-in and retry options when
 browser login fails. In CI and scripts the CLI stays non-interactive: pass the
 flags you need, or use `--yes` where supported. See
@@ -443,10 +508,10 @@ flags you need, or use `--yes` where supported. See
 
 ### Fingerprint mismatch check
 
-The CLI now blocks a release aimed at the wrong native binary unless you
-confirm it. It compares the release fingerprint against the value already
-recorded for that deployment and binary version. When they differ, the CLI
-shows the details and lets you cancel or proceed.
+The CLI blocks a release aimed at the wrong native binary unless you confirm
+it. It compares the release fingerprint against the value already recorded
+for that deployment and binary version. When they differ, the CLI shows the
+details and lets you cancel or proceed.
 
 In CI, where there is no prompt, pass `--allow-fingerprint-mismatch` only after
 you have verified the release targets the intended native binary:
@@ -462,9 +527,8 @@ The CLI sends `block_on_fingerprint_mismatch: true` by default, so on server
 0.2.0 or newer a mismatch returns `409` and no release is created. See
 [Fingerprinting](/docs/using-patch/fingerprinting).
 
-- **Failure reasons:** `cmpatch release metrics` now breaks failures down by
-  category (integrity, signature, rollout, or another category) instead of
-  showing a single `failed` count. See
-  [Analytics and metrics](/docs/using-patch/analytics).
+- `cmpatch release metrics` breaks failures down by category (integrity,
+  signature, rollout, or another category) instead of showing a single
+  `failed` count. See [Analytics and metrics](/docs/using-patch/analytics).
 
 See the [CLI release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/patch-cli%400.2.0).

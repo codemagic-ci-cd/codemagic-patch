@@ -25,8 +25,13 @@ const pkg = JSON.parse(await readFile(resolve(cliRoot, "package.json"), "utf8"))
 await rm(resolve(cliRoot, "dist"), { recursive: true, force: true });
 
 await build({
-  entryPoints: [resolve(cliRoot, "src/bin/cmpatch.ts")],
-  outfile: resolve(cliRoot, "dist/cmpatch.js"),
+  // update-check.js is the detached process behind the "newer version" notice
+  // (src/updateNotice.ts), which finds it next to cmpatch.js.
+  entryPoints: [
+    resolve(cliRoot, "src/bin/cmpatch.ts"),
+    resolve(cliRoot, "src/bin/update-check.ts"),
+  ],
+  outdir: resolve(cliRoot, "dist"),
   bundle: true,
   platform: "node",
   format: "cjs",
@@ -37,6 +42,7 @@ await build({
   external: Object.keys(pkg.dependencies ?? {}),
   alias: {
     "@codemagic/patch-shared": resolve(cliRoot, "../shared/src/index.ts"),
+    "@codemagic/patch-shared/store-artifact": resolve(cliRoot, "../shared/src/storeArtifact/index.ts"),
   },
   logLevel: "info",
 });

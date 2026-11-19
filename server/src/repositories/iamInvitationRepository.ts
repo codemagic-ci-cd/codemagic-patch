@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 import { canonicalizeEmail } from "../app/email";
 import type { DatabasePool } from "../db";
@@ -297,152 +297,9 @@ export function createPostgresIamInvitationRepository(
     },
 
     async createTeamInvitation(input) {
-      return withTransaction(pool, async (client) => {
-        const target = normalizeTarget(input.target);
-        await markExpiredPendingByTeamTarget(client, {
-          now: input.createdAt,
-          target,
-          teamId: input.teamId,
-        });
-
-        const team = await getTeam(client, input.teamId);
-        if (!team) {
-          return {
-            outcome: "not_found",
-            reason: "team_not_found",
-          };
-        }
-
-        if (team.status === "disabled") {
-          return {
-            outcome: "account_disabled",
-            reason: "team_disabled",
-          };
-        }
-
-        const role = await getRoleDefinition(client, input.roleId);
-        if (!role) {
-          return {
-            outcome: "not_found",
-            reason: "role_not_found",
-          };
-        }
-
-        if (!isSupportedSystemRole(role)) {
-          return {
-            outcome: "role_not_supported",
-          };
-        }
-
-        const pending = await getPendingInvitationForTeamTargetForUpdate(
-          client,
-          {
-            target,
-            teamId: input.teamId,
-          },
-        );
-        if (pending) {
-          if (pending.invitation.roleDefinitionId === input.roleId) {
-            return {
-              invitation: pending,
-              outcome: "already_exists",
-            };
-          }
-
-          return {
-            invitation: pending,
-            outcome: "conflict",
-            reason: "pending_invitation_role_mismatch",
-          };
-        }
-
-        const user = await getUserForTarget(client, target);
-        if (user?.status === "disabled") {
-          return {
-            outcome: "account_disabled",
-            reason: "user_disabled",
-          };
-        }
-
-        // Refused for the admin's sake: the binding would grant nothing.
-        if (user && !isHonoredInTeam(user, input.teamId)) {
-          return {
-            outcome: "service_account_other_team",
-          };
-        }
-
-        if (user) {
-          const existingRoleBinding = await getTeamRoleBindingByUnique(client, {
-            roleId: input.roleId,
-            teamId: input.teamId,
-            userId: user.id,
-          });
-          if (existingRoleBinding) {
-            return {
-              invitation: null,
-              outcome: "already_granted",
-              roleBinding: toIamRoleBinding(existingRoleBinding),
-            };
-          }
-
-          const membershipCreated = await insertMembershipIfMissing(client, {
-            createdAt: input.createdAt,
-            id: input.membershipId,
-            teamId: input.teamId,
-            userId: user.id,
-          });
-          const roleBindingCreated = await insertRoleBindingIfMissing(client, {
-            bindingId: input.roleBindingId,
-            createdAt: input.createdAt,
-            createdBy: input.createdBy,
-            roleId: input.roleId,
-            teamId: input.teamId,
-            userId: user.id,
-          });
-          const roleBinding = requireValue(
-            await getTeamRoleBindingByUnique(client, {
-              roleId: input.roleId,
-              teamId: input.teamId,
-              userId: user.id,
-            }),
-            "role_binding",
-          );
-          const iamRoleBinding = toIamRoleBinding(roleBinding);
-          const invitation = await insertAcceptedInvitation(client, {
-            acceptedAt: input.createdAt,
-            acceptedBy: user.id,
-            createdAt: input.createdAt,
-            createdBy: input.createdBy,
-            expiresAt: input.expiresAt,
-            id: input.id,
-            roleBindingId: iamRoleBinding.id,
-            roleId: input.roleId,
-            target,
-            teamId: input.teamId,
-          });
-
-          return {
-            invitation,
-            membershipCreated,
-            outcome: "accepted_existing_user",
-            roleBinding: iamRoleBinding,
-            roleBindingCreated,
-          };
-        }
-
-        return {
-          invitation: await insertPendingInvitation(client, {
-            createdAt: input.createdAt,
-            createdBy: input.createdBy,
-            expiresAt: input.expiresAt,
-            id: input.id,
-            roleId: input.roleId,
-            target,
-            teamId: input.teamId,
-          }),
-          outcome: "created",
-        };
-      });
+      return withTransaction(pool, (client) =>
+        createTeamInvitationInTransaction(client, input),
+      );
     },
 
     async listTeamInvitations(input) {
@@ -543,6 +400,156 @@ export function createPostgresIamInvitationRepository(
         };
       });
     },
+  };
+}
+
+export async function createTeamInvitationInTransaction(
+  client: PoolClient,
+  input: CreateTeamInvitationInput,
+): Promise<CreateTeamInvitationResult> {
+  const target = normalizeTarget(input.target);
+  await markExpiredPendingByTeamTarget(client, {
+    now: input.createdAt,
+    target,
+    teamId: input.teamId,
+  });
+
+  const team = await getTeam(client, input.teamId);
+  if (!team) {
+    return {
+      outcome: "not_found",
+      reason: "team_not_found",
+    };
+  }
+
+  if (team.status === "disabled") {
+    return {
+      outcome: "account_disabled",
+      reason: "team_disabled",
+    };
+  }
+
+  const role = await getRoleDefinition(client, input.roleId);
+  if (!role) {
+    return {
+      outcome: "not_found",
+      reason: "role_not_found",
+    };
+  }
+
+  if (!isSupportedSystemRole(role)) {
+    return {
+      outcome: "role_not_supported",
+    };
+  }
+
+  const pending = await getPendingInvitationForTeamTargetForUpdate(
+    client,
+    {
+      target,
+      teamId: input.teamId,
+    },
+  );
+  if (pending) {
+    if (pending.invitation.roleDefinitionId === input.roleId) {
+      return {
+        invitation: pending,
+        outcome: "already_exists",
+      };
+    }
+
+    return {
+      invitation: pending,
+      outcome: "conflict",
+      reason: "pending_invitation_role_mismatch",
+    };
+  }
+
+  const user = await getUserForTarget(client, target);
+  if (user?.status === "disabled") {
+    return {
+      outcome: "account_disabled",
+      reason: "user_disabled",
+    };
+  }
+
+  // Refused for the admin's sake: the binding would grant nothing.
+  if (user && !isHonoredInTeam(user, input.teamId)) {
+    return {
+      outcome: "service_account_other_team",
+    };
+  }
+
+  if (user) {
+    const existingRoleBinding = await getTeamRoleBindingByUnique(client, {
+      roleId: input.roleId,
+      teamId: input.teamId,
+      userId: user.id,
+    });
+    if (existingRoleBinding) {
+      return {
+        invitation: null,
+        outcome: "already_granted",
+        roleBinding: toIamRoleBinding(existingRoleBinding),
+      };
+    }
+
+    const membershipCreated = await insertMembershipIfMissing(client, {
+      createdAt: input.createdAt,
+      id: input.membershipId,
+      teamId: input.teamId,
+      userId: user.id,
+    });
+    const roleBindingCreated = await insertRoleBindingIfMissing(client, {
+      bindingId: input.roleBindingId,
+      createdAt: input.createdAt,
+      createdBy: input.createdBy,
+      roleId: input.roleId,
+      teamId: input.teamId,
+      userId: user.id,
+    });
+    const roleBinding = requireValue(
+      await getTeamRoleBindingByUnique(client, {
+        roleId: input.roleId,
+        teamId: input.teamId,
+        userId: user.id,
+      }),
+      "role_binding",
+    );
+    const iamRoleBinding = toIamRoleBinding(roleBinding);
+    const invitation = await insertAcceptedInvitation(client, {
+      acceptedAt: input.createdAt,
+      acceptedBy: user.id,
+      createdAt: input.createdAt,
+      createdBy: input.createdBy,
+      expiresAt: input.expiresAt,
+      id: input.id,
+      roleBindingId: iamRoleBinding.id,
+      roleId: input.roleId,
+      target,
+      teamId: input.teamId,
+    });
+
+    return {
+      invitation,
+      membershipCreated,
+      outcome: "accepted_existing_user",
+      roleBinding: iamRoleBinding,
+      roleBindingCreated,
+    };
+  }
+
+  return {
+    invitation: await insertPendingInvitation(client, {
+      createdAt: input.createdAt,
+      createdBy: input.createdBy,
+      expiresAt: input.expiresAt,
+      id: input.id,
+      roleId: input.roleId,
+      target,
+      teamId: input.teamId,
+    }),
+    outcome: "created",
   };
 }
 

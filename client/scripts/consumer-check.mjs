@@ -18,9 +18,10 @@
  * This checks JS packaging and loading of the test fake (`./jest`,
  * `./jest-setup`, `./vitest`, `./vitest-setup`, `./vitest-plugin`), not native
  * behavior. Before any target runs, it also checks that the tarball carries
- * the Swift Package Manager manifest and every path it references (the
- * `swiftpm-manifest` row; it runs with `--only` too). That check reads the
- * manifest as text, so it needs no Swift toolchain.
+ * the build metadata step's files (the `build-step-files` row) and the Swift
+ * Package Manager manifest with every path it references (the
+ * `swiftpm-manifest` row); both run with `--only` too. The manifest check
+ * reads the manifest as text, so it needs no Swift toolchain.
  *
  *   yarn consumer-check                    all targets
  *   yarn consumer-check --only rn-0.73     one target (comma-separated ids)
@@ -190,6 +191,35 @@ function pack(workDir) {
   return join(packDir, tarball);
 }
 
+// --- What the tarball must carry -------------------------------------------------
+
+/** The tarball's contents, as a consumer's node_modules gets them. */
+function extract(tarball, workDir) {
+  const extracted = join(workDir, "extracted");
+  rmSync(extracted, { recursive: true, force: true });
+  mkdirSync(extracted, { recursive: true });
+  if (!run("tar", ["-xzf", tarball, "-C", extracted], workDir)) throw new Error("could not extract the tarball");
+  return join(extracted, "package");
+}
+
+/**
+ * The files of the build metadata step: the text `cmpatch wire` and the Expo
+ * plugin insert, the two scripts that text runs from the installed package,
+ * and the writer those scripts run. No target builds a native app, so a file
+ * dropped from package.json `files` would first show up in a customer's build.
+ */
+const BUILD_STEP_FILES = [
+  "build-tools/native/build-integration.json",
+  "build-tools/native/build-metadata-phase.sh",
+  "build-tools/native/build-metadata.gradle",
+  "dist/build-tools/fingerprint.js",
+];
+
+function checkBuildStepFiles(packageRoot) {
+  const missing = BUILD_STEP_FILES.filter((file) => !existsSync(join(packageRoot, file)));
+  return missing.length === 0 ? null : `missing from the tarball (package.json files): ${missing.join(", ")}`;
+}
+
 // --- Swift Package Manager manifest in the tarball ------------------------------
 
 /** Strips `//` and `/* *\/` comments, leaving string literals intact. */
@@ -280,12 +310,7 @@ function podspecLibsCSources(packageRoot) {
  * the same C files as the podspec. `.package(path:)` entries point into the
  * app's autolinking tree by design and are not checked.
  */
-function checkSwiftPackageManifest(tarball, workDir) {
-  const extracted = join(workDir, "extracted");
-  rmSync(extracted, { recursive: true, force: true });
-  mkdirSync(extracted, { recursive: true });
-  if (!run("tar", ["-xzf", tarball, "-C", extracted], workDir)) return "could not extract the tarball";
-  const packageRoot = join(extracted, "package");
+function checkSwiftPackageManifest(packageRoot) {
   const manifestPath = join(packageRoot, "Package.swift");
   if (!existsSync(manifestPath)) return "Package.swift is missing from the tarball (package.json files)";
 
@@ -389,7 +414,9 @@ console.log(`consumer check work directory: ${workDir}`);
 const results = [];
 try {
   const tarball = pack(workDir);
-  results.push({ id: "swiftpm-manifest", failure: checkSwiftPackageManifest(tarball, workDir) });
+  const packageRoot = extract(tarball, workDir);
+  results.push({ id: "build-step-files", failure: checkBuildStepFiles(packageRoot) });
+  results.push({ id: "swiftpm-manifest", failure: checkSwiftPackageManifest(packageRoot) });
   for (const target of targets) {
     results.push({ id: target.id, failure: checkTarget(target, tarball, workDir) });
   }

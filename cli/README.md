@@ -12,6 +12,8 @@ Command-line interface for releasing and managing over-the-air (OTA) React Nativ
 npm install -g @codemagic/patch-cli
 ```
 
+On a terminal, `cmpatch` tells you after a command when a newer version is on npm. Set `CMPATCH_NO_UPDATE_CHECK=1` to turn that check off.
+
 ## Quick start
 
 From your React Native project root, let the CLI connect the project to a Patch
@@ -73,6 +75,7 @@ reset during recovery; other Docker projects are left alone.
 | `management` | List teams; manage apps and deployments. |
 | `metrics` | Counters, daily time series, and failure drill-down for deployments and releases. |
 | `auth` | Authenticate, manage tokens, and manage team members. |
+| `webhook` | Send a signed POST to your own systems when a release goes live, changes, or fails. |
 | `diagnostics` | Diagnose local setup and OTA readiness (`cmpatch doctor`). |
 | `config` | Store defaults, wire the SDK, and inspect the effective local context. |
 | `fingerprint` | Compute fingerprints and inspect device update logs. |

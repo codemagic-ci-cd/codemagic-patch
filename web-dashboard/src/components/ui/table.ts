@@ -7,10 +7,17 @@ export const TBL_WRAP = "overflow-auto";
 
 export const TBL = "w-full border-collapse text-[14px]";
 
-export const TBL_TH =
-  "border-b border-border bg-surface-2 px-[18px] py-[13px] text-left text-[12px] font-bold uppercase tracking-[.06em] whitespace-nowrap text-fg-3";
+/**
+ * Drop a column below the shell breakpoint. Put it on the `<th>` and every
+ * matching `<td>` (including skeleton cells) so the column leaves the table.
+ */
+export const TBL_NARROW_HIDE = "max-shell:hidden";
 
-export const TBL_TD = "border-b border-border px-[18px] py-[15px] align-middle";
+export const TBL_TH =
+  "border-b border-border bg-surface-2 px-[18px] py-[13px] text-left text-[12px] font-bold uppercase tracking-[.06em] whitespace-nowrap text-fg-3 max-shell:px-2 max-shell:py-2.5 max-shell:text-[11px] max-shell:tracking-normal";
+
+export const TBL_TD =
+  "border-b border-border px-[18px] py-[15px] align-middle max-shell:px-2 max-shell:py-3";
 
 export const TBL_TR =
   "[transition:.12s] hover:bg-surface-2 [&:last-child>td]:border-b-0";

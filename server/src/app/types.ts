@@ -20,6 +20,7 @@ import type {
   UserAccount,
 } from "../domain";
 import type { ControlPlaneAuthHandler } from "./controlPlaneAuth";
+import type { WebhookRouteHandlers } from "../webhooks/handlers";
 
 export type ServerMode = "all" | "api" | "worker";
 
@@ -48,13 +49,29 @@ export interface WorkerReconcileRouteHandler {
 
 export interface TeamCreateHandlerInput {
   name: string;
+  /**
+   * Invite an owner into the new team in the same transaction. `createdBy` is
+   * the invitation's creator, kept apart from `userId` so a wrapper can drop
+   * the caller's own membership and still record who invited.
+   */
+  owner?: {
+    createdBy: string;
+    target: IamInvitationCreateHandlerInput["target"];
+  };
   userId?: string;
 }
 
 export type TeamCreateHandlerResult =
   | {
       outcome: "created";
+      /** Present when `owner` was given: pending, accepted_existing_user or already_granted. */
+      ownerInvitation?: IamInvitationCreateHandlerResult;
       team: Team;
+    }
+  | {
+      // The owner invitation was refused; no team was created.
+      outcome: "owner_invitation_refused";
+      ownerInvitation: IamInvitationCreateHandlerResult;
     }
   | {
       outcome: "conflict";
@@ -1844,6 +1861,8 @@ export interface BuildAppOptions {
   teamListHandler?: TeamListRouteHandler;
   teamReadHandler?: TeamReadRouteHandler;
   userProfileHandler?: UserProfileRouteHandler;
+  /** The webhook management routes answer 501 without it. */
+  webhookHandlers?: WebhookRouteHandlers;
   workerReconcileHandler?: WorkerReconcileRouteHandler;
   workerSharedSecret?: string;
 }

@@ -125,8 +125,23 @@ function flattenRecord(
   });
 }
 
-function renderTable(headers: string[], rows: string[][]): string {
-  const normalizedRows = rows.length === 0 ? [headers.map(() => "-")] : rows;
+/**
+ * Control characters as visible escapes. Table cells carry text that devices
+ * and people wrote (a failure reason, a message, a release note), and a raw
+ * newline there would add a row while an escape sequence would drive the
+ * terminal. `--format json` is untouched: JSON escapes them itself.
+ */
+export function escapeControlCharacters(text: string): string {
+  return text.replace(
+    /\p{Cc}/gu,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
+export function renderTable(headers: string[], rows: string[][]): string {
+  const normalizedRows = (rows.length === 0 ? [headers.map(() => "-")] : rows).map(
+    (row) => row.map(escapeControlCharacters),
+  );
   const widths = headers.map((header, index) =>
     Math.max(
       header.length,
@@ -160,6 +175,36 @@ function formatTableValue(value: unknown): string {
   }
 
   return JSON.stringify(value);
+}
+
+/** Binary units, labelled as the dashboard labels them. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "-";
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 || value % 1 === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+/**
+ * A server `success_rate` as a percentage. The server sends a 0–1 fraction, or
+ * null when nothing was applied or failed; the CLI never computes one.
+ */
+export function formatSuccessRate(rate: unknown, absent = "-"): string {
+  return typeof rate === "number" ? `${(rate * 100).toFixed(1)}%` : absent;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

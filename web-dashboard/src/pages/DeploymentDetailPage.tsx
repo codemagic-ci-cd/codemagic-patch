@@ -78,16 +78,17 @@ import type { ReleaseListItem } from "../api/types";
 import type { Deployment } from "../model/deployment";
 import type { Release } from "../model/release";
 import {
-  formatCount,
   formatDate,
   formatRelativeTime,
 } from "../model/format";
 import { buttonVariants } from "../components/ui/Button";
 import { CELL_MAIN, CELL_SUB } from "../components/ui/cell";
 import { CHIP, CHIP_TONE } from "../components/ui/chip";
+import { GroupedCount } from "../components/ui/GroupedCount";
 import { PIN, PIN_TONE } from "../components/ui/pin";
 import {
   TBL,
+  TBL_NARROW_HIDE,
   TBL_TR,
   TBL_WRAP,
 } from "../components/ui/table";
@@ -265,7 +266,7 @@ function DeploymentDetail({
   const suggestedTargetBinaryVersion =
     allRows[0]?.release.targetBinaryVersion ?? "";
   const newReleaseButton = (
-    <span className="tip" data-tip={deployTip}>
+    <span className="tip max-shell:hidden" data-tip={deployTip}>
       <button
         type="button"
         className={buttonVariants({ intent: "primary" })}
@@ -298,7 +299,6 @@ function DeploymentDetail({
       <EmptyState
         icon={<ActivityIcon />}
         title={`No releases for ${binaryVersionFilterLabel(filter)}`}
-        description="No release in this deployment targets that binary version."
         action={
           <button
             type="button"
@@ -391,13 +391,15 @@ function DeploymentDetail({
           <h1 className={`${PAGE_TITLE} m-0`}>
             {deployment.name}
           </h1>
-          <DeploymentSdkDetails
-            deploymentKey={deployment.deploymentKey}
-            deploymentName={deployment.name}
-            framework={framework}
-          />
+          <div className="max-shell:hidden">
+            <DeploymentSdkDetails
+              deploymentKey={deployment.deploymentKey}
+              deploymentName={deployment.name}
+              framework={framework}
+            />
+          </div>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2.5">
+        <div className="ml-auto flex flex-wrap items-center gap-2.5 max-shell:hidden">
           {newReleaseButton}
           <span className="tip" data-tip={deployTip}>
             <button
@@ -745,12 +747,15 @@ function ReleaseRow({
       })}
     >
       <td className={releaseHistoryCol.td.release}>
-        <div className={CELL_MAIN}>
-          <Link className="font-semibold" to={releasePath}>
+        <div className={`${CELL_MAIN} max-shell:min-w-0 max-shell:flex-wrap`}>
+          <Link
+            className="font-semibold max-shell:min-w-0 max-shell:truncate"
+            to={releasePath}
+          >
             {release.releaseLabel}
           </Link>{" "}
           {release.isMandatory ? (
-            <span className={`${PIN} ${PIN_TONE.mandatory}`}>
+            <span className={`${PIN} ${PIN_TONE.mandatory} max-shell:whitespace-nowrap max-shell:px-1 max-shell:[&_svg]:hidden`}>
               <AlertIcon />
               Mandatory
             </span>
@@ -787,38 +792,38 @@ function ReleaseRow({
           <ReleaseNoteText text={release.releaseNotes} />
         )}
       </td>
-      <td className={releaseHistoryCol.td.data}>
+      <td className={`${releaseHistoryCol.td.data} max-shell:font-sans`}>
         <StatusChip status={release.status} />
       </td>
-      <td className={releaseHistoryCol.td.data}>
+      <td className={`${releaseHistoryCol.td.data} ${TBL_NARROW_HIDE}`}>
         <RolloutBar
           percentage={release.rolloutPercentage}
           ariaLabel={`Rollout for ${release.releaseLabel}`}
           compact
         />
       </td>
-      <td className={releaseHistoryCol.td.data}>
+      <td className={`${releaseHistoryCol.td.data} ${TBL_NARROW_HIDE}`}>
         {release.targetBinaryVersion}
       </td>
-      <td className={releaseHistoryCol.td.data}>
+      <td className={`${releaseHistoryCol.td.data} ${TBL_NARROW_HIDE}`}>
         {metrics === undefined ? (
           <span className="text-fg-3">—</span>
         ) : (
-          formatCount(metrics.downloaded)
+          <GroupedCount value={metrics.downloaded} />
         )}
       </td>
       <td className={releaseHistoryCol.td.data}>
         {metrics === undefined ? (
           <span className="text-fg-3">—</span>
         ) : (
-          formatCount(metrics.success)
+          <GroupedCount value={metrics.success} />
         )}
       </td>
       <td className={releaseHistoryCol.td.data}>
         {metrics === undefined ? (
           <span className="text-fg-3">—</span>
         ) : (
-          formatCount(metrics.failed)
+          <GroupedCount value={metrics.failed} />
         )}
       </td>
       <td className={releaseHistoryCol.td.actions}>
@@ -1018,7 +1023,7 @@ function DeploymentDetailSkeleton() {
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Skeleton width={120} height={18} />
-          <Skeleton width={72} height={28} />
+          <Skeleton className="max-shell:hidden" width={72} height={28} />
         </div>
       </div>
       <div className="mb-[18px] rounded-lg border border-border bg-surface p-[22px] shadow-sm">
@@ -1044,7 +1049,7 @@ function ReleaseTableSkeleton() {
           {[0, 1, 2].map((row) => (
             <tr key={row} className={TBL_TR}>
               <td className={releaseHistoryCol.td.release}>
-                <Skeleton width={90} variant="text" />
+                <Skeleton width={90} className="max-shell:max-w-16" variant="text" />
               </td>
               <td className={releaseHistoryCol.td.note}>
                 <Skeleton width="38ch" variant="text" />
@@ -1052,13 +1057,13 @@ function ReleaseTableSkeleton() {
               <td className={releaseHistoryCol.td.data}>
                 <Skeleton width={84} variant="text" />
               </td>
-              <td className={releaseHistoryCol.td.data}>
+              <td className={`${releaseHistoryCol.td.data} ${TBL_NARROW_HIDE}`}>
                 <Skeleton width={65} variant="text" />
               </td>
-              <td className={releaseHistoryCol.td.data}>
+              <td className={`${releaseHistoryCol.td.data} ${TBL_NARROW_HIDE}`}>
                 <Skeleton width={36} variant="text" />
               </td>
-              <td className={releaseHistoryCol.td.data}>
+              <td className={`${releaseHistoryCol.td.data} ${TBL_NARROW_HIDE}`}>
                 <Skeleton width={28} variant="text" />
               </td>
               <td className={releaseHistoryCol.td.data}>

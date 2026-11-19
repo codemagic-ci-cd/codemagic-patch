@@ -17,7 +17,8 @@
     "vitest-setup.ts",
     "test/**/*.ts",
     "e2e/**/*.ts",
-    "plugin/**/*.ts"
+    "plugin/**/*.ts",
+    "build-tools/**/*.ts"
   ],
   "exclude": [
     "e2e/fixture-app/apps/*/ios/build"

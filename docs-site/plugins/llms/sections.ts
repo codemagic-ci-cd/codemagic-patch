@@ -49,6 +49,7 @@ export const LLMS_SECTIONS: LlmsSection[] = [
       'using-patch/preparing-for-production',
       'using-patch/production-control',
       'using-patch/ci-integration',
+      'using-patch/webhooks',
       'using-patch/analytics',
       'using-patch/security',
       'using-patch/delivery',

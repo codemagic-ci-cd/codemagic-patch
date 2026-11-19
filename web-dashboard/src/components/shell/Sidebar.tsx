@@ -173,6 +173,19 @@ interface TeamNavItem {
   icon: ReactElement;
 }
 
+const WEBHOOKS_NAV_ITEM: TeamNavItem = {
+  key: "webhooks",
+  label: "Webhooks",
+  segment: "webhooks",
+  icon: (
+    <NavIcon>
+      <path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2" />
+      <path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06" />
+      <path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8" />
+    </NavIcon>
+  ),
+};
+
 const MEMBERS_NAV_ITEM: TeamNavItem = {
   key: "members",
   label: "Members",
@@ -371,6 +384,9 @@ function SidebarFoot({
         {teamId !== null ? (
           <MembersNavLink teamId={teamId} onNavigate={onNavigate} />
         ) : null}
+        {teamId !== null ? (
+          <WebhooksNavLink teamId={teamId} onNavigate={onNavigate} />
+        ) : null}
         <a
           href={SOURCE_REPO_URL}
           target="_blank"
@@ -449,6 +465,28 @@ function MembersNavLink({
     <SidebarNavLink
       teamId={teamId}
       item={MEMBERS_NAV_ITEM}
+      onNavigate={onNavigate}
+    />
+  );
+}
+
+/** Hidden from members without `webhook.manage`, like Members without `iam.manage`. */
+function WebhooksNavLink({
+  teamId,
+  onNavigate,
+}: {
+  teamId: string;
+  onNavigate?: () => void;
+}) {
+  const { can } = useTeamRole(teamId);
+  if (!can("webhook.manage")) {
+    return null;
+  }
+
+  return (
+    <SidebarNavLink
+      teamId={teamId}
+      item={WEBHOOKS_NAV_ITEM}
       onNavigate={onNavigate}
     />
   );

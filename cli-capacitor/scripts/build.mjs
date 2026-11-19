@@ -25,8 +25,13 @@ const pkg = JSON.parse(await readFile(resolve(cliRoot, "package.json"), "utf8"))
 await rm(resolve(cliRoot, "dist"), { recursive: true, force: true });
 
 await build({
-  entryPoints: [resolve(cliRoot, "src/bin/cmpatch-capacitor.ts")],
-  outfile: resolve(cliRoot, "dist/cmpatch-capacitor.js"),
+  // update-check.js is the detached process behind the "newer version" notice
+  // (src/updateNotice.ts), which finds it next to cmpatch-capacitor.js.
+  entryPoints: [
+    resolve(cliRoot, "src/bin/cmpatch-capacitor.ts"),
+    resolve(cliRoot, "src/bin/update-check.ts"),
+  ],
+  outdir: resolve(cliRoot, "dist"),
   bundle: true,
   platform: "node",
   format: "cjs",

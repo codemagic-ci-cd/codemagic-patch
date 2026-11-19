@@ -16,7 +16,6 @@ import { useState } from "react";
 
 import { useWebConfig } from "../api/hooks/webConfig";
 import { callbackRedirectUri, isLocalDevMode } from "../auth/webConfig";
-import { PRODUCT_NAME } from "../branding";
 import { AUTH_CARD, AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { buttonVariants } from "../components/ui/Button";
 import { CALLOUT, CALLOUT_TONE } from "../components/ui/callout";
@@ -109,8 +108,7 @@ export function LocalConsentPage() {
           Local evaluation sign-in
         </h1>
         <p className="mt-2 text-[14px] text-fg-2">
-          This stack runs {PRODUCT_NAME} in local evaluation mode, so this page
-          replaces GitHub sign-in. Enter any email to sign in as that user.
+          Enter any email to sign in as that user.
         </p>
 
         <div

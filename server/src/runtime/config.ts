@@ -145,6 +145,12 @@ export interface RuntimeConfig {
    * none is configured.
    */
   webOAuthProviders: WebOAuthProviderConfig[];
+  /**
+   * `WEBHOOK_ALLOW_PRIVATE_TARGETS`: lets webhook endpoints target private,
+   * loopback and link-local addresses and use http. For a self-host operator
+   * whose receivers sit on a private network.
+   */
+  webhookAllowPrivateTargets: boolean;
   workerSharedSecret?: string;
 }
 
@@ -243,6 +249,7 @@ export function resolveRuntimeConfig(
     storageAdapter,
     updateCheck: resolveUpdateCheckConfig(env),
     webOAuthProviders,
+    webhookAllowPrivateTargets: resolveBoolean(env.WEBHOOK_ALLOW_PRIVATE_TARGETS, false),
     workerSharedSecret: resolveWorkerSharedSecret(env.WORKER_SHARED_SECRET, mode),
   };
 }

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createTerminalConfirm, type ConfirmFn } from "./confirm";
 import type { StartLoopbackLoginServer } from "./loopbackLoginServer";
 import type { WritableStream } from "./output";
+import type { StartUpdateCheck } from "./updateNotice";
 
 /**
  * Everything the CLI takes from the process, in one injectable value, so a test
@@ -26,6 +27,12 @@ export interface CliDeps {
   sleep: (milliseconds: number) => Promise<void>;
   /** Loopback redirect listener for the browser login; injected for tests. */
   startLoopbackLoginServer?: StartLoopbackLoginServer;
+  /**
+   * Starts the detached npm check behind the "newer version" notice. Only the bin
+   * supplies it, and only from a build: without it the notice is off, so a `runCli`
+   * test never reads or writes the update state of the machine it runs on.
+   */
+  startUpdateCheck?: StartUpdateCheck;
   stderr: WritableStream;
   stdin: { isTTY?: boolean };
   stdout: WritableStream;

@@ -1,3 +1,4 @@
+import { WEBHOOK_EVENT_TYPES } from "./commandTypes";
 import type {
   AppTransferCommand,
   CliCommand,
@@ -10,7 +11,7 @@ import type {
 import type { ActionSummary, ObjectField } from "./resultView";
 import { summarizeInit } from "./initSummary";
 import { renderCommand } from "./argv";
-import { PRODUCT_NAME } from "./branding";
+import { PRODUCT_NAME, WEBHOOKS_DOCS_URL } from "./branding";
 import {
   parseAppCreate,
   parseAppList,
@@ -64,6 +65,16 @@ import {
   parseTokenCreate,
   parseTokenList,
   parseTokenRevoke,
+  parseWebhookCreate,
+  parseWebhookDeliveries,
+  parseWebhookDelivery,
+  parseWebhookList,
+  parseWebhookRedeliver,
+  parseWebhookRemove,
+  parseWebhookRotateSecret,
+  parseWebhookShow,
+  parseWebhookTest,
+  parseWebhookUpdate,
   parseWhoami,
 } from "./commandParsers";
 import { executeAppCreate } from "./commands/appCreate";
@@ -77,7 +88,10 @@ import { executeLogin, executeLogout } from "./commands/auth";
 import { executeDeploymentClear } from "./commands/deploymentClear";
 import { executeDeploymentCreate } from "./commands/deploymentCreate";
 import { executeDeploymentList } from "./commands/deploymentList";
-import { executeDeploymentMetrics } from "./commands/deploymentMetrics";
+import {
+  executeDeploymentMetrics,
+  renderDeploymentMetricsTable,
+} from "./commands/deploymentMetrics";
 import { executeDeploymentRename } from "./commands/deploymentRename";
 import { executeDeploymentRemove } from "./commands/deploymentRemove";
 import {
@@ -97,7 +111,10 @@ import { executeDoctor, renderDoctorTable } from "./commands/doctor";
 import { executeWireCommand } from "./commands/wire";
 import { renderWireResult } from "./wire/render";
 import type { WireResult } from "./wire/types";
-import { executeFingerprint } from "./commands/fingerprint";
+import {
+  executeFingerprint,
+  FINGERPRINT_ARTIFACT_FIELDS,
+} from "./commands/fingerprint";
 import {
   executeConfigCommand,
   executeContextCommand,
@@ -124,7 +141,11 @@ import { executeReleasePatch } from "./commands/releasePatch";
 import { executeReleasePromote } from "./commands/releasePromote";
 import { executeBundle, executeReleaseReact } from "./commands/releaseReact";
 import { executeReleaseRollback } from "./commands/releaseRollback";
-import { executeReleaseShow } from "./commands/releaseShow";
+import {
+  executeReleaseShow,
+  RELEASE_SHOW_FIELDS,
+  RELEASE_SHOW_OMIT_NULL_PATHS,
+} from "./commands/releaseShow";
 import {
   executeServerStatus,
   SERVER_STATUS_FIELDS,
@@ -137,8 +158,21 @@ import { executeTeamList, executeTeamShow } from "./commands/team";
 import { executeTokenCreate } from "./commands/tokenCreate";
 import { executeTokenList } from "./commands/tokenList";
 import { executeTokenRevoke } from "./commands/tokenRevoke";
+import {
+  executeWebhookCreate,
+  executeWebhookDeliveries,
+  executeWebhookDelivery,
+  executeWebhookList,
+  executeWebhookRedeliver,
+  executeWebhookRemove,
+  executeWebhookRotateSecret,
+  executeWebhookShow,
+  executeWebhookTest,
+  executeWebhookUpdate,
+} from "./commands/webhook";
 import { executeWhoami } from "./commands/whoami";
 import {
+  escapeControlCharacters,
   isRecord,
   PLAIN_PALETTE,
   readCell,
@@ -172,7 +206,8 @@ type CommandHelpGroupName =
   | "management"
   | "metrics"
   | "release"
-  | "selfhost";
+  | "selfhost"
+  | "webhook";
 
 export type CommandFlagHelp = {
   /** The flag with its value placeholder, e.g. "--app <name>". */
@@ -242,6 +277,12 @@ export type CommandDefaultPolicy = {
 };
 
 export type CommandHelpGroup = {
+  /**
+   * One line naming the docs page for what these commands cannot show (a
+   * webhook's payload and signature check live on the receiver). Printed on
+   * the group page and on each of its commands' pages.
+   */
+  docs?: string;
   examples: readonly string[];
   name: CommandHelpGroupName;
   /**
@@ -277,6 +318,8 @@ export type CommandView<C = never> =
       /** Label and source path per field, in the order they should be read. */
       fields: readonly ObjectField[];
       kind: "object";
+      /** Paths left out when null; see `ObjectViewOptions`. */
+      omitNullPaths?: readonly string[];
     };
 
 type CommandRouteInput = {
@@ -469,6 +512,35 @@ const serverFlagHelp: readonly CommandFlagHelp[] = [
   flagHelp.token,
 ];
 
+const webhookIdFlagHelp: CommandFlagHelp = {
+  flag: "--webhook-id <id>",
+  summary: "Webhook id (see webhook list)",
+};
+
+const deliveryIdFlagHelp: CommandFlagHelp = {
+  flag: "--delivery-id <id>",
+  summary: "Delivery id (see webhook deliveries)",
+};
+
+const webhookEventFlagHelp: CommandFlagHelp = {
+  flag: "--event <type>",
+  summary: `Event type to receive; repeat for several (default: all). Types: ${WEBHOOK_EVENT_TYPES.join(", ")}`,
+};
+
+const WEBHOOK_FIELDS: ReadonlyArray<[label: string, path: string]> = [
+  ["ID", "id"],
+  ["URL", "url"],
+  ["Status", "status"],
+  ["Description", "description"],
+  ["Events", "event_types"],
+  ["Created", "created_at"],
+  ["Last delivery", "last_delivery.status"],
+  ["Last event", "last_delivery.event_type"],
+  ["Last attempt", "last_delivery.last_attempt_at"],
+  ["Last response", "last_delivery.last_response_status"],
+  ["Last error", "last_delivery.last_error"],
+];
+
 // The binary_version / binary_version_prefix query pair, shared by every
 // command that narrows its result to the app versions devices run.
 const binaryVersionFilterFlagHelp: readonly CommandFlagHelp[] = [
@@ -563,6 +635,18 @@ const helpGroups: readonly CommandHelpGroup[] = [
     topics: ["metrics"],
   },
   {
+    docs: `Payload and signature: ${WEBHOOKS_DOCS_URL}`,
+    examples: [
+      "cmpatch webhook create --url https://example.com/hooks/patch",
+      "cmpatch webhook test --webhook-id <id>",
+      "cmpatch webhook deliveries --webhook-id <id> --status failed",
+    ],
+    name: "webhook",
+    summary:
+      "Send a signed POST to your own systems when a release goes live, changes or fails.",
+    topics: ["webhook"],
+  },
+  {
     examples: [
       "cmpatch doctor",
       "cmpatch doctor --deployment Staging --verbose",
@@ -602,6 +686,7 @@ const helpGroups: readonly CommandHelpGroup[] = [
   {
     examples: [
       "cmpatch fingerprint --platform ios --format json",
+      "cmpatch fingerprint --artifact app-release.aab --format json",
       "cmpatch debug ios",
     ],
     name: "fingerprint",
@@ -1540,26 +1625,8 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseDeploymentMetrics,
-    renderTable: (result) =>
-      renderTableOrEmpty(
-        result,
-        "releases",
-        "No release metrics found. Publish a release with `cmpatch release-react --deployment <name>`.",
-        ["ID", "LABEL", "TARGET", "ACTIVE", "DOWNLOADED", "READY", "FAILED", "APPLIED"],
-        (item) => {
-          const metrics = readRecord(item, "metrics");
-          return [
-            readCell(item, "release_id", ""),
-            readCell(item, "release_label", ""),
-            readCell(item, "target_binary_version", ""),
-            readCell(metrics, "active", ""),
-            readCell(metrics, "downloaded", ""),
-            readCell(metrics, "installed", ""),
-            readCell(metrics, "failed", ""),
-            readCell(metrics, "success", ""),
-          ];
-        },
-      ),
+    renderTable: (result, _command, palette) =>
+      renderDeploymentMetricsTable(result, palette),
     routes: [{ path: ["deployment", "metrics"] }],
   }),
   commandSpec({
@@ -1835,12 +1902,19 @@ const commandSpecs: RunnableCommandSpec[] = [
   }),
   commandSpec({
     commandName: "fingerprint",
+    // Artifact mode (--artifact) takes no defaults: runCli skips them, so a
+    // stored platform or project root never selects project mode.
     defaults: { platform: true },
     execute: executeFingerprint,
     kind: "fingerprint",
     help: [
       {
-        description: "Compute a native fingerprint.",
+        description:
+          "Compute a native fingerprint from the project, or read the fingerprint, embedded bundle hash and binary version a store artifact recorded at build time. Artifact mode needs no checkout, SDK, login or server, and never computes a fallback.",
+        examples: [
+          "cmpatch fingerprint --platform ios",
+          "cmpatch fingerprint --artifact build/App.ipa --format json",
+        ],
         flags: [
           {
             flags: [
@@ -1856,13 +1930,23 @@ const commandSpecs: RunnableCommandSpec[] = [
               },
             ],
           },
+          {
+            flags: [
+              {
+                flag: "--artifact <path>",
+                summary: "Read an .xcarchive, .ipa, .apk or .aab instead of the project (not with --platform, --project-root or --verbose)",
+              },
+            ],
+            title: "Artifact flags",
+          },
         ],
         group: "fingerprint",
-        usage: "cmpatch fingerprint --platform <ios|android> [flags]",
+        usage: "cmpatch fingerprint (--platform <ios|android> | --artifact <path>) [flags]",
       }
     ],
     parse: parseFingerprint,
     routes: [{ path: ["fingerprint"] }],
+    view: { fields: FINGERPRINT_ARTIFACT_FIELDS, kind: "object" },
   }),
   commandSpec({
     commandName: "login",
@@ -2096,12 +2180,16 @@ const commandSpecs: RunnableCommandSpec[] = [
         result,
         "invitations",
         "No invitations found. Invite one with `cmpatch member invite --email <email>`.",
-        ["ID", "EMAIL", "ROLE", "STATUS", "EXPIRES"],
+        ["ID", "INVITEE", "ROLE", "STATUS", "EXPIRES"],
         (invitation) => {
           const role = readRecord(invitation, "role");
           return [
             readCell(invitation, "id", ""),
-            readCell(invitation, "email", ""),
+            // An invitation is addressed to an email or to a GitHub handle.
+            typeof invitation.github_handle === "string" &&
+            typeof invitation.email !== "string"
+              ? `@${invitation.github_handle}`
+              : readCell(invitation, "email"),
             readCell(role, "key", ""),
             readCell(invitation, "status", ""),
             readCell(invitation, "expires_at", ""),
@@ -2163,13 +2251,15 @@ const commandSpecs: RunnableCommandSpec[] = [
         result,
         "role_bindings",
         "No members found. Add one with `cmpatch member add --email <email>`.",
-        ["ID", "USER", "EMAIL", "ROLE", "SERVICE ACCOUNT"],
+        // The user id stays in JSON: `--email` and `--binding-id` (the ID
+        // column) select a member, so the column goes to the name people know.
+        ["ID", "NAME", "EMAIL", "ROLE", "SERVICE ACCOUNT"],
         (binding) => {
           const user = readRecord(binding, "user");
           const role = readRecord(binding, "role");
           return [
             readCell(binding, "id", ""),
-            readCell(user, "id", ""),
+            readCell(user, "display_name"),
             readCell(user, "email", ""),
             readCell(role, "key", ""),
             typeof user.owner_team_id === "string" ? "yes" : "",
@@ -2490,24 +2580,47 @@ const commandSpecs: RunnableCommandSpec[] = [
       }
     ],
     parse: parseReleaseList,
-    renderTable: (result) =>
-      renderTableOrEmpty(
+    renderTable: (result, command) => {
+      // The metrics columns follow the request, not the rows: without
+      // `--include metrics` the server sends none to read.
+      const withMetrics = command.includeMetrics === true;
+
+      return renderTableOrEmpty(
         result,
         "releases",
         "No releases found. Publish one with `cmpatch release-react --deployment <name>`.",
-        ["ID", "LABEL", "TARGET", "STATUS", "MANDATORY", "ROLLOUT"],
+        [
+          "ID",
+          "LABEL",
+          "NOTE",
+          "TARGET",
+          "STATUS",
+          "MANDATORY",
+          "ROLLOUT",
+          ...(withMetrics ? ["DOWNLOADED", "APPLIED", "FAILED"] : []),
+        ],
         (item) => {
           const release = readRecord(item, "release");
+          const metrics = readRecord(item, "metrics");
           return [
             readCell(release, "id", ""),
             readCell(release, "release_label", ""),
+            readNoteCell(release.release_notes),
             readCell(release, "target_binary_version", ""),
             readCell(release, "status", ""),
             readBooleanCell(release, "is_mandatory"),
             readCell(release, "rollout_percentage", ""),
+            ...(withMetrics
+              ? [
+                  readCell(metrics, "downloaded", ""),
+                  readCell(metrics, "success", ""),
+                  readCell(metrics, "failed", ""),
+                ]
+              : []),
           ];
         },
-      ),
+      );
+    },
     routes: [
       { path: ["release", "list"] },
       {
@@ -2731,17 +2844,9 @@ const commandSpecs: RunnableCommandSpec[] = [
   commandSpec({
     commandName: "release show",
     view: {
-      fields: [
-        // Field names are the server wire format (toReleaseWire), which is
-        // snake_case throughout.
-        ["Label", "release.release_label"],
-        ["Status", "release.status"],
-        ["Target version", "release.target_binary_version"],
-        ["Rollout", "release.rollout_percentage"],
-        ["Mandatory", "release.is_mandatory"],
-        ["Release ID", "release.id"],
-      ],
+      fields: RELEASE_SHOW_FIELDS,
       kind: "object",
+      omitNullPaths: RELEASE_SHOW_OMIT_NULL_PATHS,
     },
     defaults: { prompt: ["label"], deployment: "release", serverUrl: true, team: "app-selector", app: "release" },
     execute: executeReleaseShow,
@@ -3033,6 +3138,291 @@ const commandSpecs: RunnableCommandSpec[] = [
     routes: [{ path: ["token", "revoke"] }],
   }),
   commandSpec({
+    commandName: "webhook list",
+    defaults: { serverUrl: true, team: "always" },
+    execute: executeWebhookList,
+    kind: "webhook-list",
+    help: [
+      {
+        description:
+          "List the team's webhooks. A webhook is a URL that receives a signed POST when a release goes live, changes or fails.",
+        flags: [{ flags: [...teamSelectorFlagHelp, flagHelp.format, ...serverFlagHelp] }],
+        group: "webhook",
+        usage: "cmpatch webhook list [flags]",
+      },
+    ],
+    parse: parseWebhookList,
+    renderTable: (result) =>
+      renderTableOrEmpty(
+        result,
+        "webhooks",
+        "No webhooks found. Add one with `cmpatch webhook create --url <https-url>`.",
+        ["ID", "URL", "EVENTS", "STATUS", "LAST DELIVERY"],
+        (webhook) => [
+          readCell(webhook, "id", ""),
+          readCell(webhook, "url", ""),
+          describeWebhookEvents(webhook),
+          readCell(webhook, "status", ""),
+          describeLastDelivery(webhook),
+        ],
+      ),
+    routes: [{ path: ["webhook", "list"] }],
+  }),
+  commandSpec({
+    commandName: "webhook show",
+    view: { fields: WEBHOOK_FIELDS.map(([label, path]) => [label, `webhook.${path}`]), kind: "object" },
+    defaults: { serverUrl: true },
+    execute: executeWebhookShow,
+    kind: "webhook-show",
+    help: [
+      {
+        description: "Show a webhook and its latest delivery.",
+        flags: [{ flags: [webhookIdFlagHelp, flagHelp.format, ...serverFlagHelp] }],
+        group: "webhook",
+        usage: "cmpatch webhook show --webhook-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookShow,
+    routes: [{ path: ["webhook", "show"] }],
+  }),
+  commandSpec({
+    commandName: "webhook create",
+    view: { kind: "action", summarize: summarizeWebhookSecret("Created") },
+    defaults: { serverUrl: true, team: "always" },
+    execute: executeWebhookCreate,
+    kind: "webhook-create",
+    help: [
+      {
+        description:
+          "Register a URL for release events. Prints the signing secret once (`secret` in --format json). Needs a browser login (not --token).",
+        examples: [
+          "cmpatch webhook create --url https://example.com/hooks/patch",
+          "cmpatch webhook create --url https://example.com/hooks/patch --event release.published --event release.failed",
+        ],
+        flags: [
+          {
+            flags: [
+              { flag: "--url <https-url>", summary: "Where events are sent" },
+              webhookEventFlagHelp,
+              { flag: "--description <text>", summary: "A note for your team" },
+              ...teamSelectorFlagHelp,
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "webhook",
+        usage: "cmpatch webhook create --url <https-url> [flags]",
+      },
+    ],
+    parse: parseWebhookCreate,
+    routes: [{ path: ["webhook", "create"] }],
+  }),
+  commandSpec({
+    commandName: "webhook update",
+    view: {
+      kind: "action",
+      summarize: (result) => {
+        const webhook = isRecord(result) ? readRecord(result, "webhook") : {};
+        return typeof webhook.id === "string" ? `Updated webhook ${webhook.id}` : null;
+      },
+    },
+    defaults: { serverUrl: true },
+    execute: executeWebhookUpdate,
+    kind: "webhook-update",
+    help: [
+      {
+        description:
+          "Change a webhook's URL, events or status. Also takes --description. Needs a browser login (not --token).",
+        examples: [
+          "cmpatch webhook update --webhook-id <id> --status disabled",
+          "cmpatch webhook update --webhook-id <id> --all-events",
+        ],
+        flags: [
+          {
+            flags: [
+              webhookIdFlagHelp,
+              { flag: "--url <https-url>", summary: "New destination" },
+              webhookEventFlagHelp,
+              { flag: "--all-events", summary: "Send every event type again" },
+              {
+                flag: "--description <text>",
+                summary: "New note; an empty value clears it",
+              },
+              { flag: "--status <active|disabled>", summary: "Turn delivery on or off" },
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "webhook",
+        usage: "cmpatch webhook update --webhook-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookUpdate,
+    routes: [{ path: ["webhook", "update"] }],
+  }),
+  commandSpec({
+    commandName: "webhook remove",
+    view: { kind: "action", summarize: summarizeDeletion },
+    defaults: { serverUrl: true },
+    execute: executeWebhookRemove,
+    kind: "webhook-remove",
+    help: [
+      {
+        description:
+          "Delete a webhook (confirms unless --yes). Its delivery history goes with it.",
+        flags: [
+          {
+            flags: [
+              webhookIdFlagHelp,
+              flagHelp.yes,
+              flagHelp.nonInteractive,
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "webhook",
+        usage: "cmpatch webhook remove --webhook-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookRemove,
+    routes: [{ path: ["webhook", "remove"] }],
+  }),
+  commandSpec({
+    commandName: "webhook rotate-secret",
+    view: { kind: "action", summarize: summarizeWebhookSecret("Rotated the secret of") },
+    defaults: { serverUrl: true },
+    execute: executeWebhookRotateSecret,
+    kind: "webhook-rotate-secret",
+    help: [
+      {
+        description:
+          "Replace the signing secret (confirms unless --yes). The old secret stops verifying at once; prints the new one once (`secret` in --format json). Needs a browser login (not --token).",
+        flags: [
+          {
+            flags: [
+              webhookIdFlagHelp,
+              flagHelp.yes,
+              flagHelp.nonInteractive,
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "webhook",
+        usage: "cmpatch webhook rotate-secret --webhook-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookRotateSecret,
+    routes: [{ path: ["webhook", "rotate-secret"] }],
+  }),
+  commandSpec({
+    commandName: "webhook test",
+    view: { kind: "action", summarize: summarizeWebhookQueued("Queued a ping") },
+    defaults: { serverUrl: true },
+    execute: executeWebhookTest,
+    kind: "webhook-test",
+    help: [
+      {
+        description:
+          "Send a `ping` event to a webhook. It ignores the event filter, so it checks the receiver and its signature check.",
+        flags: [{ flags: [webhookIdFlagHelp, ...serverFlagHelp] }],
+        group: "webhook",
+        usage: "cmpatch webhook test --webhook-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookTest,
+    routes: [{ path: ["webhook", "test"] }],
+  }),
+  commandSpec({
+    commandName: "webhook deliveries",
+    defaults: { serverUrl: true },
+    execute: executeWebhookDeliveries,
+    kind: "webhook-deliveries",
+    help: [
+      {
+        description:
+          "List a webhook's deliveries, newest first. One row per event, with its attempts and latest result.",
+        flags: [
+          {
+            flags: [
+              webhookIdFlagHelp,
+              {
+                flag: "--status <status>",
+                summary: "Filter: pending, succeeded or failed",
+              },
+              flagHelp.limit,
+              flagHelp.offset,
+              flagHelp.format,
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "webhook",
+        usage: "cmpatch webhook deliveries --webhook-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookDeliveries,
+    renderTable: (result) =>
+      renderTableOrEmpty(
+        result,
+        "deliveries",
+        "No deliveries yet. Send one with `cmpatch webhook test --webhook-id <id>`.",
+        ["ID", "EVENT", "STATUS", "ATTEMPTS", "RESULT", "LAST ATTEMPT", "NEXT ATTEMPT"],
+        (delivery) => [
+          readCell(delivery, "id", ""),
+          readCell(delivery, "event_type", ""),
+          readCell(delivery, "status", ""),
+          readCell(delivery, "attempt_count", "0"),
+          describeDeliveryResult(delivery),
+          readCell(delivery, "last_attempt_at", ""),
+          readCell(delivery, "next_attempt_at", ""),
+        ],
+      ),
+    routes: [{ path: ["webhook", "deliveries"] }],
+  }),
+  commandSpec({
+    commandName: "webhook delivery",
+    defaults: { serverUrl: true },
+    execute: executeWebhookDelivery,
+    kind: "webhook-delivery",
+    help: [
+      {
+        description: "Show a delivery and the body that was sent.",
+        flags: [
+          {
+            flags: [
+              webhookIdFlagHelp,
+              deliveryIdFlagHelp,
+              flagHelp.format,
+              ...serverFlagHelp,
+            ],
+          },
+        ],
+        group: "webhook",
+        usage: "cmpatch webhook delivery --webhook-id <id> --delivery-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookDelivery,
+    routes: [{ path: ["webhook", "delivery"] }],
+  }),
+  commandSpec({
+    commandName: "webhook redeliver",
+    view: { kind: "action", summarize: summarizeWebhookQueued("Queued the delivery again") },
+    defaults: { serverUrl: true },
+    execute: executeWebhookRedeliver,
+    kind: "webhook-redeliver",
+    help: [
+      {
+        description:
+          "Send a finished delivery again. It keeps its event id; a delivery that is still pending is refused.",
+        flags: [{ flags: [webhookIdFlagHelp, deliveryIdFlagHelp, ...serverFlagHelp] }],
+        group: "webhook",
+        usage: "cmpatch webhook redeliver --webhook-id <id> --delivery-id <id> [flags]",
+      },
+    ],
+    parse: parseWebhookRedeliver,
+    routes: [{ path: ["webhook", "redeliver"] }],
+  }),
+  commandSpec({
     commandName: "whoami",
     view: {
       fields: [
@@ -3181,6 +3571,71 @@ export function renderCommandTable(
  * means the server changed its contract, and the labelled record is a safer
  * thing to show than a sentence asserting something that may not be true.
  */
+function describeWebhookEvents(webhook: Record<string, unknown>): string {
+  const events = Array.isArray(webhook.event_types) ? webhook.event_types : [];
+
+  return events.length === 0 ? "all" : events.join(", ");
+}
+
+/** A delivery's outcome in one cell: the HTTP status, the error, or both. */
+function describeDeliveryResult(delivery: Record<string, unknown>): string {
+  const status = readCell(delivery, "last_response_status", "");
+  const error = readCell(delivery, "last_error", "");
+
+  return [status, error].filter((part) => part.length > 0).join(" ");
+}
+
+function describeLastDelivery(webhook: Record<string, unknown>): string {
+  const last = readRecord(webhook, "last_delivery");
+  const status = readCell(last, "status", "");
+  if (status.length === 0) {
+    return "";
+  }
+
+  const result = describeDeliveryResult(last);
+  return result.length === 0 ? status : `${status} (${result})`;
+}
+
+/**
+ * Create and rotate-secret return the secret exactly once, so the summary
+ * prints it and says so; nothing else in the CLI can show it again.
+ */
+function summarizeWebhookSecret(verb: string) {
+  return (result: unknown): ActionSummary | null => {
+    if (!isRecord(result) || typeof result.secret !== "string") {
+      return null;
+    }
+    const webhook = readRecord(result, "webhook");
+    if (typeof webhook.id !== "string") {
+      return null;
+    }
+
+    return {
+      details: [
+        `Signing secret: ${result.secret}`,
+        "Store it now: it is not shown again. Receivers verify the webhook-signature header with it.",
+        `How to verify: ${WEBHOOKS_DOCS_URL}#verify-the-signature`,
+      ],
+      hint: `cmpatch webhook test --webhook-id ${webhook.id}`,
+      summary: `${verb} webhook ${webhook.id} for ${readCell(webhook, "url", "")}`,
+    };
+  };
+}
+
+function summarizeWebhookQueued(what: string) {
+  return (result: unknown, command: { webhookId: string }): ActionSummary | null => {
+    const delivery = isRecord(result) ? readRecord(result, "delivery") : {};
+    if (typeof delivery.id !== "string") {
+      return null;
+    }
+
+    return {
+      hint: `cmpatch webhook delivery --webhook-id ${command.webhookId} --delivery-id ${delivery.id}`,
+      summary: `${what} (${delivery.id})`,
+    };
+  };
+}
+
 function summarizeDeletion(result: unknown): string | null {
   if (!isRecord(result) || result.deleted !== true) {
     return null;
@@ -3418,7 +3873,8 @@ function matchesCommandPath(argv: string[], path: CommandPath): boolean {
   return path.every((part, index) => argv[index] === part);
 }
 
-function renderTable(headers: string[], rows: string[][]): string {
+function renderTable(headers: string[], cells: string[][]): string {
+  const rows = cells.map((row) => row.map(escapeControlCharacters));
   const widths = headers.map((header, index) =>
     Math.max(
       header.length,
@@ -3541,6 +3997,24 @@ function readRecord(
 ): Record<string, unknown> {
   const nested = value[key];
   return isRecord(nested) ? nested : {};
+}
+
+const NOTE_CELL_WIDTH = 40;
+
+/** A release note as one table cell: its first line, cut where it gets long. */
+function readNoteCell(notes: unknown): string {
+  const firstLine =
+    typeof notes === "string" ? (notes.trim().split("\n")[0] ?? "").trim() : "";
+  // By code point: a UTF-16 slice can cut an emoji in half.
+  const characters = [...firstLine];
+
+  if (characters.length === 0) {
+    return "-";
+  }
+
+  return characters.length > NOTE_CELL_WIDTH
+    ? `${characters.slice(0, NOTE_CELL_WIDTH).join("")}…`
+    : firstLine;
 }
 
 function readBooleanCell(value: Record<string, unknown>, key: string): string {

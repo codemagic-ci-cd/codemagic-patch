@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/patch-cli",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Codemagic Patch CLI for releasing and managing over-the-air React Native updates",
   "license": "Apache-2.0",
   "repository": {
@@ -36,17 +36,20 @@
     "@babel/traverse": "^7.29.7",
     "@clack/prompts": "^1.7.0",
     "@expo/fingerprint": "^0.16.7",
+    "bplist-parser": "0.5.0",
     "fast-xml-parser": "^5.0.0",
     "fflate": "^0.8.2",
     "fzstd": "^0.1.1",
     "picocolors": "^1.1.1",
     "plist": "^3.0.6",
-    "xcode": "^3.0.1"
+    "xcode": "^3.0.1",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "@codemagic/patch-server": "workspace:*",
     "@codemagic/patch-shared": "workspace:*",
     "@types/babel__traverse": "^7.28.0",
+    "@types/yauzl": "^3",
     "esbuild": "^0.25.0",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",

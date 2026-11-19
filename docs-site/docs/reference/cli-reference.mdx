@@ -24,6 +24,8 @@ Capacitor apps use a separate CLI, [`cmpatch-capacitor`](#cmpatch-capacitor). Us
   </TabItem>
 </SdkTabs>
 
+On a terminal, both CLIs print one line after a command when a newer version is on npm. The check runs in the background, once a day (hourly until one succeeds), and only asks `registry.npmjs.org` for the package's latest version; the request carries no account, project, or machine identifier. It never runs in CI, when output is piped, or with `--format json`. `CMPATCH_NO_UPDATE_CHECK=1` turns it off, as does `NO_UPDATE_NOTIFIER=1`.
+
 ## Auth and config
 
 | Command | Description |
@@ -33,7 +35,7 @@ Capacitor apps use a separate CLI, [`cmpatch-capacitor`](#cmpatch-capacitor). Us
 | `cmpatch config list \| get \| set \| unset` | Store defaults: `server-url`, `team`, `team-id` |
 | `cmpatch team list \| show` | List the teams you can see / show one (`--team`, `--team-id`, or the stored default) |
 | `cmpatch init` | Link a project to a server and write `codemagic-patch.config.json`; interactively install a server or enter an existing URL, sign in after a new install, create or select an app for each platform, then wire the SDK (`--skip-wire` for the link only) |
-| `cmpatch wire` | Wire the SDK into the linked app: install the package, write each platform's deployment key and URLs, hook native bundle selection, export the root through `Patch.wrap`; shows the plan first (`--dry-run --diff` to only look) and exits `2` when steps remain for you |
+| `cmpatch wire` | Wire the SDK into the linked app: install the package, write each platform's deployment key and URLs, hook native bundle selection, add the build metadata step, export the root through `Patch.wrap`; shows the plan first (`--dry-run --diff` to only look) and exits `2` when steps remain for you |
 | `cmpatch context` | Show the effective resolved context; add `--remote` to include server SDK configuration (`downloadBaseUrl`) |
 
 A `--token` login (or `CODEMAGIC_PATCH_TOKEN`) cannot run `token create`, `member add`, `member invite`, `member update`, `member provision`, `member rotate-token`, or `app transfer`; sign in with `cmpatch login` without `--token` for those.
@@ -48,6 +50,15 @@ changes, `--allow-dirty`. Request any needed CocoaPods installation with
 `--pod-install` on macOS; on Linux that step remains incomplete even with the flag.
 A project in React Native's SwiftPM mode has no CocoaPods step: wire never runs
 `pod install` there and ignores `--pod-install`.
+
+The build metadata step (`build-metadata` in `--format json`) needs SDK 0.8.0
+or later; see [Build metadata step](/docs/setup/native-setup#build-metadata-step).
+In a bare project wire inserts it in every app target that has the
+`Bundle React Native code and images` phase and in the app module's Gradle
+script, and reports it for you to finish when the bundle phase is missing or
+unrecognised, or User Script Sandboxing is on. In an Expo project that generates its native
+directories wire edits nothing for it: the SDK's config plugin adds it at the
+next `npx expo prebuild`.
 
 ## Local evaluation and self-hosting {#self-hosting}
 
@@ -224,16 +235,33 @@ Android auto-detection supports a static `defaultConfig.versionName` and a liter
 
 | Command | Description |
 | --- | --- |
-| `cmpatch deployment metrics` | Per-release counters for a deployment; `--format json` adds each release's `success_rate` and a `summary` of the returned page, whose `coverage` is `deployment` only when the page holds every release |
+| `cmpatch deployment metrics` | Per-release counters for a deployment, with a total row and success rate for the returned page, each package counted once; the total says whether it covers this page or all releases. `--format json` adds each release's `success_rate` and that `summary`, whose `coverage` is `deployment` only when the page holds every release |
 | `cmpatch deployment timeseries` | Daily counters for a deployment, one row per UTC day; `--range 7d\|30d\|90d\|1y` or `--from` / `--to`, `--binary-version` / `--binary-version-prefix`; under the table, the range totals with success rate and the last complete day's active devices; `--format json` adds the per-release series with cumulative Applied counts |
 | `cmpatch deployment failures` | The codes under one failure reason (`--reason`); add `--code <code>` for that code's top exit reasons and messages, or `--no-code` for the failures that reported no code |
 | `cmpatch deployment failure-events` | Single failure events for one reason and code (`--reason`, `--code` or `--no-code`); `--limit`, and `--cursor` for the next page |
 | `cmpatch deployment history` | Release history with per-release metrics, most recent 50 |
-| `cmpatch release metrics` | Metrics for one release; `--format json` includes `success_rate`, overall and per binary version |
+| `cmpatch release metrics` | Metrics for one release, with diff and full download counts and sizes, the split by binary version, and failure reasons; `--format json` includes `success_rate`, overall and per binary version |
 | `cmpatch release failures` | `deployment failures` for one release |
 | `cmpatch release failure-events` | `deployment failure-events` for one release |
 
-The failure drill-down starts from a reason in the `failure_reasons` of `cmpatch deployment metrics --format json` or `cmpatch release metrics --format json`. For a Capacitor app, pass the IDs from `cmpatch-capacitor deployment list` or `release list` as `--deployment-id` / `--release-id`.
+The failure drill-down starts from a failure reason: one listed by `cmpatch release metrics`, or a key of `failure_reasons` in `cmpatch deployment metrics --format json`. For a Capacitor app, pass the IDs from `cmpatch-capacitor deployment list` or `release list` as `--deployment-id` / `--release-id`.
+
+## Webhooks
+
+`cmpatch help webhook` lists these commands. What a webhook sends, and how to verify it, is in [Webhooks](/docs/using-patch/webhooks).
+
+| Command | Description |
+| --- | --- |
+| `cmpatch webhook create` | Register `--url` for the team and print its signing secret once; `--event <type>` repeats to limit the events, `--description` adds a note |
+| `cmpatch webhook list \| show` | List the team's webhooks with each one's latest delivery, or show one by `--webhook-id` |
+| `cmpatch webhook update` | Change `--url`, the events (`--event`, or `--all-events`), `--description`, or `--status active\|disabled` |
+| `cmpatch webhook remove` | Delete a webhook and its delivery history |
+| `cmpatch webhook rotate-secret` | Replace the signing secret and print the new one once; the old one stops verifying at once |
+| `cmpatch webhook test` | Send a `ping` event to check the receiver |
+| `cmpatch webhook deliveries \| delivery` | List deliveries (`--status pending\|succeeded\|failed`, `--limit`, `--offset`), or show one with the body that was sent |
+| `cmpatch webhook redeliver` | Send a finished delivery again |
+
+`webhook create`, `webhook update`, and `webhook rotate-secret` need a browser sign-in. `webhook remove` and `webhook rotate-secret` ask before they act; pass `--yes` in CI.
 
 ## Members and diagnostics
 
@@ -242,9 +270,48 @@ The failure drill-down starts from a reason in the `failure_reasons` of `cmpatch
 | `cmpatch member add \| invite \| provision \| rotate-token \| list \| remove …` | Team membership and invitations; `member rotate-token` replaces the token of a service account the team provisioned. `member remove`, `member update`, `member rotate-token`, and `member invite-revoke` confirm unless `--yes` |
 | `cmpatch doctor` | Diagnose React Native / Expo setup on configured platforms; optionally verify delivery with `--verify-delivery` |
 | `cmpatch server status` | Show the server's own health checks (database, storage, disk, download URL, version), as on the dashboard's Status page |
-| `cmpatch fingerprint --platform ios\|android` | Compute the native fingerprint |
+| `cmpatch fingerprint --platform ios\|android` | Compute the project's native fingerprint; `--format json` adds `fingerprintEngine`, what computed it; `--verbose` lists the files that fed it |
+| `cmpatch fingerprint --artifact <path>` | Read the fingerprint, embedded bundle hash and binary version a built `.xcarchive`, `.ipa`, `.apk` or `.aab` recorded |
 
 List/metrics commands accept `--format table|json`.
+
+### `cmpatch fingerprint --artifact` {#fingerprint}
+
+Reads `CodemagicPatchBuild.json` and the binary version from a built app, as
+described in [Fingerprinting](/docs/using-patch/fingerprinting#inspect-a-binary).
+It needs no project, sign-in or server, and never computes a fingerprint in
+place of a missing record. It cannot be combined with `--platform`,
+`--project-root` or `--verbose` (exit `2`).
+
+`--format text` and `table` print one labeled line per field. `--format json`,
+the default when output is piped, prints `platform`, `binaryVersion`,
+`metadataPresent`, `fingerprint`, `fingerprintEngine`, `embeddedPackageHash`,
+`embeddedFileCount`, `embeddedFiles` and `sha256` (of the file you passed;
+`null` for an `.xcarchive` directory):
+
+```json
+{
+  "platform": "android",
+  "binaryVersion": "1.0.0",
+  "metadataPresent": true,
+  "fingerprint": "f31360ba2b065d9b83b09e32075b7d783f330413",
+  "fingerprintEngine": "@expo/fingerprint@0.21.9 codemagic-patch-rules@1 version-normalization@1",
+  "embeddedPackageHash": "34f5d7cf3077…eeeae61b",
+  "embeddedFileCount": 1,
+  "embeddedFiles": ["index.android.bundle"],
+  "sha256": "781335faecfb…9500eb59f"
+}
+```
+
+A binary built without the step exits `0` with `metadataPresent: false` and
+`null` in the record fields. An artifact it cannot read exits `3` with one
+code and the path, for example
+`unreadable-artifact: /builds/app.ipa: no such file or directory`. The codes
+are `unsupported-artifact-type`, `unreadable-artifact`, `invalid-artifact`,
+`application-not-found`, `ambiguous-application`, `missing-binary-version`,
+`unsupported-binary-version` and `malformed-build-metadata`. The Android
+version must be a literal `versionName`; one that is a string resource
+reference is `unsupported-binary-version`.
 
 `member remove`, `member update`, `member rotate-token`, `member invite-revoke`,
 and `token revoke` show what they change and ask before changing access, as `app remove` does. In

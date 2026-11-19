@@ -1108,7 +1108,7 @@ async function createDatabase(
 ): Promise<string> {
   const names = flyNames(stem);
   const password = hexSecret(fly.deps);
-  fly.progress.write(`Creating ${names.databaseApp}. The first build takes several minutes.`);
+  fly.progress.write(`Creating ${names.databaseApp}`);
   const directory = await mkdtemp(join(tmpdir(), "cmpatch-fly-db-"));
   left.directories.push({ path: directory, text: `The database config is still at ${directory}.` });
   await writeFile(join(directory, "fly.toml"), databaseFlyToml(stem, region), { mode: 0o644 });

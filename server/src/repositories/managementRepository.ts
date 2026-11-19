@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 import type {
   App,
@@ -369,35 +369,46 @@ interface Queryable {
   query<T>(sql: string, values?: unknown[]): Promise<{ rows: T[] }>;
 }
 
+// A unique violation on the name aborts the surrounding transaction; the
+// caller must not issue further statements after a conflict.
+export async function createTeamInTransaction(
+  client: PoolClient,
+  input: CreateTeamInput,
+): Promise<CreateTeamResult> {
+  try {
+    const result = await client.query<TeamRow>(
+      `
+        INSERT INTO team (id, name, created_at, updated_at)
+        VALUES ($1, $2, $3, $3)
+        RETURNING *
+      `,
+      [input.id, input.name, input.createdAt],
+    );
+
+    return {
+      outcome: "created",
+      team: mapTeamRow(requireRow(result.rows[0], "team")),
+    };
+  } catch (error) {
+    if (uniqueConstraint(error) === "idx_team_name") {
+      return {
+        outcome: "conflict",
+        reason: "team_name_exists",
+      };
+    }
+
+    throw error;
+  }
+}
+
 export function createPostgresManagementRepository(
   pool: DatabasePool | Pool,
 ): ManagementRepository {
   return {
     async createTeam(input) {
-      try {
-        const result = await pool.query<TeamRow>(
-          `
-            INSERT INTO team (id, name, created_at, updated_at)
-            VALUES ($1, $2, $3, $3)
-            RETURNING *
-          `,
-          [input.id, input.name, input.createdAt],
-        );
-
-        return {
-          outcome: "created",
-          team: mapTeamRow(requireRow(result.rows[0], "team")),
-        };
-      } catch (error) {
-        if (uniqueConstraint(error) === "idx_team_name") {
-          return {
-            outcome: "conflict",
-            reason: "team_name_exists",
-          };
-        }
-
-        throw error;
-      }
+      return withTransaction(pool, (client) =>
+        createTeamInTransaction(client, input),
+      );
     },
 
     async listTeams() {

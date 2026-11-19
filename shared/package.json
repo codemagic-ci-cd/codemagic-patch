@@ -8,15 +8,32 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./store-artifact": {
+      "types": "./dist/storeArtifact/index.d.ts",
+      "default": "./dist/storeArtifact/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "store-artifact": [
+        "./dist/storeArtifact/index.d.ts"
+      ]
     }
   },
   "files": [
     "dist"
   ],
   "dependencies": {
-    "fflate": "^0.8.2"
+    "bplist-parser": "0.5.0",
+    "fflate": "^0.8.2",
+    "plist": "^3.0.6",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
+    "@types/plist": "^3.0.5",
+    "@types/yauzl": "^3",
+    "bplist-creator": "0.3.0",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",

@@ -3,3 +3,4 @@ export * from "./artifact";
 export * from "./failurePayload";
 export * from "./releaseForm";
 export * from "./tarPath";
+export * from "./updateCheck";

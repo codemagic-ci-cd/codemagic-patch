@@ -84,6 +84,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     teamListHandler,
     teamReadHandler,
     userProfileHandler,
+    webhookHandlers,
     workerReconcileHandler,
     workerSharedSecret,
   } = options;
@@ -216,6 +217,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       teamListHandler,
       teamReadHandler,
       userProfileHandler,
+      webhookHandlers,
     });
   }
 

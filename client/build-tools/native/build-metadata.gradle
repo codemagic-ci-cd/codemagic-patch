@@ -1,0 +1,89 @@
+// "Codemagic Patch build metadata" for Android (client/specs/build-integration/Spec.md).
+// The app module applies this file with the one line in build-integration.json,
+// which finds it in the installed SDK and, with the opt-out on, does not apply
+// it at all. One task per variant runs the SDK writer
+// next to it and attaches its output directory as a generated asset source, so
+// the file is packaged at assets/CodemagicPatchBuild.json.
+
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
+abstract class CodemagicPatchBuildMetadataTask extends DefaultTask {
+    @Input abstract ListProperty<String> getNodeExecutableAndArgs()
+    @Input abstract Property<String> getWriter()
+    @Input abstract Property<String> getAppRoot()
+    @Input abstract Property<String> getBundleMode()
+    @Input abstract Property<String> getBundleName()
+    @InputDirectory @Optional abstract DirectoryProperty getBundleInputDir()
+    @OutputDirectory abstract DirectoryProperty getOutputDirectory()
+    @Inject abstract ExecOperations getExecOperations()
+
+    CodemagicPatchBuildMetadataTask() {
+        // The fingerprint inputs (config, dependencies, native sources) cannot all
+        // be declared, so the record is recomputed on every build.
+        doNotTrackState("Codemagic Patch build metadata is recomputed on every build")
+    }
+
+    @TaskAction
+    void run() {
+        if (!new File(writer.get()).isFile()) {
+            throw new GradleException("${writer.get()} is missing. Reinstall @codemagic/react-native-patch (a source checkout of the SDK needs 'yarn build').")
+        }
+        def command = []
+        command.addAll(nodeExecutableAndArgs.get())
+        command.addAll([
+            writer.get(), "write",
+            "--platform", "android",
+            "--app-root", appRoot.get(),
+            "--bundle-mode", bundleMode.get(),
+            "--bundle-name", bundleName.get(),
+            "--output", new File(outputDirectory.get().asFile, "CodemagicPatchBuild.json").absolutePath,
+        ])
+        if (bundleInputDir.isPresent()) {
+            command.addAll(["--bundle-input-dir", bundleInputDir.get().asFile.absolutePath])
+        }
+        execOperations.exec { spec ->
+            spec.workingDir(appRoot.get())
+            spec.commandLine(command)
+        }
+    }
+}
+
+def codemagicPatchWriter = new File(buildscript.sourceFile.parentFile.parentFile.parentFile, "dist/build-tools/fingerprint.js").absolutePath
+
+// withPlugin runs after the React Native plugin's apply() has returned, so its
+// onVariants callback (which registers createBundle<Variant>JsAndAssets) is
+// registered before this one. AGP runs onVariants callbacks in registration
+// order, so the bundle task exists when this callback runs for a variant.
+pluginManager.withPlugin("com.android.application") {
+    pluginManager.withPlugin("com.facebook.react") {
+        def react = extensions.getByName("react")
+        def androidComponents = extensions.getByName("androidComponents")
+
+        androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+            def variantName = variant.name
+            def capitalized = variantName.substring(0, 1).toUpperCase() + variantName.substring(1)
+            // The React Native plugin's own rule for not registering a bundle task.
+            // AGP's `debuggable` flag is not it: a debuggable release build type still bundles.
+            def metroServed = react.debuggableVariants.get().any { it.equalsIgnoreCase(variantName) }
+
+            def metadataTask = tasks.register("codemagicPatchBuildMetadata${capitalized}", CodemagicPatchBuildMetadataTask) { task ->
+                task.group = "codemagic patch"
+                task.description = "Codemagic Patch build metadata"
+                task.nodeExecutableAndArgs.set(react.nodeExecutableAndArgs)
+                task.writer.set(codemagicPatchWriter)
+                task.appRoot.set(react.root.map { it.asFile.absolutePath })
+                task.bundleName.set(react.bundleAssetName)
+                task.bundleMode.set(metroServed ? "metro" : "embedded")
+                if (!metroServed) {
+                    // Fails configuration if the React Native plugin registered no bundle
+                    // task for a variant it should bundle; never a silent Metro fallback.
+                    def bundleTask = tasks.named("createBundle${capitalized}JsAndAssets")
+                    task.dependsOn(bundleTask)
+                    task.bundleInputDir.set(bundleTask.flatMap { it.jsBundleDir })
+                }
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(metadataTask, { it.outputDirectory })
+        }
+    }
+}

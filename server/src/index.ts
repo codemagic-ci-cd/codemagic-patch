@@ -190,6 +190,7 @@ export {
   createPostgresReconcileContextRepository,
   createPostgresReleaseJobRepository,
   createPostgresReleaseTargetRepository,
+  createPostgresWebhookRepository,
 } from "./repositories";
 export type {
   ClaimReleaseJobOptions,
@@ -287,6 +288,7 @@ export type {
   TelemetryReportSnapshot,
   TransitionReleaseJobOptions,
   TransitionReleaseJobResult,
+  WebhookRepository,
 } from "./repositories";
 export {
   computePackageHashFromZipBuffer,

@@ -145,7 +145,7 @@ export function TokensPage() {
     <>
       <PageHeader
         title="API tokens"
-        description="Personal access tokens for the CLI and CI. These are per-user, not per-team."
+        description="Per user, not per team."
         actions={
           <button
             type="button"
@@ -189,7 +189,6 @@ export function TokensPage() {
           <EmptyState
             icon={<KeyIcon />}
             title="No API tokens yet"
-            description="Create a token to authenticate the CLI or CI against this server."
             action={
               <button
                 type="button"
@@ -448,7 +447,6 @@ function CreateTokenModal({ onClose, onCreated }: CreateTokenModalProps) {
       open
       onClose={requestClose}
       title="Create API token"
-      description="The full token is shown only once after creation."
       footer={
         <>
           <button

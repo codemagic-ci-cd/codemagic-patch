@@ -60,7 +60,7 @@ export function MonthlyActiveDevicesCard({
           }}
         />
       ) : query.data.months.length === 0 ? (
-        <EmptyState title="No monthly figures yet" description={CAPTION} />
+        <EmptyState title="No monthly figures yet" description="Updated daily." />
       ) : (
         <>
           <MonthlyFigures data={query.data} />

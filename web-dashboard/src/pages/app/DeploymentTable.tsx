@@ -58,6 +58,7 @@ import {
 } from "../../components/ui/form";
 import {
   TBL,
+  TBL_NARROW_HIDE,
   TBL_NUM,
   TBL_RIGHT,
   TBL_TD,
@@ -227,7 +228,7 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
       <EmptyState
         icon={<LayersIcon />}
         title="No deployments yet"
-        description={`Create a deployment to get a key for your app's ${SDK_DISPLAY_NAME} configuration.`}
+        description="Create a deployment for an SDK key."
         action={createButton(buttonVariants({ intent: "primary" }))}
       />
     );
@@ -238,10 +239,14 @@ export function DeploymentTable({ teamId, appId }: DeploymentTableProps) {
           <thead>
             <tr>
               <th className={TBL_TH}>Deployment</th>
-              <th className={TBL_TH}>Deployment key</th>
-              <th className={TBL_TH}>Latest release</th>
+              <th className={`${TBL_TH} ${TBL_NARROW_HIDE}`}>Deployment key</th>
+              <th className={`${TBL_TH} max-shell:whitespace-normal`}>
+                Latest release
+              </th>
               <th className={`${TBL_TH} ${TBL_RIGHT}`}>Applied</th>
-              <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloads</th>
+              <th className={`${TBL_TH} ${TBL_RIGHT} ${TBL_NARROW_HIDE}`}>
+                Downloads
+              </th>
               <th className={TBL_TH}>
                 <span className="sr-only">Actions</span>
               </th>
@@ -402,7 +407,7 @@ function DeploymentRow({
           <Link to={detailPath}>{deployment.name}</Link>
         </div>
       </td>
-      <td className={TBL_TD}>
+      <td className={`${TBL_TD} ${TBL_NARROW_HIDE}`}>
         <Copyable
           value={deployment.deploymentKey}
           display="masked"
@@ -465,7 +470,7 @@ function MetricCells({ deployment }: { deployment: Deployment }) {
             <Skeleton width={48} variant="text" />
           </span>
         </td>
-        <td className={`${TBL_TD} ${TBL_NUM}`}>
+        <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
           <span className="flex justify-end">
             <Skeleton width={48} variant="text" />
           </span>
@@ -492,7 +497,7 @@ function MetricCells({ deployment }: { deployment: Deployment }) {
             ariaLabel={`Retry loading successes for ${deployment.name}`}
           />
         </td>
-        <td className={`${TBL_TD} ${TBL_NUM}`}>
+        <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
           <MetricCellRetry
             onRetry={retry}
             ariaLabel={`Retry loading downloads for ${deployment.name}`}
@@ -512,7 +517,7 @@ function MetricCells({ deployment }: { deployment: Deployment }) {
         <td className={`${TBL_TD} ${TBL_NUM}`}>
           <span className="text-fg-3">—</span>
         </td>
-        <td className={`${TBL_TD} ${TBL_NUM}`}>
+        <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
           <span className="text-fg-3">—</span>
         </td>
       </>
@@ -527,7 +532,7 @@ function MetricCells({ deployment }: { deployment: Deployment }) {
       <td className={`${TBL_TD} ${TBL_NUM}`}>
         {formatCount(latest.metrics.success)}
       </td>
-      <td className={`${TBL_TD} ${TBL_NUM}`}>
+      <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
         {formatCount(latest.metrics.downloaded)}
       </td>
     </>
@@ -845,7 +850,6 @@ function CreateDeploymentModalContent({
       open={open}
       onClose={requestClose}
       title="New deployment"
-      description="A fresh deployment key is generated and revealed after creation."
       initialFocusRef={nameInputRef}
       footer={
         <>
@@ -1117,10 +1121,14 @@ function DeploymentTableSkeleton() {
         <thead>
           <tr>
             <th className={TBL_TH}>Deployment</th>
-            <th className={TBL_TH}>Deployment key</th>
-            <th className={TBL_TH}>Latest release</th>
+            <th className={`${TBL_TH} ${TBL_NARROW_HIDE}`}>Deployment key</th>
+            <th className={`${TBL_TH} max-shell:whitespace-normal`}>
+              Latest release
+            </th>
             <th className={`${TBL_TH} ${TBL_RIGHT}`}>Applied</th>
-            <th className={`${TBL_TH} ${TBL_RIGHT}`}>Downloads</th>
+            <th className={`${TBL_TH} ${TBL_RIGHT} ${TBL_NARROW_HIDE}`}>
+              Downloads
+            </th>
             <th className={TBL_TH} aria-hidden="true" />
           </tr>
         </thead>
@@ -1130,7 +1138,7 @@ function DeploymentTableSkeleton() {
               <td className={TBL_TD}>
                 <Skeleton width={110} variant="text" />
               </td>
-              <td className={TBL_TD}>
+              <td className={`${TBL_TD} ${TBL_NARROW_HIDE}`}>
                 <Skeleton width={96} variant="text" />
               </td>
               <td className={TBL_TD}>
@@ -1141,7 +1149,7 @@ function DeploymentTableSkeleton() {
                   <Skeleton width={48} variant="text" />
                 </span>
               </td>
-              <td className={`${TBL_TD} ${TBL_NUM}`}>
+              <td className={`${TBL_TD} ${TBL_NUM} ${TBL_NARROW_HIDE}`}>
                 <span className="flex justify-end">
                   <Skeleton width={48} variant="text" />
                 </span>

@@ -5,6 +5,7 @@ import {
 } from "../../app/problemDetails";
 
 export type ValidationErrorReason =
+  | "blocked_address"
   | "duplicate_part"
   | "invalid_archive"
   | "invalid_combination"
@@ -14,7 +15,8 @@ export type ValidationErrorReason =
   | "invalid_type"
   | "invalid_value"
   | "out_of_range"
-  | "required";
+  | "required"
+  | "unsupported_scheme";
 
 export function headerToSingleValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {

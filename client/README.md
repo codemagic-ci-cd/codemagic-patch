@@ -20,7 +20,7 @@ From this SDK:
 - Expo config plugin for prebuild projects, plus bare React Native wiring
 - One-line `Patch.wrap(App)` root wrapper, CodePush-style `sync()`, or step-by-step APIs when you need control
 
-  <img width="700" alt="the self-hosted Patch dashboard" src="https://github.com/user-attachments/assets/e48f2c99-78e9-48c0-ae75-5a5278581e7d" />
+  <img width="700" alt="the self-hosted Patch dashboard" src="https://patch.codemagic.io/docs/img/patch-dashboard.png" />
 
 ## Requirements
 
@@ -189,7 +189,7 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
    }
    ```
 
-   iOS — import `CodemagicPatchClient` and override `bundleURL()` / `sourceURL(for:)` in `AppDelegate` with the same selection order. Keep the `DEBUG` branch pointing at Metro so local development keeps working:
+   iOS — import `CodemagicPatchClient` and override `bundleURL()` / `sourceURL(for:)` in `AppDelegate` (`SceneDelegate` on the React Native 0.88 template) with the same selection order. Keep the `DEBUG` branch pointing at Metro so local development keeps working:
 
    ```swift
    import CodemagicPatchClient
@@ -234,6 +234,8 @@ The two URLs point at different systems (API server vs. object storage / CDN), w
 
 3. **Register the native module** for your architecture — the TurboModule (New Architecture) or the bridge module/package (Old Architecture). Autolinking handles this in most apps.
 
+4. **Add the build metadata step.** Every native build can record the project's native fingerprint and the embedded bundle's hash in `CodemagicPatchBuild.json` inside the app. Run `cmpatch wire` to add it: an Xcode run-script phase named `Codemagic Patch build metadata` after `Bundle React Native code and images`, and one line in the app module's Gradle script. See [Build metadata step](https://patch.codemagic.io/docs/setup/native-setup#build-metadata-step).
+
 ### Expo apps
 
 For projects using Prebuild, use the bundled config plugin (`app.plugin.js`) as shown in [Quick start](#expo-config-plugin). Native projects maintained manually use the native configuration and bundle-selection steps instead. The plugin configuration is:
@@ -249,7 +251,7 @@ For projects using Prebuild, use the bundled config plugin (`app.plugin.js`) as 
 }
 ```
 
-The plugin writes the native resources and wires bundle selection automatically (Configuration steps 1–3). Configure **at least one platform**, and complete every block you provide — `deploymentKey`, `downloadBaseUrl`, and `apiUrl` are all required per block (`publicKey` and `maxLaunchAttempts` are optional). The plugin resolves `expo/config-plugins` from your app's own Expo SDK, so there is nothing extra to install; `expo` is not a runtime or peer dependency of this package.
+The plugin writes the native resources, wires bundle selection and adds the build metadata step automatically (Configuration steps 1–4). Configure **at least one platform**, and complete every block you provide — `deploymentKey`, `downloadBaseUrl`, and `apiUrl` are all required per block (`publicKey` and `maxLaunchAttempts` are optional). The plugin resolves `expo/config-plugins` from your app's own Expo SDK, so there is nothing extra to install; `expo` is not a runtime or peer dependency of this package.
 
 ## Usage
 

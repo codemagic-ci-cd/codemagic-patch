@@ -1,6 +1,6 @@
 {
   "name": "@codemagic/react-native-patch",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "React Native client SDK for Codemagic Patch — over-the-air JavaScript & asset updates for React Native and Expo apps.",
   "keywords": [
     "react-native",
@@ -72,6 +72,10 @@
       "types": "./vitest-plugin.d.ts",
       "default": "./vitest-plugin.js"
     },
+    "./build-tools/fingerprint": {
+      "types": "./dist/build-tools/fingerprint.d.ts",
+      "default": "./dist/build-tools/fingerprint.js"
+    },
     "./app.plugin.js": "./app.plugin.js",
     "./package.json": "./package.json"
   },
@@ -88,12 +92,16 @@
       ],
       "vitest-plugin": [
         "./vitest-plugin.d.ts"
+      ],
+      "build-tools/fingerprint": [
+        "./dist/build-tools/fingerprint.d.ts"
       ]
     }
   },
   "files": [
     "android",
     "app.plugin.js",
+    "build-tools/native",
     "CodemagicPatchClient.podspec",
     "Package.swift",
     "dist",
@@ -130,6 +138,9 @@
     "!**/*.tsbuildinfo",
     "!**/*.md"
   ],
+  "dependencies": {
+    "@expo/fingerprint": "0.21.9"
+  },
   "peerDependencies": {
     "react": ">=18",
     "react-native": ">=0.73"
@@ -151,10 +162,10 @@
     "vitest": "^3.2.4"
   },
   "scripts": {
-    "build": "yarn exec rimraf dist plugin/build node_modules/.cache && yarn exec tsc -p tsconfig.build.json && yarn exec tsc -p tsconfig.plugin.json",
-    "prepare": "rimraf dist plugin/build node_modules/.cache && tsc -p tsconfig.build.json && tsc -p tsconfig.plugin.json",
+    "build": "yarn exec rimraf dist plugin/build node_modules/.cache && yarn exec tsc -p tsconfig.build.json && yarn exec tsc -p tsconfig.plugin.json && yarn exec tsc -p tsconfig.build-tools.json",
+    "prepare": "rimraf dist plugin/build node_modules/.cache && tsc -p tsconfig.build.json && tsc -p tsconfig.plugin.json && tsc -p tsconfig.build-tools.json",
     "clean": "yarn exec rimraf dist plugin/build node_modules/.cache",
-    "lint": "yarn exec eslint \"src/**/*.ts\" \"plugin/**/*.ts\"",
+    "lint": "yarn exec eslint \"src/**/*.ts\" \"plugin/**/*.ts\" \"build-tools/**/*.ts\"",
     "typecheck": "yarn exec tsc -p tsconfig.json"
   }
 }

@@ -56,6 +56,7 @@ export type CommandDeps = {
     projectRoot: string;
   }) => Promise<{
     fingerprint: string;
+    engine: string;
     sources: Array<{
       filePath?: string;
       type: string;

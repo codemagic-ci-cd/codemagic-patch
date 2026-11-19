@@ -12,6 +12,7 @@ import { registerReleaseRoutes } from "./releaseRoutes";
 import { createSessionRequiredProblem } from "./routeProblems";
 import type { ApiRoutesOptions } from "./routeTypes";
 import { registerServerRoutes } from "./serverRoutes";
+import { registerWebhookRoutes } from "./webhookRoutes";
 
 const WRITE_METHODS = new Set(["DELETE", "PATCH", "POST", "PUT"]);
 
@@ -119,6 +120,7 @@ export const apiRoutes: FastifyPluginAsync<ApiRoutesOptions> = async (
       registerMetricsQueryRoutes(controlPlane, options);
       registerReleaseRoutes(controlPlane, options);
       registerServerRoutes(controlPlane, options);
+      registerWebhookRoutes(controlPlane, options);
     },
     { prefix: "/v1" },
   );

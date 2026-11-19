@@ -1,8 +1,13 @@
+import type { FastifyRequest } from "fastify";
+
 import {
   createProblem,
   type ProblemDetails,
 } from "../../app/problemDetails";
 import type {
+  AuditEventWriteRouteHandler,
+  IamInvitationCreateHandlerInput,
+  IamInvitationCreateHandlerResult,
   IamInvitationCreateRouteHandler,
   IamInvitationRevokeRouteHandler,
   IamInvitationStatusFilter,
@@ -19,6 +24,7 @@ import {
   createTeamNotFoundProblem,
   MAX_IAM_INVITATION_EXPIRES_IN_DAYS,
   type PreparedJsonResponse,
+  writeAuditEventIfConfigured,
 } from "./routeSupport";
 import {
   isJsonObject,
@@ -321,42 +327,9 @@ export function parseIamInvitationCreateInput(
   }
 
   // Exactly one of email | github_handle, mirroring the role-binding selector.
-  const email = parseOptionalTrimmedString(body.email);
-  const githubHandle = parseOptionalTrimmedString(body.github_handle);
-  if (email.kind === "error") {
-    return {
-      kind: "error",
-      problem: singleFieldValidationProblem(
-        "email must be a non-empty string when provided",
-        "email",
-        typeof body.email === "string" ? "required" : "invalid_type",
-      ),
-    };
-  }
-
-  if (githubHandle.kind === "error") {
-    return {
-      kind: "error",
-      problem: singleFieldValidationProblem(
-        "github_handle must be a non-empty string when provided",
-        "github_handle",
-        typeof body.github_handle === "string" ? "required" : "invalid_type",
-      ),
-    };
-  }
-
-  if (
-    (email.value === null && githubHandle.value === null) ||
-    (email.value && githubHandle.value)
-  ) {
-    return {
-      kind: "error",
-      problem: singleFieldValidationProblem(
-        "exactly one of email or github_handle is required",
-        "invitation_target",
-        "invalid_combination",
-      ),
-    };
+  const target = parseIamInvitationTarget(body, "", "invitation_target");
+  if (target.kind === "error") {
+    return target;
   }
 
   const roleId = parseRequiredTrimmedString(body.role_id);
@@ -389,18 +362,77 @@ export function parseIamInvitationCreateInput(
       createdBy,
       expiresInDays: expiresInDays.value,
       roleId,
-      target:
-        email.value !== null
-          ? {
-              email: email.value,
-              type: "email",
-            }
-          : {
-              githubHandle: githubHandle.value!,
-              type: "github_handle",
-            },
+      target: target.value,
       teamId,
     },
+  };
+}
+
+/**
+ * Reads exactly one of `email` / `github_handle` from `body`. `fieldPrefix`
+ * names the fields in validation problems (for a nested object, e.g.
+ * "owner."); `combinationField` names the "exactly one" problem.
+ */
+export function parseIamInvitationTarget(
+  body: Record<string, unknown>,
+  fieldPrefix: string,
+  combinationField: string,
+):
+  | {
+      kind: "error";
+      problem: ProblemDetails;
+    }
+  | {
+      kind: "success";
+      value: IamInvitationCreateHandlerInput["target"];
+    } {
+  const emailField = `${fieldPrefix}email`;
+  const githubHandleField = `${fieldPrefix}github_handle`;
+  const email = parseOptionalTrimmedString(body.email);
+  const githubHandle = parseOptionalTrimmedString(body.github_handle);
+  if (email.kind === "error") {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        `${emailField} must be a non-empty string when provided`,
+        emailField,
+        typeof body.email === "string" ? "required" : "invalid_type",
+      ),
+    };
+  }
+
+  if (githubHandle.kind === "error") {
+    return {
+      kind: "error",
+      problem: singleFieldValidationProblem(
+        `${githubHandleField} must be a non-empty string when provided`,
+        githubHandleField,
+        typeof body.github_handle === "string" ? "required" : "invalid_type",
+      ),
+    };
+  }
+
+  if (email.value !== null && githubHandle.value === null) {
+    return {
+      kind: "success",
+      value: { email: email.value, type: "email" },
+    };
+  }
+
+  if (email.value === null && githubHandle.value !== null) {
+    return {
+      kind: "success",
+      value: { githubHandle: githubHandle.value, type: "github_handle" },
+    };
+  }
+
+  return {
+    kind: "error",
+    problem: singleFieldValidationProblem(
+      `exactly one of ${emailField} or ${githubHandleField} is required`,
+      combinationField,
+      "invalid_combination",
+    ),
   };
 }
 
@@ -908,6 +940,43 @@ export function prepareIamRoleBindingUpdateResponse(
     body: problem,
     status: problem.status,
   };
+}
+
+// An invitation either waits for the account to sign in (invitation.created)
+// or, when the account exists, grants the role at once: that grant is audited
+// as the role binding it is, so the audit log names who received access.
+export async function writeIamInvitationAuditEvents(
+  handler: AuditEventWriteRouteHandler | undefined,
+  request: FastifyRequest,
+  result: IamInvitationCreateHandlerResult,
+): Promise<void> {
+  if (result.outcome === "pending" && result.created) {
+    await writeAuditEventIfConfigured(handler, request, {
+      action: "iam.invitation.created",
+      afterState: result.invitation as unknown as Record<string, unknown>,
+      beforeState: null,
+      resourceId: result.invitation.id,
+      resourceType: "team_invitation",
+      result: "success",
+      teamId: result.invitation.teamId,
+    });
+    return;
+  }
+
+  if (result.outcome === "accepted_existing_user" && result.roleBindingCreated) {
+    await writeAuditEventIfConfigured(handler, request, {
+      action: "iam.role_binding.created",
+      afterState: {
+        ...result.roleBinding,
+        membershipCreated: result.membershipCreated,
+      } as unknown as Record<string, unknown>,
+      beforeState: null,
+      resourceId: result.roleBinding.id,
+      resourceType: "role_binding",
+      result: "success",
+      teamId: result.roleBinding.scope.id,
+    });
+  }
 }
 
 export function prepareIamInvitationCreateResponse(

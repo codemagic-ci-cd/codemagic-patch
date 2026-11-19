@@ -317,7 +317,9 @@ function targetOf(step: WireStep, root: string): string {
   if (step.id === "sdk-install") return "";
   if (step.id === "pod-install") return "CocoaPods";
   const file = step.files?.[0];
-  return file === undefined ? "" : elidePath(path.relative(root, file));
+  if (file !== undefined) return elidePath(path.relative(root, file));
+  // Generated native projects have no file to name; without a label the row says nothing about what it is.
+  return step.id === "build-metadata" ? "build metadata step" : "";
 }
 
 /** `android/…/java/com/demo/MainApplication.kt`: the first directory and as much of the end as fits. */
@@ -337,6 +339,10 @@ function noteOf(step: WireStep, mode: Mode): { text: string; tone: Tone } {
     case "changed":
       return { text: changedNote(step, mode === "result"), tone: "plain" };
     case "already-configured":
+      // A generated native project that an earlier prebuild left without the current step.
+      if (step.id === "build-metadata" && step.files === undefined && step.observed !== undefined) {
+        return { text: `${step.observed === "outdated" ? "updated" : "added"} by the config plugin at the next prebuild`, tone: "plain" };
+      }
       return { text: step.id === "sdk-install" ? step.detail : "already set up", tone: "dim" };
     default:
       if (isBlockedByInstall(step)) return { text: "not applied", tone: "dim" };
@@ -363,6 +369,12 @@ function changedNote(step: WireStep, done: boolean): string {
       return done ? "root wrapped with Patch.wrap" : "wrap the root with Patch.wrap";
     case "pod-install":
       return done ? step.detail.replace(/^run /, "ran ") : step.detail;
+    case "build-metadata":
+      // Generated native projects: the SDK installed by this run brings the config plugin that adds it.
+      if (step.files === undefined) return "added by the config plugin at the next prebuild";
+      // The edit changes the native fingerprint (BUILD_STEP_EDIT_NOTE, in the step's detail).
+      if (step.observed === "outdated") return `${done ? "build metadata step updated" : "update the build metadata step"}; ship with the next store build`;
+      return `${done ? "build metadata step added" : "add the build metadata step"}; ship with the next store build`;
   }
 }
 

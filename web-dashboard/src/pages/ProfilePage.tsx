@@ -90,20 +90,14 @@ export function ProfilePage() {
       <div className="mb-[18px] rounded-lg border border-border bg-surface p-[22px] shadow-sm">
         <div className={`${SECTION_TITLE} mb-[18px]`}>Appearance</div>
         <p className="text-fg-2 mb-4 text-[13px]">
-          Light, Dark, or match the operating system. The choice is stored in
-          this browser only.
+          Stored in this browser only.
         </p>
         <ThemeSwitch />
       </div>
 
       <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
         <div className="flex items-center justify-between gap-3.5">
-          <div>
-            <div className={`${SECTION_TITLE} mb-1`}>API tokens</div>
-            <p className="text-fg-3 mt-1 text-[13px]">
-              Create and manage personal access tokens for CLI and CI use.
-            </p>
-          </div>
+          <div className={SECTION_TITLE}>API tokens</div>
           <Link className={buttonVariants({ intent: "ghost" })} to="/account/tokens">
             Manage tokens <ArrowRightIcon />
           </Link>

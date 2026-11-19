@@ -16,6 +16,9 @@ export type {
   ReleaseJobId,
   ReleaseTargetId,
   ReleaseArtifactId,
+  WebhookEndpointId,
+  WebhookEventId,
+  WebhookDeliveryId,
   // Enums
   ReleaseStatus,
   ReleaseJobStatus,
@@ -58,7 +61,15 @@ export type {
   OAuthSession,
   OAuthAccessTokenMetadata,
   RefreshTokenMetadata,
+  WebhookDelivery,
+  WebhookDeliveryError,
+  WebhookDeliveryStatus,
+  WebhookEndpoint,
+  WebhookEndpointStatus,
+  WebhookEventType,
+  WebhookReleaseEventType,
 } from "./types";
+export { WEBHOOK_RELEASE_EVENT_TYPES } from "./types";
 export {
   addUtcDays,
   foldCutoff,

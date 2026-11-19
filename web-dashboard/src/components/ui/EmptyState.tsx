@@ -48,7 +48,9 @@ export function EmptyState({
       {description !== undefined ? (
         <p className="mt-[2px] mb-4 max-w-[46ch] text-fg-2">{description}</p>
       ) : null}
-      {action}
+      {action !== undefined ? (
+        <div className={description === undefined ? "mt-4" : undefined}>{action}</div>
+      ) : null}
     </div>
   );
 }

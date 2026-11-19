@@ -27,17 +27,16 @@ Reference: [Native setup for Capacitor](/docs/setup/native-setup-capacitor) ·
 
 ### Fixes
 
-- **Resource shrinking keeps the native overrides:** Android release builds
-  with resource shrinking no longer remove the `CodemagicPatch*` overrides in
-  `strings.xml`, so the app no longer falls back to `capacitor.config.ts`. On
-  older SDKs, see
+- Fixes Android release builds with resource shrinking removing the
+  `CodemagicPatch*` overrides in `strings.xml`, which made the app fall back
+  to `capacitor.config.ts`. On older SDKs, see
   [Release published but app finds no update](/docs/troubleshooting#release-published-but-app-finds-no-update).
 
 ### Other changes
 
-- **Default launch attempts lowered to 2:** `maxLaunchAttempts` defaults to 2 on
-  Android and iOS, so a broken package rolls back on its third launch instead
-  of its fourth. Set the value explicitly to keep 3.
+- Lowers the default of `maxLaunchAttempts` to 2 on Android and iOS, so a
+  broken package rolls back on its third launch instead of its fourth. Set
+  the value explicitly to keep 3.
 
 See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch%400.1.2).
 
@@ -47,15 +46,14 @@ See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/release
 
 ### Fixes
 
-- **Metrics uploads no longer block plugin calls:** A metrics upload stuck on
-  a slow or unresponsive network no longer holds up Capacitor plugin calls,
-  manifest fetches, or update downloads. Metrics are now processed separately
-  from other SDK operations.
+- Fixes metrics uploads on a slow or unresponsive network holding up
+  Capacitor plugin calls, manifest fetches, and update downloads. Metrics are
+  now processed separately from other SDK operations.
 
 ### Other changes
 
-- **`sdk_version` removed from metrics events:** The SDK no longer sends the
-  unused `sdk_version` field. Servers still accept it from older SDKs.
+- Removes the unused `sdk_version` field from metrics events. Servers still
+  accept it from older SDKs.
 
 See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/capacitor-patch%400.1.1).
 
@@ -67,9 +65,9 @@ First published version. The API may still change before 1.0.
 
 The SDK applies over-the-air updates to the web assets of a Capacitor, Ionic,
 or Cordova-on-Capacitor app. It uses the same protocol and server as the React
-Native SDK. A release is a directory of web assets; applying it points the
+Native SDK. A release is a directory of web assets. Applying it points the
 WebView at that directory with Capacitor's `setServerBasePath`. There is no
-bundler integration and no native fingerprint; releases are scoped by the
+bundler integration and no native fingerprint. Releases are scoped by the
 native app version. To set it up, install the package, run `npx cap sync`, and
 follow [Native setup for Capacitor](/docs/setup/native-setup-capacitor).
 

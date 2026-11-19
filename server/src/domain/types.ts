@@ -32,6 +32,9 @@ export type ReleaseId = PrefixedId<"rel">;
 export type ReleaseJobId = PrefixedId<"rj">;
 export type ReleaseTargetId = PrefixedId<"rt">;
 export type ReleaseArtifactId = PrefixedId<"ra">;
+export type WebhookEndpointId = PrefixedId<"wh">;
+export type WebhookEventId = PrefixedId<"whe">;
+export type WebhookDeliveryId = PrefixedId<"whd">;
 
 // ---------------------------------------------------------------------------
 // Enums (matching CHECK constraints in DDL)
@@ -88,6 +91,7 @@ export type ControlPlaneAction =
   | "release.view"
   | "release.deploy"
   | "iam.manage"
+  | "webhook.manage"
   | "instance.read";
 
 export type AuthorizationResourceScope =
@@ -476,6 +480,67 @@ export interface AuditEvent {
   userAgent: string | null;
   requestId: string | null;
   result: "success" | "failure";
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks (server/specs/webhooks-tech-spec.md)
+// ---------------------------------------------------------------------------
+
+/** Event types an endpoint can filter on. */
+export const WEBHOOK_RELEASE_EVENT_TYPES = [
+  "release.published",
+  "release.promoted",
+  "release.rolled_back",
+  "release.updated",
+  "release.disabled",
+  "release.enabled",
+  "release.failed",
+] as const;
+
+export type WebhookReleaseEventType = (typeof WEBHOOK_RELEASE_EVENT_TYPES)[number];
+
+/** `ping` is sent by the test route only and is never part of a filter. */
+export type WebhookEventType = WebhookReleaseEventType | "ping";
+
+export type WebhookEndpointStatus = "active" | "disabled";
+
+export type WebhookDeliveryStatus = "pending" | "succeeded" | "failed";
+
+export type WebhookDeliveryError =
+  | "http_error"
+  | "timeout"
+  | "network_error"
+  | "blocked_address"
+  | "endpoint_disabled";
+
+/** An endpoint as the API shows it. The secret is deliberately not here. */
+export interface WebhookEndpoint {
+  id: WebhookEndpointId;
+  teamId: TeamId;
+  url: string;
+  description: string | null;
+  /** Empty means every event type. */
+  eventTypes: WebhookReleaseEventType[];
+  status: WebhookEndpointStatus;
+  createdBy: UserId | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WebhookDelivery {
+  id: WebhookDeliveryId;
+  endpointId: WebhookEndpointId;
+  eventId: WebhookEventId;
+  eventType: WebhookEventType;
+  status: WebhookDeliveryStatus;
+  attemptCount: number;
+  /** The due time, or the lease end while an attempt is in flight. */
+  nextAttemptAt: Date | null;
+  lastAttemptAt: Date | null;
+  lastResponseStatus: number | null;
+  lastError: WebhookDeliveryError | null;
+  createdAt: Date;
+  completedAt: Date | null;
 }
 
 export interface ApiTokenMetadata {

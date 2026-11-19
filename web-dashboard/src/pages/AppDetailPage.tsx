@@ -264,7 +264,10 @@ export function AppDetailPage() {
           ) : (
             <h1 className={PAGE_TITLE}>
               {app.name}
-              <span className="tip" data-tip={canManage ? "Rename app" : manageTip}>
+              <span
+                className="tip max-shell:hidden"
+                data-tip={canManage ? "Rename app" : manageTip}
+              >
                 <button
                   type="button"
                   className={`${ICON_BTN} size-8 rounded-control [&_svg]:size-[18px]`}
@@ -302,7 +305,7 @@ export function AppDetailPage() {
       {/* Embedded deployment list (own file). */}
       <DeploymentTable teamId={teamId} appId={appId} />
 
-      <div className="grid-cols-[repeat(2,1fr)] gap-[18px] [display:grid]">
+      <div className="grid-cols-[repeat(2,1fr)] gap-[18px] [display:grid] max-shell:hidden">
         {/* Settings: code-signing toggle. */}
         <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
           <div className={`${SECTION_TITLE} mb-[18px]`}>
@@ -331,15 +334,6 @@ export function AppDetailPage() {
               </label>
             </span>
           </div>
-          {app.requireCodeSigning ? (
-            <div className={`${CALLOUT} ${CALLOUT_TONE.warn} mt-[18px]`}>
-              <AlertIcon />
-              <div>
-                Signing is <b>on</b> — unsigned releases will be rejected at
-                publish time.
-              </div>
-            </div>
-          ) : null}
         </div>
 
         {/* Danger Zone: delete + transfer (both `app.manage`). */}
@@ -687,7 +681,7 @@ function AppDetailSkeleton() {
         <Skeleton height={14} variant="line" />
         <Skeleton height={14} variant="line" />
       </div>
-      <div className="grid-cols-[repeat(2,1fr)] gap-[18px] [display:grid]">
+      <div className="grid-cols-[repeat(2,1fr)] gap-[18px] [display:grid] max-shell:hidden">
         <div className="rounded-lg border border-border bg-surface p-[22px] shadow-sm">
           <Skeleton width={120} height={16} className="mb-[18px]" />
           <Skeleton height={14} variant="line" />

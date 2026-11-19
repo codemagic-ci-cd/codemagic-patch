@@ -24,6 +24,7 @@ import {
 import { commandName } from "./registry";
 import { renderOutput } from "./render";
 import { withServerProblemHint } from "./serverProblemHints";
+import { writeUpdateNotice } from "./updateNotice";
 import { getCliVersion } from "./version";
 
 /** Runs one command line and returns the process exit code. Never throws. */
@@ -31,6 +32,19 @@ export async function runCli(
   argv: string[],
   deps: CliDeps = createDefaultDeps(),
 ): Promise<number> {
+  const exitCode = await runCommandLine(argv, deps);
+  // After the command's own output, whatever it exited with: an out-of-date CLI is
+  // one of the reasons a command fails.
+  writeUpdateNotice(deps, argv.some((arg, index) => isJsonFormat(arg, argv[index + 1])));
+  return exitCode;
+}
+
+/** `--format json` or `--format=json`, the two spellings `parseArgs` takes. */
+function isJsonFormat(arg: string, next: string | undefined): boolean {
+  return arg === "--format=json" || (arg === "--format" && next === "json");
+}
+
+async function runCommandLine(argv: string[], deps: CliDeps): Promise<number> {
   try {
     const parsed = parseCliArgs(argv);
 

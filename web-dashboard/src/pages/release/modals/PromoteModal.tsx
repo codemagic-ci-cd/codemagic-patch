@@ -260,7 +260,6 @@ function PromoteModalContent({
       open
       onClose={requestClose}
       title={`Promote ${release.releaseLabel}`}
-      description="Copy this release into another deployment."
       wide
       footer={
         <>

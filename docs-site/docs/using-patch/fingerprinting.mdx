@@ -1,11 +1,12 @@
 ---
 title: Fingerprinting
 description: >-
-  How native fingerprints block incompatible OTAs, and how to register each
-  store binary with a disabled release.
+  How native fingerprints block incompatible OTAs, how to register each store
+  binary with a disabled release, and how to read the fingerprint a build
+  recorded.
 llmsDescription: >-
   Fingerprint mismatch blocking, first-write registry, disabled store-build
-  seed, optional expansion.
+  seed, optional expansion, build-time record and fingerprint --artifact.
 sidebar_custom_props:
   sdk: react-native
 ---
@@ -14,7 +15,7 @@ sidebar_custom_props:
 
 # Fingerprinting
 
-A fingerprint is a hash of the native code in your project. Patch computes it at release time and records the first value it sees for each deployment and binary version.
+A fingerprint is a hash of the native code in your project. `cmpatch` computes it at release time, and Patch records the first value it sees for each deployment and binary version. A native build can also record it inside the app, so you can read it back from the binary later ([Recorded at build time](#recorded-at-build-time)).
 
 It is a compatibility signal. Matching fingerprints should mean compatible native code but are not a 100% guarantee.
 
@@ -26,6 +27,8 @@ The hash covers the native side of your project, not your JavaScript. For a bare
 - Your `.gitignore`, hashed as a file in its own right.
 - Autolinked native dependencies, resolved from `node_modules`.
 - The `react-native` package version, and the `scripts` block of `package.json`.
+
+With SDK 0.8.0 or later installed, `cmpatch fingerprint`, `release create` and `release-react` compute the hash with the engine the SDK pins (`@expo/fingerprint` 0.21.9), the same one the native build uses, so the value at release time equals the value the build recorded. A project on an older SDK is hashed by the CLI's own engine. An Expo project that generates its native directories needs `npx expo prebuild` before `cmpatch fingerprint` can compute its fingerprint.
 
 Three consequences are worth knowing before wiring a release into CI.
 
@@ -47,7 +50,17 @@ ios/Pods/ present                   1c7f0558ebe8a7ad903b5de34b2faf49b10dab3b   u
 
 The last pair is the one to notice: adding `ios/ScratchDir/` to `.gitignore` changed the hash, and then creating `ios/ScratchDir/file.txt` changed it again. Being ignored by git did not keep the file out of the fingerprint.
 
-**React Native's SwiftPM mode leaves Xcode's local files out.** In a project converted with `npx react-native spm add`, the CLI leaves `ios/**/xcshareddata/swiftpm/Package.resolved` and Xcode's per-user `xcuserdata` folders out of the iOS fingerprint. Xcode writes them on your machine when it resolves the Swift packages or opens the project, and a CI checkout never has them. To hash `Package.resolved` anyway, add `!ios/**/xcshareddata/swiftpm/Package.resolved` to `.fingerprintignore`. A CocoaPods project gets no such ignores: if its pods pull in Swift packages and Xcode writes a `Package.resolved`, commit the file or list it in `.fingerprintignore`, so a local build and CI compute the same fingerprint.
+**Files your tools write on one machine do not count.** With SDK 0.8.0 or later, Patch leaves these out of the fingerprint: `android/local.properties`, `android/.idea/`, `*.iml` files under `android/`, Xcode's `xcuserdata` and `DerivedData` folders, Gradle's `build/`, `.gradle/` and `.cxx/` folders of every module (including `buildSrc`), `*.keystore` and `*.jks` files under `android/`, and `*.ipa` and `*.dSYM.zip` files under `ios/`. An IDE, a build or a release tool writes them on one machine and a clean checkout never has them, so a binary built locally and a release from CI compute the same value. To hash one anyway, add it with a leading `!` to `.fingerprintignore`.
+
+**In a bare project, the app version and build number do not count.** The SDK's engine replaces literal values of `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.pbxproj` and `.xcconfig` files, `CFBundleShortVersionString` and `CFBundleVersion` in `.plist` files under `ios/`, and `versionName` and `versionCode` in `build.gradle` before hashing, so bumping only those leaves the fingerprint as it was. A version kept anywhere else, such as `gradle.properties` or a computed expression, still changes it; if yours lives there, pass the build number from CI as an environment variable or a Gradle `-P` property instead, so no file changes. This is also why the value can differ from what `npx @expo/fingerprint` prints. The SDK uses the engine's default `balanced` preset; to keep version values in the hash, select the engine's `strict` preset in `fingerprint.config.js`:
+
+```js title="fingerprint.config.js"
+module.exports = { preset: 'strict' };
+```
+
+`strict` also hashes the files of installed native modules. Under `balanced` a module counts by its package name and version, so an edit inside `node_modules`, for example through `patch-package`, does not change the fingerprint. Select `strict` if you patch native modules that way.
+
+**React Native's SwiftPM mode leaves `Package.resolved` out.** In a project converted with `npx react-native spm add`, Patch leaves `ios/**/xcshareddata/swiftpm/Package.resolved` out of the iOS fingerprint. Xcode writes it on your machine when it resolves the Swift packages, and a CI checkout never has it. To hash `Package.resolved` anyway, add `!ios/**/xcshareddata/swiftpm/Package.resolved` to `.fingerprintignore`. A CocoaPods project gets no such ignores: if its pods pull in Swift packages and Xcode writes a `Package.resolved`, commit the file or list it in `.fingerprintignore`, so a local build and CI compute the same fingerprint.
 
 ## How it helps
 
@@ -57,6 +70,19 @@ If a new release's fingerprint disagrees with the value already stored for that 
 
 - In a terminal, `cmpatch release-react` and `cmpatch release create` show the stored and release fingerprints and ask you to confirm before they retry.
 - In CI, or with `--yes`, there is no prompt: the command fails with a hint. Pass `--allow-fingerprint-mismatch` to publish anyway.
+
+Patch never replaces a stored value, so the override does not clear a disagreement: every later release to that binary version is blocked again, and releases with the new value do not [expand](#expansion) to it. When the native code really changed, ship a new binary version instead.
+
+**Upgrading the SDK is such a change**, like upgrading any other native dependency. The upgrade to 0.8.0 or later also moves the project onto the SDK's engine, which gives the same native code a different fingerprint than the CLI's own engine did. Plan the upgrade this way:
+
+- Update `cmpatch` to 0.11.0 or later first. An older `cmpatch` does not use the SDK's engine, and records its own engine's value for the binary version you release to.
+- In a bare project, run `cmpatch wire` with the upgrade, before the store build. The [build metadata step](/docs/setup/native-setup#build-metadata-step) it adds or updates is part of the native project, so running wire on its own later changes the fingerprint once more.
+- In a bare project that uses CocoaPods, run `pod install` with the upgrade and commit `Podfile.lock`. The lockfile names the SDK version, so installing pods later changes the fingerprint once more.
+- Ship the upgrade as a new binary version. Its first release records the new value.
+- Keep releasing to earlier binary versions from a branch that still has the older SDK. Their stored values came from the CLI's own engine, which that branch still uses.
+- Do not use `--allow-fingerprint-mismatch` to get past the change, for the reason above. The CLI's hint offers the flag for every mismatch; it fits a stored value you have checked and know to be wrong, not an upgrade.
+
+In an Expo project whose config or config plugins import ES modules, the value can also differ between Node.js major versions, so build and release such an app with the same one.
 
 
 ### Expansion
@@ -83,3 +109,41 @@ cmpatch release-react \
 Using `--disabled` means the release is stored on the server and the fingerprint is recorded, but devices do not download it. Later OTA releases to that binary can then be checked against the fingerprint.
 
 For targeting and promotion, see [Releasing updates](/docs/using-patch/releasing-updates).
+
+## Recorded at build time
+
+With SDK 0.8.0 or later [wired in](/docs/setup/native-setup#build-metadata-step), every native build runs a step named `Codemagic Patch build metadata` that writes `CodemagicPatchBuild.json` into the app: inside the `.app` on iOS, under `assets/` on Android. It records the project's native fingerprint at build time and, for a build that embeds its JS bundle, a hash of that bundle and the list of files it covers (the bundle file, plus its assets on iOS). Nothing in Patch reads the file when you publish or on the device; it is there so you can tell which native code and which JS a binary was built with, without the checkout it came from.
+
+A development build that loads its JS from Metro records the fingerprint but no embedded bundle hash. If the step cannot compute the record, a build that embeds its JS bundle fails with the cause, and a development build served by Metro prints the cause as a warning and builds without the file. Neither packages a stale or empty record. The step adds about 0.6 to 1.3 seconds to a build, nearly all of it computing the fingerprint (measured on a React Native 0.84 app).
+
+An incremental iOS build keeps assets you deleted from the project inside the app, and the record lists them because they ship. Build store binaries from a clean build directory.
+
+### Inspect a binary
+
+`cmpatch fingerprint --artifact` reads the record and the binary version from an `.xcarchive`, `.ipa`, `.apk` or `.aab`. It needs no checkout, sign-in or server:
+
+```bash
+cmpatch fingerprint --artifact build/MyApp.ipa --format text
+```
+
+```text
+Platform              ios
+Binary version        1.0.0
+Build metadata        present
+Fingerprint           9cc482e98159a5cfb4d88ee4dd0d47671548bd8f
+Fingerprint engine    @expo/fingerprint@0.21.9 codemagic-patch-rules@1 version-normalization@1
+Embedded bundle hash  ac720b8fb618…44e95154
+Embedded files        1 file
+Artifact SHA-256      92799062b638…98783511
+```
+
+Before you [register a store build](#register-each-store-build), you can compare its `Fingerprint` with what `cmpatch fingerprint --platform ios` prints for the commit you are about to release from. With the same SDK installed, the same native inputs should give the same value.
+
+- **`Build metadata  absent`**: the binary was built without the step, for example with an SDK older than 0.8.0, before the step was wired in, or with the opt-out below. This is a successful inspection (exit `0`); the command never computes a fingerprint from the project in its place.
+- **`Embedded bundle hash  none recorded`**: the file is present, but the build loaded its JS from Metro instead of embedding a bundle.
+
+Flags, output fields and errors: [CLI reference](/docs/reference/cli-reference#fingerprint).
+
+### Opt out
+
+Set `CODEMAGIC_PATCH_SKIP_BUILD_FINGERPRINT=1` in the environment of the native build to skip the whole file. The build then removes any copy from an earlier build and prints a warning. Only the exact value `1` opts out. On iOS, an Xcode build setting of that name works too; on Android the variable must be in the environment of the Gradle invocation, and a Gradle property of that name has no effect. In an Expo project, set it for `npx expo prebuild` as well: the config plugin then leaves the step out and prints a warning.

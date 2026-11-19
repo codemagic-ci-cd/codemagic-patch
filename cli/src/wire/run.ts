@@ -20,7 +20,7 @@ import { applyPlan } from "./apply";
 import { resolveDestinations } from "./destination";
 import { isFile } from "./fs";
 import { buildPlan, hasWork, previewStep, type PlannedStep, type WirePlan } from "./plan";
-import { inspectProject, summarizeProject } from "./project";
+import { inspectProject, MIN_BUILD_METADATA_SDK_VERSION, SDK_PACKAGE, summarizeProject } from "./project";
 import {
   renderAttention,
   renderPlan,
@@ -432,8 +432,10 @@ function nextSteps(plan: WirePlan, steps: WireStep[], mode: Mode): string[] {
   // its own next step below.
   const failed = steps.some((step) => step.state === "failed" && step.id !== "pod-install");
   if (failed) return failedNextSteps(plan, steps, mode === "dry-run" ? "`cmpatch wire --dry-run`" : "`cmpatch wire`");
-  if (mode === "dry-run") return ["Apply this plan: `cmpatch wire`"];
-  if (mode !== "applied") return ["Review and apply the plan: `cmpatch wire`"];
+  const optional = buildMetadataNextStep(plan);
+  if (mode === "dry-run") return ["Apply this plan: `cmpatch wire`", ...optional];
+  if (mode === "blocked") return ["Commit or stash the uncommitted changes, or apply next to them: `cmpatch wire --allow-dirty`", ...optional];
+  if (mode !== "applied") return ["Review and apply the plan: `cmpatch wire`", ...optional];
   const lines: string[] = [];
   // `steps` is `plan.steps` in the same order, as applied or previewed.
   // CocoaPods has its own next step.
@@ -472,5 +474,17 @@ function nextSteps(plan: WirePlan, steps: WireStep[], mode: Mode): string[] {
   }
   lines.push("Publish a first update: `cmpatch release-react --dry-run`, then `cmpatch release-react`");
   if (!doctorFirst) lines.push("Check the whole setup: `cmpatch doctor`");
+  lines.push(...optional);
   return lines;
+}
+
+/** The optional SDK upgrade that adds the build metadata step, for an SDK that predates it. */
+function buildMetadataNextStep(plan: WirePlan): string[] {
+  if (plan.buildMetadataUpgrade !== true) return [];
+  const upgrade = `Optional: upgrade \`${SDK_PACKAGE}\` to ${MIN_BUILD_METADATA_SDK_VERSION} or later`;
+  return [
+    plan.shape.expoNative === "generated"
+      ? `${upgrade}, then run \`npx expo prebuild\` again; the SDK's config plugin adds the build metadata step.`
+      : `${upgrade}, then run \`cmpatch wire\` again; it adds the build metadata step.`,
+  ];
 }

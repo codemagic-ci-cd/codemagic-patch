@@ -122,6 +122,7 @@ export default Patch.wrap(App, {
 - **Lifecycle:** each mount starts a `sync()`. Overlapping calls, including React Strict Mode's repeated effect or nested wrappers, use the `sync()` concurrency guard. A later remount can start a new check; this is not a once-per-process guarantee.
 - **Foreground checks:** `"ON_APP_RESUME"` checks on mount and on `background`/`inactive` to `active` transitions. Repeated `active` events are ignored; the listener is removed on unmount. `minimumBackgroundDuration` controls installation only, not check frequency.
 - **Scope:** no loading screen, update dialog, or progress/status callbacks. There is no `MANUAL` frequency; use direct `sync(options, onProgress)` without the wrapper for manual checks, progress, and the final status.
+- **Web:** in the web bundle of a universal app, `wrap()` returns `Root` unchanged and checks nothing. Functions that need the native side reject there, and `sync()` resolves `"error"`.
 
 Because `sync()` calls `notifyAppReady()` first, root mount confirms the running bundle as healthy. If your app must complete asynchronous initialization before confirming readiness, call `sync()` or `notifyAppReady()` yourself after it succeeds instead of using `wrap()`. See [Checking for updates](/docs/setup/checking-for-updates#minimal-integration).
 

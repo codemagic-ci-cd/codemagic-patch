@@ -17,34 +17,96 @@ npm install @codemagic/react-native-patch@latest
 Reference: [SDK reference](/docs/reference/sdk-reference) ·
 [GitHub releases](https://github.com/codemagic-ci-cd/codemagic-patch/releases?q=react-native-patch)
 
+## 0.8.0 {#v0-8-0}
+
+*19th November 2026*
+
+Adds a build step that records the native fingerprint and the embedded
+bundle's hash inside the app. See
+[Recorded at build time](/docs/using-patch/fingerprinting#recorded-at-build-time).
+
+### Upgrade steps {#v0-8-0-upgrade}
+
+Installing the package does not change your native project, so follow these
+steps before the next store build.
+
+1. Update `cmpatch` to [0.11.0](/docs/releases/cli#v0-11-0) or later.
+2. Install the SDK:
+
+   ```bash
+   npm install @codemagic/react-native-patch@latest
+   ```
+
+3. Run `cmpatch wire` again in a bare project, or `npx expo prebuild` in an
+   Expo project. This adds the
+   [build metadata step](/docs/setup/native-setup#build-metadata-step) to the
+   native project. The step needs Node.js 20 or newer on the build machine.
+
+   In a project that uses CocoaPods, wire also asks to run `pod install`,
+   because `Podfile.lock` names the SDK version. In CI or a script, where
+   wire cannot ask, pass the answers as flags:
+
+   ```bash
+   cmpatch wire --yes --allow-dirty --pod-install
+   ```
+
+   `--allow-dirty` applies the edits next to the uncommitted `package.json`
+   from step 2.
+4. Commit the changes. In a CocoaPods project they include
+   `ios/Podfile.lock`, which is part of the fingerprint: a build from the old
+   lockfile and a machine that runs `pod install` compute different
+   fingerprints.
+5. Ship the result as a new binary version. The SDK's fingerprint engine gives
+   the same native code a different fingerprint, so a release to a binary
+   version that already has one is blocked as a mismatch. Keep releasing to
+   those versions from a branch on the older SDK. See
+   [Disagreements](/docs/using-patch/fingerprinting#disagreements).
+
+If you skip step 3, the app builds and updates as before, and `cmpatch doctor`
+warns that the step is missing. In a bare project, adding the step later
+changes the fingerprint again.
+
+### Fixes
+
+- Fixes a release build that failed with
+  `Cannot read properties of undefined (reading 'getEnforcing')` in an Expo
+  Router app with `web.output: "server"`, the default in a new Expo SDK 58
+  app. The SDK now loads in a web bundle, where
+  [`wrap()`](/docs/reference/sdk-reference#wraproot-options) returns the root
+  unchanged.
+
+### Other changes
+
+- Adds `@expo/fingerprint` 0.21.9 as a dependency.
+
+See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.8.0).
+
 ## 0.7.0 {#v0-7-0}
 
 *17th November 2026*
 
 ### React Native SwiftPM mode
 
-The package ships a `Package.swift`, so an app converted with
+Ships a `Package.swift`, so an app converted with
 `npx react-native spm add` can link the SDK. Before, `spm add` stopped on the
 SDK with a mixed Swift and Objective-C sources error.
 
-- **Requirements:** React Native 0.88 or later and the New Architecture.
-  Expo's experimental Swift Package Manager support needs `expo` 58.0.17 or
-  later.
-- **Regenerate the packages:** Run `npx react-native spm` after installing or
-  upgrading the SDK, and on every fresh clone before a build.
-- **CocoaPods:** Apps on React Native 0.73 or later build as before.
+- Requires React Native 0.88 or later and the New Architecture. Expo's
+  experimental Swift Package Manager support needs `expo` 58.0.17 or later.
+- Run `npx react-native spm` after installing or upgrading the SDK, and on
+  every fresh clone before a build.
+- Apps that use CocoaPods on React Native 0.73 or later build as before.
 
 [`cmpatch wire`](/docs/releases/cli#v0-10-0) handles both modes. See
 [React Native SwiftPM mode](/docs/setup/native-setup#ios-swiftpm).
 
 ### Fixes
 
-- **Android restart crash on Expo SDK 58:** Restarting the app to apply an
-  update could create the new React instance before the old one had shut
-  down. On Expo SDK 58 that left native modules attached to the old runtime,
-  and the app crashed with a missing `ExpoApplication` error. The SDK now
-  waits for the old instance to be destroyed before it recreates the
-  Activity.
+- Fixes an Android crash on Expo SDK 58, with a missing `ExpoApplication`
+  error, when the app restarted to apply an update. The new React instance
+  could start before the old one had shut down, which left native modules
+  attached to the old runtime. The SDK now waits for the old instance to be
+  destroyed before it recreates the Activity.
 
 See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.7.0).
 
@@ -54,37 +116,35 @@ See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/release
 
 ### Testing with the SDK fake
 
-The package now ships a native-module fake for Jest and Vitest, so tests can
-run the real SDK and simulate OTA states without a native binary.
+Ships a native-module fake for Jest and Vitest. Tests can run the real SDK and
+simulate OTA states without a native binary.
 Based on a contribution in
 [codemagic-patch#38](https://github.com/codemagic-ci-cd/codemagic-patch/pull/38).
 See [Testing your app](/docs/setup/testing).
 
 ### Crash rollback
 
-- **Background boots on Android no longer count:** A process the OS starts
-  in the background (a headless JS task, an FCM data message) boots the
-  pending package as before but no longer spends a launch attempt unless the
-  user opens the app in that process. Idle processes reclaimed by the OS were
-  the leading cause of rollbacks of packages the user never opened. A package
-  that crashes only in background code is no longer rolled back by the
-  budget.
-- **Default launch attempts lowered to 2:** `CodemagicPatchMaxLaunchAttempts`
-  defaults to 2 on Android and iOS, so a broken package rolls back on its
-  third launch instead of its fourth. Set the value explicitly to keep 3.
+- On Android, a process the OS starts in the background (a headless JS task,
+  an FCM data message) still boots the pending package, but no longer spends
+  a launch attempt unless the user opens the app in that process. Idle
+  processes reclaimed by the OS were the leading cause of rollbacks of
+  packages the user never opened. A package that crashes only in background
+  code is no longer rolled back by the budget.
+- Lowers the default of `CodemagicPatchMaxLaunchAttempts` to 2 on Android and
+  iOS, so a broken package rolls back on its third launch instead of its
+  fourth. Set the value explicitly to keep 3.
 
 ### Fixes
 
-- **Resource shrinking keeps the Patch strings:** Android release builds with
-  resource shrinking no longer remove the `CodemagicPatch*` strings, so they
-  keep finding updates. On older SDKs, see
+- Fixes Android release builds with resource shrinking removing the
+  `CodemagicPatch*` strings, which stopped the app from finding updates. On
+  older SDKs, see
   [Release published but app finds no update](/docs/troubleshooting#release-published-but-app-finds-no-update).
 
 ### Other changes
 
-- **Missing deployment key warning:** On Android, the SDK logs a warning once,
-  under the `CodemagicPatchModule` tag, when `CodemagicPatchDeploymentKey` is
-  missing or blank.
+- Logs a warning once on Android, under the `CodemagicPatchModule` tag, when
+  `CodemagicPatchDeploymentKey` is missing or blank.
 
 See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.6.0).
 
@@ -94,22 +154,20 @@ See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/release
 
 ### React Native 0.88 and Expo SDK 58
 
-The SDK now supports React Native 0.88.0, tested with the New Architecture on
-Android and iOS. Expo SDK 58, which uses React Native 0.88.0, is supported and
-tested on Android and iOS.
+Supports React Native 0.88.0, tested with the New Architecture on Android and
+iOS. Supports Expo SDK 58, which uses React Native 0.88.0, tested on Android
+and iOS.
 
 ### Fixes
 
-- **Metrics uploads no longer block the SDK:** A metrics upload stuck on a
-  slow or unresponsive network no longer holds up bundle selection, update
-  downloads, `sync()`, or other SDK calls. On Android and iOS, metrics uploads
-  now run separately from update operations.
+- Fixes metrics uploads on a slow or unresponsive network holding up bundle
+  selection, update downloads, `sync()`, and other SDK calls. On Android and
+  iOS, metrics uploads now run separately from update operations.
 
 ### Other changes
 
-- **`sdk_version` removed from metrics events:** The SDK no longer sends the
-  unused `sdk_version` field. Servers still accept it from older SDKs, and
-  existing metrics data is unchanged.
+- Removes the unused `sdk_version` field from metrics events. Servers still
+  accept it from older SDKs, and existing metrics data is unchanged.
 
 See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.5.1).
 
@@ -120,8 +178,8 @@ See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/release
 
 ### `Patch.wrap`
 
-`Patch.wrap` wraps your root component and runs an update check after it
-mounts:
+Adds `Patch.wrap`, which wraps your root component and runs an update check
+after it mounts:
 
 ```tsx
 import * as Patch from "@codemagic/react-native-patch";
@@ -138,23 +196,23 @@ call `sync()` after that step instead of using `Patch.wrap`.
 
 ### `CodemagicPatchMaxLaunchAttempts`
 
-Added the optional `CodemagicPatchMaxLaunchAttempts` setting (Info.plist on
+Adds the optional `CodemagicPatchMaxLaunchAttempts` setting (Info.plist on
 iOS, strings.xml on Android). It sets how many launches a pending update may
 make without `notifyAppReady()` before it is rolled back. The default is still
 3. In Expo projects, set it with the config plugin's `maxLaunchAttempts` option.
 
-- **Lifecycle names** (requires server 0.5.0): `Installed` is now `Ready` (the
-  update is prepared for the next launch), and `Success` is now `Applied` (the
-  update is running and confirmed by `notifyAppReady()`). Servers 0.4.x and
-  earlier drop these events, so upgrade the server before shipping an app build
-  with this SDK.
-- **Development warning:** In development builds, a failed `sync()` now logs a
-  warning with the reason, even when nothing reads its result, as with
-  `Patch.wrap`. Release builds do not log it. A wrong deployment key or server
-  path returns "no update" and does not trigger the warning.
-- **Duplicate Applied events:** Concurrent `notifyAppReady()` calls no longer
-  report the same update as applied more than once.
-- **React Native 0.87:** Fixed type errors in strict TypeScript apps.
+- Renames two lifecycle events, and requires server 0.5.0. `Installed` is now
+  `Ready` (the update is prepared for the next launch), and `Success` is now
+  `Applied` (the update is running and confirmed by `notifyAppReady()`).
+  Servers 0.4.x and earlier drop these events, so upgrade the server before
+  shipping an app build with this SDK.
+- In development builds, a failed `sync()` now logs a warning with the reason,
+  even when nothing reads its result, as with `Patch.wrap`. Release builds do
+  not log it, and a wrong deployment key or server path returns "no update"
+  without the warning.
+- Concurrent `notifyAppReady()` calls no longer report the same update as
+  Applied more than once.
+- Fixes type errors in strict TypeScript apps on React Native 0.87.
 
 See the [SDK reference](/docs/reference/sdk-reference#wraproot-options) and
 [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.5.0).
@@ -165,13 +223,13 @@ See the [SDK reference](/docs/reference/sdk-reference#wraproot-options) and
 
 ### `isNextVersionReady()`
 
-Added `isNextVersionReady()`, which reports whether a different OTA package is
+Adds `isNextVersionReady()`, which reports whether a different OTA package is
 installed and waiting for the next reload. Use it to show an “Update ready”
 prompt while the current bundle keeps running. It does not report a staged
 return to the embedded bundle.
 
-- **Embedded revert fix:** Returning to the embedded bundle now honors the
-  selected install mode, including next suspend, resume, or restart.
+- Fixes returning to the embedded bundle so it honors the selected install
+  mode, including next suspend, resume, or restart.
 
 See the [SDK reference](/docs/reference/sdk-reference) and
 [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.4.0).
@@ -182,17 +240,16 @@ See the [SDK reference](/docs/reference/sdk-reference) and
 
 ### Failure details
 
-Failed installs now include diagnostic details that the dashboard displays:
+Failed installs now report diagnostic details that the dashboard displays: the
 HTTP status, the origin or platform error message, and on Android 11+ the
-previous process exit reason. Previously the dashboard showed only a `network`
+previous process exit reason. Before, the dashboard showed only a `network`
 count. See the [server notes](/docs/releases/server#v0-3-0) for the dashboard
 side.
 
-- **Three launches before rollback:** A pending package now gets three
-  consecutive launches to call `notifyAppReady()` before the SDK rolls back
-  and reports `Failed`. This reduces false crash rollbacks caused by OS process
-  kills, while a broken bundle is still rolled back. See
-  [Analytics and metrics](/docs/using-patch/analytics).
+- A pending package now gets three consecutive launches to call
+  `notifyAppReady()` before the SDK rolls back and reports `Failed`. This
+  reduces false crash rollbacks from OS process kills, and a broken bundle is
+  still rolled back. See [Analytics and metrics](/docs/using-patch/analytics).
 
 See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/releases/tag/%40codemagic/react-native-patch%400.3.0).
 
@@ -202,10 +259,10 @@ See the [SDK release](https://github.com/codemagic-ci-cd/codemagic-patch/release
 
 ### `getRunningBundleUpdateMetadata()`
 
-`getRunningBundleUpdateMetadata()` returns `label`, `packageHash`, and
-`releaseNotes` for the OTA release active in the current process, or `null`
-when the app is still on the embedded store binary. Use it for an in-app
-"About this build" screen or for QA.
+Adds `getRunningBundleUpdateMetadata()`, which returns `label`, `packageHash`,
+and `releaseNotes` for the OTA release active in the current process, or
+`null` when the app is still on the embedded store binary. Use it for an
+in-app "About this build" screen or for QA.
 
 ```ts
 import { getRunningBundleUpdateMetadata } from "@codemagic/react-native-patch";

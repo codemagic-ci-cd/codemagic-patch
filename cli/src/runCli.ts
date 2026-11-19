@@ -34,10 +34,8 @@ import {
   createInteractivePrompt,
   PromptAbortError,
 } from "./prompt";
-import {
-  computeNativeFingerprint,
-  computeNativeFingerprintDetails,
-} from "./fingerprint";
+import { computeNativeFingerprintDetails } from "./fingerprint";
+import { createProjectFingerprintResolver } from "./fingerprintResolver";
 import {
   exitCodeForProblemDetails,
   getProblemTypeSuffix,
@@ -91,17 +89,29 @@ import { runProcessWithSpawn } from "./remoteExec";
 import { createDnsClient } from "./selfhostDns";
 import { createTlsNameProbe } from "./selfhostTls";
 import { connectTcp } from "./selfhostInstall";
+import { type StartUpdateCheck, writeUpdateNotice } from "./updateNotice";
 import { getCliVersion } from "./version";
 
 export type CliDeps = CommandDeps & {
+  /**
+   * Starts the detached npm check behind the "newer version" notice. Only the
+   * bin supplies it, and only from a build: without it the notice is off, so
+   * a `runCli` test never reads or writes the update state of the machine it
+   * runs on.
+   */
+  startUpdateCheck?: StartUpdateCheck;
   stderr: WritableStream;
   stdout: WritableStream;
 };
 
 function createDefaultDeps(): CliDeps {
+  const fingerprints = createProjectFingerprintResolver({
+    legacy: computeNativeFingerprintDetails,
+  });
+
   return {
-    computeFingerprint: computeNativeFingerprint,
-    computeFingerprintDetails: computeNativeFingerprintDetails,
+    computeFingerprint: fingerprints.computeFingerprint,
+    computeFingerprintDetails: fingerprints.computeFingerprintDetails,
     confirm: createInteractiveConfirm(process.stdin, process.stderr),
     env: process.env,
     fetch: globalThis.fetch,
@@ -230,6 +240,20 @@ export async function runCli(
   const out = createPalette(deps.stdout, deps.env);
   const err = createPalette(deps.stderr, deps.env);
 
+  const exitCode = await runCommandLine(argv, deps, out, err);
+  // After the command's own output, whatever it exited with: an out-of-date
+  // CLI is one of the reasons a command fails.
+  writeUpdateNotice(deps, readRawFormatFlag(argv) === "json", err);
+  return exitCode;
+}
+
+async function runCommandLine(
+  argv: string[],
+  deps: CliDeps,
+  out: Palette,
+  err: Palette,
+): Promise<number> {
+
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
     const parsed = parseCliArgs(argv);
 
@@ -255,6 +279,7 @@ export async function runCli(
     const shouldApplyDefaults =
       commandRoute?.defaults !== undefined &&
       commandRoute.defaults !== false &&
+      !inspectsStoreArtifact(argv, commandRoute.kind) &&
       mayNeedDefaultOptions(argv, commandRoute.defaults);
     const defaultConfig =
       shouldApplyDefaults
@@ -695,6 +720,15 @@ function mayNeedDefaultOptions(
 }
 
 
+/**
+ * `fingerprint --artifact` reads the platform and every value from the
+ * artifact. Stored defaults must not load (a broken project config in the cwd
+ * is not its business), select project mode, or be prompted for.
+ */
+function inspectsStoreArtifact(argv: string[], kind: string): boolean {
+  return kind === "fingerprint" && hasOption(argv, "--artifact");
+}
+
 function getStructuredOutputFormat(
   command: CliCommand,
 ): StructuredOutputFormat | undefined {
@@ -857,7 +891,9 @@ function renderResultView(
   }
 
   if (view?.kind === "object") {
-    return renderObjectView(result, palette, view.fields);
+    return renderObjectView(result, palette, view.fields, {
+      omitNullPaths: view.omitNullPaths,
+    });
   }
 
   const list = Array.isArray(result) ? result : unwrapSingleList(result);
@@ -950,6 +986,8 @@ const JSON_NON_INTERACTIVE_KINDS = {
   "release-react": true,
   "release-rollback": true,
   "token-revoke": true,
+  "webhook-remove": true,
+  "webhook-rotate-secret": true,
 } satisfies Record<
   Extract<CliCommand, { nonInteractive?: true }>["kind"],
   true

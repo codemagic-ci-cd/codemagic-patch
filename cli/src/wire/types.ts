@@ -29,6 +29,8 @@ export type WireStepId =
   | "native-hook"
   /** `Patch.wrap(App)` at the JavaScript root. */
   | "js-root"
+  /** The "Codemagic Patch build metadata" Xcode phase / Gradle line for one platform. */
+  | "build-metadata"
   | "pod-install";
 
 export type WireStepState =
@@ -71,7 +73,17 @@ export type WireStep = {
   manual?: string[];
   /** The last lines a failed command printed, as it printed them. */
   output?: string[];
+  /**
+   * `build-metadata` only, when the installed SDK's definition could be
+   * compared: what the native project carries now. `absent` (not
+   * configured), `current` (equal to the installed SDK's text), `outdated`
+   * (ours, with other text; rewritten in place) or `conflict` (found
+   * something wire cannot safely edit; the file is left alone).
+   */
+  observed?: BuildStepObserved;
 };
+
+export type BuildStepObserved = "absent" | "current" | "outdated" | "conflict";
 
 /** Appended to the detail of every step the failed SDK install kept back. */
 export const SDK_INSTALL_FAILED_NOTE = "the SDK install failed";

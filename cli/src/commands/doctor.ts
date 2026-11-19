@@ -2,6 +2,7 @@ import { teamAppsPath } from "../appFramework";
 import { prepareDoctorFix, applyDoctorFix, type DoctorFix } from "../doctor/fixes";
 import { canPromptOnStderr } from "./shared";
 import { doctorBlockers } from "../doctor/report";
+import { inspectBuildMetadataSteps } from "../doctor/buildMetadata";
 import { isServerCredential, SERVER_CREDENTIAL_PATTERN } from "../doctor/credentials";
 import { verifyDoctorDelivery, type PublicationCache } from "../doctor/deliveryVerification";
 import { basename, resolve } from "node:path";
@@ -344,6 +345,10 @@ async function runDoctorChecks(
         .map((check) => ({ ...check, platform: item.platform })),
     });
   }
+  const buildMetadata = await inspectBuildMetadataSteps(
+    projectRoot,
+    platforms.map((item) => item.platform),
+  );
   // No known OTA scope still gets useful CLI/server probes, never a guessed SDK binding.
   const publicationCache: PublicationCache = new Map();
   const plans: Array<PlatformDiscovery | undefined> = platforms.length
@@ -406,6 +411,7 @@ async function runDoctorChecks(
     const sdkChecks = item
       ? [
           ...item.findings.map(toCheck),
+          ...(buildMetadata[item.platform] ? [toCheck(buildMetadata[item.platform]!)] : []),
           ...compareApplicationSettings(item, plan, localState),
         ]
       : [];

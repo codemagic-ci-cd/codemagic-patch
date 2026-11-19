@@ -110,6 +110,7 @@ export async function startServer(
     teamListHandler: runtime.teamListHandler,
     teamReadHandler: runtime.teamReadHandler,
     userProfileHandler: runtime.userProfileHandler,
+    webhookHandlers: runtime.webhookHandlers,
     workerReconcileHandler: runtime.workerReconcileHandler,
     workerSharedSecret: config.workerSharedSecret,
   });

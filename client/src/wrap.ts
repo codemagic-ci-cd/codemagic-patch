@@ -12,6 +12,7 @@ import {
 
 import { AppState } from "react-native";
 
+import { hasNativeModule } from "./NativeCodemagicPatch";
 import { sync } from "./sync";
 import { CheckFrequency, type SyncOptions, type WrapOptions } from "./types";
 
@@ -70,11 +71,16 @@ function rootDisplayName(root: AnyRootComponent): string {
  * repeatedly and its concurrency guard turns overlapping calls (React Strict
  * Mode's double effect, a nested `wrap()`) into a `sync-in-progress` result
  * rather than a second update cycle.
+ *
+ * On web there is no native module and nothing to update, so the root is
+ * returned as it is.
  */
 export function wrap<C extends AnyRootComponent>(
   Root: C,
   options?: WrapOptions,
 ): WrappedRootComponent<C> {
+  if (!hasNativeModule) return Root as unknown as WrappedRootComponent<C>;
+
   const {
     checkFrequency = CheckFrequency.ON_APP_START,
     ...installOptions

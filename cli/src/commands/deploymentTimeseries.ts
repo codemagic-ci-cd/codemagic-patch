@@ -7,7 +7,7 @@ import type {
   TimeseriesRange,
 } from "../commandTypes";
 import { authenticatedRequest } from "../authenticatedRequest";
-import { isRecord, type Palette } from "../output";
+import { formatSuccessRate, isRecord, type Palette } from "../output";
 import { resolveDeploymentId } from "./resolveNames";
 import {
   binaryVersionFilterQuery,
@@ -103,10 +103,7 @@ export function renderDeploymentTimeseriesNote(
   if (isRecord(result.summary)) {
     const { last_complete_day: lastDay, totals } = result.summary;
     if (isRecord(totals)) {
-      const rate =
-        typeof totals.success_rate === "number"
-          ? `${(totals.success_rate * 100).toFixed(1)}%`
-          : "n/a";
+      const rate = formatSuccessRate(totals.success_rate, "n/a");
       lines.push(
         `Range totals: ${String(totals.downloaded)} downloaded, ${String(totals.installed)} ready, ${String(totals.failed)} failed, ${String(totals.success)} applied; success rate ${rate}.`,
       );

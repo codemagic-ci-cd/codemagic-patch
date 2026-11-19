@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist/build-tools",
+    "rootDir": "./build-tools",
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.build-tools.tsbuildinfo"
+  },
+  "include": ["build-tools/**/*.ts"],
+  "exclude": ["test/**"]
+}

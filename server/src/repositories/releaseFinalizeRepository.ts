@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { withTransaction } from "../db";
 import type { Release, ReleaseJob, ReleaseJobId } from "../domain";
 import type { DatabasePool } from "../db";
+import type { ReleaseSettledHook } from "./releaseSettledHook";
 import {
   mapReleaseJobRow,
   mapReleaseRow,
@@ -64,8 +65,14 @@ export interface ReleaseFinalizeRepository {
   ): Promise<TransitionReleaseJobResult>;
 }
 
+export interface ReleaseFinalizeRepositoryOptions {
+  /** Called in each transaction that settles a job, before it commits. */
+  onReleaseSettled?: ReleaseSettledHook;
+}
+
 export function createPostgresReleaseFinalizeRepository(
   pool: DatabasePool | Pool,
+  repositoryOptions: ReleaseFinalizeRepositoryOptions = {},
 ): ReleaseFinalizeRepository {
   return {
     async finalizeReleaseSuccess(jobId, claimGeneration, options = {}) {
@@ -138,6 +145,14 @@ export function createPostgresReleaseFinalizeRepository(
           [jobId, now],
         );
 
+        await repositoryOptions.onReleaseSettled?.({
+          client,
+          failure: null,
+          jobRow: requireRow(jobResult.rows[0], "release_job"),
+          now,
+          releaseRow: requireRow(releaseResult.rows[0], "release"),
+        });
+
         return {
           activatedTargetCount: activatedTargets.rowCount ?? 0,
           cleanedPendingTargetCount: cleanedPendingTargets.rowCount ?? 0,
@@ -190,6 +205,14 @@ export function createPostgresReleaseFinalizeRepository(
           `,
           [jobId, now, failure.stage, failure.reason],
         );
+
+        await repositoryOptions.onReleaseSettled?.({
+          client,
+          failure: { reason: failure.reason, stage: failure.stage },
+          jobRow: requireRow(jobResult.rows[0], "release_job"),
+          now,
+          releaseRow: requireRow(releaseResult.rows[0], "release"),
+        });
 
         return {
           job: mapReleaseJobRow(requireRow(jobResult.rows[0], "release_job")),

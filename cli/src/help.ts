@@ -52,6 +52,7 @@ const TOP_LEVEL_SECTIONS: readonly {
       ["deployment", "Manage deployments"],
       ["member", "Manage team members and invitations"],
       ["token", "Manage personal access tokens"],
+      ["webhook", "Send release events to your own systems"],
       ["selfhost", "Install and maintain your own update server"],
     ],
     title: "Manage",
@@ -60,7 +61,7 @@ const TOP_LEVEL_SECTIONS: readonly {
     rows: [
       ["config", "Store user-level defaults"],
       ["context", "Show the effective local context"],
-      ["fingerprint", "Compute a native fingerprint"],
+      ["fingerprint", "Compute or read a native fingerprint"],
       ["debug", "Stream device update logs"],
       ["whoami", "Show the authenticated user"],
       ["logout", "Remove stored credentials"],
@@ -162,6 +163,9 @@ function renderHelpTopic(topic: string, palette: Palette): string {
       ...(group.seeAlso === undefined
         ? []
         : ["", ...wrapText(group.seeAlso, MAX_WIDTH)]),
+      ...(group.docs === undefined
+        ? []
+        : ["", ...wrapText(group.docs, MAX_WIDTH)]),
       "",
       palette.heading("Examples:"),
       ...group.examples.map((line) => `  $ ${line}`),
@@ -212,6 +216,16 @@ function renderCommandHelp(
       palette.heading("Examples:"),
       ...examples.map((line) => `  $ ${line}`),
     );
+  }
+
+  // A reader who came straight to this page never saw the group page, so the
+  // group's docs line is repeated here.
+  const docs = getCommandHelpGroups().find(
+    (candidate) => candidate.name === command.group,
+  )?.docs;
+
+  if (docs !== undefined) {
+    lines.push("", ...wrapText(docs, MAX_WIDTH));
   }
 
   return lines.join("\n");

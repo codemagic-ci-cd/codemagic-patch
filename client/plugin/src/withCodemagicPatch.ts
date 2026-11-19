@@ -21,6 +21,7 @@ import { withIosBundleURL } from './withIosBundleURL';
 import { withIosConfig } from './withIosConfig';
 import { withAndroidBundleFile } from './withAndroidBundleFile';
 import { withAndroidConfig } from './withAndroidConfig';
+import { withAndroidBuildMetadata, withIosBuildMetadata } from './withBuildMetadata';
 
 /**
  * Expo config plugin for `@codemagic/react-native-patch`.
@@ -28,7 +29,9 @@ import { withAndroidConfig } from './withAndroidConfig';
  * Adds, at prebuild time, the native bundle-selection seam the SDK needs (the
  * one bare-RN hosts wire by hand) plus the per-platform CodemagicPatch config values.
  * The bundle-override mods are run-once (idempotent across the plugin chain);
- * the config mods run every prebuild so prop changes always apply.
+ * the config mods run every prebuild so prop changes always apply. The
+ * build-metadata mods insert the native build step that writes
+ * CodemagicPatchBuild.json; they are idempotent on their own.
  *
  */
 const withCodemagicPatch: ConfigPlugin<CodemagicPatchPluginProps> = (config, props = {}) => {
@@ -39,10 +42,12 @@ const withCodemagicPatch: ConfigPlugin<CodemagicPatchPluginProps> = (config, pro
   if (props.ios) {
     plugins.push(createRunOncePlugin(withIosBundleURL, '@codemagic/react-native-patch:ios-bundle'));
     plugins.push([withIosConfig, props.ios]);
+    plugins.push(withIosBuildMetadata);
   }
   if (props.android) {
     plugins.push(createRunOncePlugin(withAndroidBundleFile, '@codemagic/react-native-patch:android-bundle'));
     plugins.push([withAndroidConfig, props.android]);
+    plugins.push(withAndroidBuildMetadata);
   }
 
   return withPlugins(config, plugins);

@@ -1,4 +1,4 @@
-// The native bundle-selection hook: AppDelegate prefers the OTA bundle and
+// The native bundle-selection hook: the app or scene delegate prefers the OTA bundle and
 // MainApplication feeds the OTA bundle path to React Native. The same seam
 // the Expo config plugin wires at prebuild, transformed here for projects
 // that maintain their native code — with the conflict checks a prebuild
@@ -16,7 +16,7 @@ import {
   withoutComments,
   withoutLiterals,
 } from "../doctor/discovery";
-import { isFile } from "./fs";
+import { isFile, readTextFile } from "./fs";
 
 export type HookTransform =
   | { kind: "changed"; contents: string }
@@ -195,29 +195,48 @@ export type IosAppDelegate =
   | { kind: "resolved"; file: string; language: "objc" | "swift" }
   | { kind: "unresolved"; reason: string };
 
+const APP_DELEGATE = /AppDelegate\.(swift|mm|m)$/;
+const SCENE_DELEGATE = /SceneDelegate\.(swift|mm|m)$/;
+/** What a delegate that picks the JS bundle names: the override or the embedded file. */
+const SELECTS_BUNDLE = /\bbundleURL\b|jsbundle/;
+
 /**
- * The delegate among the app target's sources; when Xcode's synchronized
- * folders hide the file list, the one next to the target's Info.plist.
+ * The delegate that selects the JS bundle, among the app target's sources;
+ * when Xcode's synchronized folders hide the file list, among the delegates
+ * next to the target's Info.plist. React Native 0.88's template moved bundle
+ * selection from AppDelegate into a SceneDelegate, and an app can have a scene
+ * delegate for other reasons (CarPlay, a second window), so a scene delegate
+ * is the host only when it names the bundle and the AppDelegate does not.
  */
 export async function locateIosAppDelegate(
   sources: string[],
   plistDirectory: string,
 ): Promise<IosAppDelegate> {
-  let candidates = sources.filter((file) => /AppDelegate\.(swift|mm|m)$/.test(file));
-  if (candidates.length === 0) {
-    candidates = [];
-    for (const name of ["AppDelegate.swift", "AppDelegate.mm", "AppDelegate.m"]) {
+  const delegates = sources.filter((file) => APP_DELEGATE.test(file) || SCENE_DELEGATE.test(file));
+  if (delegates.length === 0) {
+    for (const name of ["AppDelegate", "SceneDelegate"].flatMap((base) => [`${base}.swift`, `${base}.mm`, `${base}.m`])) {
       const file = path.join(plistDirectory, name);
-      if (await isFile(file)) candidates.push(file);
+      if (await isFile(file)) delegates.push(file);
     }
+  }
+  let candidates = delegates.filter((file) => APP_DELEGATE.test(file));
+  const scenes = delegates.filter((file) => SCENE_DELEGATE.test(file));
+  if (scenes.length > 0) {
+    const selecting: string[] = [];
+    for (const file of delegates) {
+      const text = await readTextFile(file);
+      if (text !== null && SELECTS_BUNDLE.test(withoutComments(text))) selecting.push(file);
+    }
+    if (selecting.length > 0) candidates = selecting;
+    else if (candidates.length === 0) candidates = scenes;
   }
   if (candidates.length !== 1) {
     return {
       kind: "unresolved",
       reason:
         candidates.length === 0
-          ? "no AppDelegate source was found in the application target"
-          : `several AppDelegate sources: ${candidates.map((file) => path.basename(file)).join(", ")}`,
+          ? "no AppDelegate or SceneDelegate source was found in the application target"
+          : `several delegate sources: ${candidates.map((file) => path.basename(file)).join(", ")}`,
     };
   }
   const file = candidates[0]!;
