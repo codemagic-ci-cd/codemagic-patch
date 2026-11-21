@@ -172,6 +172,15 @@ cmpatch token create --name ci
 
 Replace `eas update` (or EAS Update workflow steps) with the same `release-react` command, pointed at your production server URL. `release-react` bundles JS, resolves a target binary version, and uploads in one step, similar in role to `eas update` plus local bundling. See [CI integration](/docs/using-patch/ci-integration).
 
+If the project uses [Continuous Native Generation](https://docs.expo.dev/workflow/continuous-native-generation/) and does not commit `ios/` or `android/`, generate them in the same job before publishing. `release-react` fingerprints the native project, so without them it stops with "For an Expo CNG project, run prebuild first":
+
+```bash
+npx expo prebuild --platform ios --no-install
+cmpatch release-react --platform ios --deployment Staging --yes --non-interactive
+```
+
+`--no-install` skips CocoaPods, which publishing does not need, so the step takes seconds and runs on a Linux runner. `eas update` does not need this step, because it does not require the native directories.
+
 You can keep **EAS Build** (or any CI) to produce the native `.ipa` / `.apk`.
 
 If your app reads `EXPO_PUBLIC_*` variables, set them in the `release-react` job too: `cmpatch release-react` bundles with the environment of the invoking shell and does not read EAS build profiles. See [Keep bundle environment in sync with the native build](/docs/using-patch/ci-integration#keep-bundle-environment-in-sync-with-the-native-build).
